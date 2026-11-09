@@ -1,13 +1,14 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro record_, macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io as io;
 
-labels Version = { value: String, stamp: String };
+type Version = { Value: String; Stamp: String };
 
-labels { tail: String };
+type { Tail: String }
 
 fn catchall(input: . | (Version & Tail)) {
   match(input) {
@@ -18,9 +19,9 @@ fn catchall(input: . | (Version & Tail)) {
 fn product_first(input: . | (Version & Tail)) {
   match(input) {
     .(head: Version, rest: Tail) {
-      io.print(head.?{value});
-      io.print(head.?{stamp});
-      io.print(rest.?{tail})
+      io.print(head.>select { Value.get });
+      io.print(head.>select { Stamp.get });
+      io.print(rest.>select { Tail.get })
     };
     .(_empty: .) { io.print("empty\n") }
   }
@@ -29,7 +30,8 @@ fn product_first(input: . | (Version & Tail)) {
 pub fn main() {
   let empty = widen_sum(())[. | (Version & Tail)];
   let packet =
-    widen_sum(({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"}))[. | (Version & Tail)];
+    widen_sum((record_ { Value.mk("value\n"); Stamp.mk("stamp\n") }, Tail.mk("tail\n")))[| .
+    | (Version & Tail)];
   catchall(empty);
   catchall(packet);
   product_first(empty);

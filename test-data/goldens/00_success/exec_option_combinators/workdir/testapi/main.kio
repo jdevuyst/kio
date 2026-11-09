@@ -13,11 +13,11 @@ import testapi/text(string_concat);
 // branch carries a present value. `some` / `none` are the
 // canonical constructors; `map` / `and_then` / `or_else` are the
 // textbook combinators for chained partial computation.
-newtype Option[A] : . | A { pub constructor mk_option; pub projector un_option }
+type { Option[A]: . | A { pub mk; pub get } }
 
-fn some[A](v: A) -> Option[A] { Option.mk_option(widen_sum(v)[. | A]) }
+fn some[A](v: A) -> Option[A] { Option.mk(widen_sum(v)[. | A]) }
 
-fn none[A]() -> Option[A] { Option.mk_option(widen_sum(())[. | A]) }
+fn none[A]() -> Option[A] { Option.mk(widen_sum(())[. | A]) }
 
 // `map` lifts a total `A -> B` over `Option`. Clause order matters:
 // the value arm `.(v: A)` is strictly more specific than the
@@ -25,7 +25,7 @@ fn none[A]() -> Option[A] { Option.mk_option(widen_sum(())[. | A]) }
 // admits drops, so a `.(_: .)` slot placed first would absorb
 // both arms.
 fn map[A][B](f: A -> B, o: Option[A]) -> Option[B] {
-  match(o.>Option.un_option) {
+  match(o.>Option.get) {
     (.(v: A) { some(f(v)) }, .(_empty: .) { none[B](()) })
   }
 }
@@ -33,7 +33,7 @@ fn map[A][B](f: A -> B, o: Option[A]) -> Option[B] {
 // `and_then` chains an `A -> Option(B)` over `Option(A)`. Same
 // clause-order rule as `map`.
 fn and_then[A][B](f: A -> Option[B], o: Option[A]) -> Option[B] {
-  match(o.>Option.un_option) {
+  match(o.>Option.get) {
     (.(v: A) { f(v) }, .(_empty: .) { none[B](()) })
   }
 }
@@ -42,7 +42,7 @@ fn and_then[A][B](f: A -> Option[B], o: Option[A]) -> Option[B] {
 // when it is `none`. The value arm ignores its payload and returns
 // the original `o` because that preserves the option's identity.
 fn or_else[A](default: Option[A], o: Option[A]) -> Option[A] {
-  match(o.>Option.un_option) {
+  match(o.>Option.get) {
     (.(_v: A) { o }, .(_empty: .) { default })
   }
 }
@@ -51,7 +51,7 @@ fn or_else[A](default: Option[A], o: Option[A]) -> Option[A] {
 // option-printer pattern: a thin wrapper around the projector +
 // `match`. Reused by the BST case to render its `lookup` result.
 fn print_option(o: Option[I32]) -> String {
-  match(o.>Option.un_option) {
+  match(o.>Option.get) {
     (
     , .(v: I32) { string_concat("some(", string_concat(int_to_string(v), ")")) }
     , .(_empty: .) { "none" }

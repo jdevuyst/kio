@@ -10,15 +10,15 @@ type Actual = types.Other;
 
 type Bool = real.Bool;
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
-labels { cell[Cell]: Cell };
+type { Cell[Cell]: Cell { mk; get } }
 
 fn identity[A](value: A) -> A { value }
 
-fn make_box(value: real.Actual) -> Box[real.Actual] { Box.mk_box(value) }
+fn make_box(value: real.Actual) -> Box[real.Actual] { Box.mk(value) }
 
-fn consume_box(value: Box[real.Actual]) -> real.Actual { Box.un_box(value) }
+fn consume_box(value: Box[real.Actual]) -> real.Actual { Box.get(value) }
 
 fn call(value: real.Actual) -> d.Flag { d.id(value) }
 
@@ -30,7 +30,7 @@ fn local_nominal_under_same_named_binder[Box](value: real.Actual) -> real.Actual
   consume_box(identity(make_box(value)))
 }
 
-fn field_roundtrip[Cell](value: d.Flag) -> d.Flag { {cell = value}.?{cell} }
+fn field_roundtrip[Cell](value: d.Flag) -> d.Flag { Cell.get(Cell.mk(value)) }
 
 fn consume_other(value: types.Other) -> types.Other { value }
 

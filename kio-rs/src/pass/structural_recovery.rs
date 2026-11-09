@@ -29,11 +29,10 @@
 //!   own).
 //! - **Product access** — a `__fst__` / `__snd__` call becomes an
 //!   [`Expr::EnrichedProject`] over the n-ary spine of its target
-//!   product. A `__snd__` whose `R` type-arg is itself a product
-//!   returns a sub-product — recovery materializes it as an
-//!   [`Expr::EnrichedTuple`] of per-slot projections, rebuilding
-//!   the sub-product explicitly under the n-ary `Prod_<spine(R)>`
-//!   mint.
+//!   product. `__snd__[A][R]` uses a two-slot view whose final
+//!   slot retains all of `R`, including an explicit product tail.
+//!   The target is recovered and evaluated once without rebuilding
+//!   the suffix product.
 //! - **Sum injection** — a `__left__` / `__right__` chain that
 //!   names a single positional variant in a statically-known sum
 //!   becomes an [`Expr::EnrichedInject`] with n-ary
@@ -319,7 +318,7 @@ impl<'a> Recoverer<'a> {
             // Statically uninhabited at Prime.
             Item::LiteralAlias(_, ext) => match *ext {},
             Item::Labels(_, ext) => match *ext {},
-            Item::LabelForward(_, ext) => match *ext {},
+
             Item::Equiv(_, ext) => match *ext {},
             Item::Macro(_, ext) => match *ext {},
             Item::Op(_, ext) => match *ext {},
@@ -555,9 +554,6 @@ impl<'a> Recoverer<'a> {
             // statically uninhabited at `Prime`.
             Expr::Tuple { ext, .. } => match *ext {},
             Expr::FnPlaceholder { ext, .. } => match *ext {},
-            Expr::LabelValue { ext, .. } => match *ext {},
-            Expr::RowLet { ext, .. } => match *ext {},
-            Expr::Elaborator { ext, .. } => match *ext {},
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
             Expr::UserMacro { ext, .. } => match *ext {},
             Expr::Ufcs { ext, .. } => match *ext {},
@@ -801,100 +797,35 @@ impl<'a> Recoverer<'a> {
 
     // ---- pattern: product access ------------------------------------
 
-    /// A `__fst__` / `__snd__` call → [`Expr::EnrichedProject`] over
-    /// the n-ary spine of its target product, or — when the call is
-    /// `__snd__(A, R, p)` with `R` itself a product — an
-    /// [`Expr::EnrichedTuple`] of per-slot projections that rebuilds
-    /// the sub-product `R` from `p`'s tail slots.
-    ///
-    /// The outer product's spine count is `1 + product_spine_count(R)`:
-    /// `__fst__` projects to slot 0; `__snd__` with atomic `R`
-    /// projects to slot 1 of a 2-spine outer. `__snd__` with a
-    /// product `R` materializes the sub-product as a fresh n-ary
-    /// tuple whose items are the outer's slots `1..n` projected
-    /// directly — no raw `__snd__` call survives, and the recovered
-    /// tree carries the same observable shape (the sub-product `R`
-    /// at the source level) under the n-ary `Prod_<spine(R)>` mint.
+    /// Recover the validated intrinsic's product view. `__fst__` selects
+    /// the first slot of the explicit right spine; `__snd__` selects the
+    /// final slot of a two-slot view, retaining the complete right type.
+    /// Both forms preserve the original product type and one target evaluation.
     fn recover_projection(&mut self, e: &Expr<Prime>) -> Option<Expr<Enriched>> {
         let name = single_segment_callee(call_callee(e)?)?;
         let call = classify_intrinsic(name, call_args(e)?)?;
         let span = e.span();
-        let r_ty = type_arg_type(call.type_part.get(1)?);
         let inner = value_arg(call.value_part, 0)?;
         let target_ty = synth_ty_from_pair(&call, SpineKind::Product, span)?;
-        let arity = 1 + product_spine_count(r_ty.as_ref());
         match name {
             "__fst__" => Some(Expr::EnrichedProject {
                 occurrence: Default::default(),
                 target: Box::new(self.recover_expr(inner)),
                 index: 0,
-                arity,
+                arity: 1 + product_spine_count(type_arg_type(call.type_part.get(1)?).as_ref()),
                 target_ty,
                 meta: Meta::new(span),
                 ext: (),
             }),
-            "__snd__" => {
-                if matches!(r_ty.as_ref(), Type::Product { .. }) {
-                    // Sub-product case: `__snd__` returns the right
-                    // tail `R`, itself an n-ary product. Materialize
-                    // it as an `EnrichedTuple` over per-slot
-                    // projections of the outer product — slots
-                    // `1..arity`. The resulting shape's synth_ty is
-                    // `R` (n-ary `Prod_<spine(R)>`). Codegen reads
-                    // each slot from one bound copy of the original
-                    // `p` and packs them into a fresh n-ary mint.
-                    let target_name = self.fresh_name();
-                    let recovered_inner = self.recover_expr(inner);
-                    let tail_ty = convert_type::<Prime, Enriched>(r_ty.as_ref());
-                    let items: Vec<Expr<Enriched>> = (1..arity)
-                        .map(|i| Expr::EnrichedProject {
-                            occurrence: Default::default(),
-                            target: Box::new(Expr::Path {
-                                occurrence: Default::default(),
-                                segments: vec![PathSegment::new(target_name.clone(), span)],
-                                meta: Meta::new(span),
-                                ext: (),
-                            }),
-                            index: i,
-                            arity,
-                            target_ty: target_ty.clone(),
-                            meta: Meta::new(span),
-                            ext: (),
-                        })
-                        .collect();
-                    let tuple = Expr::EnrichedTuple {
-                        occurrence: Default::default(),
-                        items,
-                        synth_ty: tail_ty,
-                        meta: Meta::new(span),
-                        ext: (),
-                    };
-                    Some(Expr::Let {
-                        occurrence: Default::default(),
-                        name: target_name,
-                        name_span: span,
-                        ty: None,
-                        pattern: (),
-                        value: Box::new(recovered_inner),
-                        body: Box::new(tuple),
-                        meta: Meta::new(span),
-                    })
-                } else {
-                    // R is atomic / nominal / aliased / function /
-                    // Unit / Bottom — `__snd__` projects to a
-                    // single slot. `arity` is `1 + 1 = 2` by the
-                    // `product_spine_count` opaqueness rule.
-                    Some(Expr::EnrichedProject {
-                        occurrence: Default::default(),
-                        target: Box::new(self.recover_expr(inner)),
-                        index: 1,
-                        arity,
-                        target_ty,
-                        meta: Meta::new(span),
-                        ext: (),
-                    })
-                }
-            }
+            "__snd__" => Some(Expr::EnrichedProject {
+                occurrence: Default::default(),
+                target: Box::new(self.recover_expr(inner)),
+                index: 1,
+                arity: 2,
+                target_ty,
+                meta: Meta::new(span),
+                ext: (),
+            }),
             _ => None,
         }
     }
@@ -1778,9 +1709,6 @@ fn has_free_value_ref(e: &Expr<Enriched>, name: &str, shadowed: bool) -> bool {
         | Expr::BoolLit { .. } => false,
         Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
-        | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
@@ -2282,16 +2210,27 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+    enum EvaluationPosition {
+        Binding(usize),
+        TupleSlot(usize),
+    }
+
     fn constructor_slot<'a>(
         slot: &'a Expr<Enriched>,
         bindings: &[LeadingBinding<'a>],
         expected_newtype: &str,
-    ) -> (usize, Option<usize>, &'a Expr<Enriched>) {
-        let (Some(constructor_index), constructor) =
-            resolve_bound_value(slot, bindings, bindings.len())
-        else {
-            panic!("{expected_newtype}: tuple slot is not wired to a leading binding: {slot:?}");
-        };
+        slot_index: usize,
+    ) -> (
+        EvaluationPosition,
+        Option<EvaluationPosition>,
+        &'a Expr<Enriched>,
+    ) {
+        let (constructor_index, constructor) = resolve_bound_value(slot, bindings, bindings.len());
+        // Leading lets run before the terminal tuple; inline slots run left to right.
+        let constructor_position = constructor_index
+            .map(EvaluationPosition::Binding)
+            .unwrap_or(EvaluationPosition::TupleSlot(slot_index));
         let Expr::Call { callee, args, .. } = constructor else {
             panic!("{expected_newtype}: expected constructor Call, got {constructor:?}");
         };
@@ -2313,8 +2252,16 @@ mod tests {
             value_args.next().is_none(),
             "{expected_newtype}: constructor has more than one value payload: {args:?}"
         );
-        let (payload_index, payload) = resolve_bound_value(payload, bindings, constructor_index);
-        (constructor_index, payload_index, payload)
+        let (payload_index, payload) = resolve_bound_value(
+            payload,
+            bindings,
+            constructor_index.unwrap_or(bindings.len()),
+        );
+        (
+            constructor_position,
+            payload_index.map(EvaluationPosition::Binding),
+            payload,
+        )
     }
 
     /// Count every node in `e` for which `pred` holds, walking the
@@ -2634,51 +2581,28 @@ mod tests {
 
     #[test]
     fn recovery_temporary_names_belong_to_the_named_function() {
-        let subject = "fn target(p: . & . & .) -> . & . { __snd__[.][. & .](p) }";
+        let subject = "fn target(p: . | .) -> . { __either__[.][.][.](p, factory(), factory()) }";
         let shapes = [
             "",
-            "fn unrelated(p: . & . & .) -> . & . { __snd__[.][. & .](p) }",
+            "fn unrelated(p: . | .) -> . { __either__[.][.][.](p, factory(), factory()) }",
         ]
         .map(|prefix| {
             let module = recover_one(
                 "x/main",
-                &format!("module x/main; import __intrinsics__; {prefix} {subject}"),
+                &format!("module x/main; import __intrinsics__; host fn factory() -> . -> .; {prefix} {subject}"),
                 None,
             );
-            let Expr::Let {
-                name, value, body, ..
-            } = fn_body(&module, "target")
-            else {
-                panic!("sub-product recovery must introduce a temporary");
+            let (bindings, terminal) = leading_let_spine(fn_body(&module, "target"));
+            assert_eq!(bindings.len(), 2, "both computed handlers are staged");
+            let Expr::EnrichedMatch { arms, .. } = terminal else {
+                panic!("staged handlers feed the recovered match");
             };
-            assert!(matches!(value.as_ref(), Expr::Path { segments, .. } if segments[0] == "p"));
-            let Expr::EnrichedTuple { items, .. } = body.as_ref() else {
-                panic!("recovered tail is a tuple of bound projections");
-            };
-            let projections = items
-                .iter()
-                .map(|item| {
-                    let Expr::EnrichedProject {
-                        target,
-                        index,
-                        arity,
-                        ..
-                    } = item
-                    else {
-                        panic!("tail entry is a projection");
-                    };
-                    let Expr::Path { segments, .. } = target.as_ref() else {
-                        panic!("projection targets the generated binder");
-                    };
-                    assert_eq!(segments.len(), 1);
-                    assert_eq!(segments[0].as_str(), name);
-                    (segments[0].name.clone(), *index, *arity)
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(projections.len(), 2);
-            assert_eq!((projections[0].1, projections[1].1), (1, 2));
-            assert!(projections.iter().all(|(_, _, arity)| *arity == 3));
-            (name.clone(), projections)
+            bindings.iter().zip(arms).map(|((name, value), arm)| {
+                assert!(name.starts_with("__rec"), "recovery must synthesize this binder: {name}");
+                assert_eq!(direct_call_name(value), Some("factory"));
+                assert_eq!(direct_call_name(&arm.body), Some(*name));
+                (*name).to_owned()
+            }).collect::<Vec<_>>()
         });
         assert_eq!(
             shapes[0], shapes[1],
@@ -3090,7 +3014,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+             type { Box[A]: A { pub mk; pub get; }; } \
              fn snd_of[A](p: (A & Box[A])) -> Box[A] { __snd__[A][ Box[A]]( p) }",
             None,
         );
@@ -3121,67 +3045,87 @@ mod tests {
         );
     }
 
-    /// A bare `__snd__` whose result is itself a *sub-product* (not a
-    /// single component) recovers by binding the recovered source once
-    /// and projecting the rebuilt sub-product slots from that binding.
-    /// No `__snd__` call survives.
     #[test]
-    fn snd_run_to_sub_product_recovers_as_nary_tuple() {
-        let m = recover_one(
+    fn snd_retains_the_whole_right_tail_in_a_two_slot_view() {
+        for (head, tail) in [
+            ("A", "B & C"),
+            ("A & B", "B & C"),
+            ("A", "(B & C) & A"),
+            ("A", "."),
+            ("A", ". & B"),
+            ("A", "B & ."),
+            ("A", "B"),
+            ("A", "Alias[B][C]"),
+            ("A", "Opaque[B & C]"),
+            ("A", "B -> C"),
+            ("A", "[X] X -> X"),
+        ] {
+            let module = recover_one(
+                "x/main",
+                &format!(
+                    "module x/main; import __intrinsics__; type Alias[B][C] = B & C; type {{ Opaque[A]: A {{ mk; get; }}; }} fn rest[A][B][C](p: ({head}) & ({tail})) -> ({tail}) {{ __snd__[{head}][{tail}](p) }}"
+                ),
+                None,
+            );
+            let Expr::EnrichedProject {
+                target,
+                index,
+                arity,
+                target_ty,
+                ..
+            } = fn_body(&module, "rest")
+            else {
+                panic!("{head} / {tail}: direct tail projection expected");
+            };
+            assert_eq!((*index, *arity), (1, 2), "{head} / {tail}");
+            assert!(
+                matches!(target.as_ref(), Expr::Path { segments, .. } if segments.len() == 1 && segments[0] == "p")
+            );
+            let definition = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "rest" => Some(def),
+                    _ => None,
+                })
+                .unwrap();
+            let Type::Product { right, .. } = target_ty else {
+                panic!("original product type retained");
+            };
+            assert!(
+                structural_type_equal(right, &definition.ret),
+                "{head} / {tail}: {right:?} != {:?}",
+                definition.ret
+            );
+        }
+    }
+
+    #[test]
+    fn snd_recovers_an_effectful_receiver_once_without_suffix_reconstruction() {
+        let module = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn rest[A][B][C](p: (A & (B & C))) -> (B & C) { __snd__(p) }",
+            "module x/main; import __intrinsics__; host fn packet() -> . & (. & .); fn rest() -> . & . { __snd__[.][. & .](packet()) }",
             None,
         );
-        let body = fn_body(&m, "rest");
-        match body {
-            Expr::Let {
-                name,
-                value,
-                body: tuple,
-                ..
-            } => {
-                assert!(
-                    matches!(&**value, Expr::Path { segments, .. }
-                        if segments.len() == 1 && segments[0].name == "p"),
-                    "recovery should bind the original source once: {value:?}"
-                );
-                let Expr::EnrichedTuple { items, .. } = &**tuple else {
-                    panic!("expected let body to be EnrichedTuple, got {tuple:?}");
-                };
-                assert_eq!(items.len(), 2, "sub-product has 2 slots (b, c)");
-                for (i, it) in items.iter().enumerate() {
-                    let slot = i + 1;
-                    match it {
-                        Expr::EnrichedProject {
-                            index,
-                            arity,
-                            target,
-                            ..
-                        } => {
-                            assert_eq!(*index, slot, "slot {i} projects outer index {slot}");
-                            assert_eq!(*arity, 3, "outer arity is 3");
-                            assert!(
-                                matches!(&**target, Expr::Path { segments, .. }
-                                    if segments.len() == 1 && segments[0].name == name.as_str()),
-                                "target should be the recovery binding `{name}`: {target:?}"
-                            );
-                        }
-                        other => panic!("slot {i}: expected EnrichedProject, got {other:?}"),
-                    }
-                }
-            }
-            other => panic!("expected EnrichedTuple, got {other:?}"),
-        }
+        let body = fn_body(&module, "rest");
         assert_eq!(
-            count(body, &|e| matches!(
-                e,
-                Expr::Call { callee, .. }
-                    if matches!(&**callee, Expr::Path { segments, .. }
-                        if segments.len() == 1 && segments[0] == "__snd__")
+            count(body, &|expr| direct_call_name(expr) == Some("packet")),
+            1
+        );
+        assert_eq!(
+            count(body, &|expr| matches!(expr, Expr::EnrichedTuple { .. })),
+            0
+        );
+        assert_eq!(
+            count(body, &|expr| matches!(
+                expr,
+                Expr::EnrichedProject {
+                    index: 1,
+                    arity: 2,
+                    ..
+                }
             )),
-            0,
-            "no `__snd__` call should survive recovery"
+            1
         );
     }
 
@@ -3283,21 +3227,20 @@ mod tests {
         );
     }
 
-    /// A surface tuple of label-derived newtype constructor calls (the
-    /// record literal `({hed = ()}, {mid = ()}, {tal = ()})` after
-    /// label elaboration) recovers to one flat [`Expr::EnrichedTuple`]
+    /// A surface tuple of nominal constructor calls recovers to one flat
+    /// [`Expr::EnrichedTuple`]
     /// while retaining each constructor wrap. Prime canonicalization
     /// may lift the constructor and intermediate pair calls onto the
     /// statement spine; recovery follows the binding relationships
     /// and removes only the single-use pair temporaries.
     #[test]
-    fn labels_record_literal_recovers_to_enriched_tuple() {
+    fn nominal_constructor_tuple_recovers_to_enriched_tuple() {
         let m = recover_one(
             "x/main",
             "module x/main; \
-             labels { hed: ., mid: ., tal: . }; \
+             type { Hed: .; Mid: .; Tal: .; }; \
              fn rec() -> (Hed & Mid & Tal) { \
-               ({hed = ()}, {mid = ()}, {tal = ()}) \
+               (Hed.mk(()), Mid.mk(()), Tal.mk(())) \
              }",
             None,
         );
@@ -3316,9 +3259,11 @@ mod tests {
             "tuple width matches its synthesized product type"
         );
         let mut previous_constructor = None;
-        for (slot, expected_newtype) in items.iter().zip(["Hed", "Mid", "Tal"]) {
+        for (slot_index, (slot, expected_newtype)) in
+            items.iter().zip(["Hed", "Mid", "Tal"]).enumerate()
+        {
             let (constructor_index, _, payload) =
-                constructor_slot(slot, &bindings, expected_newtype);
+                constructor_slot(slot, &bindings, expected_newtype, slot_index);
             if let Some(previous) = previous_constructor {
                 assert!(
                     previous < constructor_index,
@@ -3336,47 +3281,14 @@ mod tests {
             1,
             "the recovered product has one maximally-flat tuple node"
         );
-    }
-
-    #[test]
-    fn unrelated_grouped_newtype_does_not_reclassify_local_constructor() {
-        let a = parse(
-            "module a; \
-             rec { \
-               pub newtype Foo : Peer { pub constructor mk_a; pub projector mk_b; }; \
-               pub newtype Peer : Foo { pub constructor make_peer; pub projector un_peer; }; \
-             }",
-        )
-        .expect("parse a");
-        let b = parse(
-            "module b; import __intrinsics__; \
-             pub newtype Foo : . { pub constructor mk_b; pub projector un_b; }; \
-             pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__[.][ .]( p)) }",
-        )
-        .expect("parse b");
-        let (lowered_modules, _) = FullPipeline::lower_package(
-            vec![(PathBuf::from("a.kio"), a), (PathBuf::from("b.kio"), b)],
-            None,
-        )
-        .expect("lower package");
-        let package = Package::build(Path::new(""), lowered_modules, None).expect("build package");
-        package.resolve_imports().expect("resolve imports");
-        package
-            .check_in_body_resolution()
-            .expect("check in-body resolution");
-        let prime = check_package(&package).expect("check package");
-        let recovered = recover_package(&prime);
-        let b = &recovered.module("b").expect("module b").module;
-        let body = fn_body(b, "keep");
-
-        assert!(
-            matches!(body,
+        assert_eq!(
+            count(body, &|e| matches!(e,
                 Expr::Call { callee, .. }
                     if matches!(callee.as_ref(), Expr::Path { segments, .. }
-                        if segments.len() == 2
-                            && segments[0].name == "Foo"
-                            && segments[1].name == "mk_b")),
-            "an unrelated module reclassified `b.Foo.mk_b` during recovery: {body:?}"
+                        if segments.len() == 2 && segments[1].name == "mk"
+                            && ["Hed", "Mid", "Tal"].contains(&segments[0].name.as_str())))),
+            3,
+            "each constructor wrap appears exactly once"
         );
     }
 
@@ -3386,21 +3298,21 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; \
-                 pub newtype Hed : . { pub constructor put; pub projector get; }; \
-                 pub newtype Tal : . { pub constructor put_tal; pub projector get_tal; };",
+                 pub type { Hed: . { pub mk; pub get; }; }; \
+                 pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
                 "module decoy; \
-                 pub newtype Hed : . { pub constructor stash; pub projector peek; }; \
-                 pub newtype Tal : . { pub constructor stash_tal; pub projector peek_tal; };",
+                 pub type { Hed: . { pub mk; pub get; }; }; \
+                 pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "qualified.kio",
                 "module qualified; import __intrinsics__; \
                  import provider as p; import decoy as d; \
                  fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
-                 fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.peek(__fst__(r)) }",
+                 fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
             ),
             (
                 "selective.kio",
@@ -3449,6 +3361,121 @@ mod tests {
         }
     }
 
+    /// Alias projectors retain their terminal owner through recovery and routing.
+    #[test]
+    fn alias_projectors_retain_exact_terminal_owner_through_recovery_and_routing() {
+        let sources = [
+            (
+                "provider.kio",
+                "module provider; \
+                 pub type { Provider_hed: . { pub mk; pub get; }; }; pub type Hed = Provider_hed; \
+                 pub type { Tal: . { pub mk; pub get; }; };",
+            ),
+            (
+                "decoy.kio",
+                "module decoy; \
+                 pub type { Decoy_hed: . { pub mk; pub get; }; }; pub type Hed = Decoy_hed; \
+                 pub type { Tal: . { pub mk; pub get; }; };",
+            ),
+            (
+                "qualified.kio",
+                "module qualified; import __intrinsics__; \
+                 import provider as p; import decoy as d; \
+                 fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
+                 fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
+            ),
+            (
+                "selective.kio",
+                "module selective; import __intrinsics__; \
+                 import provider(Hed, Tal); \
+                 fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
+            ),
+        ];
+        let parsed = sources
+            .into_iter()
+            .map(|(path, source)| {
+                (
+                    PathBuf::from(path),
+                    parse(source).unwrap_or_else(|error| panic!("parse {path}: {error:?}")),
+                )
+            })
+            .collect();
+        let (lowered_modules, _) =
+            FullPipeline::lower_package(parsed, None).expect("lower package");
+        let package = Package::build(Path::new(""), lowered_modules, None).expect("build package");
+        package.resolve_imports().expect("resolve imports");
+        package
+            .check_in_body_resolution()
+            .expect("check in-body resolution");
+        let prime = check_package(&package).expect("check package");
+        let recovered = recover_package(&prime);
+
+        let routed = crate::pass::route::route_package(&recovered);
+        for (module, function, alias_path, owner, nominal) in [
+            (
+                "qualified",
+                "read",
+                vec!["p", "Hed", "get"],
+                "provider",
+                "Provider_hed",
+            ),
+            (
+                "qualified",
+                "read_decoy",
+                vec!["d", "Hed", "get"],
+                "decoy",
+                "Decoy_hed",
+            ),
+            (
+                "selective",
+                "read",
+                vec!["Hed", "get"],
+                "provider",
+                "Provider_hed",
+            ),
+        ] {
+            let recovered_module = &recovered.module(module).expect("consumer module").module;
+            let body = fn_body(recovered_module, function);
+            let Expr::Call { callee, args, .. } = body else {
+                panic!("{module}::{function} must preserve the alias call: {body:?}");
+            };
+            assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+                if segments.iter().map(|segment| segment.as_str()).eq(alias_path.iter().copied())));
+            let [
+                CallArg::Value(Expr::EnrichedProject {
+                    index: 0,
+                    arity: 2,
+                    target_ty,
+                    ..
+                }),
+            ] = args.as_slice()
+            else {
+                panic!("{module}::{function} must project its record: {args:?}");
+            };
+            assert!(matches!(target_ty, Type::Product { left, .. }
+                if matches!(left.as_ref(), Type::Path { segments, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == nominal))));
+
+            let routed_module = &routed.module(module).expect("routed module").module;
+            let routed_body = routed_module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == function => Some(&def.body),
+                    _ => None,
+                })
+                .expect("routed function");
+            assert!(
+                matches!(routed_body, Expr::LowQualifiedNewtypeMember {
+                module_path, newtype, member, payload, ..
+            } if module_path == owner && newtype == nominal && member == "get"
+                && matches!(payload.as_ref(), Expr::EnrichedProject { target, index: 0, arity: 2, .. }
+                    if matches!(target.as_ref(), Expr::LowBoundRef { name, .. } if name == "r"))),
+                "{module}::{function} must route to the terminal owner: {routed_body:?}"
+            );
+        }
+    }
+
     /// The member projector spelling `Hed.get(__fst__(r))` on a
     /// positional access into a record `Hed & Tal` folds to an
     /// [`Expr::EnrichedFieldGet`] carrying the field name and the
@@ -3459,7 +3486,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             labels { hed: ., tal: . }; \
+             type { Hed: .; Tal: .; }; \
              fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
             None,
         );
@@ -3510,7 +3537,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             labels { hed: ., tal: . }; \
+             type { Hed: .; Tal: .; }; \
              fn read(r: (Hed & Tal)) -> . { Tal.get(__snd__(r)) }",
             None,
         );
@@ -3541,7 +3568,7 @@ mod tests {
     }
 
     /// A projector call whose argument is *not* a positional access
-    /// (a bare record value, here a `fn` parameter of the label type)
+    /// (a bare record value, here a `fn` parameter of the nominal type)
     /// stays a structural projector call — recovery is opportunistic
     /// and leaves the projector untouched; so no `EnrichedFieldGet`
     /// appears.
@@ -3550,7 +3577,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; \
-             labels { hed: . }; \
+             type { Hed: .; }; \
              fn read(h: Hed) -> . { Hed.get(h) }",
             None,
         );
@@ -3574,8 +3601,8 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; \
-             labels { hed: . }; \
-             fn mixed() -> (Hed & .) { ({hed = ()}, ()) }",
+             type { Hed: .; }; \
+             fn mixed() -> (Hed & .) { (Hed.mk(()), ()) }",
             None,
         );
         let body = fn_body(&m, "mixed");
@@ -3588,12 +3615,21 @@ mod tests {
         };
         assert_eq!(items.len(), 2, "mixed tuple retains both slots");
         assert_eq!(items.len(), Type::right_spine_product(synth_ty).len());
-        let (_, _, payload) = constructor_slot(&items[0], &bindings, "Hed");
+        let (_, _, payload) = constructor_slot(&items[0], &bindings, "Hed", 0);
         assert!(
             matches!(payload, Expr::Unit { .. }),
             "named slot retains its constructor payload: {payload:?}"
         );
         assert!(matches!(&items[1], Expr::Unit { .. }), "unnamed unit slot");
+        assert_eq!(
+            count(body, &|e| matches!(e,
+                Expr::Call { callee, .. }
+                    if matches!(callee.as_ref(), Expr::Path { segments, .. }
+                        if segments.len() == 2
+                            && segments[0].name == "Hed" && segments[1].name == "mk"))),
+            1,
+            "the constructor wrap appears exactly once"
+        );
     }
 
     /// A 5-component tuple recovers as one flat n-ary `EnrichedTuple`
@@ -3641,10 +3677,10 @@ mod tests {
             "module main; \
              host type Int role(i32); \
              host fn mark(value: Int) -> Int; \
-             labels { a: Int, b: Int, c: Int, d: Int }; \
+             type { A: Int; B: Int; C: Int; D: Int; }; \
              fn quad(_kp0: Int) -> (A & B & C & D) { \
-               ({a = mark(10[Int])}, {b = mark(20[Int])}, \
-                {c = mark(30[Int])}, {d = mark(40[Int])}) \
+               (A.mk(mark(10[Int])), B.mk(mark(20[Int])), \
+                C.mk(mark(30[Int])), D.mk(mark(40[Int]))) \
              }",
             None,
         );
@@ -3669,13 +3705,14 @@ mod tests {
 
         let mut previous_payload = None;
         let mut previous_constructor = None;
-        for ((slot, expected_newtype), expected_digits) in items
+        for (slot_index, ((slot, expected_newtype), expected_digits)) in items
             .iter()
             .zip(["A", "B", "C", "D"])
             .zip(["10", "20", "30", "40"])
+            .enumerate()
         {
             let (constructor_index, payload_index, payload) =
-                constructor_slot(slot, &bindings, expected_newtype);
+                constructor_slot(slot, &bindings, expected_newtype, slot_index);
             if let Some(payload_index) = payload_index {
                 assert!(
                     payload_index < constructor_index,

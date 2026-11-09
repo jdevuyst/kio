@@ -8,7 +8,7 @@ host fn pack[T](value: T) -> Box[T];
 
 host fn invoked();
 
-pub newtype N : Number { pub constructor wrap; pub projector unwrap }
+pub type { N: Number { pub mk; pub get } }
 
 fn identity[T](value: T) -> T { invoked(); value }
 
@@ -26,21 +26,18 @@ pub fn relay_callback[A](value: N -> A) -> N -> A { value }
 
 pub fn relay_factory[A](value: . -> N -> A) -> . -> N -> A { value }
 
-pub newtype Hidden : Number { constructor hide; projector reveal }
+pub type { Hidden: Number { mk; get } }
 
-pub newtype Packed <U> : U & (U -> Number) { constructor pack; projector open_pack }
+pub type { Packed <U>: U & (U -> Number) { mk; get } }
 
-pub fn make_hidden(value: Number) -> Hidden { Hidden.hide(value) }
+pub fn make_hidden(value: Number) -> Hidden { Hidden.mk(value) }
 
-pub fn read_hidden(value: Hidden) -> Number { invoked(); Hidden.reveal(value) }
+pub fn read_hidden(value: Hidden) -> Number { invoked(); Hidden.get(value) }
 
 fn read_payload[U](value: U, reader: U -> Number) -> Number { reader(value) }
 
 pub fn make_packed(value: Number) -> Packed {
-  Packed.pack[Number](value, .(n: Number) { n })
+  Packed.mk[Number](value, .(n: Number) { n })
 }
 
-pub fn read_packed(value: Packed) -> Number {
-  invoked();
-  Packed.open_pack(value)[Number](read_payload)
-}
+pub fn read_packed(value: Packed) -> Number { invoked(); Packed.get(value)[Number](read_payload) }

@@ -1,0 +1,32 @@
+module main;
+
+import __comptime__;
+
+pure fn nested[A](ct: __Comptime__, _input: .) {
+  __structural_recur__(ct)[__Type__][.][.](
+  , __reflect_type__(ct)[A]
+  , ()
+  , .(_outer_recur: (__Type__ & .) -> ., fuel: __Type__, _outer_input: .) -> . {
+      __structural_recur__(ct)[__Type__][.][.](
+      , fuel
+      , ()
+      , .(_inner_recur: (__Type__ & .) -> ., _inner_fuel: __Type__, _inner_input: .) -> . { () }
+      )
+    }
+  )
+}
+
+equiv reflexive(ct: __Comptime__) {
+  .[A](_input: .) -> . { nested[A](ct, ()) };
+  .[B](_input: .) -> . { nested[B](ct, ()) }
+}
+
+equiv concrete_unit(ct: __Comptime__) {
+  nested[.](ct, ());
+  ()
+}
+
+equiv concrete_product(ct: __Comptime__) {
+  nested[. & .](ct, ());
+  ()
+}

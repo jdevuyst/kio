@@ -5,20 +5,20 @@ import internal(bump);
 
 pub type Twin[A] = A & A;
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-pub newtype Sealed <U> : I32 & U { pub constructor mk_sealed; pub projector un_sealed }
+pub type { Sealed <U>: I32 & U { pub mk; pub get } }
 
-pub newtype Outer[A][B] <U> : (A & B) & U { pub constructor mk_outer; pub projector un_outer }
+pub type { Outer[A][B] <U>: (A & B) & U { pub mk; pub get } }
 
-pub newtype Free <U> : Resource & U { pub constructor mk_free; pub projector un_free }
+pub type { Free <U>: Resource & U { pub mk; pub get } }
 
-pub newtype Token : I32 { pub constructor mk_token; pub(guest) projector un_token }
+pub type { Token: I32 { pub mk; pub(guest) get } }
 
-pub newtype Mirror[A] : Twin[A] { pub constructor mk_mirror; pub projector un_mirror }
+pub type { Mirror[A]: Twin[A] { pub mk; pub get } }
 
-pub(guest) newtype Leak : I32 { pub constructor mk_leak; pub projector un_leak }
+pub(guest) type { Leak: I32 { pub mk; pub get } }
 
-pub fn seal(n: I32) -> Sealed { Sealed.mk_sealed((n, bump(n))) }
+pub fn seal(n: I32) -> Sealed { Sealed.mk((n, bump(n))) }
 
 pub(guest) fn hidden_fn(n: I32) -> I32 { bump(n) }

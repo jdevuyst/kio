@@ -1,0 +1,3 @@
+module scope/origin;
+
+pub(scope) type { Item: . { pub mk; pub get } }

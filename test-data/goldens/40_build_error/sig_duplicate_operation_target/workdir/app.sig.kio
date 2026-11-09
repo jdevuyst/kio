@@ -4,8 +4,8 @@ v(1) {
   with {
     module api {
       rec {
-        pub newtype A : A | B { pub constructor mk_a; pub projector un_a };
-        pub newtype B : B | A { pub constructor mk_b; pub projector un_b }
+        pub type { A: A | B { pub mk; pub get } };
+        pub type { B: B | A { pub mk; pub get } }
       }
     }
   };
@@ -21,8 +21,8 @@ v(2) {
   with {
     module api {
       rec {
-        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a };
-        pub newtype B : B | A { pub constructor mk_b; pub projector un_b }
+        pub type { A: (A | B) | . { pub mk; pub get } };
+        pub type { B: B | A { pub mk; pub get } }
       }
     }
   };
@@ -30,7 +30,7 @@ v(2) {
     modify {
       api.A;
       module api {
-        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a }
+        pub type { A: (A | B) | . { pub mk; pub get } }
       }
     }
   }

@@ -129,18 +129,6 @@ fn declaration_doc_at(
                     }
                 }
             }
-            Item::LabelForward(forward, _) => {
-                if span_contains(forward.name_span, byte_offset) {
-                    return Some((
-                        forward.name_span,
-                        entry_markdown(
-                            module,
-                            source,
-                            DocEntry::LabelForward(forward, format!("{{{}}}", forward.name)),
-                        ),
-                    ));
-                }
-            }
             Item::Macro(e, _) => {
                 if span_contains(e.name_span, byte_offset) {
                     return Some((
@@ -398,38 +386,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_label_nominal_hover_uses_its_labels_owner() {
-        let source = "module pkg;\n/// The field label.\nlabels { field: . };\n";
-        let offset = source.find("field:").unwrap() as u32;
+    fn ordinary_nominal_hover_uses_its_compact_owner() {
+        let source = "module pkg;\n/// The field type.\ntype { Field: .; };\n";
+        let offset = source.find("Field:").unwrap() as u32;
         let hover = doc_hover_at(source, offset, &LineIndex::new(source)).unwrap();
         let HoverContents::Markup(markup) = hover.contents else {
             panic!("expected markup hover");
         };
         assert!(
-            markup.value.contains("labels { field: . };"),
+            markup.value.contains("type { Field: . }"),
             "{}",
             markup.value
         );
-        assert!(markup.value.contains("The field label."));
-        assert!(!markup.value.contains("newtype Field"));
+        assert!(markup.value.contains("The field type."));
     }
 
     #[test]
-    fn forwarded_label_hover_uses_its_own_declaration_and_doc() {
+    fn alias_hover_uses_its_own_declaration_and_doc() {
         let source = concat!(
             "module pkg;\nfn field() -> . { () }\n",
-            "/// The forwarded field.\n",
-            "pub type {field} = {original};\n",
+            "/// The field alias.\n",
+            "pub type Field = Original;\n",
         );
-        let offset = source.find("{field}").unwrap() as u32 + 1;
+        let offset = source.find("Field =").unwrap() as u32;
         let index = LineIndex::new(source);
         let hover = doc_hover_at(source, offset, &index).unwrap();
         let HoverContents::Markup(markup) = hover.contents else {
             panic!("expected markup hover");
         };
-        assert!(markup.value.contains("pub type {field} = {original};"));
-        assert!(markup.value.contains("The forwarded field."));
-        assert!(!markup.value.contains("newtype Field"));
+        assert!(markup.value.contains("pub type Field = Original;"));
+        assert!(markup.value.contains("The field alias."));
         assert_eq!(
             hover.range,
             Some(span_to_lsp_range(Span::new(offset, offset + 5), &index))

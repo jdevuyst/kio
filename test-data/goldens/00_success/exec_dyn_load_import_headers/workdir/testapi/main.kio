@@ -161,7 +161,6 @@ pub fn main() {
   , "selective intrinsics: "[testapi.String]
   , "import __intrinsics__(from);"[testapi.String]
   );
-  report_header("label entry: "[testapi.String], "import provider/names({from});"[testapi.String]);
   report_header(
   , "operator entry: "[testapi.String]
   , "import provider/names(op _ + _);"[testapi.String]

@@ -1,6 +1,6 @@
 module build_rust_label_type_arg_function/main;
 
-labels { greet: . };
+type { Greet: . { mk; get } }
 
 fn id[A](x: A) -> A { x }
 

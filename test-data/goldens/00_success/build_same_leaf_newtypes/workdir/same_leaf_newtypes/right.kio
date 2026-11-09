@@ -2,6 +2,6 @@ module same_leaf_newtypes/right;
 
 import same_leaf_newtypes(String);
 
-pub newtype Box : String { pub constructor mk_box; pub projector un_box }
+pub type { Box: String { pub mk; pub get } }
 
-pub fn make_right() -> Box { Box.mk_box("right"[String]) }
+pub fn make_right() -> Box { Box.mk("right"[String]) }

@@ -4,4 +4,4 @@ import a as unrelated;
 
 type Hidden = .;
 
-pub newtype Exposed : Hidden { pub constructor mk; projector un }
+pub type { Exposed: Hidden { pub mk; get } }

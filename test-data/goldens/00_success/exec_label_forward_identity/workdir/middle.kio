@@ -5,6 +5,6 @@ import testapi(String);
 
 type Caption = .;
 
-pub type {caption} = {original.item};
+pub type Alias = original.Item;
 
 pub fn caption() -> String { "ordinary-value\n" }

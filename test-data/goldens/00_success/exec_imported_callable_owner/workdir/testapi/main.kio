@@ -11,7 +11,7 @@ pub fn main() {
   let .(folded: definitions.Box[I32]) = [* 4, 5 *];
   print(i32_to_string(combined));
   print("\n");
-  print(i32_to_string(definitions.finish(definitions.Box.unbox(folded))));
+  print(i32_to_string(definitions.finish(definitions.Box.get(folded))));
   print("\n");
   let .(paired: I32 & I32) = 6 %* 7;
   print(i32_to_string(definitions.sum_pair(paired)));

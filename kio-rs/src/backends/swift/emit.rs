@@ -1904,9 +1904,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             | Expr::Call { ext, .. }
             | Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
-            | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
@@ -3131,11 +3128,11 @@ mod tests {
     fn same_leaf_package() -> Package<Routed> {
         let sources = [
             "module left; host type Shared role(i32); \
-             pub newtype Token : Shared { constructor mk_token; projector un_token; }; \
+             pub type { Token: Shared { mk; get; }; }; \
              host fn round_token(value: Token) -> Token; \
              pub fn left_value() -> Shared { 1 }",
             "module right; host type Shared role(i64); \
-             pub newtype Token : Shared { constructor mk_token; projector un_token; }; \
+             pub type { Token: Shared { mk; get; }; }; \
              host fn round_token(value: Token) -> Token; \
              pub fn right_value() -> Shared { 2 }",
         ];
@@ -3327,7 +3324,7 @@ v(1) {
         host type Legacy role(str);
         host type Unused[A];
     host type Unused_nullary;
-        newtype Token[A] : A { pub constructor make_token; projector read_token; };
+        type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Box[Token[.]] & (. -> .)) -> [A] A -> A;
         host fn old_text(value: Legacy) -> Legacy;
       }
@@ -3671,7 +3668,7 @@ v(2) {
         let package = single_api_package(
             "module api; \
              host type Box[A]; \
-             pub newtype Token[A] : A { pub constructor make_token; projector read_token; }; \
+             pub type { Token[A]: A { pub mk; get; }; }; \
              host fn current(value: Box[Token[.]] & (. -> .)) -> [A] A -> A; \
              pub fn unit() -> . { () }",
         );
@@ -3863,10 +3860,10 @@ v(2) {
     fn comptime_named_package() -> Package<Routed> {
         let source = "module api; \
             host type Comptime_bool role(i32); \
-            pub newtype Comptime_str : . { \
-              pub constructor make_str; \
-              pub projector read_str; \
-            }; \
+            pub type { Comptime_str: . { \
+              pub mk; \
+              pub get; \
+            }; }; \
             host fn round_host(value: Comptime_bool) -> Comptime_bool; \
             host fn round_newtype(value: Comptime_str) -> Comptime_str;";
         let parsed = vec![(
@@ -3918,27 +3915,27 @@ v(2) {
 
     fn opaque_newtype_package() -> Package<Routed> {
         let source = "module api; import __comptime__; \
-            newtype Hidden_payload : . { constructor mk_hidden; projector un_hidden; }; \
-            pub newtype Hidden_type : __Type__ { constructor make_hidden_type; projector read_hidden_type; }; \
-            pub newtype Opaque_a : Hidden_payload { constructor mk_opaque_a; projector un_opaque_a; }; \
-            pub newtype Opaque_b : Hidden_payload { constructor mk_opaque_b; projector un_opaque_b; }; \
-            pub newtype Constructor_only : . { pub constructor make_constructor_only; projector read_constructor_only; }; \
-            pub newtype Projector_only : . { constructor make_projector_only; pub projector read_projector_only; }; \
-            pub newtype Generic[A] : A { pub constructor make_generic; projector read_generic; }; \
-            pub newtype Existential <U> : U { constructor make_existential; pub projector read_existential; }; \
-            pub newtype Transparent_both : . { pub constructor make_transparent; pub projector read_transparent; }; \
-            pub newtype Transparent_spread : [A] (Hidden_type & A) -> Hidden_type { pub constructor make_transparent_spread; pub projector read_transparent_spread; }; \
-            pub newtype Transparent_packed : (Hidden_type & Hidden_type) -> Hidden_type { pub constructor make_transparent_packed; pub projector read_transparent_packed; }; \
-            pub newtype Constructor_spread : [A] (Hidden_type & A) -> Hidden_type { pub constructor make_constructor_spread; projector read_constructor_spread; }; \
-            pub newtype Projector_spread : [A] (Hidden_type & A) -> Hidden_type { constructor make_projector_spread; pub projector read_projector_spread; }; \
-            pub newtype Existential_spread <U> : [A] (U & A) -> U { constructor make_existential_spread; pub projector read_existential_spread; }; \
-            pub newtype Foo : . { constructor make_foo; projector read_foo; }; \
-            pub newtype Foo_host : . { constructor make_foo_host; projector read_foo_host; }; \
+            type { Hidden_payload: . { mk; get; }; }; \
+            pub type { Hidden_type: __Type__ { mk; get; }; }; \
+            pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
+            pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
+            pub type { Constructor_only: . { pub mk; get; }; }; \
+            pub type { Projector_only: . { mk; pub get; }; }; \
+            pub type { Generic[A]: A { pub mk; get; }; }; \
+            pub type { Existential <U>: U { mk; pub get; }; }; \
+            pub type { Transparent_both: . { pub mk; pub get; }; }; \
+            pub type { Transparent_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; pub get; }; }; \
+            pub type { Transparent_packed: (Hidden_type & Hidden_type) -> Hidden_type { pub mk; pub get; }; }; \
+            pub type { Constructor_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; get; }; }; \
+            pub type { Projector_spread: [A] (Hidden_type & A) -> Hidden_type { mk; pub get; }; }; \
+            pub type { Existential_spread <U>: [A] (U & A) -> U { mk; pub get; }; }; \
+            pub type { Foo: . { mk; get; }; }; \
+            pub type { Foo_host: . { mk; get; }; }; \
             rec { \
-              pub newtype Outer : Hidden { pub constructor make_outer; pub projector read_outer; }; \
-              pub newtype Hidden : Outer { constructor make_hidden; projector read_hidden; }; \
+              pub type { Outer: Hidden { pub mk; pub get; }; }; \
+              pub type { Hidden: Outer { mk; get; }; }; \
             } \
-            pub rec newtype Direct_recursive : . | Direct_recursive { pub constructor make_direct; pub projector read_direct; }; \
+            pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
             host fn round_opaque(value: Opaque_a) -> Opaque_a; \
             host fn round_generic[A](value: Generic[A]) -> Generic[A]; \
             host fn round_existential(value: Existential) -> Existential; \
@@ -4138,11 +4135,11 @@ v(2) {
     fn nominal_applications_are_opaque_host_indexed_and_grouping_canonical() {
         let package = single_api_package(
             "module api; \
-             pub newtype Opaque[A][B] : A & B { constructor make; projector read; }; \
-             pub newtype Construct[A][B] : A & B { pub constructor make; projector read; }; \
-             pub newtype Project[A][B] : A & B { constructor make; pub projector read; }; \
-             pub newtype Both[A][B] : A & B { pub constructor make; pub projector read; }; \
-             pub newtype Packed[A][B] <Hidden> : A & B & Hidden { pub constructor make; pub projector read; };",
+             pub type { Opaque[A][B]: A & B { mk; get; }; }; \
+             pub type { Construct[A][B]: A & B { pub mk; get; }; }; \
+             pub type { Project[A][B]: A & B { mk; pub get; }; }; \
+             pub type { Both[A][B]: A & B { pub mk; pub get; }; }; \
+             pub type { Packed[A][B] <Hidden>: A & B & Hidden { pub mk; pub get; }; };",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit Swift");
         for name in ["Opaque", "Construct", "Project", "Both", "Packed"] {
@@ -4232,7 +4229,7 @@ v(2) {
              ) -> Box[[R] R -> More]; \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
-             pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
+             pub type { Secret: [A] A -> A { mk; get; }; }; \
              host fn opaque(value: Secret) -> Secret;",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit structural callable aliases");
@@ -4343,7 +4340,7 @@ v(2) {
         let package = single_api_package(
             "module api; \
              host type Box[A]; host type Pair[A][B]; \
-             pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
+             pub type { Holder[*F][A]: . { mk; get; }; }; \
              host fn higher[*F](bound: Holder[F][ [A] A -> A], \
                  nominal: Holder[Box][ [B] B -> B], \
                  partial: Holder[Pair[[C] C -> C]][ .]) -> .;",

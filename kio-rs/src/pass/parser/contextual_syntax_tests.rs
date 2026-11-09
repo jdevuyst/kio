@@ -14,6 +14,7 @@ fn default_remains_an_ordinary_import_and_value_name() {
 
 #[test]
 fn removed_default_modifiers_and_selectors_are_rejected() {
+    parse("module main; type { Wrapper: . { mk; get; }; };").expect("ordinary nominal declaration");
     for item in [
         "default host type Int role(i64);",
         "default pub host type Int role(i64);",
@@ -23,7 +24,7 @@ fn removed_default_modifiers_and_selectors_are_rejected() {
         "pub default host type Int role(i64);",
         "default fn value() -> . { () }",
         "default host fn value() -> .;",
-        "default newtype Wrapper : . { constructor wrap; projector unwrap; };",
+        "default type { Wrapper: . { mk; get; }; };",
         "default literal one = 1;",
         "import provider(default Int);",
         "import provider(default Int as Number);",
@@ -47,7 +48,9 @@ fn signatures_reject_removed_default_syntax() {
         );
         assert!(parse_signature_file(&source, None).is_err(), "{source}");
     }
-    let source = "signature app v(1); v(1) { with { module api { rec { default pub type Int = Other; pub newtype Other : Int { pub constructor make; pub projector read; }; } } }; nonbreaking { add { api.Int; api.Other; } } }";
+    let source = "signature app v(1); v(1) { with { module api { rec { default pub type Int = Other; pub type { Other: Int { pub mk; pub get; }; }; } } }; nonbreaking { add { api.Int; api.Other; } } }";
+    parse_signature_file(&source.replace("default ", ""), None)
+        .expect("the same recursive signature without the removed modifier");
     assert!(parse_signature_file(source, None).is_err());
 }
 

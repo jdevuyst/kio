@@ -6,27 +6,26 @@ import list/core as core;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
-pub labels Version = { value: I32, stamp: clock.Clock };
+pub type Version = { Value: I32; Stamp: clock.Clock };
 
-pub labels Message = { key: I32, payload: Version };
+pub type Message = { Key: I32; Payload: Version };
 
-pub labels Replica = {
-, node: clock.Node
-, observed: clock.Clock
-, records: dict.Dict[I32][core.List[Version]]
+pub type Replica = {
+  Node: clock.Node;
+  Observed: clock.Clock;
+  Records: dict.Dict[I32][core.List[Version]]
 };
 
-pub labels Fault =
-  { missing: I32 }
-  | { conflict: I32 }
-  | { not_conflicted: I32 }
-  | { choice_absent: I32 };
+pub type Fault =
+  { Missing: I32 } | { Conflict: I32 } | { Not_conflicted: I32 } | { Choice_absent: I32 }
+  ;
 
 pub type Change = Replica & Message;
 
@@ -35,17 +34,17 @@ pub fn key_order(a: I32, b: I32) -> dict.Ordering {
 }
 
 pub fn empty(node: clock.Node) -> Replica {
-  {node, observed = clock.zero(), records = dict.empty[_][_]}
+  (Node.mk(node), Observed.mk(clock.zero()), Records.mk(dict.empty[_][_]))
 }
 
 pub fn versions(replica: Replica, key: I32) -> core.List[Version] {
-  dict.get_or(key_order, replica.?{records}, key, core.nil[_])
+  dict.get_or(key_order, replica.>select { Records.get }, key, core.nil[_])
 }
 
 rec(loop) fn insert_ordered(incoming: Version, retained: core.List[Version]) -> core.List[Version] {
   match(core.uncons(retained)) {
     .(head: Version, tail: core.List[Version]) {
-      if(clock.lexical_before(incoming.?{stamp}, head.?{stamp})) {
+      if(clock.lexical_before(incoming.>select { Stamp.get }, head.>select { Stamp.get })) {
         core.cons(incoming, retained)
       } else {
         core.cons(head, recur(cont) insert_ordered(incoming, tail))
@@ -59,7 +58,11 @@ fn merge(incoming: Version, retained: core.List[Version]) -> core.List[Version] 
   let obsolete =
     lists.foldl(
     , .(found: Bool, old: Version) {
-        if(found) { .t } else { clock.leq(incoming.?{stamp}, old.?{stamp}) }
+        if(found) {
+          .t
+        } else {
+          clock.leq(incoming.>select { Stamp.get }, old.>select { Stamp.get })
+        }
       }
     , .f
     , retained
@@ -69,7 +72,7 @@ fn merge(incoming: Version, retained: core.List[Version]) -> core.List[Version] 
   } else {
     let survivors = lists.filter(
     , .(old: Version) {
-        if(clock.leq(old.?{stamp}, incoming.?{stamp})) { .f } else { .t }
+        if(clock.leq(old.>select { Stamp.get }, incoming.>select { Stamp.get })) { .f } else { .t }
       }
     , retained
     );
@@ -78,13 +81,18 @@ fn merge(incoming: Version, retained: core.List[Version]) -> core.List[Version] 
 }
 
 pub fn deliver(replica: Replica, message: Message) -> Replica {
-  let incoming = message.?{payload};
-  let retained = merge(incoming, versions(replica, message.?{key}));
-  {
-  , node = replica.?{node}
-  , observed = clock.join(replica.?{observed}, incoming.?{stamp})
-  , records = dict.insert(key_order, replica.?{records}, message.?{key}, retained)
-  }
+  let incoming = message.>select { Payload.get };
+  let retained = merge(incoming, versions(replica, message.>select { Key.get }));
+  (
+  , Node.mk(replica.>select { Node.get })
+  , Observed.mk(clock.join(replica.>select { Observed.get }, incoming.>select { Stamp.get }))
+  , Records.mk(dict.insert(
+    , key_order
+    , replica.>select { Records.get }
+    , message.>select { Key.get }
+    , retained
+    ))
+  )
 }
 
 pub fn replay(replica: Replica, messages: core.List[Message]) -> Replica {
@@ -92,8 +100,8 @@ pub fn replay(replica: Replica, messages: core.List[Message]) -> Replica {
 }
 
 pub fn write(replica: Replica, key: I32, value: I32) -> Change {
-  let stamp = clock.tick(replica.?{node}, replica.?{observed});
-  let message = {key, payload = {value, stamp}};
+  let stamp = clock.tick(replica.>select { Node.get }, replica.>select { Observed.get });
+  let message = (Key.mk(key), Payload.mk((Value.mk(value), Stamp.mk(stamp))));
   (deliver(replica, message), message)
 }
 
@@ -101,24 +109,31 @@ pub fn read(replica: Replica, key: I32) -> result.Result[I32][Fault] {
   match(core.uncons(versions(replica, key))) {
     .(head: Version, tail: core.List[Version]) {
       if(lists.null(tail)) {
-        result.ok(head.?{value})
+        result.ok(head.>select { Value.get })
       } else {
-        result.err(({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum)[Fault])
+        result.err((Conflict.mk(arith.add_i32(1, lists.length(tail))).>widen_sum)[Fault])
       }
     };
-    .(_empty: .) { result.err(({missing = key}.>widen_sum)[Fault]) }
+    .(_empty: .) { result.err((Missing.mk(key).>widen_sum)[Fault]) }
   }
 }
 
 fn choose(replica: Replica, key: I32, choice: I32) -> result.Result[I32][Fault] {
   let retained = versions(replica, key);
   if(lists.null(retained)) {
-    result.err(({missing = key}.>widen_sum)[Fault])
+    result.err((Missing.mk(key).>widen_sum)[Fault])
   } else if(arith.lt_i32(lists.length(retained), 2)) {
-    result.err(({not_conflicted = key}.>widen_sum)[Fault])
-  } else match(lists.find(.(v: Version) { arith.eq_i32(choice, v.?{value}) }, retained)) {
-    .(v: Version) { result.ok(v.?{value}) };
-    .(_absent: .) { result.err(({choice_absent = choice}.>widen_sum)[Fault]) }
+    result.err((Not_conflicted.mk(key).>widen_sum)[Fault])
+  } else match(lists.find(
+  , .(v: Version) {
+      arith.eq_i32(choice, v.>select { Value.get })
+    }
+  , retained
+  )) {
+    .(v: Version) {
+      result.ok(v.>select { Value.get })
+    };
+    .(_absent: .) { result.err((Choice_absent.mk(choice).>widen_sum)[Fault]) }
   }
 }
 
@@ -127,7 +142,11 @@ pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result[Change]
 }
 
 fn same_version(x: Version, y: Version) -> Bool {
-  if(arith.eq_i32(x.?{value}, y.?{value})) { clock.equal(x.?{stamp}, y.?{stamp}) } else { .f }
+  if(arith.eq_i32(x.>select { Value.get }, y.>select { Value.get })) {
+    clock.equal(x.>select { Stamp.get }, y.>select { Stamp.get })
+  } else {
+    .f
+  }
 }
 
 fn same_versions(xs: core.List[Version], ys: core.List[Version]) -> Bool {
@@ -145,10 +164,10 @@ fn same_versions(xs: core.List[Version], ys: core.List[Version]) -> Bool {
 }
 
 pub fn converged(x: Replica, y: Replica) -> Bool {
-  if(clock.equal(x.?{observed}, y.?{observed})) {
-    if(arith.eq_i32(dict.size(x.?{records}), dict.size(y.?{records}))) {
+  if(clock.equal(x.>select { Observed.get }, y.>select { Observed.get })) {
+    if(arith.eq_i32(dict.size(x.>select { Records.get }), dict.size(y.>select { Records.get }))) {
       dict.fold_asc(
-      , x.?{records}
+      , x.>select { Records.get }
       , .t
       , .(same: Bool, key: I32, retained: core.List[Version]) {
           if(same) { same_versions(retained, versions(y, key)) } else { .f }

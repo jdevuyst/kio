@@ -2,6 +2,7 @@ module petri/search;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import petri/model as model;
 import queue/core as queues;
@@ -12,53 +13,77 @@ import testapi(Bool, I32);
 import testapi/arith as arithmetic;
 import testapi/iter(loop);
 
-pub labels Node = { id: I32, marking: model.Marking, parent: I32, via: I32, depth: I32 };
+pub type Node = { Id: I32; Marking: model.Marking; Parent: I32; Via: I32; Depth: I32 };
 
-pub labels Search = {
-, frontier: queues.Queue[Node]
-, visited: lists.List[Node]
-, edges: I32
-, duplicates: I32
-, terminals: I32
-, deadlocks: I32
-, first_deadlock: Node | .
-, peak: I32
+pub type Search = {
+  Frontier: queues.Queue[Node];
+  Visited: lists.List[Node];
+  Edges: I32;
+  Duplicates: I32;
+  Terminals: I32;
+  Deadlocks: I32;
+  First_deadlock: Node | .;
+  Peak: I32
 };
 
 pub fn find_node(nodes: lists.List[Node], node_id: I32) -> Node | . {
-  traversal.find(.(node: Node) { arithmetic.eq_i32(node.?{id}, node_id) }, nodes)
+  traversal.find(
+  , .(node: Node) {
+      arithmetic.eq_i32(node.>select { Id.get }, node_id)
+    }
+  , nodes
+  )
 }
 
 fn seen(nodes: lists.List[Node], state: model.Marking) -> Bool {
-  match(traversal.find(.(node: Node) { model.equal(node.?{marking}, state) }, nodes)) {
+  match(traversal.find(
+  , .(node: Node) {
+      model.equal(node.>select { Marking.get }, state)
+    }
+  , nodes
+  )) {
     .(_node: Node) { .t };
     .() { .f }
   }
 }
 
 fn discover(state: Search, source: Node, transition_id: I32, marking: model.Marking) -> Search {
-  if(seen(state.?{visited}, marking)) {
-    state.!{
-    , edges = arithmetic.add_i32(state.?{edges}, 1)
-    , duplicates = arithmetic.add_i32(state.?{duplicates}, 1)
-    }
+  if(seen(state.>select { Visited.get }, marking)) {
+    (
+    , Frontier.mk(state.>select { Frontier.get })
+    , Visited.mk(state.>select { Visited.get })
+    , Edges.mk(arithmetic.add_i32(state.>select { Edges.get }, 1))
+    , Duplicates.mk(arithmetic.add_i32(state.>select { Duplicates.get }, 1))
+    , Terminals.mk(state.>select { Terminals.get })
+    , Deadlocks.mk(state.>select { Deadlocks.get })
+    , First_deadlock.mk(state.>select { First_deadlock.get })
+    , Peak.mk(state.>select { Peak.get })
+    )
   } else {
-    let child = {
-    , id = traversal.length(state.?{visited})
-    , marking
-    , parent = source.?{id}
-    , via = transition_id
-    , depth = arithmetic.add_i32(source.?{depth}, 1)
-    };
-    let frontier = fifo.enqueue(child, state.?{frontier});
+    let child = (
+    , Id.mk(traversal.length(state.>select { Visited.get }))
+    , Marking.mk(marking)
+    , Parent.mk(source.>select { Id.get })
+    , Via.mk(transition_id)
+    , Depth.mk(arithmetic.add_i32(source.>select { Depth.get }, 1))
+    );
+    let frontier = fifo.enqueue(child, state.>select { Frontier.get });
     let size = fifo.length(frontier);
-    let peak = if(arithmetic.lt_i32(state.?{peak}, size)) { size } else { state.?{peak} };
-    state.!{
-    , frontier
-    , visited = lists.cons(child, state.?{visited})
-    , edges = arithmetic.add_i32(state.?{edges}, 1)
-    , peak
-    }
+    let peak = if(arithmetic.lt_i32(state.>select { Peak.get }, size)) {
+      size
+    } else {
+      state.>select { Peak.get }
+    };
+    (
+    , Frontier.mk(frontier)
+    , Visited.mk(lists.cons(child, state.>select { Visited.get }))
+    , Edges.mk(arithmetic.add_i32(state.>select { Edges.get }, 1))
+    , Duplicates.mk(state.>select { Duplicates.get })
+    , Terminals.mk(state.>select { Terminals.get })
+    , Deadlocks.mk(state.>select { Deadlocks.get })
+    , First_deadlock.mk(state.>select { First_deadlock.get })
+    , Peak.mk(peak)
+    )
   }
 }
 
@@ -72,7 +97,7 @@ rec(loop) fn expand(
   match(lists.uncons(remaining)) {
     .(transition: model.Transition, rest: lists.List[model.Transition]) {
       let .(next: Search) =
-        match(model.fire(net, transition, source.?{marking})) {
+        match(model.fire(net, transition, source.>select { Marking.get })) {
           .(marking: model.Marking) { discover(state, source, transition_id, marking) };
           .() { state }
         };
@@ -84,22 +109,50 @@ rec(loop) fn expand(
 
 fn record_deadlock(state: Search, node: Node) -> Search {
   let .(first: Node | .) =
-    match(state.?{first_deadlock}) {
+    match(state.>select { First_deadlock.get }) {
       .(found: Node) { found.>widen_sum };
       .() { node.>widen_sum }
     };
-  state.!{deadlocks = arithmetic.add_i32(state.?{deadlocks}, 1), first_deadlock = first}
+  (
+  , Frontier.mk(state.>select { Frontier.get })
+  , Visited.mk(state.>select { Visited.get })
+  , Edges.mk(state.>select { Edges.get })
+  , Duplicates.mk(state.>select { Duplicates.get })
+  , Terminals.mk(state.>select { Terminals.get })
+  , Deadlocks.mk(arithmetic.add_i32(state.>select { Deadlocks.get }, 1))
+  , First_deadlock.mk(first)
+  , Peak.mk(state.>select { Peak.get })
+  )
 }
 
 rec(loop) fn explore(net: model.Net, state: Search) -> Search {
-  match(fifo.dequeue(state.?{frontier})) {
+  match(fifo.dequeue(state.>select { Frontier.get })) {
     .(node: Node, rest: queues.Queue[Node]) {
-      let .(popped: Search) = state.!{frontier = rest};
-      let grown = expand(net, node, net.?{model.transitions}, 0, popped);
+      let .(popped: Search) =
+        (
+        , Frontier.mk(rest)
+        , Visited.mk(state.>select { Visited.get })
+        , Edges.mk(state.>select { Edges.get })
+        , Duplicates.mk(state.>select { Duplicates.get })
+        , Terminals.mk(state.>select { Terminals.get })
+        , Deadlocks.mk(state.>select { Deadlocks.get })
+        , First_deadlock.mk(state.>select { First_deadlock.get })
+        , Peak.mk(state.>select { Peak.get })
+        );
+      let grown = expand(net, node, net.>select { model.Transitions.get }, 0, popped);
       let .(classified: Search) =
-        if(arithmetic.eq_i32(grown.?{edges}, state.?{edges})) {
-          if(model.completed(net, node.?{marking})) {
-            grown.!{terminals = arithmetic.add_i32(grown.?{terminals}, 1)}
+        if(arithmetic.eq_i32(grown.>select { Edges.get }, state.>select { Edges.get })) {
+          if(model.completed(net, node.>select { Marking.get })) {
+            (
+            , Frontier.mk(grown.>select { Frontier.get })
+            , Visited.mk(grown.>select { Visited.get })
+            , Edges.mk(grown.>select { Edges.get })
+            , Duplicates.mk(grown.>select { Duplicates.get })
+            , Terminals.mk(arithmetic.add_i32(grown.>select { Terminals.get }, 1))
+            , Deadlocks.mk(grown.>select { Deadlocks.get })
+            , First_deadlock.mk(grown.>select { First_deadlock.get })
+            , Peak.mk(grown.>select { Peak.get })
+            )
           } else {
             record_deadlock(grown, node)
           }
@@ -113,18 +166,25 @@ rec(loop) fn explore(net: model.Net, state: Search) -> Search {
 }
 
 pub fn run(net: model.Net) -> Search {
-  let root = {id = 0, marking = net.?{model.initial}, parent = -1, via = -1, depth = 0};
+  let root =
+    (
+    , Id.mk(0)
+    , Marking.mk(net.>select { model.Initial.get })
+    , Parent.mk(-1)
+    , Via.mk(-1)
+    , Depth.mk(0)
+    );
   explore(
   , net
-  , {
-    , frontier = queues.singleton(root)
-    , visited = lists.singleton(root)
-    , edges = 0
-    , duplicates = 0
-    , terminals = 0
-    , deadlocks = 0
-    , first_deadlock = ().>widen_sum
-    , peak = 1
-    }
+  , (
+    , Frontier.mk(queues.singleton(root))
+    , Visited.mk(lists.singleton(root))
+    , Edges.mk(0)
+    , Duplicates.mk(0)
+    , Terminals.mk(0)
+    , Deadlocks.mk(0)
+    , First_deadlock.mk(().>widen_sum)
+    , Peak.mk(1)
+    )
   )
 }

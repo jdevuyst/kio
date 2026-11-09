@@ -3,11 +3,10 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-// A `labels` entry with an existential binder run desugars to a
-// `newtype` whose projector is CPS-shaped. To consume the value,
-// call the newtype's projector member directly through the uppercase
-// nominal: `Box.get(a, b)((), .[U](pair) { ... })`.
-labels { box[A] <U> : A & U };
+// A nominal with an existential binder has a CPS-shaped projector.
+// To consume the value, call `Box.get` with the boxed value and a
+// continuation polymorphic over the hidden type.
+type { Box[A] <U>: A & U }
 
 fn make_box[A][U](x: A, y: U) -> Box[A] { Box.mk((x, y)) }
 

@@ -2,20 +2,20 @@ module main;
 
 import macros/sequence(macro do);
 
-newtype Left : . { constructor left; projector unleft }
+type { Left: . { mk; get } }
 
-newtype Right : . { constructor right; projector unright }
+type { Right: . { mk; get } }
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-fn pure[A](value: A) -> Box[A] { Box.box(value) }
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 
 fn choose_second[A](first: A, second: Right) -> Box[Right] {
-  do(.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }) {
+  do(.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }) {
     let first_value <- pure(first);
     let second_value <- pure(second);
     pure(second_value)
   }
 }
 
-pub fn main() { choose_second(Left.left(), Right.right()).>Box.unbox.>Right.unright }
+pub fn main() { choose_second(Left.mk(), Right.mk()).>Box.get.>Right.get }

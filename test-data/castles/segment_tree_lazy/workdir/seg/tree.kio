@@ -17,6 +17,7 @@
 module seg/tree;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import seg/agg(Agg, agg, agg_min, agg_sum, combine, leaf_agg, shift);
 import seg/meter(Meter, bump_push, bump_work, new_meter, pushes, work);
 import seg/num(half, int_eq, int_lt, not);
@@ -29,13 +30,7 @@ import testapi/iter(loop);
 /// heap layout, so that is the allocation.
 literal heap_factor = 4;
 
-pub labels Tree = {
-, sums: Array[I32]
-, mins: Array[I32]
-, tags: Array[I32]
-, leaves: I32
-, gauge: Meter
-};
+pub type Tree = { Sums: Array[I32]; Mins: Array[I32]; Tags: Array[I32]; Leaves: I32; Gauge: Meter };
 
 pub fn left(node: I32) -> I32 { add_i32(mul_i32(2, node), 1) }
 
@@ -50,9 +45,13 @@ fn span(lo: I32, hi: I32) -> I32 { add_i32(sub_i32(hi, lo), 1) }
 
 pub fn is_leaf(lo: I32, hi: I32) -> Bool { int_eq(lo, hi) }
 
-pub fn leaf_count(t: Tree) -> I32 { t.?{leaves} }
+pub fn leaf_count(t: Tree) -> I32 {
+  t.>select { Leaves.get }
+}
 
-fn gauge(t: Tree) -> Meter { t.?{gauge} }
+fn gauge(t: Tree) -> Meter {
+  t.>select { Gauge.get }
+}
 
 pub fn visits(t: Tree) -> I32 { work(gauge(t)) }
 
@@ -62,17 +61,21 @@ pub fn tag_pushes(t: Tree) -> I32 { pushes(gauge(t)) }
 pub fn visit(t: Tree) { bump_work(gauge(t)) }
 
 pub fn node_agg(t: Tree, node: I32) -> Agg {
-  agg(array_get(t.?{sums}, node), array_get(t.?{mins}, node))
+  agg(array_get(t.>select { Sums.get }, node), array_get(t.>select { Mins.get }, node))
 }
 
 pub fn set_agg(t: Tree, node: I32, a: Agg) {
-  array_set(t.?{sums}, node, agg_sum(a));
-  array_set(t.?{mins}, node, agg_min(a))
+  array_set(t.>select { Sums.get }, node, agg_sum(a));
+  array_set(t.>select { Mins.get }, node, agg_min(a))
 }
 
-fn tag_at(t: Tree, node: I32) -> I32 { array_get(t.?{tags}, node) }
+fn tag_at(t: Tree, node: I32) -> I32 {
+  array_get(t.>select { Tags.get }, node)
+}
 
-fn set_tag(t: Tree, node: I32, value: I32) { array_set(t.?{tags}, node, value) }
+fn set_tag(t: Tree, node: I32, value: I32) {
+  array_set(t.>select { Tags.get }, node, value)
+}
 
 /// Record "add `x` to every cell of `[lo, hi]`" at `node` without descending:
 /// the node's own aggregate is fixed arithmetically and the add is left
@@ -118,13 +121,13 @@ rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array[I32]) -> 
 pub fn build(src: Array[I32], n: I32) -> Tree {
   let cells = mul_i32(heap_factor, n);
   let t =
-    {
-    , sums = array_make_filled(cells, 0)
-    , mins = array_make_filled(cells, 0)
-    , tags = array_make_filled(cells, 0)
-    , leaves = n
-    , gauge = new_meter()
-    };
+    (
+    , Sums.mk(array_make_filled(cells, 0))
+    , Mins.mk(array_make_filled(cells, 0))
+    , Tags.mk(array_make_filled(cells, 0))
+    , Leaves.mk(n)
+    , Gauge.mk(new_meter())
+    );
   let _root = build_at(t, 0, 0, sub_i32(n, 1), src);
   t
 }

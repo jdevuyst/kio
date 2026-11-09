@@ -1,16 +1,17 @@
 module testapi/main;
 
 import macros/control(macro scope);
+import macros/row_macros(macro with_);
 import quotation(macro duplicate);
 import testapi(Bool);
 import testapi/io(print);
 import testapi/iter(loop);
 
-labels Fields = { flag: Bool };
+type Fields = { Flag: Bool { mk; get } };
 
 fn pass(value: Bool) -> Bool { print("pass\n"); value }
 
-fn row() -> Fields { print("row\n"); {flag = .t} }
+fn row() -> Fields { print("row\n"); Flag.mk(.t) }
 
 fn later() -> Bool { print("later\n"); .t }
 
@@ -24,10 +25,10 @@ fn stages(value: Bool) -> Bool -> Bool {
 rec(loop) {
   fn left() -> Bool { print("left\n"); .f };
   fn ufcs_source() -> Bool { let value = duplicate(recur(cont) left().>pass); .t };
-  fn field_source() -> Bool { let value = duplicate({flag = recur(cont) left()}.?{flag}); .t };
+  fn field_source() -> Bool { let value = duplicate(Flag.get(Flag.mk(recur(cont) left()))); .t };
   fn flat_source() -> Bool { let value = duplicate(stages(.t)(recur(cont) left())); .t };
   fn update_source() -> Bool {
-    let value = duplicate(row().!{flag = recur(cont) left()}.?{flag});
+    let value = duplicate(row().>with_ { Flag.mk(recur(cont) left()) }.>Flag.get);
     .t
   };
   fn nested_source() -> Bool { let value = duplicate(duplicate(recur(cont) left())); .t };
@@ -49,7 +50,7 @@ rec(loop) {
   fn row_let_source() -> Bool {
     let value =
       duplicate(scope {
-        let .({flag as saved}) = {flag = recur(cont) left()};
+        let saved = Flag.get(Flag.mk(recur(cont) left()));
         print("row let body\n");
         saved
       });

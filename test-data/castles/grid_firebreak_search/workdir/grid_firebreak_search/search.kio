@@ -2,13 +2,13 @@ module grid_firebreak_search/search;
 
 import grid_firebreak_search/grid as grid;
 import grid_firebreak_search/model(
+, Blocked
+, Candidate_count
+, Frontier_count
 , Plan
-, {blocked}
-, {candidate_count}
-, {frontier_count}
-, {score}
-, {selected}
-, {spend}
+, Score
+, Selected
+, Spend
 );
 import grid_firebreak_search/store as store;
 import macros/control(macro if);
@@ -272,14 +272,14 @@ rec(iter.loop) fn choose_cells(
       )
     }
   } else {
-    {
-    , selected = chosen
-    , score = total_score
-    , spend = spend_now
-    , blocked = blocked_now
-    , frontier_count = frontier_total
-    , candidate_count = candidate_total
-    }
+    (
+    , Selected.mk(chosen)
+    , Score.mk(total_score)
+    , Spend.mk(spend_now)
+    , Blocked.mk(blocked_now)
+    , Frontier_count.mk(frontier_total)
+    , Candidate_count.mk(candidate_total)
+    )
   }
 }
 

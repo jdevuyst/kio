@@ -821,7 +821,6 @@ fn collect_origin_type_references(
             }
         }
         Type::Unit { .. } | Type::Bottom { .. } => {}
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -1000,7 +999,6 @@ fn canonicalize_type<'a>(
             result
         }
         Type::Unit { .. } | Type::Bottom { .. } => Ok(()),
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -1445,7 +1443,7 @@ mod tests {
             ),
             (
                 "newtype payload",
-                "module dep { host type Raw; }; module api { import dep(Raw); pub newtype Wrapped : Raw { pub constructor mk; pub projector get; }; }",
+                "module dep { host type Raw; }; module api { import dep(Raw); pub type { Wrapped : Raw { pub mk; pub get; }; }; }",
                 true,
             ),
             (
@@ -1550,7 +1548,7 @@ mod tests {
         let source = "signature app v(1); v(1) {
           with { module api { rec {
             pub type A = . | B;
-            pub newtype B : A { pub constructor mk; pub projector get; };
+            pub type { B : A { pub mk; pub get; }; };
           } } };
           nonbreaking { add { api.A; api.B; } }
         }";
@@ -1640,14 +1638,12 @@ mod tests {
             let next = (index + 1) % cycle_members;
             write!(
                 source,
-                " pub newtype N{index}{binders} : api.N{next}{arguments} {{ pub constructor mk_n{index}; pub projector un_n{index}; }};"
+                " pub type {{ N{index}{binders} : api.N{next}{arguments} {{ pub mk; pub get; }}; }};"
             )
             .expect("write recursive type member");
         }
         if include_trailing_acyclic_member {
-            source.push_str(
-                " pub newtype Zextra : . { pub constructor mk_zextra; pub projector un_zextra; };",
-            );
+            source.push_str(" pub type { Zextra : . { pub mk; pub get; }; };");
         }
         source.push_str(" }");
 

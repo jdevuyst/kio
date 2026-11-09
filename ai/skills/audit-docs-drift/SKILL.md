@@ -90,8 +90,9 @@ Start at `docs/README.md` and follow the order and branches it recommends as a n
   function.
   Require visible examples of singleton brackets, omitted types, tuple versus
   successive value stages, residual functions and adjacent-stage UFCS. Follow
-  that model into macros: each projected block is its own function stage, and
-  multiple prefix groups do not merge. Flag examples or prose that quietly
+  that model into macros: the whole final prefix value and projected block
+  values form one product for one function stage; earlier prefix groups stay
+  separate. Flag examples or prose that quietly
   restore flat curry crossing; passing fragments alone do not teach the rule.
 - Audit tutorials as a sequence. Audit each guide as a standalone topic: it must either explain its prerequisites or link to where the learning path teaches them. Treat case studies and host guides according to the specialized audiences in `ai/topics/docs.md`.
 - For each tutorial, identify its learner goal, prerequisites, and progression.

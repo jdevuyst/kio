@@ -5,6 +5,7 @@ import index/automaton as sam;
 import index/numbers as num;
 import index/scan as scan;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as n;
 import testapi/array as a;
@@ -29,9 +30,9 @@ pub fn heading(name: String, source: Array[I32], index: sam.Index) {
   io.print(" [");
   show_symbols(source, 0);
   io.print("]\n  states=");
-  integer(a.array_len(index.?{sam.states}));
+  integer(a.array_len(index.>select { sam.States.get }));
   io.print(" clones=");
-  integer(index.?{sam.clones});
+  integer(index.>select { sam.Clones.get });
   io.print(" independent clone rows=");
   integer(analysis.divergent_clones(index));
   io.print("\n  distinct substrings=");
@@ -40,13 +41,13 @@ pub fn heading(name: String, source: Array[I32], index: sam.Index) {
   integer(analysis.longest_repeated(index));
   let audit = scan.verify(source, index);
   io.print("\n  direct scan: intervals=");
-  integer(audit.?{scan.intervals});
+  integer(audit.>select { scan.Intervals.get });
   io.print(" count mismatches=");
-  integer(audit.?{scan.mismatches});
+  integer(audit.>select { scan.Mismatches.get });
   io.print(" distinct=");
-  integer(audit.?{scan.unique});
+  integer(audit.>select { scan.Unique.get });
   io.print(" repeated=");
-  integer(audit.?{scan.repeated});
+  integer(audit.>select { scan.Repeated.get });
   io.print("\n")
 }
 

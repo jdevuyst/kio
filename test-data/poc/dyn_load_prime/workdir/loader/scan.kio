@@ -18,7 +18,6 @@ import loader(
 , tyaliases_cons
 , tyaliases_nil
 , tyaliases_reverse
-, {binder_info}
 );
 import loader(
 , Member_decl
@@ -45,7 +44,7 @@ import loader(mk_diag_at);
 import loader(mk_host_header);
 import loader(module_aliases, module_decls, module_imports, module_name, module_newtypes);
 import loader(pgroups_cons, pgroups_nil);
-import loader(pnames_cons, pnames_has, pnames_nil, {pnames});
+import loader(pnames_cons, pnames_has, pnames_nil);
 import loader(pnames_len, un_pgroups, un_pnames);
 import loader(un_decls, un_imports, un_modules);
 import loader(visibility_is_scoped, visibility_valid_for_owner);
@@ -91,9 +90,9 @@ import token(toks_cons, toks_nil, un_token, un_toks);
 //   [pub[(a/b)]] [pure] fn NAME [A]… ( p: T, … )… [-> R] { body }
 //                              (`pub` and `pure` may appear in either order)
 //   [pub[(a/b)]] type NAME … = …;
-//   [pub[(a/b)]] newtype NAME [A]… <U>… : T { constructor c; projector p }
-//   [pub[(a/b)]] rec newtype NAME [A]… <U>… : T { constructor c; projector p }
-//   rec { type/newtype MEMBER; type/newtype MEMBER; … }
+//   [pub[(a/b)]] type { NAME [A]… <U>… : T { mk; get; }; }
+//   [pub[(a/b)]] rec type { NAME [A]… <U>… : T { mk; get; }; }
+//   rec { type MEMBER; type MEMBER; … }
 //   [pub] host [pub] type NAME … ;
 //   [pub] host [pub] fn NAME (…) -> R;
 //
@@ -202,7 +201,7 @@ fn head_word_is(ts: Toks, kw: String) -> Bool {
 // dependency matching and per-module visibility see the real module
 // identity.
 /// Wraps a module-path read's `(path, remaining-tokens)`.
-labels { mod_path: String & Toks };
+type { Mod_path: String & Toks }
 
 // Read a `word (/ word)*` module path, the head at the first word.
 fn read_module_path(ts: Toks) -> . | Mod_path {
@@ -224,12 +223,12 @@ fn read_module_path(ts: Toks) -> . | Mod_path {
                         | Mod_path]
                       }
                     , .(_noseg: .) {
-                        widen_sum({mod_path = (acc, after_word)})[(Toks & String) | Mod_path]
+                        widen_sum(Mod_path.mk((acc, after_word)))[(Toks & String) | Mod_path]
                       }
                     )
                   }
                 } else {
-                  widen_sum({mod_path = (acc, after_word)})[(Toks & String) | Mod_path]
+                  widen_sum(Mod_path.mk((acc, after_word)))[(Toks & String) | Mod_path]
                 }
               }
             }
@@ -245,7 +244,7 @@ fn read_module_path(ts: Toks) -> . | Mod_path {
 fn un_mod_path(m: . | Mod_path) -> . | Mod_path { m }
 
 /// A declaration visibility and the tokens following its optional scope.
-labels { visibility_read: Visibility & Toks };
+type { Visibility_read: Visibility & Toks }
 
 // Read the visibility after an optional leading `pub` has already been
 // consumed. A scoped path is retained verbatim for the loader's import gate.
@@ -258,7 +257,7 @@ fn read_visibility(ts0: Toks, exported: Bool) -> Visibility_read | Diag {
             match(Mod_path.get(path)) {
               .(root: String, after_path: Toks) {
                 if(head_is(after_path, c_rparen())) {
-                  widen_sum({visibility_read = (scoped_visibility(root), rest(after_path))})[| Visibility_read
+                  widen_sum(Visibility_read.mk((scoped_visibility(root), rest(after_path))))[| Visibility_read
                   | Diag]
                 } else {
                   widen_sum(mk_diag_at(
@@ -279,10 +278,10 @@ fn read_visibility(ts0: Toks, exported: Bool) -> Visibility_read | Diag {
         )
       }
     } else {
-      widen_sum({visibility_read = (public_visibility(), ts0)})[Visibility_read | Diag]
+      widen_sum(Visibility_read.mk((public_visibility(), ts0)))[Visibility_read | Diag]
     }
   } else {
-    widen_sum({visibility_read = (private_visibility(), ts0)})[Visibility_read | Diag]
+    widen_sum(Visibility_read.mk((private_visibility(), ts0)))[Visibility_read | Diag]
   }
 }
 
@@ -295,7 +294,7 @@ fn drop(ts: Toks, code: I32) -> Toks {
 // Drop a leading comma if the head is one.
 fn drop_comma(ts: Toks) -> Toks { drop(ts, c_comma()) }
 
-labels { after_semis: Toks };
+type { After_semis: Toks }
 
 fn skip_semis(ts: Toks) -> Toks {
   After_semis.get(loop(
@@ -303,7 +302,7 @@ fn skip_semis(ts: Toks) -> Toks {
       if(head_is(cur, c_semi())) {
         widen_sum(rest(cur))[Toks | After_semis]
       } else {
-        widen_sum({after_semis = cur})[Toks | After_semis]
+        widen_sum(After_semis.mk(cur))[Toks | After_semis]
       }
     }
   , ts
@@ -488,7 +487,7 @@ fn skip_group(ts: Toks) -> Toks {
 // Every bracket group contains one kind-marked binder and contributes one
 // erased Unit stage. The scanner validates the group before retaining it.
 /// Wraps one binder-group scan's `(arity, remaining-tokens)`.
-labels { binder_group_scan: I32 & Toks };
+type { Binder_group_scan: I32 & Toks }
 
 fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
   let pos = head_pos(ts);
@@ -501,7 +500,7 @@ fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
             , .(_token: Token) {
                 if(head_is(cur, c_rbrack())) {
                   if(eq_i32(n, 1[I32])) {
-                    widen_sum({binder_group_scan = (n, rest(cur))})[| (Toks & I32)
+                    widen_sum(Binder_group_scan.mk((n, rest(cur))))[| (Toks & I32)
                     | Binder_group_scan
                     | Diag]
                   } else {
@@ -552,7 +551,7 @@ fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
 
 /// Wraps a type-binder scan's `(count, remaining-tokens)` so the loop's exit
 /// arm differs structurally from its `(toks, count)` continue arm.
-labels { tyargs: I32 & Toks };
+type { Tyargs: I32 & Toks }
 
 // Count and skip the leading type binders `[A][B]…`, returning
 // `(count, tokens-after-the-last-group)`.
@@ -576,7 +575,7 @@ fn scan_tyarity(ts: Toks) -> (I32 & Toks) | Diag {
                 )
               }
             } else {
-              widen_sum({tyargs = (n, cur)})[(Toks & I32) | Tyargs | Diag]
+              widen_sum(Tyargs.mk((n, cur)))[(Toks & I32) | Tyargs | Diag]
             }
           }
         }
@@ -595,12 +594,12 @@ fn scan_tyarity(ts: Toks) -> (I32 & Toks) | Diag {
 // Existential binder runs `<U> <V>`
 // =====================================================================
 //
-// A `newtype` header may carry whitespace-separated `<X>` atoms trailing
+// A nominal entry header may carry whitespace-separated `<X>` atoms trailing
 // the universal-parameter list (`specs/prime.md` § Existential binders).
 // The count determines how many erased type stages the CPS projector applies
 // to its continuation before supplying the payload.
 /// Wraps a token cursor for a loop whose continue arm is also `Toks`.
-labels { toks_done: Toks };
+type { Toks_done: Toks }
 
 // Advance past the first `>`, returning the tokens after it (the binder
 // atom's `<` already consumed; a binder holds one word, so no nesting).
@@ -611,12 +610,12 @@ fn skip_to_gt(ts: Toks) -> Toks {
         (
         , .(_t: Token) {
             if(head_is(cur, c_gt())) {
-              widen_sum({toks_done = rest(cur)})[Toks | Toks_done]
+              widen_sum(Toks_done.mk(rest(cur)))[Toks | Toks_done]
             } else {
               widen_sum(rest(cur))[Toks | Toks_done]
             }
           }
-        , .(_e: .) { widen_sum({toks_done = cur})[Toks | Toks_done] }
+        , .(_e: .) { widen_sum(Toks_done.mk(cur))[Toks | Toks_done] }
         )
       }
     }
@@ -625,7 +624,7 @@ fn skip_to_gt(ts: Toks) -> Toks {
 }
 
 /// Wraps the existential scan's `(count, remaining-tokens)`.
-labels { exi_scan: I32 & Toks };
+type { Exi_scan: I32 & Toks }
 
 fn scan_existentials(ts: Toks) -> I32 & Toks {
   match(Exi_scan.get(loop(
@@ -636,7 +635,7 @@ fn scan_existentials(ts: Toks) -> I32 & Toks {
             let after = skip_to_gt(rest(cur));
             widen_sum((after, add_i32(count, 1[I32])))[(Toks & I32) | Exi_scan]
           } else {
-            widen_sum({exi_scan = (count, cur)})[(Toks & I32) | Exi_scan]
+            widen_sum(Exi_scan.mk((count, cur)))[(Toks & I32) | Exi_scan]
           }
         }
       }
@@ -659,12 +658,12 @@ fn scan_existentials(ts: Toks) -> I32 & Toks {
 // Reverse a most-recent-first name accumulator onto `acc`, yielding
 // declaration order.
 fn pnames_reverse(ps: Pnames, acc: Pnames) -> Pnames {
-  {pnames = append(reverse(Pnames.get(ps)), Pnames.get(acc))}
+  Pnames.mk(append(reverse(Pnames.get(ps)), Pnames.get(acc)))
 }
 
 /// Wraps a parameter-group scan's `(names, remaining-tokens)` so the loop's
 /// exit arm differs structurally from its `(toks, rev-names)` continue arm.
-labels { plist: Pnames & Toks };
+type { Plist: Pnames & Toks }
 
 // Scan one value-parameter group, the head positioned just after the `(`.
 // Read `NAME : TYPE` items until the `)`; collect the names (reversed) and
@@ -679,7 +678,7 @@ fn scan_params(ts: Toks) -> Pnames & Toks {
           // leading-comma style), so a comma may precede any param.
           let cur = drop_comma(cur0);
           if(head_is(cur, c_rparen())) {
-            widen_sum({plist = (pnames_reverse(acc, pnames_nil()), rest(cur))})[| (Toks & Pnames)
+            widen_sum(Plist.mk((pnames_reverse(acc, pnames_nil()), rest(cur))))[| (Toks & Pnames)
             | Plist]
           } else match(head_word(cur)) {
             (
@@ -691,7 +690,7 @@ fn scan_params(ts: Toks) -> Pnames & Toks {
                 widen_sum((after_comma, pnames_cons(name, acc)))[(Toks & Pnames) | Plist]
               }
             , .(_notword: .) {
-                widen_sum({plist = (pnames_reverse(acc, pnames_nil()), cur)})[| (Toks & Pnames)
+                widen_sum(Plist.mk((pnames_reverse(acc, pnames_nil()), cur)))[| (Toks & Pnames)
                 | Plist]
               }
             )
@@ -732,13 +731,13 @@ fn toks_rev(ts: Toks) -> Toks {
 }
 
 /// Wraps a header collection's `(header-tokens, remaining-tokens)`.
-labels { header_run: Toks & Toks };
+type { Header_run: Toks & Toks }
 
 // Collect the signature token-run from just after the fn's name up to —
 // without consuming — the body's depth-0 `{`. The collected run (source
 // order, offsets kept) is the declaration's retained header, which the
 // typed contract renders; the group structure is re-read from it.
-fn collect_header(ts: Toks) -> Toks & Toks {
+fn collect_header(ts: Toks, nominal: Bool) -> Toks & Toks {
   match(Header_run.get(loop(
   , .(st: Toks & I32 & Toks) {
       match(st) {
@@ -747,8 +746,15 @@ fn collect_header(ts: Toks) -> Toks & Toks {
             (
             , .(t: Token, p: I32, after: Toks) {
                 if(eq_i32(depth, 0[I32])) {
-                  if(head_is(cur, c_lbrace())) {
-                    widen_sum({header_run = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Header_run]
+                  let boundary = if(head_is(cur, c_lbrace())) {
+                    .t[Bool]
+                  } else if(nominal) {
+                    if(head_is(cur, c_semi())) { .t[Bool] } else { head_is(cur, c_rbrace()) }
+                  } else {
+                    .f[Bool]
+                  };
+                  if(boundary) {
+                    widen_sum(Header_run.mk((toks_rev(acc), cur)))[(Toks & I32 & Toks) | Header_run]
                   } else {
                     widen_sum((after, (depth_delta(t, depth), toks_cons(t, p, acc))))[| (& Toks
                     & I32
@@ -763,7 +769,7 @@ fn collect_header(ts: Toks) -> Toks & Toks {
                 }
               }
             , .(_e: .) {
-                widen_sum({header_run = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Header_run]
+                widen_sum(Header_run.mk((toks_rev(acc), cur)))[(Toks & I32 & Toks) | Header_run]
               }
             )
           }
@@ -778,7 +784,7 @@ fn collect_header(ts: Toks) -> Toks & Toks {
 
 /// Wraps a body scan's `(body-tokens, remaining-tokens)` so the loop's exit
 /// arm differs structurally from its `(toks, depth, rev-body)` continue arm.
-labels { bodytoks: Toks & Toks };
+type { Bodytoks: Toks & Toks }
 
 // Collect the brace-balanced body run, the head positioned at the opening
 // `{`. Returns the body tokens (braces excluded) in source order plus the
@@ -797,13 +803,13 @@ fn scan_body(ts0: Toks) -> Toks & Toks {
             , .(t: Token, p: I32, after: Toks) {
                 let d1 = depth_delta(t, depth);
                 if(leq_i32(d1, 0[I32])) {
-                  widen_sum({bodytoks = (toks_rev(acc), after)})[(Toks & I32 & Toks) | Bodytoks]
+                  widen_sum(Bodytoks.mk((toks_rev(acc), after)))[(Toks & I32 & Toks) | Bodytoks]
                 } else {
                   widen_sum((after, (d1, toks_cons(t, p, acc))))[(Toks & I32 & Toks) | Bodytoks]
                 }
               }
             , .(_e: .) {
-                widen_sum({bodytoks = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Bodytoks]
+                widen_sum(Bodytoks.mk((toks_rev(acc), cur)))[(Toks & I32 & Toks) | Bodytoks]
               }
             )
           }
@@ -848,7 +854,7 @@ fn pgroups_reverse_scan(gs: Pgroups) -> Pgroups {
 }
 
 /// Wraps the group scan's collected `(reversed-groups, remaining-tokens)`.
-labels { groups_run: Pgroups & Toks };
+type { Groups_run: Pgroups & Toks }
 
 // Prepend `count` empty runtime groups. Each empty group represents one
 // erased unary `forall` stage; under the evaluator it is a Unit closure.
@@ -899,7 +905,7 @@ fn scan_groups(ts: Toks) -> Pgroups | Diag {
                 )
               }
             } else {
-              widen_sum({groups_run = (acc, cur)})[(Toks & Pgroups) | Groups_run | Diag]
+              widen_sum(Groups_run.mk((acc, cur)))[(Toks & Pgroups) | Groups_run | Diag]
             }
           }
         }
@@ -928,22 +934,22 @@ fn scan_groups(ts: Toks) -> Pgroups | Diag {
 // header run up to the body's `{`, read the header's group structure, and
 // collect the body. Yields the `Decl` plus the tokens after the body.
 /// Wraps a fn scan's `(decl, remaining-tokens)` for the outer scan's `match`.
-labels { fn_decl: Decl & Toks };
+type { Fn_decl: Decl & Toks }
 
 /// Defines the fn-scan success arm.
-labels { fs_ok: Fn_decl };
+type { Fs_ok: Fn_decl }
 
 /// Defines the fn-scan failure arm (a diagnostic).
-labels { fs_err: Diag };
+type { Fs_err: Diag }
 
 /// The outcome of scanning one fn declaration.
 type Fn_scan = Fs_ok | Fs_err;
 
 fn fs_ok(d: Decl, after: Toks) -> Fn_scan {
-  widen_sum({fs_ok = {fn_decl = (d, after)}})[Fs_ok | Fs_err]
+  widen_sum(Fs_ok.mk(Fn_decl.mk((d, after))))[Fs_ok | Fs_err]
 }
 
-fn fs_err(d: Diag) -> Fn_scan { widen_sum({fs_err = d})[Fs_ok | Fs_err] }
+fn fs_err(d: Diag) -> Fn_scan { widen_sum(Fs_err.mk(d))[Fs_ok | Fs_err] }
 
 fn un_fn_scan(r: Fn_scan) -> Fs_ok | Fs_err { r }
 
@@ -956,7 +962,7 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
     (
     , .(name: String) {
         let after_name = rest(after_fn);
-        match(collect_header(after_name)) {
+        match(collect_header(after_name, .f[Bool])) {
           .(header: Toks, at_brace: Toks) {
             if(head_is(at_brace, c_lbrace())) {
               match(scan_body(at_brace)) {
@@ -1006,12 +1012,12 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
 }
 
 // =====================================================================
-// Scanning a `newtype` declaration
+// Scanning an explicit singleton nominal declaration
 // =====================================================================
 //
-// The header grammar is `[pub] newtype NAME [A]… <U>… : TYPE { member;
-// member }` where each member is `[pub[(a/b)]] ('constructor' |
-// 'projector') NAME` in either order (`specs/grammar.md` § Productions
+// The entry grammar is `NAME [A]… <U>… : TYPE { member; member }`
+// inside an explicit singleton `type { ... }` block. Each member is
+// `[pub[(a/b)]] ('mk' | 'get')` in either order (`specs/grammar.md` § Productions
 // (Kio'); the emit writes visibility before the member keyword). The
 // loader records the name, the universal type-arity, the existential-binder
 // count, the two member names, the retained header tokens, and
@@ -1019,43 +1025,35 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
 // facts drive term-parser dispatch; the visibility fields gate imports and
 // member use independently.
 /// Wraps a newtype-header scan's `(name, entry, remaining-tokens)`.
-labels { nt_decl: Member_decl & Toks };
+type { Nt_decl: Member_decl & Toks }
 
 /// Defines the newtype-scan success arm.
-labels { ns_ok: Nt_decl };
+type { Ns_ok: Nt_decl }
 
 /// Defines the newtype-scan failure arm (a diagnostic).
-labels { ns_err: Diag };
+type { Ns_err: Diag }
 
 /// The outcome of scanning one newtype declaration.
 type Nt_scan = Ns_ok | Ns_err;
 
 fn ns_ok(md: Member_decl, after: Toks) -> Nt_scan {
-  widen_sum({ns_ok = {nt_decl = (md, after)}})[Ns_ok | Ns_err]
+  widen_sum(Ns_ok.mk(Nt_decl.mk((md, after))))[Ns_ok | Ns_err]
 }
 
-fn ns_err(d: Diag) -> Nt_scan { widen_sum({ns_err = d})[Ns_ok | Ns_err] }
+fn ns_err(d: Diag) -> Nt_scan { widen_sum(Ns_err.mk(d))[Ns_ok | Ns_err] }
 
 fn un_nt_scan(r: Nt_scan) -> Ns_ok | Ns_err { r }
 
 // One scanned newtype member: which member keyword it carried, its complete
 // visibility, and its name.
 /// Wraps a member read's `(is-projector, visibility, member-name, remaining-tokens)`.
-labels { nt_member: Bool & Visibility & String & Toks };
+type { Nt_member: Bool & Visibility & String & Toks }
 
-fn read_nt_member_name(is_proj: Bool, visibility: Visibility, ts: Toks) -> . | Nt_member | Diag {
-  match(head_word(ts)) {
-    (
-    , .(name: String) {
-        widen_sum({nt_member = (is_proj, (visibility, (name, rest(ts))))})[. | Nt_member | Diag]
-      }
-    , .(_noname: .) { widen_sum(())[. | Nt_member | Diag] }
-    )
-  }
-}
+// Read one fixed member role with its independent visibility.
+fn read_nt_member_value(is_proj: Bool, visibility: Visibility, name: String, ts: Toks) ->
+  . | Nt_member | Diag
+   { widen_sum(Nt_member.mk((is_proj, (visibility, (name, rest(ts))))))[. | Nt_member | Diag] }
 
-// Read one newtype body member: `[pub[(a/b)]] ('constructor' | 'projector')
-// NAME`. Returns `()` when the head is not a member keyword.
 fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
   let exported = head_word_is(ts0, "pub"[String]);
   let after_pub = if(exported) { rest(ts0) } else { ts0 };
@@ -1065,12 +1063,12 @@ fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
         match(Visibility_read.get(read)) {
           .(visibility: Visibility, ts: Toks) {
             if(visibility_valid_for_owner(visibility, owner)) {
-              let is_ctor = head_word_is(ts, "constructor"[String]);
-              let is_proj = head_word_is(ts, "projector"[String]);
+              let is_ctor = head_word_is(ts, "mk"[String]);
+              let is_proj = head_word_is(ts, "get"[String]);
               if(is_ctor) {
-                read_nt_member_name(.f[Bool], visibility, rest(ts))
+                read_nt_member_value(.f[Bool], visibility, "mk"[String], ts)
               } else if(is_proj) {
-                read_nt_member_name(.t[Bool], visibility, rest(ts))
+                read_nt_member_value(.t[Bool], visibility, "get"[String], ts)
               } else {
                 widen_sum(())[. | Nt_member | Diag]
               }
@@ -1105,14 +1103,28 @@ fn nt_body_diag(name: String, ts0: Toks) -> Nt_scan {
   ns_err(mk_diag_at(
   , string_concat(
     , "dyn_load_prime: malformed image — newtype `"[String]
-    , string_concat(name, "`'s body must declare a constructor and a projector"[String])
+    , string_concat(name, "`'s body must declare `mk` and `get`"[String])
     )
   , head_pos(ts0)
   ))
 }
 
-// The newtype owns member separator runs; the enclosing sequence owns any
-// semicolon after its closing brace.
+// The entry block has one nominal and at most one edge separator.
+fn finish_newtype(md: Member_decl, after_members: Toks) -> Nt_scan {
+  let at_close = drop(after_members, c_semi());
+  if(head_is(at_close, c_rbrace())) {
+    ns_ok(md, rest(at_close))
+  } else {
+    ns_err(mk_diag_at(
+    , "dyn_load_prime: malformed image — a nominal declaration must contain "
+      "exactly one entry"[String]
+    , head_pos(at_close)
+    ))
+  }
+}
+
+// The member body owns separator runs; finish_newtype checks the enclosing
+// singleton entry block and its single optional trailing separator.
 fn scan_newtype_body(
 , name: String
 , arity: I32
@@ -1143,10 +1155,10 @@ fn scan_newtype_body(
                             let proj = if(proj1) { name1 } else { name2 };
                             let ctor_visibility = if(proj1) { visibility2 } else { visibility1 };
                             let proj_visibility = if(proj1) { visibility1 } else { visibility2 };
-                            ns_ok(
+                            finish_newtype(
                             , mk_member_decl(
                               , name
-                              , match(head_pos(rest(ts0))) {
+                              , match(head_pos(ts0)) {
                                   (.(pos: I32) { pos }, .(_impossible: .) { 0[I32] })
                                 }
                               , mk_nt_info(arity, existential_arity, ctor, proj)
@@ -1164,7 +1176,7 @@ fn scan_newtype_body(
                               , "dyn_load_prime: malformed image — newtype `"[String]
                               , string_concat(
                                 , name
-                                , "` must declare exactly one constructor and one projector"[String]
+                                , "` must declare exactly one `mk` and one `get`"[String]
                                 )
                               )
                             , head_pos(ts0)
@@ -1201,8 +1213,8 @@ fn scan_newtype_body(
   }
 }
 
-// Scan one newtype declaration. `ts0` is at the `newtype` keyword: consume
-// it, read the name, count the universal binder groups, note the
+// Scan one explicit singleton nominal. `ts0` is at `type {`:
+// consume the opening block, read the name, count the universal binder groups, note the
 // existential binders, skip the `: TYPE` payload to the body's `{`, and
 // read the two members (either order). Yields the name and its erasure
 // entry, or a diagnostic.
@@ -1212,12 +1224,12 @@ fn scan_newtype(
 , visibility: Visibility
 , recursive_scope: . | Recursive_type_scope
 ) -> Nt_scan {
-  let after_kw = rest(ts0);
+  let after_kw = drop(rest(rest(ts0)), c_semi());
   match(head_word(after_kw)) {
     (
     , .(name: String) {
         let after_name = rest(after_kw);
-        match(collect_header(after_name)) {
+        match(collect_header(after_name, .t[Bool])) {
           .(header: Toks, at_brace: Toks) {
             match(scan_tyarity(header)) {
               (
@@ -1226,7 +1238,9 @@ fn scan_newtype(
                     .(existential_arity: I32, after_exi: Toks) {
                       if(head_is(after_exi, c_colon())) {
                         let payload = rest(after_exi);
-                        if(head_is(payload, c_lbrace())) {
+                        if(match(peek(payload)) {
+                          (.(_token: Token) { .f[Bool] }, .() { .t[Bool] })
+                        }) {
                           ns_err(mk_diag_at(
                           , string_concat(
                             , "dyn_load_prime: malformed image — newtype `"[String]
@@ -1244,7 +1258,7 @@ fn scan_newtype(
                           , recursive_scope
                           , header
                           , rest(at_brace)
-                          , ts0
+                          , after_kw
                           )
                         } else {
                           ns_err(mk_diag_at(
@@ -1275,7 +1289,8 @@ fn scan_newtype(
       }
     , .(_noname: .) {
         ns_err(mk_diag_at(
-        , "dyn_load_prime: malformed image — `newtype` is not followed by a name"[String]
+        , "dyn_load_prime: malformed image — `type {` is not followed by one "
+          "nominal entry"[String]
         , head_pos(ts0)
         ))
       }
@@ -1287,22 +1302,22 @@ fn scan_newtype(
 // Scanning import headers
 // =====================================================================
 /// Wraps an import-header scan's imports, aliases, and remaining tokens.
-labels { import_scan: Imports & Aliases & Toks };
+type { Import_scan: Imports & Aliases & Toks }
 
 /// A malformed import header.
-labels { import_err: Diag };
+type { Import_err: Diag }
 
 type Import_outcome = Import_scan | Import_err;
 
 /// Reversed imported names and the tokens after the closing parenthesis.
-labels { names_scan: Imports & Toks };
+type { Names_scan: Imports & Toks }
 
 fn import_diag(ts: Toks, message: String) -> Diag {
   mk_diag_at(string_concat("dyn_load_prime: malformed image — "[String], message), head_pos(ts))
 }
 
 fn import_error(ts: Toks, message: String) -> Import_outcome {
-  widen_sum({import_err = import_diag(ts, message)})[Import_scan | Import_err]
+  widen_sum(Import_err.mk(import_diag(ts, message)))[Import_scan | Import_err]
 }
 
 fn import_name_tail(name: String, start: I32, has_lower: Bool) -> Bool {
@@ -1432,7 +1447,7 @@ fn skip_import_commas(ts: Toks) -> Toks {
       if(head_is(cur, c_comma())) {
         widen_sum(rest(cur))[Toks | Toks_done]
       } else {
-        widen_sum({toks_done = cur})[Toks | Toks_done]
+        widen_sum(Toks_done.mk(cur))[Toks | Toks_done]
       }
     }
   , ts
@@ -1507,7 +1522,7 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
             match(un_imports(names)) {
               (
               , .(_entry: Import, _tail: Imports) {
-                  widen_sum({names_scan = (names, rest(cur))})[(Toks & Imports) | Names_scan | Diag]
+                  widen_sum(Names_scan.mk((names, rest(cur))))[(Toks & Imports) | Names_scan | Diag]
                 }
               , .(_empty: .) {
                   widen_sum(import_diag(cur, "expected at least one imported identifier"[String]))[| (& Toks
@@ -1517,11 +1532,6 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
                 }
               )
             }
-          } else if(head_is(cur, c_lbrace())) {
-            widen_sum(import_diag(cur, "braced label imports are not in Kio'"[String]))[| (& Toks
-            & Imports)
-            | Names_scan
-            | Diag]
           } else match(scan_import_item(cur, provider)) {
             (
             , .(entry: Import, after: Toks) {
@@ -1532,7 +1542,7 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
                     head_word_is(cur, "op"[String])
                   };
                 if(head_is(after, c_rparen())) {
-                  widen_sum({names_scan = (imports_cons(entry, names), rest(after))})[| (& Toks
+                  widen_sum(Names_scan.mk((imports_cons(entry, names), rest(after))))[| (& Toks
                   & Imports)
                   | Names_scan
                   | Diag]
@@ -1590,10 +1600,10 @@ fn scan_import_alias(ts: Toks, target: String, imports: Imports, aliases: Aliase
         if(import_value_name(alias)) {
           let after = rest(ts);
           if(head_is(after, c_semi())) {
-            widen_sum({import_scan = (
+            widen_sum(Import_scan.mk((
             , imports
             , (aliases_cons(mk_alias(alias, target), aliases), rest(after))
-            )})[Import_scan | Import_err]
+            )))[Import_scan | Import_err]
           } else {
             import_error(after, "expected semicolon after import alias"[String])
           }
@@ -1611,7 +1621,7 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
   if(head_word_is(after_import, "__intrinsics__"[String])) {
     let after = rest(after_import);
     if(head_is(after, c_semi())) {
-      widen_sum({import_scan = (imports, (aliases, rest(after)))})[Import_scan | Import_err]
+      widen_sum(Import_scan.mk((imports, (aliases, rest(after)))))[Import_scan | Import_err]
     } else {
       import_error(after, "expected semicolon after import __intrinsics__"[String])
     }
@@ -1632,10 +1642,10 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
                       match(Names_scan.get(selected)) {
                         .(names: Imports, after: Toks) {
                           if(head_is(after, c_semi())) {
-                            widen_sum({import_scan = (
+                            widen_sum(Import_scan.mk((
                             , prepend_imports(names, imports)
                             , (aliases, rest(after))
-                            )})[Import_scan | Import_err]
+                            )))[Import_scan | Import_err]
                           } else {
                             import_error(after, "expected semicolon after import list"[String])
                           }
@@ -1643,7 +1653,7 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
                       }
                     }
                   , .(diagnostic: Diag) {
-                      widen_sum({import_err = diagnostic})[Import_scan | Import_err]
+                      widen_sum(Import_err.mk(diagnostic))[Import_scan | Import_err]
                     }
                   )
                 }
@@ -1684,7 +1694,7 @@ fn toks_rev_scan(ts0: Toks) -> Toks {
 }
 
 /// Wraps a declaration body and the tokens at its enclosing boundary.
-labels { semi_run: Toks & Toks };
+type { Semi_run: Toks & Toks }
 
 fn read_decl_body(ts0: Toks, in_group: Bool) -> . | Semi_run {
   loop(
@@ -1695,13 +1705,13 @@ fn read_decl_body(ts0: Toks, in_group: Bool) -> . | Semi_run {
             (
             , .(t: Token, pos: I32, tail: Toks) {
                 if(head_is(cur, c_semi())) {
-                  widen_sum(widen_sum({semi_run = (
+                  widen_sum(widen_sum(Semi_run.mk((
                   , toks_rev_scan(acc)
                   , if(in_group) { cur } else { tail }
-                  )})[. | Semi_run])[(Toks & Toks) | . | Semi_run]
+                  )))[. | Semi_run])[(Toks & Toks) | . | Semi_run]
                 } else if(in_group) {
                   if(head_is(cur, c_rbrace())) {
-                    widen_sum(widen_sum({semi_run = (toks_rev_scan(acc), cur)})[. | Semi_run])[| (& Toks
+                    widen_sum(widen_sum(Semi_run.mk((toks_rev_scan(acc), cur)))[. | Semi_run])[| (& Toks
                     & Toks)
                     | .
                     | Semi_run]
@@ -1734,10 +1744,10 @@ fn read_to_semi(ts0: Toks) -> . | Semi_run { read_decl_body(ts0, .f[Bool]) }
 // the retained header; host items carry no body.
 /// Wraps a host scan's `(is-fn, name, header-tokens, name-offset,
 /// remaining-tokens)`.
-labels { host_decl: Bool & String & Toks & I32 & Toks };
+type { Host_decl: Bool & String & Toks & I32 & Toks }
 
 /// Defines the host-scan failure arm.
-labels { hs_err: Diag };
+type { Hs_err: Diag }
 
 /// The outcome of scanning one host declaration.
 type Host_scan = Host_decl | Hs_err;
@@ -1754,34 +1764,34 @@ fn scan_host_name(is_fn: Bool, ts: Toks, ts0: Toks) -> Host_scan {
                 , .(body: Semi_run) {
                     match(Semi_run.get(body)) {
                       .(header: Toks, after: Toks) {
-                        widen_sum({host_decl = (is_fn, name, header, decl_pos, after)})[| Host_decl
+                        widen_sum(Host_decl.mk((is_fn, name, header, decl_pos, after)))[| Host_decl
                         | Hs_err]
                       }
                     }
                   }
                 , .(_unterminated: .) {
-                    widen_sum({hs_err = mk_diag_at(
+                    widen_sum(Hs_err.mk(mk_diag_at(
                     , "dyn_load_prime: malformed image — unterminated `host` declaration"[String]
                     , head_pos(ts0)
-                    )})[Host_decl | Hs_err]
+                    )))[Host_decl | Hs_err]
                   }
                 )
               }
             }
           , .(_missing_pos: .) {
-              widen_sum({hs_err = mk_diag_at(
+              widen_sum(Hs_err.mk(mk_diag_at(
               , "dyn_load_prime: malformed image — a `host` declaration names no item"[String]
               , head_pos(ts0)
-              )})[Host_decl | Hs_err]
+              )))[Host_decl | Hs_err]
             }
           )
         }
       }
     , .(_noname: .) {
-        widen_sum({hs_err = mk_diag_at(
+        widen_sum(Hs_err.mk(mk_diag_at(
         , "dyn_load_prime: malformed image — a `host` declaration names no item"[String]
         , head_pos(ts0)
-        )})[Host_decl | Hs_err]
+        )))[Host_decl | Hs_err]
       }
     )
   }
@@ -1799,11 +1809,11 @@ fn scan_host(ts0: Toks) -> Host_scan {
   } else if(is_type) {
     scan_host_name(.f[Bool], rest(after_vis), ts0)
   } else {
-    widen_sum({hs_err = mk_diag_at(
+    widen_sum(Hs_err.mk(mk_diag_at(
     , "dyn_load_prime: malformed image — `host` is not followed by `fn` or "
       "`type`"[String]
     , head_pos(ts0)
-    )})[Host_decl | Hs_err]
+    )))[Host_decl | Hs_err]
   }
 }
 
@@ -1818,19 +1828,13 @@ fn un_host_scan(r: Host_scan) -> Host_decl | Hs_err { r }
 /// The in-progress module: name, reversed imports, reversed aliases, its
 /// newtype table, reversed decls, reversed host-fn names, reversed type
 /// names, and reversed retained host declaration headers.
-labels { wip: & String
-& Imports
-& Aliases
-& Ntab
-& Decls
-& Pnames
-& Pnames
-& Members
-& Tyaliases
-& Host_headers };
+type {
+  Wip:
+    String & Imports & Aliases & Ntab & Decls & Pnames & Pnames & Members & Tyaliases & Host_headers
+}
 
 fn fresh_wip(name: String) -> Wip {
-  {wip = (
+  Wip.mk((
   , name
   , (
     , imports_nil()
@@ -1845,7 +1849,7 @@ fn fresh_wip(name: String) -> Wip {
         )
       )
     )
-  )}
+  ))
 }
 
 fn wip_name(w: Wip) -> String {
@@ -1880,7 +1884,7 @@ fn with_imports(w: Wip, i2: Imports) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i2, (a, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+    ) { Wip.mk((n, (i2, (a, (nt, (d, (h, (t, (mm, (ta, hh)))))))))) }
   }
 }
 
@@ -1897,7 +1901,7 @@ fn with_aliases(w: Wip, a2: Aliases) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+    ) { Wip.mk((n, (i, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))) }
   }
 }
 
@@ -1914,7 +1918,7 @@ fn with_imports_and_aliases(w: Wip, i2: Imports, a2: Aliases) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i2, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))} }
+    ) { Wip.mk((n, (i2, (a2, (nt, (d, (h, (t, (mm, (ta, hh)))))))))) }
   }
 }
 
@@ -1932,7 +1936,7 @@ fn with_newtype(w: Wip, md: Member_decl) -> Wip {
     , ta: Tyaliases
     , hh: Host_headers
     ) {
-      {wip = (
+      Wip.mk((
       , n
       , (
         , i
@@ -1944,7 +1948,7 @@ fn with_newtype(w: Wip, md: Member_decl) -> Wip {
             )
           )
         )
-      )}
+      ))
     }
   }
 }
@@ -1962,7 +1966,7 @@ fn with_decl(w: Wip, d2: Decl) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i, (a, (nt, (decls_cons(d2, d), (h, (t, (mm, (ta, hh)))))))))} }
+    ) { Wip.mk((n, (i, (a, (nt, (decls_cons(d2, d), (h, (t, (mm, (ta, hh)))))))))) }
   }
 }
 
@@ -1982,7 +1986,7 @@ fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32
     ) {
       let hostfns = if(is_fn) { pnames_cons(name, h) } else { h };
       let typenames = if(is_fn) { t } else { pnames_cons(name, t) };
-      {wip = (
+      Wip.mk((
       , n
       , (
         , i
@@ -2003,7 +2007,7 @@ fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32
             )
           )
         )
-      )}
+      ))
     }
   }
 }
@@ -2040,7 +2044,7 @@ fn with_typename(w: Wip, name: String) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i, (a, (nt, (d, (h, (pnames_cons(name, t), (mm, (ta, hh)))))))))} }
+    ) { Wip.mk((n, (i, (a, (nt, (d, (h, (pnames_cons(name, t), (mm, (ta, hh)))))))))) }
   }
 }
 
@@ -2057,7 +2061,7 @@ fn with_tyalias(w: Wip, a2: Alias_decl) -> Wip {
     , mm: Members
     , ta: Tyaliases
     , hh: Host_headers
-    ) { {wip = (n, (i, (a, (nt, (d, (h, (t, (mm, (tyaliases_cons(a2, ta), hh)))))))))} }
+    ) { Wip.mk((n, (i, (a, (nt, (d, (h, (t, (mm, (tyaliases_cons(a2, ta), hh)))))))))) }
   }
 }
 
@@ -2134,12 +2138,12 @@ fn finish_wip(w: Wip) -> Module {
   }
 }
 
-// Scan one `[pub[(a/b)]] fn / newtype / type / host …` declaration after an
+// Scan one `[pub[(a/b)]] fn / type / host …` declaration after an
 // optional `pub` (already consumed). A following `(scope)` is consumed here:
 // fn, newtype, and type declarations retain it for declaration and import-path
 // gates, while host declarations reject scoped visibility.
 /// Wraps a declaration scan's `(updated-module, remaining-tokens)`.
-labels { wip_and_toks: Wip & Toks };
+type { Wip_and_toks: Wip & Toks }
 
 type Decl_scan = Wip_and_toks | Diag;
 
@@ -2164,7 +2168,7 @@ fn is_punct_code(t: Token, code: I32) -> Bool {
   }
 }
 
-labels { star_read: I32 & Toks };
+type { Star_read: I32 & Toks }
 
 fn read_stars(ts0: Toks) -> Star_read {
   loop(
@@ -2174,7 +2178,7 @@ fn read_stars(ts0: Toks) -> Star_read {
           if(head_is(cur, c_star())) {
             widen_sum((rest(cur), add_i32(stars, 1[I32])))[(Toks & I32) | Star_read]
           } else {
-            widen_sum({star_read = (stars, cur)})[(Toks & I32) | Star_read]
+            widen_sum(Star_read.mk((stars, cur)))[(Toks & I32) | Star_read]
           }
         }
       }
@@ -2185,7 +2189,7 @@ fn read_stars(ts0: Toks) -> Star_read {
 
 /// Wraps one binder group's read: the reversed binder accumulator, tokens
 /// after the closing bracket, and whether the group was valid.
-labels { tab_one: Binders & Toks & Bool };
+type { Tab_one: Binders & Toks & Bool }
 
 // Read exactly one kind-marked binder after its opening `[`. Alias kinds
 // are checked by offline Prime validation and the canonical contract parser.
@@ -2196,19 +2200,19 @@ fn read_binder_group(ts0: Toks, binders0: Binders) -> Tab_one {
     , .(name: String) {
         let after = rest(after_stars);
         if(head_is(after, c_rbrack())) {
-          {tab_one = (binders_cons({binder_info = (name, stars)}, binders0), rest(after), .t[Bool])}
+          Tab_one.mk((binders_cons(Binder_info.mk((name, stars)), binders0), rest(after), .t[Bool]))
         } else {
-          {tab_one = (binders0, after, .f[Bool])}
+          Tab_one.mk((binders0, after, .f[Bool]))
         }
       }
-    , .(_missing: .) { {tab_one = (binders0, after_stars, .f[Bool])} }
+    , .(_missing: .) { Tab_one.mk((binders0, after_stars, .f[Bool])) }
     )
   }
 }
 
 /// Wraps the binder-run read: binders in declaration order, tokens after the
 /// last group, and whether every group was valid.
-labels { tab_binders: Binders & Toks & Bool };
+type { Tab_binders: Binders & Toks & Bool }
 
 // The leading `[A][B]…` binders after the alias's name.
 fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
@@ -2222,14 +2226,14 @@ fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
                 if(valid) {
                   widen_sum((after, next))[(Toks & Binders) | Tab_binders]
                 } else {
-                  widen_sum({tab_binders = (binders_reverse(next), (after, .f[Bool]))})[| (& Toks
+                  widen_sum(Tab_binders.mk((binders_reverse(next), (after, .f[Bool]))))[| (& Toks
                   & Binders)
                   | Tab_binders]
                 }
               }
             }
           } else {
-            widen_sum({tab_binders = (binders_reverse(binders), (cur, .t[Bool]))})[| (Toks & Binders)
+            widen_sum(Tab_binders.mk((binders_reverse(binders), (cur, .t[Bool]))))[| (Toks & Binders)
             | Tab_binders]
           }
         }
@@ -2240,7 +2244,7 @@ fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
 }
 
 fn ds_ok(w: Wip, after: Toks) -> Decl_scan {
-  widen_sum({wip_and_toks = (w, after)})[Wip_and_toks | Diag]
+  widen_sum(Wip_and_toks.mk((w, after)))[Wip_and_toks | Diag]
 }
 
 fn ds_err(d: Diag) -> Decl_scan { widen_sum(d)[Wip_and_toks | Diag] }
@@ -2258,6 +2262,10 @@ fn scan_visible_fn(ts: Toks, visibility: Visibility, w: Wip) -> Decl_scan {
     , .(e: Fs_err) { ds_err(Fs_err.get(e)) }
     )
   }
+}
+
+fn is_nominal_head(ts: Toks) -> Bool {
+  if(head_word_is(ts, "type"[String])) { head_is(rest(ts), c_lbrace()) } else { .f[Bool] }
 }
 
 fn scan_visible_newtype(
@@ -2301,11 +2309,11 @@ fn scan_visible_decl(
     }
   } else if(head_word_is(ts, "fn"[String])) {
     scan_visible_fn(ts, visibility, w)
-  } else if(head_word_is(ts, "newtype"[String])) {
+  } else if(is_nominal_head(ts)) {
     scan_visible_newtype(ts, visibility, recursive_scope, in_group, w)
   } else if(head_word_is(ts, "rec"[String])) {
     let after_rec = rest(ts);
-    if(head_word_is(after_rec, "newtype"[String])) {
+    if(is_nominal_head(after_rec)) {
       scan_visible_newtype(
       , after_rec
       , visibility
@@ -2317,7 +2325,8 @@ fn scan_visible_decl(
       )
     } else if(head_word_is(after_rec, "type"[String])) {
       ds_err(mk_diag_at(
-      , "dyn_load_prime: malformed image — `rec type` is not a Kio' declaration"[String]
+      , "dyn_load_prime: malformed image — `rec type` requires an explicit "
+        "singleton nominal declaration"[String]
       , head_pos(ts)
       ))
     } else if(head_is(after_rec, c_lbrace())) {
@@ -2328,8 +2337,8 @@ fn scan_visible_decl(
       ))
     } else {
       ds_err(mk_diag_at(
-      , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
-        "a type group"[String]
+      , "dyn_load_prime: malformed image — `rec` is not followed by a singleton "
+        "`type` declaration or a type group"[String]
       , head_pos(ts)
       ))
     }
@@ -2459,7 +2468,7 @@ fn scan_visible_decl(
   } else {
     ds_err(mk_diag_at(
     , "dyn_load_prime: malformed image — `pub` is not followed by `fn`, `rec "
-      "newtype`, `newtype`, `type`, or `host`"[String]
+      "type`, `type`, or `host`"[String]
     , head_pos(ts)
     ))
   }
@@ -2525,7 +2534,7 @@ fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
 // Scanning a recursive type group
 // =====================================================================
 /// Wraps a completed recursive type group's updated module and remaining tokens.
-labels { type_group_read: Wip & Toks };
+type { Type_group_read: Wip & Toks }
 
 type Type_group_scan = Type_group_read | Diag;
 
@@ -2548,12 +2557,10 @@ fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, 
             if(visibility_valid_for_owner(visibility, wip_name(w))) {
               if(head_word_is(ts, "type"[String])) {
                 scan_visible_decl(ts, visibility, .f[Bool], recursive_scope, .t[Bool], w)
-              } else if(head_word_is(ts, "newtype"[String])) {
-                scan_visible_decl(ts, visibility, .f[Bool], recursive_scope, .t[Bool], w)
               } else {
                 ds_err(mk_diag_at(
                 , "dyn_load_prime: malformed image — a recursive type group member must be "
-                  "`type` or `newtype`"[String]
+                  "an alias or an explicit singleton nominal `type` declaration"[String]
                 , head_pos(ts)
                 ))
               }
@@ -2604,7 +2611,7 @@ fn scan_type_group(ts0: Toks, w0: Wip) -> Type_group_scan {
                       , cur
                       ))[(Toks & Wip & I32) | Type_group_read | Diag]
                     } else {
-                      widen_sum(widen_sum({type_group_read = (w, drop(rest(cur), c_semi()))})[| Type_group_read
+                      widen_sum(widen_sum(Type_group_read.mk((w, drop(rest(cur), c_semi()))))[| Type_group_read
                       | Diag])[(Toks & Wip & I32) | Type_group_read | Diag]
                     }
                   } else match(un_decl_scan(scan_type_group_member(cur, recursive_scope, w))) {
@@ -2657,8 +2664,8 @@ fn scan_type_group(ts0: Toks, w0: Wip) -> Type_group_scan {
     )
   } else {
     type_group_diag(
-    , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
-      "a type group"[String]
+    , "dyn_load_prime: malformed image — `rec` is not followed by a singleton "
+      "`type` declaration or a type group"[String]
     , ts0
     )
   }
@@ -2700,12 +2707,10 @@ fn wip_aliases(w: Wip) -> Aliases {
   }
 }
 
-// Whether the head word opens a declaration (`fn` / `newtype` / `type` /
+// Whether the head word opens a declaration (`fn` / `type` /
 // `host`).
 fn is_decl_head(ts: Toks) -> Bool {
   if(head_word_is(ts, "fn"[String])) {
-    .t[Bool]
-  } else if(head_word_is(ts, "newtype"[String])) {
     .t[Bool]
   } else if(head_word_is(ts, "type"[String])) {
     .t[Bool]
@@ -2728,19 +2733,19 @@ fn is_decl_head(ts: Toks) -> Bool {
 // contract surface) are recognized at the top level.
 /// Defines the package-scan-success arm: the modules and the bridge
 /// surface (`()` only when the input carried no manifest).
-labels { pscan_ok: Modules & Bridge };
+type { Pscan_ok: Modules & Bridge }
 
 /// Defines the package-scan-failure arm (a diagnostic).
-labels { pscan_err: Diag };
+type { Pscan_err: Diag }
 
 /// The outcome of scanning a whole-package image.
 type Pscan_outcome = Pscan_ok | Pscan_err;
 
 fn pscan_ok(ms: Modules, bridge: Bridge) -> Pscan_outcome {
-  widen_sum({pscan_ok = (ms, bridge)})[Pscan_ok | Pscan_err]
+  widen_sum(Pscan_ok.mk((ms, bridge)))[Pscan_ok | Pscan_err]
 }
 
-fn pscan_err(d: Diag) -> Pscan_outcome { widen_sum({pscan_err = d})[Pscan_ok | Pscan_err] }
+fn pscan_err(d: Diag) -> Pscan_outcome { widen_sum(Pscan_err.mk(d))[Pscan_ok | Pscan_err] }
 
 /// One-step destructor on a package-scan outcome.
 fn un_pscan_outcome(o: Pscan_outcome) -> Pscan_ok | Pscan_err { o }
@@ -2748,20 +2753,20 @@ fn un_pscan_outcome(o: Pscan_outcome) -> Pscan_ok | Pscan_err { o }
 // The scanner must distinguish a truly manifest-less image from a present
 // manifest whose bridge surface is empty, while also remembering whether an
 // explicit bridge block has already appeared so a second block is rejected.
-labels { scan_no_manifest: . };
+type { Scan_no_manifest: . }
 
-labels { scan_manifest_without_bridge: . };
+type { Scan_manifest_without_bridge: . }
 
-labels { scan_bridge_globs: Pnames };
+type { Scan_bridge_globs: Pnames }
 
 type Bridge_scan = Scan_no_manifest | Scan_manifest_without_bridge | Scan_bridge_globs;
 
-fn bridge_scan_no_manifest() -> Bridge_scan { widen_sum({scan_no_manifest=})[Bridge_scan] }
+fn bridge_scan_no_manifest() -> Bridge_scan { widen_sum(Scan_no_manifest.mk(()))[Bridge_scan] }
 
 fn bridge_scan_note_manifest(bridge: Bridge_scan) -> Bridge_scan {
   match(bridge) {
     (
-    , .(_none: Scan_no_manifest) { widen_sum({scan_manifest_without_bridge=})[Bridge_scan] }
+    , .(_none: Scan_no_manifest) { widen_sum(Scan_manifest_without_bridge.mk(()))[Bridge_scan] }
     , .(_manifest: Scan_manifest_without_bridge) { bridge }
     , .(_globs: Scan_bridge_globs) { bridge }
     )
@@ -2779,7 +2784,7 @@ fn bridge_scan_has_block(bridge: Bridge_scan) -> Bool {
 }
 
 fn bridge_scan_with_globs(globs: Pnames) -> Bridge_scan {
-  widen_sum({scan_bridge_globs = globs})[Bridge_scan]
+  widen_sum(Scan_bridge_globs.mk(globs))[Bridge_scan]
 }
 
 fn bridge_scan_finish(bridge: Bridge_scan) -> Bridge {
@@ -2907,21 +2912,21 @@ fn pscan_type_group(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> P
 // canonical strings; the loader's `bridge_admits` matches module paths
 // against them.
 /// Wraps a glob read's `(glob-text, remaining-tokens)`.
-labels { glob_read: String & Toks };
+type { Glob_read: String & Toks }
 
 // Read one glob segment: a word, `**`, or `*`. Two adjacent `*` marks fold
 // into `**`.
 fn read_glob_segment(ts: Toks) -> . | Glob_read {
   match(head_word(ts)) {
     (
-    , .(seg: String) { widen_sum({glob_read = (seg, rest(ts))})[. | Glob_read] }
+    , .(seg: String) { widen_sum(Glob_read.mk((seg, rest(ts))))[. | Glob_read] }
     , .(_notword: .) {
         if(head_is(ts, c_star())) {
           let after1 = rest(ts);
           if(head_is(after1, c_star())) {
-            widen_sum({glob_read = ("**"[String], rest(after1))})[. | Glob_read]
+            widen_sum(Glob_read.mk(("**"[String], rest(after1))))[. | Glob_read]
           } else {
-            widen_sum({glob_read = ("*"[String], after1)})[. | Glob_read]
+            widen_sum(Glob_read.mk(("*"[String], after1)))[. | Glob_read]
           }
         } else {
           widen_sum(())[. | Glob_read]
@@ -2956,12 +2961,12 @@ fn read_glob(ts: Toks) -> . | Glob_read {
                             }
                           }
                         , .(_bad: .) {
-                            widen_sum({glob_read = (acc, cur)})[(String & Toks) | Glob_read]
+                            widen_sum(Glob_read.mk((acc, cur)))[(String & Toks) | Glob_read]
                           }
                         )
                       }
                     } else {
-                      widen_sum({glob_read = (acc, cur)})[(String & Toks) | Glob_read]
+                      widen_sum(Glob_read.mk((acc, cur)))[(String & Toks) | Glob_read]
                     }
                   }
                 }
@@ -2977,7 +2982,7 @@ fn read_glob(ts: Toks) -> . | Glob_read {
 }
 
 /// Wraps the bridge-block read's `(globs, remaining-tokens)`.
-labels { bridge_read: Pnames & Toks };
+type { Bridge_read: Pnames & Toks }
 
 // Read `glob; glob; … }`, the head just past the `{`. Returns the globs
 // and the tokens after the `}`.
@@ -2987,7 +2992,7 @@ fn read_bridge_entries(ts0: Toks) -> Bridge_read | Diag {
       match(st) {
         .(cur: Toks, acc: Pnames) {
           if(head_is(cur, c_rbrace())) {
-            widen_sum(widen_sum({bridge_read = (acc, rest(cur))})[Bridge_read | Diag])[| (& Toks
+            widen_sum(widen_sum(Bridge_read.mk((acc, rest(cur))))[Bridge_read | Diag])[| (& Toks
             & Pnames)
             | Bridge_read
             | Diag]

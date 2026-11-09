@@ -1,7 +1,7 @@
 module main;
 
 /// Label documentation.
-pub labels // header
-{ greet // member colon
+pub type // header
+{ Greet // member colon
 : // payload
 String };

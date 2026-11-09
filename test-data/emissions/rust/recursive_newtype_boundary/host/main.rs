@@ -25,7 +25,7 @@ fn forest_facade(value: Forest) -> Forest {
 }
 
 fn inspect_forest(value: Forest, expected: i32) {
-    let payload: Sum<(), Product<Tree, Forest>> = Forest::unForest(value);
+    let payload: Sum<(), Product<Tree, Forest>> = Forest::get(value);
     let Sum::Right(Product {
         _0: child,
         _1: tail,
@@ -33,9 +33,9 @@ fn inspect_forest(value: Forest, expected: i32) {
     else {
         panic!("expected a nonempty forest");
     };
-    let child_payload: Sum<i32, Forest> = Tree::unTree(child);
+    let child_payload: Sum<i32, Forest> = Tree::get(child);
     assert!(matches!(child_payload, Sum::Left(value) if value == expected));
-    let tail_payload: Sum<(), Product<Tree, Forest>> = Forest::unForest(tail);
+    let tail_payload: Sum<(), Product<Tree, Forest>> = Forest::get(tail);
     assert!(matches!(tail_payload, Sum::Left(())));
 }
 
@@ -43,18 +43,18 @@ fn main() {
     let package = rust_recursive_newtype_boundary::create_rustRecursiveNewtypeBoundary(Host);
     let leaf: Tree = tree_facade(package.recursiveBoundary.leaf(41));
     let empty: Forest = forest_facade(package.recursiveBoundary.empty());
-    assert!(matches!(Forest::unForest(empty.clone()), Sum::Left(())));
+    assert!(matches!(Forest::get(empty.clone()), Sum::Left(())));
     let forest: Forest = package.recursiveBoundary.graft(leaf, empty);
     let node: Tree = package.recursiveBoundary.node(forest);
-    let payload: Sum<i32, Forest> = Tree::unTree(node);
+    let payload: Sum<i32, Forest> = Tree::get(node);
     let Sum::Right(forest) = payload else {
         panic!("expected a forest node");
     };
     inspect_forest(forest_facade(forest), 41);
 
-    let child: Tree = tree_facade(Tree::mkTree(Sum::Left(7)));
-    let tail: Forest = forest_facade(Forest::mkForest(Sum::Left(())));
-    let constructed: Forest = Forest::mkForest(Sum::Right(Product {
+    let child: Tree = tree_facade(Tree::mk(Sum::Left(7)));
+    let tail: Forest = forest_facade(Forest::mk(Sum::Left(())));
+    let constructed: Forest = Forest::mk(Sum::Right(Product {
         _0: child,
         _1: tail,
     }));

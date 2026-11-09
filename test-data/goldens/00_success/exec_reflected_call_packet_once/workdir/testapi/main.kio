@@ -1,0 +1,77 @@
+module testapi/main;
+
+import __comptime__;
+import testapi(String);
+import testapi/io as io;
+
+pure fn invoke_impl(
+, ct: __Comptime__
+, function_type: __Type__
+, function: __Checked_term__
+, _argument_type: __Type__
+, argument: __Checked_term__
+) -> __Checked_term__ { __term_call__(ct, function_type, function, argument) }
+
+macro invoke : [Function] Function -> [Argument] Argument -> . { impl invoke_impl }
+
+pure fn generated_impl(
+, ct: __Comptime__
+, function_type: __Type__
+, function: __Checked_term__
+, maker_type: __Type__
+, maker: __Checked_term__
+) -> __Checked_term__ {
+  let argument = __term_call__(ct, maker_type, maker, __term_unit__(ct));
+  __term_call__(ct, function_type, function, argument)
+}
+
+macro generated : [Function] Function -> [Maker] Maker -> . { impl generated_impl }
+
+pure fn projected_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, function_type: __Type__
+, function: __Checked_term__
+, maker_type: __Type__
+, maker: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  (generated_impl(ct, function_type, function, maker_type, maker), fills)
+}
+
+macro projected : [Function] Function -> [Maker] Maker -> . { impl(fills) projected_impl }
+
+fn consume(left: String, right: String) { io.print(left); io.print(right) }
+
+fn packet() -> String & String { io.print("packet\n"); ("left\n", "right\n") }
+
+fn consume_tail(left: String, tail: String & String) { io.print(left); consume(tail) }
+
+fn tail_packet() -> String & String & String {
+  io.print("tail packet\n");
+  ("left\n", "middle\n", "right\n")
+}
+
+fn nullary() { io.print("called\n") }
+
+fn unary(_value: .) { io.print("called\n") }
+
+fn unit_packet() { io.print("unit packet\n") }
+
+pub fn main() {
+  io.print("inferred\n");
+  invoke(consume)(packet());
+  io.print("explicit\n");
+  invoke[(String & String) -> .](consume)(packet());
+  io.print("direct\n");
+  consume(packet());
+  io.print("generated\n");
+  generated(consume)(packet);
+  io.print("projected\n");
+  projected(consume)(packet);
+  io.print("grouped tail\n");
+  generated(consume_tail)(tail_packet);
+  io.print("nullary\n");
+  generated(nullary)(unit_packet);
+  io.print("unary\n");
+  generated(unary)(unit_packet)
+}

@@ -3,18 +3,18 @@ set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
 module fmt_label_payload_comments;
-labels { ready: . };
-fn construct(ready: .) -> Ready { {ready = (// construction leading
+type { Ready: . { mk; get } }
+fn construct(ready: .) -> Ready { record { Ready.mk((// construction leading
 ready // construction trailing
-)} }
-fn construct_unit() -> Ready { {ready = (// construction unit
-)} }
-fn update(row: Ready, other: .) -> Ready { row.!{ready = // update leading
+)) } }
+fn construct_unit() -> Ready { record { Ready.mk((// construction unit
+)) } }
+fn update(row: Ready, other: .) -> Ready { row.>with { Ready.mk( // update leading
 (other // update trailing
-)} }
-fn update_unit(row: Ready) -> Ready { row.!{ready = (// update unit
-)} }
-fn canonical(ready: .) -> Ready & Ready { ({ready = ready}, {ready = ()}) }
+)) } }
+fn update_unit(row: Ready) -> Ready { row.>with { Ready.mk((// update unit
+)) } }
+fn canonical(ready: .) -> Ready & Ready { (record { Ready.mk(ready) }, record { Ready.mk(()) }) }
 KIO
 )
 reformatted=$(printf '%s\n' "$formatted" | "$KIO_BIN" fmt -)

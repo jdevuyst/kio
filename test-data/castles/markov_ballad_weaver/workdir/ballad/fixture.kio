@@ -41,7 +41,7 @@ pub fn read_int(fallback: I32) -> I32 {
 /// a non-empty phrase is reversed on the way out; a blank run of lines closes
 /// nothing.
 fn close_phrase(words: List[String], acc: List[List[String]]) -> List[List[String]] {
-  match(words.>List.un_list) {
+  match(words.>List.get) {
     (.(_head: String, _rest: List[String]) { cons(reverse(words), acc) }, .(_empty: .) { acc })
   }
 }

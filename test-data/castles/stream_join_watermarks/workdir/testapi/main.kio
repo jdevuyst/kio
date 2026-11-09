@@ -6,6 +6,7 @@ import join/model as m;
 import join/report as report;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, String);
 import testapi/io as io;
@@ -15,35 +16,37 @@ import testapi/text as text;
 rec(loop) fn replay(state: m.State, previous: String | .) {
   match(input.next()) {
     .(command: input.Begin) {
-      io.print(command.?{input.begin}.>text.string_concat("\n").>>text.string_concat("session "));
+      io.print(command.>select { input.Begin.get }
+        .>text.string_concat("\n")
+        .>>text.string_concat("session "));
       recur replay(engine.empty(), previous)
     };
     .(command: input.Left_event) {
-      let event = command.?{input.left_event};
+      let event = command.>select { input.Left_event.get };
       let next = engine.event(state, event, .t);
       report.admission("left", event, state, next);
       recur replay(next, previous)
     };
     .(command: input.Right_event) {
-      let event = command.?{input.right_event};
+      let event = command.>select { input.Right_event.get };
       let next = engine.event(state, event, .f);
       report.admission("right", event, state, next);
       recur replay(next, previous)
     };
     .(command: input.Left_watermark) {
-      let value = command.?{input.left_watermark};
+      let value = command.>select { input.Left_watermark.get };
       let next = engine.watermark(state, value, .t);
       report.watermark("left", value, state, next);
       recur replay(next, previous)
     };
     .(command: input.Right_watermark) {
-      let value = command.?{input.right_watermark};
+      let value = command.>select { input.Right_watermark.get };
       let next = engine.watermark(state, value, .f);
       report.watermark("right", value, state, next);
       recur replay(next, previous)
     };
     .(command: input.Checkpoint) {
-      report.checkpoint(command.?{input.checkpoint}, state);
+      report.checkpoint(command.>select { input.Checkpoint.get }, state);
       recur replay(state, previous)
     };
     .(_command: input.End) {

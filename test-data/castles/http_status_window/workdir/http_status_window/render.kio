@@ -1,18 +1,13 @@
 module http_status_window/render;
 
 import http_status_window/strings as s;
-import http_status_window/window(Entry, {bytes}, {family}, {method}, {ordinal}, {path}, {status});
+import http_status_window/window(Bytes, Entry, Family, Method, Ordinal, Path, Status);
+import macros/row_macros(macro select);
 import testapi(String);
 
 pub fn entry(entry: Entry) -> String {
-  let .({
-  , ordinal as id
-  , method as verb
-  , path as resource
-  , status as code
-  , bytes as size
-  , family as class
-  }) = entry;
+  let .(id, verb, resource, code, size, class) =
+    entry.>select { Ordinal.get; Method.get; Path.get; Status.get; Bytes.get; Family.get };
   s.cat7(
   , "  "
   , id

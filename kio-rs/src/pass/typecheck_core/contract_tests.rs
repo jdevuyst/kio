@@ -48,7 +48,7 @@ fn project(module: &Module<Lowered>) -> Module<Contract> {
                     Item::HostFn(def) => Item::HostFn(convert_host_fn(def)),
                     Item::HostType(def) => Item::HostType(convert_host_type(def)),
                     Item::Equiv(..) | Item::Macro(..) => return None,
-                    Item::Labels(_, witness) | Item::LabelForward(_, witness) => match *witness {},
+                    Item::Labels(_, witness) => match *witness {},
                     Item::Op(_, witness) | Item::VariadicOperator(_, witness) => match *witness {},
                     Item::RecGroup(_, witness) | Item::LiteralAlias(_, witness) => {
                         match *witness {}
@@ -85,11 +85,11 @@ fn bodyless_ordinary_pure_generic_uses_the_shared_nominal_and_header_checks() {
     let sources = [
         (
             "provider.kio",
-            "module provider; pub newtype Token : . { pub constructor mk; pub projector get; };",
+            "module provider; pub type { Token: . { pub mk; pub get; }; };",
         ),
         (
             "other.kio",
-            "module other; newtype Token : . { constructor mk; projector get; };",
+            "module other; type { Token: . { mk; get; }; };",
         ),
         (
             "consumer.kio",
@@ -133,7 +133,7 @@ fn bodyless_validation_preserves_private_nominal_and_kind_error_ownership() {
         let (ordinary, contract) = packages(&[
             (
                 "provider.kio",
-                "module provider; newtype Hidden : . { constructor mk; projector get; };",
+                "module provider; type { Hidden: . { mk; get; }; };",
             ),
             ("consumer.kio", consumer),
         ]);

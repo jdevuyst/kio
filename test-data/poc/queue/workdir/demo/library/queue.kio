@@ -81,11 +81,11 @@ fn reverse_list[A](xs: List[A]) -> List[A] {
 fn mkq[A](f: List[A], b: List[A]) -> Queue[A] {
   match(uncons(f)) {
     (
-    , .(_pair: A & List[A]) { Queue.mk_unchecked((f, b)) }
+    , .(_pair: A & List[A]) { Queue.mk((f, b)) }
     , .(_empty: .) {
         match(uncons(b)) {
           (
-          , .(_bpair: A & List[A]) { Queue.mk_unchecked((reverse_list(b), nil[A])) }
+          , .(_bpair: A & List[A]) { Queue.mk((reverse_list(b), nil[A])) }
           , .(_bempty: .) { empty[A] }
           )
         }
@@ -224,7 +224,7 @@ equiv fifo_second_out[A](a0: A, a1: A) {
         .(_h: A, rest: Queue[A]) { peek(rest) }
       }
     }
-  , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil[A])), nil[A])))
+  , dequeue(Queue.mk((cons(a0, cons(a1, nil[A])), nil[A])))
   );
   present(a1)
 }
@@ -237,24 +237,24 @@ equiv dequeue_head_is_oldest[A](a0: A, a1: A) {
         .(h: A, _rest: Queue[A]) { present(h) }
       }
     }
-  , dequeue(Queue.mk_unchecked((cons(a0, cons(a1, nil[A])), nil[A])))
+  , dequeue(Queue.mk((cons(a0, cons(a1, nil[A])), nil[A])))
   );
   present(a0)
 }
 
 equiv front_head_stable_under_enqueue[A](f0: A, f1: A, x: A) {
-  head(front(enqueue(x, Queue.mk_unchecked((cons(f0, cons(f1, nil[A])), nil[A])))));
+  head(front(enqueue(x, Queue.mk((cons(f0, cons(f1, nil[A])), nil[A])))));
   present(f0)
 }
 
 equiv reverse_exposes_newest[A](a0: A, a1: A) {
-  peek(reverse(Queue.mk_unchecked((cons(a0, nil[A]), cons(a1, nil[A])))));
+  peek(reverse(Queue.mk((cons(a0, nil[A]), cons(a1, nil[A])))));
   present(a1)
 }
 
 equiv reverse_involution[A](a0: A, a1: A) {
-  reverse(reverse(Queue.mk_unchecked((cons(a0, nil[A]), cons(a1, nil[A])))));
-  Queue.mk_unchecked((cons(a0, nil[A]), cons(a1, nil[A])))
+  reverse(reverse(Queue.mk((cons(a0, nil[A]), cons(a1, nil[A])))));
+  Queue.mk((cons(a0, nil[A]), cons(a1, nil[A])))
 }
 
 equiv op_snoc_is_enqueue[A](f0: A, x: A) {

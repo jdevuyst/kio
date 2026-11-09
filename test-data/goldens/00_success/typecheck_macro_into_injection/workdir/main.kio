@@ -2,9 +2,9 @@ module main;
 
 import macros/algebraic_macros(macro into);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
 // R-Widen-Sum: `A → A | B`. The source's single arm `A` injects
 // into the target's left arm. Slack on the right (target values

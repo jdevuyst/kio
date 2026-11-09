@@ -1,5 +1,5 @@
 module left;
 
-pub newtype Token : . { pub constructor make; pub projector read }
+pub type { Token: . { pub mk; pub get } }
 
-pub fn token() -> Token { Token.make(()) }
+pub fn token() -> Token { Token.mk(()) }

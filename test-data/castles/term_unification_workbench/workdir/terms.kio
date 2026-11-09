@@ -4,6 +4,7 @@ import list/core as lists;
 import list/list as traversal;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
@@ -11,25 +12,24 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-pub labels { variable: I32 };
+pub type { Variable: I32 }
 
-pub rec newtype Term : Variable | (I32 & lists.List[Term]) {
-  pub constructor wrap;
-  pub projector unwrap
-  }
+pub rec type { Term: Variable | (I32 & lists.List[Term]) { pub mk; pub get } }
 
-pub fn variable(id: I32) -> Term { Term.wrap({variable = id}.>widen_sum) }
+pub fn variable(id: I32) -> Term { Term.mk(Variable.mk(id).>widen_sum) }
 
 pub fn node(symbol: I32, arguments: lists.List[Term]) -> Term {
-  Term.wrap((symbol, arguments).>widen_sum)
+  Term.mk((symbol, arguments).>widen_sum)
 }
 
 pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil[_]) }
 
 rec(loop) {
   pub fn render(term: Term) -> String {
-    match(term.>Term.unwrap) {
-      .(v: Variable) { string_concat("v", fmt.int_to_string(v.?{variable})) };
+    match(term.>Term.get) {
+      .(v: Variable) {
+        string_concat("v", fmt.int_to_string(v.>select { Variable.get }))
+      };
       .(symbol: I32, arguments: lists.List[Term]) {
         string_concat(
         , "f"
@@ -59,9 +59,9 @@ rec(loop) {
 rec(loop) fn occurs_in(id: I32, pending: lists.List[Term]) -> Bool {
   match(lists.uncons(pending)) {
     .(first: Term, rest: lists.List[Term]) {
-      match(first.>Term.unwrap) {
+      match(first.>Term.get) {
         .(v: Variable) {
-          if(arith.eq_i32(id, v.?{variable})) { .t } else { recur occurs_in(id, rest) }
+          if(arith.eq_i32(id, v.>select { Variable.get })) { .t } else { recur occurs_in(id, rest) }
         };
         .(_symbol: I32, arguments: lists.List[Term]) {
           recur occurs_in(id, traversal.append(arguments, rest))
@@ -76,15 +76,17 @@ pub fn occurs(id: I32, term: Term) -> Bool { occurs_in(id, lists.singleton(term)
 
 rec(loop) {
   pub fn equal(left: Term, right: Term) -> Bool {
-    match(left.>Term.unwrap) {
+    match(left.>Term.get) {
       .(v: Variable) {
-        match(right.>Term.unwrap) {
-          .(w: Variable) { arith.eq_i32(v.?{variable}, w.?{variable}) };
+        match(right.>Term.get) {
+          .(w: Variable) {
+            arith.eq_i32(v.>select { Variable.get }, w.>select { Variable.get })
+          };
           .(_symbol: I32, _arguments: lists.List[Term]) { .f }
         }
       };
       .(symbol: I32, arguments: lists.List[Term]) {
-        match(right.>Term.unwrap) {
+        match(right.>Term.get) {
           .(_v: Variable) { .f };
           .(other: I32, other_arguments: lists.List[Term]) {
             if(arith.eq_i32(symbol, other)) {

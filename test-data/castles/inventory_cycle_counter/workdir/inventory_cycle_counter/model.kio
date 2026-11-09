@@ -2,12 +2,12 @@ module inventory_cycle_counter/model;
 
 import testapi(I32, String);
 
-pub labels Bin = { code: String, expected: I32, observed: I32 };
+pub type Bin = { Code: String; Expected: I32; Observed: I32 };
 
-pub fn bin_a() -> Bin { {code = "A", expected = 12, observed = 12} }
+pub fn bin_a() -> Bin { (Code.mk("A"), Expected.mk(12), Observed.mk(12)) }
 
-pub fn bin_b() -> Bin { {code = "B", expected = 8, observed = 6} }
+pub fn bin_b() -> Bin { (Code.mk("B"), Expected.mk(8), Observed.mk(6)) }
 
-pub fn bin_c() -> Bin { {code = "C", expected = 5, observed = 9} }
+pub fn bin_c() -> Bin { (Code.mk("C"), Expected.mk(5), Observed.mk(9)) }
 
-pub fn bin_d() -> Bin { {code = "D", expected = 14, observed = 13} }
+pub fn bin_d() -> Bin { (Code.mk("D"), Expected.mk(14), Observed.mk(13)) }

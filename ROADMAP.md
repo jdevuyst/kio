@@ -33,4 +33,4 @@ Rewriting the Kio compiler in Kio.
 
 ## Auto-generated catamorphism
 
-Compiler-generated structural folds over recursive `newtype`s — letting user code traverse data structures by describing the fold rather than the recursion.
+Compiler-generated structural folds over recursive nominal types — letting user code traverse data structures by describing the fold rather than the recursion.

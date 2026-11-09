@@ -2,6 +2,7 @@ module lru/cache;
 
 import lru/text as text;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
@@ -14,12 +15,12 @@ import testapi/array(
 );
 import testapi/iter(loop);
 
-pub labels Cache = {
-, keys: Array[I32]
-, values: Array[I32]
-, ages: Array[I32]
-, stats: Array[I32]
-, victims: Array[I32]
+pub type Cache = {
+  Keys: Array[I32];
+  Values: Array[I32];
+  Ages: Array[I32];
+  Stats: Array[I32];
+  Victims: Array[I32]
 };
 
 pub fn capacity() -> I32 { 3 }
@@ -36,15 +37,25 @@ fn clock_index() -> I32 { 3 }
 
 fn missing_key() -> I32 { sub_i32(0, 1) }
 
-fn keys_array(c: Cache) -> Array[I32] { c.?{keys} }
+fn keys_array(c: Cache) -> Array[I32] {
+  c.>select { Keys.get }
+}
 
-fn values_array(c: Cache) -> Array[I32] { c.?{values} }
+fn values_array(c: Cache) -> Array[I32] {
+  c.>select { Values.get }
+}
 
-fn ages_array(c: Cache) -> Array[I32] { c.?{ages} }
+fn ages_array(c: Cache) -> Array[I32] {
+  c.>select { Ages.get }
+}
 
-fn stats_array(c: Cache) -> Array[I32] { c.?{stats} }
+fn stats_array(c: Cache) -> Array[I32] {
+  c.>select { Stats.get }
+}
 
-fn victims_array(c: Cache) -> Array[I32] { c.?{victims} }
+fn victims_array(c: Cache) -> Array[I32] {
+  c.>select { Victims.get }
+}
 
 fn next(n: I32) -> I32 { add_i32(n, 1) }
 
@@ -189,13 +200,13 @@ pub fn new_cache() -> Cache {
   let .(age_slots: Array[I32]) = array_make_filled(capacity(), 0);
   let .(stat_slots: Array[I32]) = array_make_filled(4, 0);
   let victim_slots = array_make_empty[I32](());
-  {
-  , keys = key_slots
-  , values = value_slots
-  , ages = age_slots
-  , stats = stat_slots
-  , victims = victim_slots
-  }
+  (
+  , Keys.mk(key_slots)
+  , Values.mk(value_slots)
+  , Ages.mk(age_slots)
+  , Stats.mk(stat_slots)
+  , Victims.mk(victim_slots)
+  )
 }
 
 pub fn get(c: Cache, step: I32, key: I32) -> String {

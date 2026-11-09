@@ -2882,7 +2882,7 @@ v(1) {
       module api {
         host type Box[A];
         host type Unused[A];
-        newtype Token[A] : A { pub constructor make_token; projector read_token; };
+        type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
@@ -2910,7 +2910,7 @@ v(1) {
       module api {
         host type Box[A];
         host type Unused[A];
-        newtype Token[A] : A { pub constructor make_token; projector read_token; };
+        type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
@@ -3536,7 +3536,7 @@ v(2) {
         let malformed = r#"signature app v(2);
 v(1) {
   with { module api {
-    pub rec newtype Bad : (Bad -> .) { pub constructor mk; pub projector un; };
+    pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
 }

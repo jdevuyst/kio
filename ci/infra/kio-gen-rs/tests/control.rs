@@ -84,7 +84,13 @@ fn invoked_control_distribution_covers_semantic_catalog() {
             .find(|(path, _)| path == "workdir/kio_gen_control_blocks.kio")
             .unwrap()
             .1;
-        assert!(descriptors.contains("[Left][Right] (Left -> Right -> .) -> Left -> Right -> ."));
+        assert!(descriptors.contains("[Left][Right] ((Left -> Right -> .) & Left & Right) -> ."));
+        assert!(descriptors.contains(
+            "right_type: __Type__, arguments: __Checked_term__) -> __Checked_term__ & __Fill_ctx__"
+        ));
+        assert!(descriptors.contains(
+            "__term_let__(ct, __term_type__(ct, arguments), arguments, .(packet: __Checked_term__)"
+        ));
         for s in sequences(probe) {
             check_sequence(s, 0);
             witness(format!("receiver:{:?}", s.receiver));
@@ -303,7 +309,7 @@ fn invoked_type_and_recursion_probes_cover_grammar_cells() {
             } => {
                 assert!(*payload < 3);
                 assert_ne!(first, last);
-                assert!(source.contains("newtype Packed <Hidden> : Hidden & (Hidden -> String)"));
+                assert!(source.contains("type { Packed <Hidden>: Hidden & (Hidden -> String); }"));
                 assert!(source.contains("observe(seed)"));
                 assert!(source.contains("let selected = open(packed); selected"));
                 assert_eq!(source.contains("let .(<Hidden> packet)"), !explicit_open);
@@ -565,8 +571,8 @@ fn invoked_row_probes_cover_updates_bindings_and_preserved_fields() {
                 emit::GENERATED_CONTROL_MAIN_PROTOCOL
             }
         );
-        assert!(source.contains("let row = source().!{"));
-        assert!(source.contains(" = binding_source(row);"));
+        assert!(source.contains("let .(row: Row) = source().>with {"));
+        assert!(source.contains(" = binding_source(row).>select {"));
         seen.entry(format!("updates:{}", rows.updates.len()))
             .or_insert(seed);
         seen.entry(format!("bindings:{}", rows.bindings.len()))

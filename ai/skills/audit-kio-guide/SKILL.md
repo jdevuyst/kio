@@ -65,6 +65,15 @@ Sweep both authoring files and public guides for workaround language such as
 verdict: a backed idiom, a legitimate boundary, or a hidden compiler defect.
 Never turn a defect into an idiom; follow `AGENTS.md`'s bug and scope rules.
 
+Check macro-authoring examples and reusable library owners for unnecessary
+public same-module implementation adapters. Enumerate both `impl` and
+`impl(fills)` declarations, then inspect resolved clients before recommending
+privacy: independently reused ordinary helpers, cross-module implementation
+targets, outward runtime captures, and visibility-subject fixtures have
+separate contracts. A public macro alone does not require a public helper.
+Do not classify candidates solely by a `_checked` suffix or remove an exported
+API without the required behavioral authority.
+
 ## Reporting
 
 Lead with broken links or commands, then portability/split findings, learning

@@ -1,10 +1,11 @@
 module pid/calibration;
 
-import pid/model(Calibration, Offset, Scale, {offset}, {scale});
+import macros/row_macros(macro select);
+import pid/model(Calibration, Offset, Scale);
 import testapi(F64);
 import testapi/arith as arith;
 
 pub fn apply(raw: F64, calibration: Calibration) -> F64 {
-  let shifted = arith.sub_f64(raw, calibration.?{offset});
-  arith.mul_f64(shifted, calibration.?{scale})
+  let shifted = arith.sub_f64(raw, calibration.>select { Offset.get });
+  arith.mul_f64(shifted, calibration.>select { Scale.get })
 }

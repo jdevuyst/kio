@@ -2,18 +2,15 @@ module api;
 
 host type Box[T];
 
-pub labels Pair = { left: ., right: . };
+pub type Pair = { Left: .; Right: . };
 
-pub labels Choice = { first: . } | { second: . };
+pub type Choice = { First: . } | { Second: . };
 
 pub type Poly_id = [A] A -> A;
 
-pub newtype Wrapped_poly_id : [A] A -> A {
-  pub constructor mk_wrapped_poly_id;
-  pub projector un_wrapped_poly_id
-  }
+pub type { Wrapped_poly_id: [A] A -> A { pub mk; pub get } }
 
-newtype F[A] : A { constructor mk_f; projector un_f }
+type { F[A]: A { mk; get } }
 
 host fn pair_seed() -> Box[Pair];
 

@@ -14,12 +14,12 @@
 //!
 //! Token types (indices 0..):
 //!   0  `namespace`        — module path segments
-//!   1  `type`             — type definition names (`newtype`, type alias)
+//!   1  `type`             — type definition names (nominal entries and type aliases)
 //!   2  `typeParameter`    — type-parameter binders `[A]`
 //!   3  `parameter`        — value-parameter binders
 //!   4  `variable`         — let-bound and other value binders
 //!   5  `function`         — function definition names and call-site callees
-//!   6  `enumMember`       — label entry names (`foo:` inside `labels { … }`)
+//!   6  `enumMember`       — label spellings in record expressions and imports
 //!   7  `keyword`          — language keywords
 //!   8  `comment`          — line comments
 //!   9  `string`           — string literals
@@ -28,8 +28,7 @@
 //!  12  `macro`            — macro declarations, imports and call heads
 //!
 //! Token modifiers (bit indices 0..):
-//!   0  `declaration`      — the definition site of a binding; omitted from
-//!                           `foo: _` label-reuse references
+//!   0  `declaration`      — the definition site of a binding
 //!   1  `defaultLibrary`   — items supplied by the host
 //!   2  `readonly`         — every Kio binder is immutable (applied
 //!                           to parameters, let-bindings, and fn defs)
@@ -105,6 +104,7 @@ const TT_TYPE: u32 = 1;
 const TT_PARAMETER: u32 = 3;
 const TT_VARIABLE: u32 = 4;
 const TT_FUNCTION: u32 = 5;
+#[cfg(test)]
 const TT_ENUM_MEMBER: u32 = 6;
 const TT_KEYWORD: u32 = 7;
 const TT_COMMENT: u32 = 8;
@@ -192,11 +192,6 @@ fn classify_token_kind(kind: TokenKind) -> Option<(u32, u32)> {
 
         // Module path segments.
         TokenKind::EntityNameModule => Some((TT_NAMESPACE, 0)),
-
-        // Label entry names (Kio's analogue of enum members).
-        TokenKind::EntityNameLabel => Some((TT_ENUM_MEMBER, MOD_DECLARATION)),
-        TokenKind::EntityNameLabelReference => Some((TT_ENUM_MEMBER, 0)),
-        TokenKind::EntityNameQualifiedLabelReference => Some((TT_ENUM_MEMBER, 0)),
 
         // Parameter binders (value params and type params).
         TokenKind::VariableParameter => Some((TT_PARAMETER, MOD_DECLARATION | MOD_READONLY)),
@@ -489,40 +484,31 @@ mod tests {
     }
 
     #[test]
-    fn entity_name_label_classifies_as_enum_member_with_declaration() {
-        let (ty, mods) = classify_token_kind(TokenKind::EntityNameLabel).unwrap();
-        assert_eq!(ty, TT_ENUM_MEMBER);
-        assert_ne!(mods & MOD_DECLARATION, 0);
-    }
-
-    #[test]
-    fn entity_name_label_reference_has_no_declaration_modifier() {
-        let (ty, mods) = classify_token_kind(TokenKind::EntityNameLabelReference).unwrap();
-        assert_eq!(ty, TT_ENUM_MEMBER);
-        assert_eq!(mods & MOD_DECLARATION, 0);
-    }
-
-    #[test]
-    fn label_reuse_marker_is_a_reference_semantic_token() {
-        let source = "module x; labels { field: . }; labels Row = { field: _, other: . };";
+    fn compact_nominals_and_rhs_references_use_ordinary_type_tokens() {
+        let source = "module x; type { Field: .; }; type Row = Field | { Other: .; };";
         let tokens = semantic_tokens(source).expect("semantic tokens");
-        let labels: Vec<_> = tokens
-            .data
-            .iter()
-            .filter(|token| token.token_type == TT_ENUM_MEMBER)
-            .collect();
-        assert_eq!(labels.len(), 3);
-        assert_ne!(labels[0].token_modifiers_bitset & MOD_DECLARATION, 0);
-        assert_eq!(labels[1].token_modifiers_bitset & MOD_DECLARATION, 0);
-        assert_ne!(labels[2].token_modifiers_bitset & MOD_DECLARATION, 0);
+        assert_eq!(
+            tokens
+                .data
+                .iter()
+                .filter(|token| token.token_type == TT_TYPE)
+                .count(),
+            4,
+        );
+        assert!(
+            tokens
+                .data
+                .iter()
+                .all(|token| token.token_type != TT_ENUM_MEMBER)
+        );
     }
 
     #[test]
-    fn selective_label_import_is_a_reference_semantic_token() {
-        let source = "module x; import origin({field});";
+    fn selective_nominal_import_is_an_ordinary_reference_semantic_token() {
+        let source = "module x; import origin(Field);";
         let tokens = semantic_tokens(source).expect("semantic tokens");
-        let field = semantic_token_at(source, &tokens.data, "field").expect("field token");
-        assert_eq!(field.token_type, TT_ENUM_MEMBER);
+        let field = semantic_token_at(source, &tokens.data, "Field").expect("nominal token");
+        assert_eq!(field.token_type, TT_VARIABLE);
         assert_eq!(field.token_modifiers_bitset & MOD_DECLARATION, 0);
     }
 

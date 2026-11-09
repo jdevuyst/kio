@@ -1,3 +1,0 @@
-module feature/store;
-
-pub(feature) newtype Token : . { constructor make; pub projector get }

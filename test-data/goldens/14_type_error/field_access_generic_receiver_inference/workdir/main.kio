@@ -1,9 +1,13 @@
 module main;
 
+import macros/row_macros(macro select);
+
 host type String role(str);
 
 host fn make[A]() -> A;
 
-labels { item[A]: A };
+type { Item[A]: A { mk; get } }
 
-fn read() -> String { Item.mk(make()).?{item} }
+fn read() -> String {
+  Item.mk(make()).>select { Item.get[String] }
+}

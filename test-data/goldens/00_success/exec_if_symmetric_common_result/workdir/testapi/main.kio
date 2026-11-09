@@ -5,30 +5,30 @@ import testapi(Bool, I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-newtype Const[A] : I32 { constructor mk_const; projector un_const }
+type { Const[A]: I32 { mk; get } }
 
 fn generic_first(condition: Bool) -> I32 {
   let selected =
     if(condition) {
       print("if generic-first\n");
-      Const.mk_const(11)
+      Const.mk(11)
     } else {
       print("if concrete-later\n");
-      Const.mk_const[I32](12)
+      Const.mk[I32](12)
     };
-  Const.un_const(selected)
+  Const.get(selected)
 }
 
 fn concrete_first(condition: Bool) -> I32 {
   let selected =
     if(condition) {
       print("if concrete-first\n");
-      Const.mk_const[I32](21)
+      Const.mk[I32](21)
     } else {
       print("if generic-later\n");
-      Const.mk_const(22)
+      Const.mk(22)
     };
-  Const.un_const(selected)
+  Const.get(selected)
 }
 
 fn print_line(value: I32) { print(int_to_string(value)); print("\n") }

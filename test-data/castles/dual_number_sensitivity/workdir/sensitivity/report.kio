@@ -1,5 +1,6 @@
 module sensitivity/report;
 
+import macros/row_macros(macro select);
 import sensitivity/jet as jet;
 import testapi(F64, String);
 import testapi/fmt as fmt;
@@ -16,17 +17,17 @@ pub fn model(name: String, run: (jet.Jet & jet.Jet) -> jet.Jet, x: F64, y: F64, 
   io.print(" at ");
   pair(x, y);
   io.print("\n  value=");
-  number(result.?{jet.value});
+  number(result.>select { jet.Value.get });
   io.print(" gradient=");
-  pair(result.?{jet.dx}, result.?{jet.dy});
+  pair(result.>select { jet.Dx.get }, result.>select { jet.Dy.get });
   io.print("\n  hessian=(");
-  number(result.?{jet.dxx});
+  number(result.>select { jet.Dxx.get });
   io.print(", ");
-  number(result.?{jet.dxy});
+  number(result.>select { jet.Dxy.get });
   io.print("; ");
-  number(result.?{jet.dxy});
+  number(result.>select { jet.Dxy.get });
   io.print(", ");
-  number(result.?{jet.dyy});
+  number(result.>select { jet.Dyy.get });
   io.print(")\n  direction=");
   pair(vx, vy);
   io.print(" slope=");

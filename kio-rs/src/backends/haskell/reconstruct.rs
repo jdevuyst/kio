@@ -445,15 +445,15 @@ mod tests {
             (
                 "owner.kio",
                 "module owner; \
-                 pub newtype Token : . { constructor mk_token; projector un_token; }; \
-                 pub newtype Field[A] : [T] T -> (A & Token) { \
-                     constructor mk_field; projector un_field; \
-                 };",
+                 pub type { Token: . { mk; get; }; }; \
+                 pub type { Field[A]: [T] T -> (A & Token) { \
+                     mk; get; \
+                 }; };",
             ),
             (
                 "actual.kio",
                 "module actual; \
-                 pub newtype Token : (. & .) { constructor mk_token; projector un_token; };",
+                 pub type { Token: (. & .) { mk; get; }; };",
             ),
             (
                 "consumer.kio",
@@ -487,16 +487,16 @@ mod tests {
             (
                 "owner.kio",
                 "module owner; \
-                 pub newtype Box[A] : A { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: A { \
+                     pub mk; pub get; \
+                 }; };",
             ),
             (
                 "decoy.kio",
                 "module decoy; \
-                 pub newtype Box[A] : . { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: . { \
+                     pub mk; pub get; \
+                 }; };",
             ),
             (
                 "consumer.kio",
@@ -504,19 +504,19 @@ mod tests {
                  import owner as selected; \
                  import decoy as other; \
                  fn qualified_wrap[A](value: A) -> selected.Box[A] { \
-                     selected.Box.mk_box[A]( value) \
+                     selected.Box.mk[A]( value) \
                  } \
                  fn qualified_unwrap[A](value: selected.Box[A]) -> A { \
-                     selected.Box.un_box[A]( value) \
+                     selected.Box.get[A]( value) \
                  } \
                  fn preserve_decoy[A](value: other.Box[A]) -> other.Box[A] { value }",
             ),
             (
                 "local.kio",
                 "module local; \
-                 newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-                 fn local_wrap[A](value: A) -> Box[A] { Box.mk_box[A]( value) } \
-                 fn local_unwrap[A](value: Box[A]) -> A { Box.un_box[A]( value) }",
+                 type { Box[A]: A { mk; get; }; }; \
+                 fn local_wrap[A](value: A) -> Box[A] { Box.mk[A]( value) } \
+                 fn local_unwrap[A](value: Box[A]) -> A { Box.get[A]( value) }",
             ),
         ]);
         let resolution = NewtypeResolution::build(&package);
@@ -548,16 +548,16 @@ mod tests {
             (
                 "actual.kio",
                 "module actual; \
-                 pub newtype Box[A] : . { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: . { \
+                     pub mk; pub get; \
+                 }; };",
             ),
             (
                 "selected.kio",
                 "module selected; \
-                 pub newtype Box[A] : A { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: A { \
+                     pub mk; pub get; \
+                 }; };",
             ),
             (
                 "consumer.kio",
@@ -565,7 +565,7 @@ mod tests {
                  import selected as actual; \
                  import actual as selected; \
                  fn wrap[A](value: A) -> actual.Box[A] { \
-                     actual.Box.mk_box[A]( value) \
+                     actual.Box.mk[A]( value) \
                  }",
             ),
         ]);
@@ -584,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn qualified_label_member_keeps_declaring_owner_despite_alias_collision() {
+    fn qualified_nominal_projection_keeps_declaring_owner_despite_alias_collision() {
         let control = include_str!("../../../../test-data/poc/macros/workdir/control.kio")
             .replace("host type Bool role(bool);", "import testapi(Bool);");
         let package = routed_package(&[
@@ -592,25 +592,22 @@ mod tests {
             ("testapi.kio", "module testapi; host type Bool role(bool);"),
             (
                 "selected.kio",
-                "module selected; import testapi(Bool); pub labels Card = { flag: Bool };",
+                "module selected; import testapi(Bool); pub type Card = { Flag: Bool; };",
             ),
-            ("decoy.kio", "module decoy; pub labels Card = { flag: . };"),
+            ("decoy.kio", "module decoy; pub type Card = { Flag: .; };"),
             (
                 "consumer.kio",
                 "module consumer; import control(macro if); import testapi(Bool); import decoy as selected; \
                  import selected as chosen; fn choose(card: chosen.Card) -> Bool { \
-                 if (card.?{chosen.flag}) { .t } else { .f } }",
+                 let payload = chosen.Flag.get(card); if (payload) { .t } else { .f } }",
             ),
         ]);
         let definition = function(&package, "consumer", "choose");
-        let Expr::Let { body, .. } = &definition.body else {
-            panic!("field access should bind its receiver");
-        };
-        let Expr::Let { value, .. } = body.as_ref() else {
-            panic!("field access should bind its projected payload");
+        let Expr::Let { value, .. } = &definition.body else {
+            panic!("the conditional input retains its projected payload binding");
         };
         let Expr::LowQualifiedNewtypeMember { module_path, .. } = value.as_ref() else {
-            panic!("field access should project through the generated label newtype");
+            panic!("the payload is projected through its qualified nominal owner");
         };
         assert_eq!(module_path, "selected");
 
@@ -618,7 +615,7 @@ mod tests {
         let recon = TypeRecon::new(&definition.sig, &package, &resolution, "consumer");
         let reconstructed = recon
             .value_type(value)
-            .expect("reconstruct qualified label projection");
+            .expect("reconstruct qualified nominal projection");
         assert_eq!(canonical_type_string(&reconstructed), "testapi.Bool");
     }
 

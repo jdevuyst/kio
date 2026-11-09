@@ -1,9 +1,10 @@
 module tree;
 
 import chain as chain;
-import chain(Evaluation, Matrix, {cols}, {cost}, {first}, {last}, {leaves}, {rows});
+import chain(Cols, Cost, Evaluation, First, Last, Leaves, Matrix, Rows);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as math;
@@ -12,17 +13,19 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub rec labels Tree = { leaf: I32 } | { join: Tree & Tree };
+pub rec type Tree = { Leaf: I32 } | { Join: Tree & Tree };
 
-pub fn leaf(index: I32) -> Tree { widen_sum({leaf = index}) }
+pub fn leaf(index: I32) -> Tree { widen_sum(Leaf.mk(index)) }
 
-pub fn join(left: Tree, right: Tree) -> Tree { widen_sum({join = (left, right)}) }
+pub fn join(left: Tree, right: Tree) -> Tree { widen_sum(Join.mk((left, right))) }
 
 pub rec(loop) fn render(tree: Tree) -> String {
   match(tree) {
-    .(node: Leaf) { text.string_concat("A", fmt.int_to_string(math.add_i32(node.?{leaf}, 1))) };
+    .(node: Leaf) {
+      text.string_concat("A", fmt.int_to_string(math.add_i32(node.>select { Leaf.get }, 1)))
+    };
     .(node: Join) {
-      let .(left: Tree, right: Tree) = node.?{join};
+      let .(left: Tree, right: Tree) = node.>select { Join.get };
       let left_text = recur(cont) render(left);
       let right_text = recur(cont) render(right);
       text.string_concat(
@@ -34,17 +37,23 @@ pub rec(loop) fn render(tree: Tree) -> String {
 }
 
 fn combine(left: Evaluation, right: Evaluation) -> Evaluation | String {
-  if(chain.equal(left.?{cols}, right.?{rows})) {
-    if(chain.equal(math.add_i32(left.?{last}, 1), right.?{first})) {
-      let scalar_cost = math.mul_i32(math.mul_i32(left.?{rows}, left.?{cols}), right.?{cols});
-      widen_sum({
-      , rows = left.?{rows}
-      , cols = right.?{cols}
-      , cost = math.add_i32(math.add_i32(left.?{cost}, right.?{cost}), scalar_cost)
-      , first = left.?{first}
-      , last = right.?{last}
-      , leaves = math.add_i32(left.?{leaves}, right.?{leaves})
-      })
+  if(chain.equal(left.>select { Cols.get }, right.>select { Rows.get })) {
+    if(chain.equal(math.add_i32(left.>select { Last.get }, 1), right.>select { First.get })) {
+      let scalar_cost = math.mul_i32(
+      , math.mul_i32(left.>select { Rows.get }, left.>select { Cols.get })
+      , right.>select { Cols.get }
+      );
+      widen_sum((
+      , Rows.mk(left.>select { Rows.get })
+      , Cols.mk(right.>select { Cols.get })
+      , Cost.mk(math.add_i32(
+        , math.add_i32(left.>select { Cost.get }, right.>select { Cost.get })
+        , scalar_cost
+        ))
+      , First.mk(left.>select { First.get })
+      , Last.mk(right.>select { Last.get })
+      , Leaves.mk(math.add_i32(left.>select { Leaves.get }, right.>select { Leaves.get }))
+      ))
     } else {
       widen_sum("leaf order is not consecutive"[String])
     }
@@ -56,19 +65,19 @@ fn combine(left: Evaluation, right: Evaluation) -> Evaluation | String {
 pub rec(loop) fn replay(tree: Tree, matrices: Array[Matrix]) -> Evaluation | String {
   match(tree) {
     .(node: Leaf) {
-      let index = node.?{leaf};
+      let index = node.>select { Leaf.get };
       let matrix = arrays.array_get(matrices, index);
-      widen_sum({
-      , rows = matrix.?{rows}
-      , cols = matrix.?{cols}
-      , cost = 0
-      , first = index
-      , last = index
-      , leaves = 1
-      })
+      widen_sum((
+      , Rows.mk(matrix.>select { Rows.get })
+      , Cols.mk(matrix.>select { Cols.get })
+      , Cost.mk(0)
+      , First.mk(index)
+      , Last.mk(index)
+      , Leaves.mk(1)
+      ))
     };
     .(node: Join) {
-      let .(left: Tree, right: Tree) = node.?{join};
+      let .(left: Tree, right: Tree) = node.>select { Join.get };
       match(recur(cont) replay(left, matrices)) {
         .(left_result: Evaluation) {
           match(recur(cont) replay(right, matrices)) {

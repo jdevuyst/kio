@@ -1900,18 +1900,8 @@ mod tests {
     fn hello_world_package_file_lexes() {
         let src = r#"package hello;
 
-env {
-  type String role(str);
-  fn print(p0: String) -> .;
-}
-
-bridge main {
-  type String = String;
-  fn print(p0: String) -> . = print;
-}
-
-export {
-  fn main() -> . = main.main;
+bridge {
+  main
 }
 "#;
         let toks = lex(src).unwrap();
@@ -1925,10 +1915,6 @@ export {
             toks.iter()
                 .any(|t| t.kind == TokenKind::Ident("bridge".into()))
         );
-        assert!(
-            toks.iter()
-                .any(|t| t.kind == TokenKind::Ident("role".into()))
-        );
         assert!(!toks.iter().any(|t| matches!(t.kind, TokenKind::StrLit(_))));
     }
 
@@ -1936,12 +1922,10 @@ export {
     fn hello_world_module_file_lexes() {
         let src = r#"module main;
 
-env {
-  type String role(str);
-  fn print(p0: String) -> .;
-}
+host type String role(str);
+host fn print(p0: String);
 
-pub fn main() -> . {
+pub fn main() {
   print("Hello, world!")
 }
 "#;

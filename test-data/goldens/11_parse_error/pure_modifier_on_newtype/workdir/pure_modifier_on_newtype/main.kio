@@ -2,4 +2,4 @@ module pure_modifier_on_newtype/main;
 
 import pure_modifier_on_newtype(String);
 
-pure newtype Bad : String { constructor mk_bad; projector un_bad; };
+pure type { Bad: String { mk; get; }; };

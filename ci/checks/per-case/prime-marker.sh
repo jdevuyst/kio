@@ -19,8 +19,8 @@
 # carries an IS_KIO_PRIME marker iff every regular-module `.kio` file
 # under `workdir/` parses against the formal Kio' grammar. Package
 # files are package-boundary syntax, not a regular-module Kio' source
-# file. Root `module <name>;` files with `env { ... }` are
-# regular-module Kio' files and are checked here.
+# file. Root `module <name>;` files containing host declarations are
+# regular modules and are checked here.
 #
 # This check is impl-independent — it operates on the case source
 # via KIO_PRIME_CHECK_BIN, not on KIO_BIN's output — so the

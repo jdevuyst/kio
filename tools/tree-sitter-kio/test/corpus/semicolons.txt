@@ -94,9 +94,9 @@ module source; macro make: . { ; captures(helper); impl run; }
       (bracket_rbrace))))
 
 ================================================================================
-structural semicolons_newtype_runs
+structural semicolons_nominal_runs
 ================================================================================
-module source; newtype Box: . { ;; constructor box;; projector unbox;; }
+module source; type { Box: . { ;; mk;; get;; }; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -105,31 +105,34 @@ module source; newtype Box: . { ;; constructor box;; projector unbox;; }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (separator_dot)
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (separator_semicolon)
-      (separator_semicolon)
-      (newtype_member
-        (keyword_constructor)
-        (entity_name_function))
-      (separator_semicolon)
-      (separator_semicolon)
-      (newtype_member
-        (keyword_projector)
-        (entity_name_function))
-      (separator_semicolon)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (nominal_members
+          (bracket_lbrace)
+          (separator_semicolon)
+          (separator_semicolon)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (separator_semicolon)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (separator_semicolon)
+          (bracket_rbrace)))
       (separator_semicolon)
       (bracket_rbrace))))
 
 ================================================================================
-structural semicolons_newtype_empty_runs
+structural semicolons_nominal_empty_runs
 ================================================================================
-module source; newtype Box: . { ;; }
+module source; type { Box: . { ;; }; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -138,14 +141,21 @@ module source; newtype Box: . { ;; }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (separator_dot)
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (separator_semicolon)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (nominal_members
+          (bracket_lbrace)
+          (separator_semicolon)
+          (separator_semicolon)
+          (nominal_member
+            (MISSING entity_name_function))
+          (bracket_rbrace)))
       (separator_semicolon)
       (bracket_rbrace))))
 
@@ -376,7 +386,7 @@ module source; rec(loop) { ; fn first() { () }; fn second() { () }; };
 ================================================================================
 structural semicolons_rec_type_edges
 ================================================================================
-module source; rec { ; type A = .; newtype B: . { ; constructor b; }; };
+module source; rec { ; type A = .; type { B: . { ; mk; }; }; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -395,17 +405,21 @@ module source; rec { ; type A = .; newtype B: . { ; constructor b; }; };
       (operator_builtin)
       (separator_dot))
     (separator_semicolon)
-    (newtype_decl_head
-      (keyword_newtype)
-      (entity_name_type)
-      (operator_builtin)
-      (separator_dot)
-      (newtype_body
+    (nominal_decl_head
+      (keyword_type)
+      (nominal_group
         (bracket_lbrace)
-        (separator_semicolon)
-        (newtype_member
-          (keyword_constructor)
-          (entity_name_function))
+        (nominal_entry
+          (entity_name_type)
+          (operator_builtin)
+          (separator_dot)
+          (nominal_members
+            (bracket_lbrace)
+            (separator_semicolon)
+            (nominal_member
+              (entity_name_function))
+            (separator_semicolon)
+            (bracket_rbrace)))
         (separator_semicolon)
         (bracket_rbrace)))
     (separator_semicolon)
@@ -605,7 +619,7 @@ signature app v(1); v(1) { with { module imports { import helper as h }; module 
 ================================================================================
 structural semicolons_signature_nested_last_declarations
 ================================================================================
-signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub newtype Box: . {pub constructor box; pub projector unbox} } } } }
+signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub type { Box: . { pub mk; pub get }; } } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -650,23 +664,26 @@ signature app v(1); v(1) { breaking { add { module api { host type T; pub type A
                 (operator_builtin)
                 (separator_dot))
               (separator_semicolon)
-              (newtype_decl_head
+              (nominal_decl_head
                 (keyword_pub)
-                (keyword_newtype)
-                (entity_name_type)
-                (operator_builtin)
-                (separator_dot)
-                (newtype_body
+                (keyword_type)
+                (nominal_group
                   (bracket_lbrace)
-                  (newtype_member
-                    (keyword_pub)
-                    (keyword_constructor)
-                    (entity_name_function))
+                  (nominal_entry
+                    (entity_name_type)
+                    (operator_builtin)
+                    (separator_dot)
+                    (nominal_members
+                      (bracket_lbrace)
+                      (nominal_member
+                        (keyword_pub)
+                        (entity_name_function))
+                      (separator_semicolon)
+                      (nominal_member
+                        (keyword_pub)
+                        (entity_name_function))
+                      (bracket_rbrace)))
                   (separator_semicolon)
-                  (newtype_member
-                    (keyword_pub)
-                    (keyword_projector)
-                    (entity_name_function))
                   (bracket_rbrace)))
               (bracket_rbrace)))
           (bracket_rbrace))
@@ -674,10 +691,10 @@ signature app v(1); v(1) { breaking { add { module api { host type T; pub type A
       (bracket_rbrace))))
 
 ================================================================================
-structural semicolons_outer_same_line_newtype
+structural semicolons_outer_same_line_nominal
 ================================================================================
 module source;
-newtype Box: . { constructor box } fn after() { () }
+type { Box: . { mk }; } fn after() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -686,16 +703,20 @@ newtype Box: . { constructor box } fn after() { () }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (separator_dot)
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (newtype_member
-        (keyword_constructor)
-        (entity_name_function))
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (bracket_rbrace)))
+      (separator_semicolon)
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -783,9 +804,9 @@ module source; host type Text { owned };
       (separator_semicolon))))
 
 ================================================================================
-structural semicolons_nonbraced_labels_terminator
+structural semicolons_compact_nominal_terminator
 ================================================================================
-module source; labels L = {left: .} | {right: .};
+module source; type L = { Left: .; } | { Right: .; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -794,25 +815,27 @@ module source; labels L = {left: .} | {right: .};
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (labels_decl_head
-    (keyword_labels)
+  (type_alias_decl_head
+    (keyword_type)
     (entity_name_type)
     (operator_builtin)
-    (labels_arms
-      (labels_block
+    (nominal_type_product
+      (nominal_group
         (bracket_lbrace)
-        (label_entry
-          (entity_name_label)
+        (nominal_entry
+          (entity_name_type)
           (operator_builtin)
           (separator_dot))
+        (separator_semicolon)
         (bracket_rbrace))
       (operator_builtin)
-      (labels_block
+      (nominal_group
         (bracket_lbrace)
-        (label_entry
-          (entity_name_label)
+        (nominal_entry
+          (entity_name_type)
           (operator_builtin)
           (separator_dot))
+        (separator_semicolon)
         (bracket_rbrace)))
     (separator_semicolon)))
 
@@ -898,13 +921,14 @@ module source; op _ + _ { ;; impl add }
     (slot)
     (callable_impl_block
       (bracket_lbrace)
+      (separator_semicolon)
       (ERROR
         (separator_semicolon))
-      (separator_semicolon)
       (keyword_declaration)
       (callable_path
         (entity_name_function))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural semicolons_varop_missing
@@ -963,13 +987,14 @@ module source; varop [+ +] { foldl join empty;; finalize done }
         (entity_name_function))
       (callable_path
         (entity_name_function))
+      (separator_semicolon)
       (ERROR
         (separator_semicolon))
-      (separator_semicolon)
       (keyword_declaration)
       (callable_path
         (entity_name_function))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural semicolons_macro_missing
@@ -995,9 +1020,10 @@ module source; macro make: . { captures(helper) impl run }
       (plain_value_path
         (identifier))
       (bracket_rparen))
-    (entity_name_label)
-    (entity_name_label))
+    (identifier)
+    (identifier))
   (bracket_rbrace))
+
 
 ================================================================================
 structural semicolons_macro_repeated
@@ -1024,14 +1050,15 @@ module source; macro make: . { captures(helper);; impl run }
         (plain_value_path
           (identifier))
         (bracket_rparen))
+      (separator_semicolon)
       (ERROR
         (separator_semicolon))
-      (separator_semicolon)
       (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (entity_name_function)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural semicolons_bridge_semicolon_only
@@ -1187,7 +1214,7 @@ module source; rec(loop) { fn first() { () };; fn second() { () } }
 ================================================================================
 structural semicolons_rec_type_missing
 ================================================================================
-module source; rec { newtype A: . {constructor a} newtype B: . {constructor b} }
+module source; rec { type { A: . { mk }; } type { B: . { mk }; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1196,31 +1223,38 @@ module source; rec { newtype A: . {constructor a} newtype B: . {constructor b} }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (identifier)
-  (ERROR
-    (bracket_lbrace)
-    (newtype_decl_head
-      (keyword_newtype)
-      (entity_name_type)
-      (operator_builtin)
-      (separator_dot)
-      (newtype_body
-        (bracket_lbrace)
-        (newtype_member
-          (keyword_constructor)
-          (entity_name_function))
-        (bracket_rbrace)))
-    (entity_name_label))
-  (identifier)
-  (operator_builtin)
-  (separator_dot)
-  (body_block
-    (expression_block
+  (nominal_decl_head
+    (keyword_rec)
+    (ERROR
       (bracket_lbrace)
-      (expression_path
-        (identifier))
-      (ERROR
-        (identifier))
+      (nominal_decl_head
+        (keyword_type)
+        (nominal_group
+          (bracket_lbrace)
+          (nominal_entry
+            (entity_name_type)
+            (operator_builtin)
+            (separator_dot)
+            (nominal_members
+              (bracket_lbrace)
+              (nominal_member
+                (entity_name_function))
+              (bracket_rbrace)))
+          (separator_semicolon)
+          (bracket_rbrace))))
+    (keyword_type)
+    (nominal_group
+      (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (bracket_rbrace)))
+      (separator_semicolon)
       (bracket_rbrace)))
   (bracket_rbrace))
 
@@ -1244,15 +1278,16 @@ module source; rec { type A = .;; type B = . }
       (entity_name_type)
       (operator_builtin)
       (separator_dot))
+    (separator_semicolon)
     (ERROR
       (separator_semicolon))
-    (separator_semicolon)
     (type_alias_decl_head
       (keyword_type)
       (entity_name_type)
       (operator_builtin)
       (separator_dot))
     (bracket_rbrace)))
+
 
 ================================================================================
 structural semicolons_build_missing
@@ -1277,14 +1312,15 @@ package source; build { docs { md "guide.md" } target rust { out "out" } }
           (string_literal))
         (bracket_rbrace))
       (ERROR
-        (entity_name_label)
-        (entity_name_label)
+        (identifier)
+        (identifier)
         (bracket_lbrace)
-        (entity_name_label)
+        (identifier)
         (string_literal))
       (bracket_rbrace)))
   (ERROR
     (bracket_rbrace)))
+
 
 ================================================================================
 structural semicolons_docs_missing
@@ -1308,10 +1344,11 @@ package source; build { docs { md "guide.md" html "guide.html" } }
           (keyword_declaration)
           (string_literal)
           (ERROR
-            (entity_name_label))
+            (identifier))
           (string_literal))
         (bracket_rbrace))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural semicolons_source_missing
@@ -1331,9 +1368,10 @@ dependency helper; source { git "https://example.com/helper" ref "main" }
         (keyword_declaration)
         (string_literal)
         (ERROR
-          (entity_name_label))
+          (identifier))
         (string_literal))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural semicolons_signature_sections_missing
@@ -1373,17 +1411,24 @@ signature app v(1); v(1) { with { module api { host type T } } breaking { remove
               (keyword_type)
               (entity_name_type)))
           (bracket_rbrace)))
-      (bracket_rbrace))
-    (entity_name_label)
-    (bracket_lbrace)
-    (entity_name_label)
-    (bracket_lbrace)
-    (entity_name_label)
-    (separator_dot)
-    (entity_name_label))
-  (bracket_rbrace)
-  (bracket_rbrace)
+      (bracket_rbrace)))
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        (call_callee
+          (entity_name_function))
+        (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier)
+            (separator_dot)
+            (identifier))
+          (bracket_rbrace)))
+      (bracket_rbrace)))
   (bracket_rbrace))
+
 
 ================================================================================
 structural semicolons_signature_sections_repeated
@@ -1424,9 +1469,9 @@ signature app v(1); v(1) { with { module api { host type T } };; breaking { remo
                 (entity_name_type)))
             (bracket_rbrace)))
         (bracket_rbrace))
+      (separator_semicolon)
       (ERROR
         (separator_semicolon))
-      (separator_semicolon)
       (signature_breaking_block
         (keyword_breaking)
         (bracket_lbrace)
@@ -1442,10 +1487,11 @@ signature app v(1); v(1) { with { module api { host type T } };; breaking { remo
         (bracket_rbrace))
       (bracket_rbrace))))
 
+
 ================================================================================
 structural semicolons_signature_module_missing
 ================================================================================
-signature app v(1); v(1) { breaking { add { module api { newtype A: . {constructor a} newtype B: . {constructor b} } } } }
+signature app v(1); v(1) { breaking { add { module api { type { A: . { mk }; } type { B: . { mk }; } } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1477,28 +1523,35 @@ signature app v(1); v(1) { breaking { add { module api { newtype A: . {construct
               (entity_name_module))
             (variant_block
               (bracket_lbrace)
-              (newtype_decl_head
-                (keyword_newtype)
-                (entity_name_type)
-                (operator_builtin)
-                (separator_dot)
-                (newtype_body
+              (nominal_decl_head
+                (keyword_type)
+                (nominal_group
                   (bracket_lbrace)
-                  (newtype_member
-                    (keyword_constructor)
-                    (entity_name_function))
+                  (nominal_entry
+                    (entity_name_type)
+                    (operator_builtin)
+                    (separator_dot)
+                    (nominal_members
+                      (bracket_lbrace)
+                      (nominal_member
+                        (entity_name_function))
+                      (bracket_rbrace)))
+                  (separator_semicolon)
                   (bracket_rbrace)))
               (ERROR
-                (entity_name_label)
+                (identifier)
+                (bracket_lbrace)
                 (uppercase_identifier)
                 (bracket_lbrace)
-                (entity_name_label)
-                (entity_name_label))
+                (entity_name_function))
               (bracket_rbrace)))
+          (separator_semicolon)
           (bracket_rbrace))
         (bracket_rbrace))
       (bracket_rbrace)))
+  (bracket_rbrace)
   (bracket_rbrace))
+
 
 ================================================================================
 structural semicolons_signature_import_after_declaration
@@ -1540,9 +1593,9 @@ signature app v(1); v(1) { with { module api { host type T; import helper as h }
             (separator_semicolon)
             (ERROR
               (identifier)
-              (entity_name_label)
-              (entity_name_label)
-              (entity_name_label))
+              (identifier)
+              (keyword_as)
+              (identifier))
             (bracket_rbrace)))
         (bracket_rbrace))
       (separator_semicolon)

@@ -1,6 +1,6 @@
 module main;
 
-newtype Token : . { constructor mk; projector get }
+type { Token: . { mk; get } }
 
 fn generic[Token](value: Token) -> Token { value }
 

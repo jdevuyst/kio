@@ -116,7 +116,7 @@ The hardest signature to catch mechanically, and the most corrosive: a `.kio` so
 - **Monomorphization scaffolding.** A polymorphic newtype split into several monomorphic newtypes, or a generic function specialized to one concrete type, where the natural authoring would be a single polymorphic declaration — the "splitting one polymorphic newtype into several monomorphic ones" / "monomorphising on a single type to skip codegen paths" reshape named in the rule. Grep for clusters of near-duplicate monomorphic declarations:
 
   ```bash
-  grep -rnE 'newtype +_?[A-Z][A-Za-z0-9]*(I32|I64|F64|String|Bool)\b' test-data/
+  grep -rnE '_?[A-Z][A-Za-z0-9]*(I32|I64|F64|String|Bool)\s*:' test-data/
   ```
 
   A case with `WrapI32` / `WrapString` / `WrapBool` siblings where a `Wrap[A]` would read naturally is a candidate finding.
@@ -464,9 +464,9 @@ A library POC missing the ready-to-drop-in claim, or a worked-example POC missin
 
 ### POC 2. Module `///` documentation
 
-Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `literal`, `newtype`, `labels`, `op`, `varop`, and `macro`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
+Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `literal`, `op`, `varop`, and `macro`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
 
-Private helpers do not need `///`. If an item is not worth documenting for copyable library users, it should not be `pub` unless another module genuinely needs it across the module boundary. Public constructors and projectors inside a documented `newtype` are covered by the `newtype` docs unless they need extra semantic explanation.
+Private helpers do not need `///`. If an item is not worth documenting for copyable library users, it should not be `pub` unless another module genuinely needs it across the module boundary. Public constructors and projectors inside a documented nominal type are covered by the type docs unless they need extra semantic explanation.
 
 Deduplicate symlinked shared files by canonical realpath before reporting, so one shared module produces one finding:
 
@@ -498,7 +498,7 @@ for path in sorted(Path("test-data/poc").glob("*/workdir/**/*.kio")):
     seen.add(real)
     paths.append(path)
 
-public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|literal|newtype|labels|op|varop|macro|rec)\b")
+public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|literal|op|varop|macro|rec)\b")
 failures = []
 
 for path in paths:
@@ -580,7 +580,7 @@ The shared contract sets size guardrails:
 
 - 3 to 6 `op _ … _ { impl …, };` operator declarations.
 - 20 to 40 top-level `fn` declarations.
-- One `newtype` or `type` alias for the data structure itself (one optional small domain-specific helper type is allowed; this allowance does not permit a duplicate public general-purpose abstraction or a local named Option for routine absence).
+- One nominal type or `type` alias for the data structure itself (one optional small domain-specific helper type is allowed; this allowance does not permit a duplicate public general-purpose abstraction or a local named Option for routine absence).
 - 15 to 30 `equiv` blocks (see § POC 5 below).
 - Primary library source size 400 to 800 lines (1000 ceiling for tree-backed structures like `vec` / `dict`).
 

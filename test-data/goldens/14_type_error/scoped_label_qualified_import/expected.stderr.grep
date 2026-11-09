@@ -1,0 +1,3 @@
+origin\.Item
+not visible from module `outside`
+restricted to `pub\(scope\)`

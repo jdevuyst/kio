@@ -8,28 +8,33 @@ module datalog/atom;
 import datalog/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
-pub labels Term = { t_const: I32 } | { t_var: I32 };
+pub type Term = { T_const: I32 } | { T_var: I32 };
 
 pub type Args = list.List[Term];
 
-pub labels Atom = { a_pred: I32, a_args: Args };
+pub type Atom = { A_pred: I32; A_args: Args };
 
 pub type Atoms = list.List[Atom];
 
-pub fn tconst(code: I32) -> Term { ({t_const = code}.>widen_sum)[Term] }
+pub fn tconst(code: I32) -> Term { (T_const.mk(code).>widen_sum)[Term] }
 
-pub fn tvar(code: I32) -> Term { ({t_var = code}.>widen_sum)[Term] }
+pub fn tvar(code: I32) -> Term { (T_var.mk(code).>widen_sum)[Term] }
 
-pub fn mk_atom(pred: I32, args: Args) -> Atom { {a_pred = pred, a_args = args} }
+pub fn mk_atom(pred: I32, args: Args) -> Atom { (A_pred.mk(pred), A_args.mk(args)) }
 
-pub fn pred_of(a: Atom) -> I32 { a.?{a_pred} }
+pub fn pred_of(a: Atom) -> I32 {
+  a.>select { A_pred.get }
+}
 
-pub fn args_of(a: Atom) -> Args { a.?{a_args} }
+pub fn args_of(a: Atom) -> Args {
+  a.>select { A_args.get }
+}
 
 pub fn atom1(pred: I32, t0: Term) -> Atom { mk_atom(pred, list.of1(t0)) }
 
@@ -52,12 +57,22 @@ fn term_eq(x: Term, y: Term) -> Bool {
     (
     , .(k: T_const) {
         match(y) {
-          (.(j: T_const) { eq_i32(k.?{t_const}, j.?{t_const}) }, .(_w: T_var) { .f })
+          (
+          , .(j: T_const) {
+              eq_i32(k.>select { T_const.get }, j.>select { T_const.get })
+            }
+          , .(_w: T_var) { .f }
+          )
         }
       }
     , .(v: T_var) {
         match(y) {
-          (.(_j: T_const) { .f }, .(w: T_var) { eq_i32(v.?{t_var}, w.?{t_var}) })
+          (
+          , .(_j: T_const) { .f }
+          , .(w: T_var) {
+              eq_i32(v.>select { T_var.get }, w.>select { T_var.get })
+            }
+          )
         }
       }
     )
@@ -65,10 +80,10 @@ fn term_eq(x: Term, y: Term) -> Bool {
 }
 
 rec(loop) fn args_eq(xs: Args, ys: Args) -> Bool {
-  match(xs.>list.List.un_list) {
+  match(xs.>list.List.get) {
     (
     , .(x: Term, xrest: Args) {
-        match(ys.>list.List.un_list) {
+        match(ys.>list.List.get) {
           (
           , .(y: Term, yrest: Args) {
               if(term_eq(x, y)) { recur args_eq(xrest, yrest) } else { .f }

@@ -15,6 +15,7 @@ module cpu/machine;
 import cpu/isa(Instr, is_halt);
 import cpu/num(and, int_eq, int_lt);
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len, array_make_filled);
@@ -29,25 +30,25 @@ literal mem_words = 8;
 /// network is switched on. The two runs differ in exactly one field of
 /// this record, which is what makes them an experiment rather than two
 /// programs.
-pub labels Cpu = { prog: Array[Instr], regs: Array[I32], mem: Array[I32], forwarding: Bool };
+pub type Cpu = { Prog: Array[Instr]; Regs: Array[I32]; Mem: Array[I32]; Forwarding: Bool };
 
-pub labels Machine = {
-, cycle: I32
-, pc: I32
-, st_if: I32
-, st_id: I32
-, st_ex: I32
-, st_mem: I32
-, st_wb: I32
-, ex_mem: I32
-, mem_wb: I32
-, sealed: Bool
-, retired: I32
-, stalls: I32
-, bubbles: I32
-, flushes: I32
-, fwd_ex_mem: I32
-, fwd_mem_wb: I32
+pub type Machine = {
+  Cycle: I32;
+  Pc: I32;
+  St_if: I32;
+  St_id: I32;
+  St_ex: I32;
+  St_mem: I32;
+  St_wb: I32;
+  Ex_mem: I32;
+  Mem_wb: I32;
+  Sealed: Bool;
+  Retired: I32;
+  Stalls: I32;
+  Bubbles: I32;
+  Flushes: I32;
+  Fwd_ex_mem: I32;
+  Fwd_mem_wb: I32
 };
 
 pub fn empty_stage() -> I32 { -1 }
@@ -65,30 +66,33 @@ pub fn stage_filled(slot: I32) -> Bool { leq_i32(0, slot) }
 /// of the code array and faults there; ending in HALT is an ISA rule, not
 /// a courtesy.
 pub fn initial(prog: Array[Instr]) -> Machine {
-  {
-  , cycle = 1
-  , pc = 1
-  , st_if = 0
-  , st_id = -1
-  , st_ex = -1
-  , st_mem = -1
-  , st_wb = -1
-  , ex_mem = 0
-  , mem_wb = 0
-  , sealed = is_halt(array_get(prog, 0))
-  , retired = 0
-  , stalls = 0
-  , bubbles = 0
-  , flushes = 0
-  , fwd_ex_mem = 0
-  , fwd_mem_wb = 0
-  }
+  (
+  , Cycle.mk(1)
+  , Pc.mk(1)
+  , St_if.mk(0)
+  , St_id.mk(-1)
+  , St_ex.mk(-1)
+  , St_mem.mk(-1)
+  , St_wb.mk(-1)
+  , Ex_mem.mk(0)
+  , Mem_wb.mk(0)
+  , Sealed.mk(is_halt(array_get(prog, 0)))
+  , Retired.mk(0)
+  , Stalls.mk(0)
+  , Bubbles.mk(0)
+  , Flushes.mk(0)
+  , Fwd_ex_mem.mk(0)
+  , Fwd_mem_wb.mk(0)
+  )
 }
 
 pub fn pipeline_empty(m: Machine) -> Bool {
   and(
-  , and(stage_empty(m.?{st_if}), stage_empty(m.?{st_id}))
-  , and(stage_empty(m.?{st_ex}), and(stage_empty(m.?{st_mem}), stage_empty(m.?{st_wb})))
+  , and(stage_empty(m.>select { St_if.get }), stage_empty(m.>select { St_id.get }))
+  , and(
+    , stage_empty(m.>select { St_ex.get })
+    , and(stage_empty(m.>select { St_mem.get }), stage_empty(m.>select { St_wb.get }))
+    )
   )
 }
 

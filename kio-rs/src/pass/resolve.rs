@@ -460,7 +460,6 @@ fn collect_type_rec_edges<'a, P: ResolvePhase>(
             }
         }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -1236,7 +1235,6 @@ pub(crate) fn type_rec_marker_fix_is_locally_proven<P: ResolvePhase>(
                 Some((kind, recursive_head))
             }
             Type::Path { .. } | Type::Infer { .. } | Type::Goal { .. } => None,
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -1394,7 +1392,6 @@ pub(crate) fn missing_recursive_newtype_marker_error<P: ResolvePhase>(
                 .iter()
                 .find_map(|argument| first_self_reference(argument, name, module_path, bound)),
             Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => None,
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -1415,7 +1412,7 @@ pub(crate) fn missing_recursive_newtype_marker_error<P: ResolvePhase>(
                 ),
             )
             .with_help(format!(
-                "write `rec newtype {}` to give the payload its own type head",
+                "add `rec` before the declaration of `{}` to give the payload its own type head",
                 newtype.name
             ))
             .with_fix(
@@ -2887,7 +2884,7 @@ fn item_name_and_span<P: ResolvePhase>(item: &crate::ast::Item<P>) -> (&str, Spa
             Some(name) => (name.as_str(), d.meta.span),
             None => ("", d.meta.span),
         },
-        crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
         crate::ast::Item::Equiv(e, _ext) => (e.name.as_str(), e.meta.span),
         crate::ast::Item::Macro(s, _ext) => (s.name.as_str(), s.meta.span),
         crate::ast::Item::HostType(h) => (h.name.as_str(), h.meta.span),
@@ -2916,7 +2913,7 @@ fn item_visibility<P: ResolvePhase>(item: &crate::ast::Item<P>) -> crate::ast::V
         crate::ast::Item::LiteralAlias(_, ext) => match *ext {},
         crate::ast::Item::Newtype(d) => d.vis.clone(),
         crate::ast::Item::Labels(d, _ext) => d.vis.clone(),
-        crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
         // `equiv` decls have no visibility (they're never reachable
         // by callers; they exist for the test runner). Treat as
         // private for visibility checks.
@@ -3146,7 +3143,6 @@ fn module_path_typo_fix(path: &ModulePath, replacement: &str) -> Option<Fix> {
 
 pub trait ExportContractPhase:
     Phase<
-        TypeLabelSugar = crate::ast::Never,
         ItemLabels = crate::ast::Never,
         ItemLiteralAlias = crate::ast::Never,
         ItemOp = crate::ast::Never,
@@ -3171,7 +3167,6 @@ impl ContractBinderLookup for HashMap<String, Kind> {
 }
 impl<T> ExportContractPhase for T where
     T: Phase<
-            TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
             ItemLiteralAlias = crate::ast::Never,
             ItemOp = crate::ast::Never,
@@ -3205,9 +3200,7 @@ pub(crate) fn exported_routed_contract_type(
 /// nominal canonicalizer in [`crate::pass::typecheck_core`] uses this to
 /// qualify an unfolded alias body in the alias's *owner* module, for
 /// which only the `Module` is on hand.
-pub(crate) fn qualify_contract_type_in_module<
-    P: Phase<TypeLabelSugar = crate::ast::Never> + Clone,
->(
+pub(crate) fn qualify_contract_type_in_module<P: Phase + Clone>(
     ty: &Type<P>,
     defining_module: &crate::ast::Module<P>,
     locals: &HashMap<String, Kind>,
@@ -3216,7 +3209,7 @@ pub(crate) fn qualify_contract_type_in_module<
 }
 
 pub(crate) fn qualify_contract_type_in_module_with_binder_lookup<
-    P: Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: Phase + Clone,
     L: ContractBinderLookup + ?Sized,
 >(
     ty: &Type<P>,
@@ -3253,7 +3246,7 @@ enum ContractPathState {
     Routed,
 }
 
-fn qualify_contract_type_in_module_with<P: Phase<TypeLabelSugar = crate::ast::Never> + Clone>(
+fn qualify_contract_type_in_module_with<P: Phase + Clone>(
     ty: &Type<P>,
     defining_module: &crate::ast::Module<P>,
     locals: &HashMap<String, Kind>,
@@ -3270,7 +3263,7 @@ fn qualify_contract_type_in_module_with<P: Phase<TypeLabelSugar = crate::ast::Ne
 }
 
 fn qualify_contract_type_in_module_with_lookup<
-    P: Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: Phase + Clone,
     L: ContractBinderLookup + ?Sized,
 >(
     ty: &Type<P>,
@@ -3411,7 +3404,6 @@ fn qualify_contract_type_in_module_with_lookup<
             nested.pop();
             qualified
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -3607,7 +3599,7 @@ pub(crate) fn qualify_type_segments_in_module<P: Phase>(
     })
 }
 
-fn qualify_type_segments_in_module_with<P: Phase>(
+pub(crate) fn qualify_type_segments_in_module_with<P: Phase>(
     segments: &[crate::ast::PathSegment],
     defining_module: &crate::ast::Module<P>,
     is_local: impl Fn(&str) -> bool,
@@ -3668,18 +3660,18 @@ fn module_declares_type_name<P: Phase>(module: &crate::ast::Module<P>, name: &st
                 TypeRecMember::Newtype(newtype) => newtype.name == name,
                 TypeRecMember::Labels(labels, _) => {
                     labels.type_alias_name.as_deref() == Some(name)
-                        || labels.entries.iter().any(|entry| {
-                            !entry.is_reuse_marker()
-                                && crate::ast::mint_label_newtype_name(&entry.name) == name
-                        })
+                        || labels
+                            .entries
+                            .iter()
+                            .any(|entry| crate::ast::mint_label_newtype_name(&entry.name) == name)
                 }
             }),
             Item::Labels(labels, _) => {
                 labels.type_alias_name.as_deref() == Some(name)
-                    || labels.entries.iter().any(|entry| {
-                        !entry.is_reuse_marker()
-                            && crate::ast::mint_label_newtype_name(&entry.name) == name
-                    })
+                    || labels
+                        .entries
+                        .iter()
+                        .any(|entry| crate::ast::mint_label_newtype_name(&entry.name) == name)
             }
             _ => type_declaration_name(item) == Some(name),
         }
@@ -4264,11 +4256,7 @@ impl IdentityAliasNewtypeIndex {
                 },
             );
         }
-        for entry in labels
-            .entries
-            .iter()
-            .filter(|entry| !entry.is_reuse_marker())
-        {
+        for entry in labels.entries.iter() {
             nodes.insert(
                 (
                     module_path.to_owned(),
@@ -4491,11 +4479,7 @@ pub(crate) fn identity_alias_progressive_scope_add_item<P: Phase>(
         if let Some(name) = &labels.type_alias_name {
             scope.decls.entry(name.clone()).or_insert(outer_id);
         }
-        for entry in labels
-            .entries
-            .iter()
-            .filter(|entry| !entry.is_reuse_marker())
-        {
+        for entry in labels.entries.iter() {
             scope
                 .decls
                 .entry(crate::ast::mint_label_newtype_name(&entry.name))
@@ -5487,7 +5471,6 @@ impl<P: ResolvePhase> Package<P> {
             }
             crate::ast::Item::HostType(_)
             | crate::ast::Item::Labels(_, _)
-            | crate::ast::Item::LabelForward(_, _)
             | crate::ast::Item::Equiv(_, _)
             | crate::ast::Item::Macro(_, _)
             | crate::ast::Item::Op(_, _)
@@ -5576,7 +5559,6 @@ impl<P: ResolvePhase> Package<P> {
                 }
                 Ok(())
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -5854,23 +5836,18 @@ enum Binding {
 /// Kio'-shaped artifact), and `Prime` (the kio-prime pipeline's
 /// post-`prime::lower` AST).
 ///
-/// Elaborator-position variants (`Expr::UserMacro`, `Expr::Elaborator`)
-/// stay inhabited at `Lowered` (each carries a
-/// `NodeId`) and uninhabited at `Prime`; the resolver walks children
-/// either way — the corresponding match arms compile at both phases.
+/// `Expr::UserMacro` is inhabited at `Lowered` and uninhabited at `Prime`;
+/// the resolver walks its children at either phase.
 ///
 pub trait ResolvePhase:
     Phase<
         ExprTuple = crate::ast::Never,
-        ExprLabelValue = crate::ast::Never,
-        ExprRowLet = crate::ast::Never,
         ExprFnPlaceholder = crate::ast::Never,
         ExprOpChain = crate::ast::Never,
         ExprRecCall = crate::ast::Never,
         ExprBlockSyntax = crate::ast::Never,
         ExprEnriched = crate::ast::Never,
         ExprLow = crate::ast::Never,
-        TypeLabelSugar = crate::ast::Never,
         ItemLabels = crate::ast::Never,
         ItemOp = crate::ast::Never,
         ItemRecGroup = crate::ast::Never,
@@ -6019,7 +5996,6 @@ impl<'m> Resolver<'m> {
                                 && declaration.doc.is_none(),
                             true,
                             value_members,
-                            false,
                         )
                     })
                     .or_else(|| {
@@ -6036,23 +6012,16 @@ impl<'m> Resolver<'m> {
                                     declaration.constructor.name.as_str(),
                                     declaration.projector.name.as_str(),
                                 ],
-                                is_generated_label_newtype(declaration),
                             )
                         })
                     });
-                if let Some((
-                    name,
-                    name_span,
-                    locally_safe,
-                    alias_member_head,
-                    value_members,
-                    generated_fragment,
-                )) = named
+                if let Some((name, name_span, locally_safe, alias_member_head, value_members)) =
+                    named
                 {
-                    // Lowering may mint a declaration from a larger source item.
-                    // Its retained owner span is useful for structural repairs,
-                    // but the generated head is not independently movable.
-                    let owns_complete_source_declaration = !generated_fragment
+                    // Several lowered declarations can share one written owner;
+                    // only its sole declaration can move independently.
+                    let owns_complete_source_declaration = span_counts.get(&item_span).copied()
+                        == Some(1)
                         && item_span.start < name_span.start
                         && name_span.end <= item_span.end;
                     declaration_items.entry(name).or_insert(item_index);
@@ -6066,9 +6035,7 @@ impl<'m> Resolver<'m> {
                             dependent_items: 0,
                             leading_gap,
                             owns_complete_source_declaration,
-                            safe_move: owns_complete_source_declaration
-                                && locally_safe
-                                && span_counts.get(&item_span).copied() == Some(1),
+                            safe_move: owns_complete_source_declaration && locally_safe,
                             alias_member_head,
                             value_members,
                         });
@@ -6321,7 +6288,7 @@ impl<'m> Resolver<'m> {
             .with_help(if nested_marker.is_some() {
                 "unwrap the group; the declaration already has its required `rec` modifier"
             } else if add_singleton_marker {
-                "unwrap the group and write `rec newtype` for this recursive singleton"
+                "unwrap the group and write `rec type` for this recursive singleton"
             } else if analysis.cyclic_components.is_empty() {
                 "unwrap this acyclic declaration without a `rec` marker"
             } else {
@@ -6495,7 +6462,7 @@ impl<'m> Resolver<'m> {
             crate::ast::Item::HostFn(h) => self.check_host_fn(h),
             // Statically uninhabited at every `ResolvePhase`.
             crate::ast::Item::Labels(_, ext) => match *ext {},
-            crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
             // Resolve `equiv` body — bind type/value params in scope,
             // then resolve each `term`'s expression. Reuses the same
             // path `fn` already takes.
@@ -6657,8 +6624,6 @@ impl<'m> Resolver<'m> {
                 inner.insert(param.name.as_str(), Binding::TypeParam(param.span));
                 self.check_type(body, &inner)
             }
-            // Statically uninhabited at every `ResolvePhase`.
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
             // `_` placeholder: nothing to resolve. No-op at Lowered;
             // statically uninhabited at Prime.
             crate::ast::Type::Infer { .. } => Ok(()),
@@ -6744,32 +6709,6 @@ impl<'m> Resolver<'m> {
             crate::ast::Expr::FnPlaceholder { ext, .. } => match *ext {},
             crate::ast::Expr::OpChain { ext, .. } => match *ext {},
             crate::ast::Expr::RecCall { ext, .. } => match *ext {},
-            // Statically uninhabited at every `ResolvePhase`.
-            crate::ast::Expr::LabelValue { ext, .. } => match *ext {},
-            crate::ast::Expr::RowLet { ext, .. } => match *ext {},
-            crate::ast::Expr::Elaborator { kind, call, .. } => {
-                // Field-syntax elaborator positions are stripped by the
-                // typer at the `Lowered → Prime` boundary; resolve still
-                // needs to walk the receiver at `Lowered` so the typer
-                // sees pre-resolved names. At `Prime` the variant is
-                // uninhabited and this arm is statically unreachable.
-                match call {
-                    crate::ast::ElaboratorCall::FieldAccess { receiver, .. } => {
-                        debug_assert_eq!(*kind, crate::ast::ElaboratorKind::Access);
-                        self.check_expr(receiver, locals)
-                    }
-                    crate::ast::ElaboratorCall::FieldUpdate { base, updates } => {
-                        debug_assert_eq!(*kind, crate::ast::ElaboratorKind::Filtered);
-                        if let Some(receiver) = base.receiver() {
-                            self.check_expr(receiver, locals)?;
-                        }
-                        for update in updates {
-                            self.check_expr(&update.value, locals)?;
-                        }
-                        Ok(())
-                    }
-                }
-            }
             crate::ast::Expr::RecQuote { plan, .. } => {
                 for annotation in plan.annotations() {
                     self.check_type(annotation, locals)?;
@@ -7075,7 +7014,7 @@ pub(crate) fn item_name<P: ResolvePhase>(item: &crate::ast::Item<P>) -> &str {
         crate::ast::Item::Newtype(d) => &d.name,
         // Statically uninhabited at every `ResolvePhase`.
         crate::ast::Item::Labels(_, ext) => match *ext {},
-        crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
         crate::ast::Item::Equiv(e, _ext) => &e.name,
         crate::ast::Item::Macro(s, _ext) => &s.name,
         crate::ast::Item::HostType(h) => &h.name,
@@ -7165,7 +7104,7 @@ mod tests {
     fn unresolved_qualified_head_fix_preserves_primary_span_and_suffix() {
         for (expression, primary_width) in [("Alia.mk(())", 7), ("().>Alia.mk", 7)] {
             let source = format!(
-                "module main; newtype Wrapper : . {{ constructor mk; projector get; }}; \
+                "module main; type {{ Wrapper: . {{ mk; get; }}; }}; \
                  type Alias = Wrapper; fn main() -> Wrapper {{ {expression} }}"
             );
             let package = pkg(vec![&source]).unwrap();
@@ -7183,6 +7122,57 @@ mod tests {
                 .unwrap()
                 .check_in_body_resolution()
                 .unwrap();
+        }
+    }
+
+    #[test]
+    fn ordinary_nominal_head_typo_fix_preserves_receiver_and_payload() {
+        for expression in ["Heper.mk(payload)", "row.>Heper.get"] {
+            for tied in [false, true] {
+                let declarations = if tied {
+                    "type { Helper: . { mk; get }; Heaper: . { mk; get }; }"
+                } else {
+                    "type { Helper: . { mk; get }; }"
+                };
+                let source = format!(
+                    "module main; {declarations} fn main(row: Helper, payload: .) -> . {{ \
+                     let _value = {expression}; () }}"
+                );
+                let package = pkg(vec![&source]).expect("package");
+                let error = package
+                    .check_in_body_resolution()
+                    .expect_err("misspelled nominal head")
+                    .error;
+                let diagnostic = error.diagnostic();
+                assert!(
+                    diagnostic
+                        .help()
+                        .is_some_and(|help| help.contains("did you mean")),
+                    "{diagnostic:?}"
+                );
+                if tied {
+                    assert!(
+                        diagnostic.fixes().is_empty(),
+                        "tied candidates must not choose an edit"
+                    );
+                } else {
+                    let [fix] = diagnostic.fixes() else {
+                        panic!("one exact head fix: {diagnostic:?}")
+                    };
+                    let [edit] = fix.edits.as_slice() else {
+                        panic!("one identifier edit")
+                    };
+                    let start = source.find("Heper").unwrap() as u32;
+                    assert_eq!(edit.span, Span::new(start, start + 5));
+                    assert_eq!(edit.replacement, "Helper");
+                    let repaired = apply_source_fix(&source, fix);
+                    assert_eq!(repaired, source.replace("Heper", "Helper"));
+                    pkg(vec![&repaired])
+                        .unwrap()
+                        .check_in_body_resolution()
+                        .unwrap();
+                }
+            }
         }
     }
 
@@ -7316,7 +7306,7 @@ mod tests {
             "module x;\n\
              fn foo() -> . { () }\n\
              type Bar = .;\n\
-             newtype Baz : . { pub constructor mk_baz; pub projector un_baz; };",
+             type { Baz: . { pub mk; pub get; }; };",
         );
         let scope = TopLevelScope::build(&m).unwrap();
         assert_eq!(scope.len(), 3);
@@ -7394,16 +7384,17 @@ mod tests {
     #[test]
     fn duplicate_newtype_is_error_at_second_decl() {
         let src = "module x;\n\
-                   newtype Foo : . { pub constructor mk_a; pub projector un_a; };\n\
-                   newtype Foo : . { pub constructor mk_b; pub projector un_b; };";
+                   type { Foo: . { pub mk; pub get; }; };\n\
+                   type { Foo: . { pub mk; pub get; }; };";
         let m = parse_module(src);
         let err = TopLevelScope::build(&m).unwrap_err();
         match err {
             Error::NameRes(Diagnostic { span, message, .. }) => {
                 assert!(message.contains("duplicate"));
-                // Span should be on the second newtype, which starts after
-                // the first declaration's terminating `;\n`.
-                assert!(span.start > 50);
+                // The diagnostic must identify the second declaration.
+                let start = src.rfind("type {").expect("second declaration") as u32;
+                let end = src.rfind('}').expect("declaration closer") as u32 + 1;
+                assert_eq!(span, Span::new(start, end));
             }
             other => panic!("expected NameRes, got {other:?}"),
         }
@@ -7415,7 +7406,7 @@ mod tests {
         // so the module-local declaration index deliberately ignores imports.
         let src = "module x;\n\
                    import other(Wrap);\n\
-                   newtype Wrap : . { pub constructor mk; pub projector un; };";
+                   type { Wrap: . { pub mk; pub get; }; };";
         let m = parse_module(src);
         TopLevelScope::build(&m).expect("cross-origin conflicts are a later package check");
     }
@@ -7830,14 +7821,14 @@ mod tests {
     fn newtype_member_heads_follow_only_written_lexical_routes() {
         let p = pkg(vec![
             "module provider; \
-             pub newtype Imported : . { pub constructor make_i; pub projector open_i; }; \
-             pub newtype Qualified : . { pub constructor make_q; pub projector open_q; };",
+             pub type { Imported: . { pub mk; pub get; }; }; \
+             pub type { Qualified: . { pub mk; pub get; }; };",
             "module decoy; \
-             pub newtype Qualified : . { pub constructor make_d; pub projector open_d; };",
+             pub type { Qualified: . { pub mk; pub get; }; };",
             "module main; \
              import provider(Imported); \
              import provider as p; \
-             newtype Local : . { constructor make_l; projector open_l; };",
+             type { Local: . { mk; get; }; };",
         ])
         .expect("package");
         p.resolve_imports().expect("resolve imports");
@@ -8008,7 +7999,7 @@ mod tests {
     #[test]
     fn identity_alias_and_selective_import_are_distinct_introductions() {
         let p = pkg(vec![
-            "module origin; pub newtype Tag : . { constructor mk; projector un; };",
+            "module origin; pub type { Tag: . { mk; get; }; };",
             "module main; import origin(Tag); import origin as source; type Tag = source.Tag;",
         ])
         .expect("package");
@@ -8057,7 +8048,7 @@ mod tests {
             "module origin; \
              rec { \
                pub type Tag = Wrap; \
-               pub newtype Wrap : (. | Tag) { constructor mk; projector un; }; \
+               pub type { Wrap: (. | Tag) { mk; get; }; }; \
              }",
             "module main; \
              import origin(Tag); \
@@ -8079,8 +8070,8 @@ mod tests {
     fn identity_alias_newtype_members_require_full_positional_kind_preservation() {
         let p = pkg(vec![
             "module origin; \
-             pub newtype Pair[A][B] : A & B { pub constructor mk; pub projector un; }; \
-             pub newtype Higher[*F] : . { pub constructor make; pub projector open; };",
+             pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; \
+             pub type { Higher[*F]: . { pub mk; pub get; }; };",
             "module relay; \
              import origin as source; \
              pub type Exact[A][B] = source.Pair[A][ B]; \
@@ -8114,10 +8105,10 @@ mod tests {
     fn identity_alias_member_target_requires_a_written_import_edge() {
         let p = pkg(vec![
             "module provider; \
-             pub newtype Tag : . { pub constructor make; pub projector open; };",
+             pub type { Tag: . { pub mk; pub get; }; };",
             "module no_import; pub type Alias = provider.Tag;",
             "module imported; import provider as source; pub type Alias = source.Tag;",
-            "module unrelated; pub newtype Noise : . { constructor make; projector open; };",
+            "module unrelated; pub type { Noise: . { mk; get; }; };",
         ])
         .expect("package");
 
@@ -8134,9 +8125,8 @@ mod tests {
     #[test]
     fn identity_alias_newtype_index_visits_each_chain_edge_once() {
         const ALIASES: usize = 256;
-        let mut source = String::from(
-            "module chain; pub newtype Terminal : . { pub constructor make; pub projector open; };",
-        );
+        let mut source =
+            String::from("module chain; pub type { Terminal: . { pub mk; pub get; }; };");
         for index in 0..ALIASES {
             let target = if index == 0 {
                 "Terminal".to_owned()
@@ -8169,7 +8159,7 @@ mod tests {
         const ALIASES: usize = 128;
         let origin = parse(
             "module origin; \
-             pub newtype Terminal : . { pub constructor make; pub projector open; };",
+             pub type { Terminal: . { pub mk; pub get; }; };",
         )
         .expect("parse origin");
         let mut source = String::from("module relay;");
@@ -8201,10 +8191,10 @@ mod tests {
         let module = parse(
             "module local; \
              type Later = Target; \
-             pub newtype Target : . { pub constructor make; pub projector open; }; \
+             pub type { Target: . { pub mk; pub get; }; }; \
              rec { \
                type Peer = Wrapped; \
-               newtype Wrapped : Peer { constructor wrap; projector unwrap; }; \
+               type { Wrapped: Peer { mk; get; }; }; \
              }",
         )
         .expect("parse local aliases");
@@ -8234,7 +8224,7 @@ mod tests {
             "module qualified; \
              import qualified as self_module; \
              type Premature = self_module.Later; \
-             pub newtype Later : . { pub constructor make; pub projector open; }; \
+             pub type { Later: . { pub mk; pub get; }; }; \
              type Inscope = self_module.Later;",
         )
         .expect("parse qualified self import");
@@ -8242,7 +8232,7 @@ mod tests {
             "module selective; \
              import selective(Later); \
              type Premature = Later; \
-             pub newtype Later : . { pub constructor make; pub projector open; }; \
+             pub type { Later: . { pub mk; pub get; }; }; \
              type Inscope = Later;",
         )
         .expect("parse selective self import");
@@ -8251,7 +8241,7 @@ mod tests {
              import recursive as self_module; \
              rec { \
                type Peer = self_module.Wrapped; \
-               newtype Wrapped : Peer { constructor wrap; projector unwrap; }; \
+               type { Wrapped: Peer { mk; get; }; }; \
              }",
         )
         .expect("parse recursive self import");
@@ -8278,37 +8268,37 @@ mod tests {
     }
 
     #[test]
-    fn surface_named_labels_aliases_require_the_exact_positional_lowering_shape() {
+    fn surface_named_compact_aliases_require_the_exact_positional_lowering_shape() {
         check(
             "module valid; \
-             labels Reordered[A][B] = { swapped[B][A]: A & B };",
+             type Reordered[A][B] = { Swapped[B][A]: A & B; };",
         )
         .expect("binder permutation is a valid structural alias, just not an identity alias");
         let standalone = parse(
             "module standalone; \
-             labels Exact[A][B] = { item[A][B]: A & B }; \
-             labels Reordered[A][B] = { swapped[B][A]: A & B }; \
-             labels Renamed[A] = { renamed_item[B]: B }; \
-             labels Partial[A] = { partial_item: . };",
+             type Exact[A][B] = { Item[A][B]: A & B; }; \
+             type Reordered[A][B] = { Swapped[B][A]: A & B; }; \
+             type Renamed[A] = { Renamed_item[B]: B; }; \
+             type Partial[A] = { Partial_item: .; };",
         )
-        .expect("parse standalone labels aliases");
+        .expect("parse standalone compact aliases");
         let grouped = parse(
             "module grouped; \
              rec { \
-               labels Exact[A][B] = { link[A][B]: Peer[A][ B] }; \
-               newtype Peer[A][B] : Exact[A][ B] { constructor make; projector open; }; \
+               type Exact[A][B] = { Link[A][B]: Peer[A][ B]; }; \
+               type { Peer[A][B]: Exact[A][ B] { mk; get; }; }; \
              } \
              rec { \
-               labels Reordered[A][B] = { back[B][A]: Other[B][ A] }; \
-               newtype Other[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
+               type Reordered[A][B] = { Back[B][A]: Other[B][ A]; }; \
+               type { Other[A][B]: Reordered[A][ B] { mk; get; }; }; \
              }",
         )
-        .expect("parse recursive labels aliases");
+        .expect("parse recursive compact aliases");
         check(
             "module valid_group; \
              rec { \
-               labels Reordered[A][B] = { swapped[B][A]: Peer[B][ A] }; \
-               newtype Peer[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
+               type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; \
+               type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; \
              }",
         )
         .expect("the binder-permuting recursive declaration remains structurally valid");
@@ -8385,7 +8375,7 @@ mod tests {
     fn invalid_import_does_not_create_local_binding() {
         let p = pkg(vec![
             "module main; import missing(Wrap); \
-             newtype Wrap : . { constructor mk; projector un; };",
+             type { Wrap: . { mk; get; }; };",
         ])
         .expect("an unresolved import has no authenticated binding origin");
         let err = p
@@ -8556,22 +8546,37 @@ mod tests {
     }
 
     #[test]
-    fn label_generated_type_has_one_source_identity() {
-        let err = full_pkg(&[
+    fn compact_nominal_has_one_source_identity() {
+        for declaration in ["type { Foo: .; };", "type { Foo: . { mk; get; }; };"] {
+            let consumer = format!("module main; import source(Foo); {declaration}");
+            let package = full_pkg(&[
+                ("source.kio", "module source; pub type Foo = .;"),
+                ("main.kio", &consumer),
+            ])
+            .expect("package construction defers import collisions");
+            package.resolve_imports().expect("import exists");
+            let err = package
+                .check_in_body_resolution()
+                .expect_err("local nominal and imported type conflict");
+            assert_eq!(err.file_path, PathBuf::from("main.kio"));
+            let Error::NameRes(diagnostic) = err.error else {
+                panic!("expected NameRes, got {:?}", err.error);
+            };
+            assert_eq!(diagnostic.message, "binding `Foo` has more than one source");
+        }
+
+        let package = full_pkg(&[
             ("source.kio", "module source; pub type Foo = .;"),
             (
                 "main.kio",
-                "module main; import source(Foo); labels { foo: . };",
+                "module main; import source(Foo); type { Bar: .; };",
             ),
         ])
-        .expect_err("generated label type must not overwrite an imported type");
-        match err.error {
-            Error::NameRes(Diagnostic { message, .. }) => {
-                assert!(message.contains("Foo"), "got: {message}");
-                assert!(message.contains("more than one source"), "got: {message}");
-            }
-            other => panic!("expected NameRes, got {other:?}"),
-        }
+        .expect("non-conflicting package");
+        package.resolve_imports().expect("import exists");
+        package
+            .check_in_body_resolution()
+            .expect("distinct introductions resolve");
     }
 
     #[test]
@@ -8590,7 +8595,7 @@ mod tests {
     fn root_env_signature_resolves_kio_type() {
         let p = pkg(vec![
             "module hello; \
-             pub newtype Box : . { pub constructor mk_box; pub projector un_box; }; \
+             pub type { Box: . { pub mk; pub get; }; }; \
              host fn accept(b: Box) -> .;",
         ])
         .unwrap();
@@ -8646,18 +8651,18 @@ mod tests {
         let package = pkg_with_package_file(
             vec![
                 "module app/left; \
-                 pub newtype Shared : . { pub constructor make; projector read; };",
+                 pub type { Shared: . { pub mk; get; }; };",
                 "module app/right; \
-                 pub newtype Shared : . { constructor make; pub projector read; };",
+                 pub type { Shared: . { mk; pub get; }; };",
                 "module app/states; \
                  rec { \
-                   pub newtype Opaque : Both { constructor make_opaque; projector read_opaque; }; \
-                   pub newtype Both : Opaque { \
-                     pub constructor make_both; pub projector read_both; \
-                   }; \
+                   pub type { Opaque: Both { mk; get; }; }; \
+                   pub type { Both: Opaque { \
+                     pub mk; pub get; \
+                   }; }; \
                  }",
                 "module app/outside; \
-                 pub newtype Shared : . { pub constructor make; pub projector read; };",
+                 pub type { Shared: . { pub mk; pub get; }; };",
             ],
             "app",
             "bridge { app/left; app/right; app/states; }",
@@ -8699,7 +8704,7 @@ mod tests {
             vec![
                 "module app; \
                  type Hidden = .; \
-                 pub newtype Opaque : Hidden { constructor mk; projector un; };",
+                 pub type { Opaque: Hidden { mk; get; }; };",
             ],
             "app",
             "bridge { app; }",
@@ -8713,10 +8718,10 @@ mod tests {
             vec![
                 "module app; \
                  pub(app) type Scoped = .; \
-                 pub newtype Opaque : Scoped { \
-                   pub(app) constructor mk; \
-                   pub(app) projector un; \
-                 };",
+                 pub type { Opaque: Scoped { \
+                   pub(app) mk; \
+                   pub(app) get; \
+                 }; };",
             ],
             "app",
             "bridge { app; }",
@@ -8730,7 +8735,7 @@ mod tests {
             vec![
                 "module app; \
                  type Hidden = .; \
-                 pub newtype Exposed : Hidden { pub constructor mk; projector un; };",
+                 pub type { Exposed: Hidden { pub mk; get; }; };",
             ],
             "app",
             "bridge { app; }",
@@ -9098,7 +9103,7 @@ mod tests {
             "module x; \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+             type { Box[A]: A { pub mk; pub get; }; }; \
              fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
              rec(loop) fn value(n: I32) -> Box[I32] { \
                let .(result: Box[_]) = choose_box(0, recur(cont) value(0)); \
@@ -9220,9 +9225,7 @@ mod tests {
     fn marked_recursive_newtype_resolves_its_own_head() {
         check(
             "module x; \
-             rec newtype Tree : (. | (Tree)) { \
-               pub constructor mk_tree; pub projector un_tree; \
-             };",
+             rec type { Tree: (. | (Tree)) { pub mk; pub get; }; };",
         )
         .unwrap();
     }
@@ -9231,31 +9234,29 @@ mod tests {
     fn unmarked_recursive_newtype_resolves_for_deferred_semantic_validation() {
         check(
             "module x; \
-             newtype Tree : (. | Tree) { \
-               pub constructor mk_tree; pub projector un_tree; \
-             };",
+             type { Tree: (. | Tree) { pub mk; pub get; }; };",
         )
         .expect("the typer reports a missing marker after validating the declaration");
     }
 
     #[test]
     fn negative_unmarked_recursive_newtype_reaches_semantic_validation() {
-        check("module x; newtype Bad : Bad -> . { constructor mk; projector un; };")
+        check("module x; type { Bad: Bad -> . { mk; get; }; };")
             .expect("resolution defers the marker diagnostic to semantic validation");
     }
 
     #[test]
     fn arity_invalid_unmarked_recursive_newtype_reaches_semantic_validation() {
-        check("module x; newtype Bad[A] : Bad { constructor mk; projector un; };")
+        check("module x; type { Bad[A]: Bad { mk; get; }; };")
             .expect("resolution defers the marker diagnostic to semantic validation");
     }
 
     #[test]
     fn marked_acyclic_newtype_reports_the_redundant_marker() {
         let error = check(
-            "module x; rec newtype Box[A] : A { \
-               pub constructor mk_box; pub projector un_box; \
-             };",
+            "module x; rec type { Box[A]: A { \
+               pub mk; pub get; \
+             }; };",
         )
         .expect_err("redundant marker");
         let Error::Parse(diagnostic) = error else {
@@ -9269,9 +9270,7 @@ mod tests {
     fn rec_unknown_newtype_is_unbound() {
         let msg = check_err(
             "module x; \
-             newtype Foo : (Bar) { \
-               pub constructor mk_foo; pub projector un_foo; \
-             };",
+             type { Foo: (Bar) { pub mk; pub get; }; };",
         );
         assert!(msg.contains("`Bar`"), "got: {msg}");
     }
@@ -9296,8 +9295,8 @@ mod tests {
     fn later_newtype_member_in_function_body_reports_directed_source_order_error() {
         let error = check(
             "module x; \
-             fn before() { Later.un(Later.mk(())) } \
-             newtype Later : . { constructor mk; projector un; };",
+             fn before() { Later.get(Later.mk(())) } \
+             type { Later: . { mk; get; }; };",
         )
         .expect_err("a later newtype head remains unavailable in a value path");
         let Error::NameRes(diagnostic) = error else {
@@ -9347,8 +9346,8 @@ mod tests {
     fn later_newtype_member_in_ufcs_reports_directed_source_order_error() {
         let error = check(
             "module x; \
-             fn before() { ().>Later.mk.>Later.un } \
-             newtype Later : . { constructor mk; projector un; };",
+             fn before() { ().>Later.mk.>Later.get } \
+             type { Later: . { mk; get; }; };",
         )
         .expect_err("a later newtype head remains unavailable in a UFCS callee path");
         let Error::NameRes(diagnostic) = error else {
@@ -9363,54 +9362,63 @@ mod tests {
     }
 
     #[test]
-    fn later_generated_label_member_has_no_partial_declaration_move() {
-        let error = check(
-            "module x; \
-             fn before() { Foo.get(Foo.mk(())) } \
-             labels { foo: . };",
-        )
-        .expect_err("a generated label head remains unavailable before its declaration");
-        let Error::NameRes(diagnostic) = error else {
-            panic!("expected NameRes, got {error:?}");
-        };
-        assert_eq!(
-            diagnostic.message,
-            "`Foo` is declared later and is not visible here"
-        );
-        assert_eq!(diagnostic.secondary().len(), 1);
-        assert_eq!(
-            diagnostic.help(),
-            Some(
-                "move the source declaration that provides `Foo` before this use; use a bare \
-                 `rec { ... }` group only when the declarations form one genuine recursive \
-                 component"
-            )
-        );
-        assert!(
-            diagnostic.fixes().is_empty(),
-            "a generated label entry is not a complete movable declaration"
-        );
+    fn later_singleton_nominal_moves_its_complete_source_declaration() {
+        for declaration in ["type { Foo: .; };", "type { Foo: . { mk; get; }; };"] {
+            let source = format!("module x; fn before() {{ Foo.get(Foo.mk(())) }} {declaration}");
+            let error = check(&source).expect_err("later nominal remains unavailable");
+            let Error::NameRes(diagnostic) = error else {
+                panic!("expected NameRes, got {error:?}");
+            };
+            assert_eq!(
+                diagnostic.message,
+                "`Foo` is declared later and is not visible here"
+            );
+            assert_eq!(diagnostic.secondary().len(), 1);
+            assert_eq!(
+                diagnostic.help(),
+                Some(
+                    "move the declaration of `Foo` before this use; use a bare `rec { ... }` group only when the declarations form one genuine recursive component"
+                )
+            );
+            let [fix] = diagnostic.fixes() else {
+                panic!("one complete declaration move: {diagnostic:?}");
+            };
+            assert_eq!(fix.title, "Move `Foo` before its use");
+            let repaired = apply_source_fix(&source, fix);
+            let structural_declaration = declaration.trim_end_matches(';');
+            assert!(
+                repaired.find(structural_declaration).unwrap()
+                    < repaired.find("fn before").unwrap()
+            );
+            assert_eq!(repaired.matches(structural_declaration).count(), 1);
+            check(&repaired).expect("the complete declaration move resolves the program");
+        }
     }
 
     #[test]
-    fn later_generated_label_type_in_multi_entry_declaration_has_no_partial_move() {
-        let error = check(
-            "module x; \
-             type Before = Foo; \
-             labels { foo: ., bar: . };",
-        )
-        .expect_err("a generated label type remains unavailable before its declaration");
-        let Error::NameRes(diagnostic) = error else {
-            panic!("expected NameRes, got {error:?}");
-        };
-        assert_eq!(
-            diagnostic.message,
-            "`Foo` is declared later and is not visible here"
-        );
-        assert!(
-            diagnostic.fixes().is_empty(),
-            "moving one entry would corrupt its owning labels declaration"
-        );
+    fn later_nominal_move_preserves_owner_and_movement_boundaries() {
+        for source in [
+            "module x; type Before = Foo; type { Foo: .; Bar: .; };",
+            "module x; type Before = Foo; type Row = { Foo: .; };",
+            "module x; type Before = Foo; pub type { Foo: .; };",
+            "module x; type Before = Foo; /// Foo docs\ntype { Foo: .; };",
+            "module x; type Before = Foo; rec type { Foo: . | Foo; };",
+            "module x; type Before = Foo; type Dep = .; type { Foo: Dep; };",
+            "module x; type Before = Foo; type Other = Foo; type { Foo: .; };",
+        ] {
+            let error = check(source).expect_err("later nominal remains unavailable");
+            let Error::NameRes(diagnostic) = error else {
+                panic!("expected NameRes for {source}, got {error:?}");
+            };
+            assert_eq!(
+                diagnostic.message,
+                "`Foo` is declared later and is not visible here"
+            );
+            assert!(
+                diagnostic.fixes().is_empty(),
+                "unsafe move offered for {source}"
+            );
+        }
     }
 
     #[test]
@@ -9418,7 +9426,7 @@ mod tests {
         let error = check(
             "module x; \
              fn before() -> . { Later.missing(()) } \
-             newtype Later : . { constructor mk; projector un; };",
+             type { Later: . { mk; get; }; };",
         )
         .expect_err("an unknown member is not diagnostic evidence for a later type path");
         let Error::NameRes(diagnostic) = error else {
@@ -9454,8 +9462,8 @@ mod tests {
         check(
             "module x; \
              rec { \
-               newtype A : (. | B) { pub constructor mk_a; pub projector un_a; }; \
-               newtype B : (. | A) { pub constructor mk_b; pub projector un_b; }; \
+               type { A: (. | B) { pub mk; pub get; }; }; \
+               type { B: (. | A) { pub mk; pub get; }; }; \
              }",
         )
         .unwrap();
@@ -9465,8 +9473,8 @@ mod tests {
     fn implicit_later_newtype_scope_is_rejected() {
         let error = check(
             "module x; \
-             newtype A : (. | B) { pub constructor mk_a; pub projector un_a; }; \
-             newtype B : (. | A) { pub constructor mk_b; pub projector un_b; };",
+             type { A: (. | B) { pub mk; pub get; }; }; \
+             type { B: (. | A) { pub mk; pub get; }; };",
         )
         .expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
@@ -9486,19 +9494,19 @@ mod tests {
             (
                 "public",
                 "module x; pub type A = B; \
-                 pub newtype B : A { constructor mk_b; projector un_b; };",
+                 pub type { B: A { mk; get; }; };",
                 "pub type A",
             ),
             (
                 "scoped-public",
-                "module x; pub(x) newtype A : B { constructor mk_a; projector un_a; }; \
-                 pub(x) newtype B : A { constructor mk_b; projector un_b; };",
-                "pub(x) newtype A",
+                "module x; pub(x) type { A: B { mk; get; }; }; \
+                 pub(x) type { B: A { mk; get; }; };",
+                "pub(x) type { A",
             ),
             (
                 "documented",
                 "module x; /// A docs\ntype A = B; \
-                 /// B docs\nnewtype B : A { constructor mk_b; projector un_b; };",
+                 /// B docs\ntype { B: A { mk; get; }; };",
                 "/// A docs",
             ),
         ] {
@@ -9521,12 +9529,12 @@ mod tests {
     }
 
     #[test]
-    fn implicit_label_cycle_fix_owns_the_complete_labels_declaration() {
+    fn implicit_compact_cycle_fix_owns_the_complete_type_declaration() {
         let source = concat!(
             "module x; ",
-            "/// label docs\n",
-            "labels { foo: Bar }; ",
-            "newtype Bar : Foo { constructor mk_bar; projector un_bar; };",
+            "/// type docs\n",
+            "type { Foo: Bar; }; ",
+            "type { Bar: Foo { mk; get; }; };",
         );
         let error = check(source).expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
@@ -9535,13 +9543,13 @@ mod tests {
         let fix = diagnostic
             .fixes()
             .first()
-            .expect("a complete labels owner and its peer can be wrapped");
+            .expect("a complete compact owner and its peer can be wrapped");
         assert_eq!(fix.title, "Fix recursive type groups");
         assert_eq!(fix.edits.len(), 2);
         assert_eq!(
             fix.edits[0].span.start,
-            source.find("/// label docs").unwrap() as u32,
-            "the group must open before the labels owner's attached docs"
+            source.find("/// type docs").unwrap() as u32,
+            "the group must open before the compact owner's attached docs"
         );
         assert_eq!(
             fix.edits[1].span.start,
@@ -9551,10 +9559,10 @@ mod tests {
     }
 
     #[test]
-    fn implicit_label_cycle_fix_includes_acyclic_generated_siblings() {
+    fn implicit_compact_cycle_fix_includes_acyclic_siblings() {
         let source = "module x; \
-                      labels { other: ., foo: Bar }; \
-                      newtype Bar : Foo { constructor mk_bar; projector un_bar; };";
+                      type { Other: .; Foo: Bar; }; \
+                      type { Bar: Foo { mk; get; }; };";
         let error = check(source).expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9562,21 +9570,18 @@ mod tests {
         let fix = diagnostic
             .fixes()
             .first()
-            .expect("the complete labels owner can carry an acyclic generated sibling");
-        assert_eq!(
-            fix.edits[0].span.start,
-            source.find("labels").unwrap() as u32
-        );
+            .expect("the complete compact owner can carry an acyclic generated sibling");
+        assert_eq!(fix.edits[0].span.start, source.find("type").unwrap() as u32);
         assert_eq!(fix.edits[1].span.start, source.len() as u32);
         let repaired = apply_source_fix(source, fix);
-        check(&repaired).expect("the complete labels owner must form a legal group");
+        check(&repaired).expect("the complete compact owner must form a legal group");
     }
 
     #[test]
-    fn implicit_named_sum_label_cycle_fix_includes_acyclic_arm() {
+    fn implicit_named_sum_cycle_fix_includes_acyclic_arm() {
         let source = "module x; \
-                      labels Tree = { leaf: . } | { branch: Bar }; \
-                      newtype Bar : Tree { constructor mk_bar; projector un_bar; };";
+                      type Tree = { Leaf: .; } | { Branch: Bar; }; \
+                      type { Bar: Tree { mk; get; }; };";
         let error = check(source).expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9584,23 +9589,20 @@ mod tests {
         let fix = diagnostic
             .fixes()
             .first()
-            .expect("the complete named labels owner can carry an acyclic arm");
-        assert_eq!(
-            fix.edits[0].span.start,
-            source.find("labels").unwrap() as u32
-        );
+            .expect("the complete named compact owner can carry an acyclic arm");
+        assert_eq!(fix.edits[0].span.start, source.find("type").unwrap() as u32);
         assert_eq!(fix.edits[1].span.start, source.len() as u32);
         let repaired = apply_source_fix(source, fix);
-        check(&repaired).expect("the complete named labels owner must form a legal group");
+        check(&repaired).expect("the complete named compact owner must form a legal group");
     }
 
     #[test]
-    fn implicit_label_cycle_fix_is_withheld_for_two_recursive_components() {
+    fn implicit_compact_cycle_fix_is_withheld_for_two_recursive_components() {
         let error = check(
             "module x; \
-             labels { first: Left_peer, second: Right_peer }; \
-             newtype Left_peer : First { constructor mk_left; projector un_left; }; \
-             newtype Right_peer : Second { constructor mk_right; projector un_right; };",
+             type { First: Left_peer; Second: Right_peer; }; \
+             type { Left_peer: First { mk; get; }; }; \
+             type { Right_peer: Second { mk; get; }; };",
         );
         let error = error.expect_err("two independent components need separate groups");
         let Error::NameRes(diagnostic) = error else {
@@ -9613,8 +9615,8 @@ mod tests {
     fn mutual_group_fix_is_withheld_when_wrapping_would_fail_positivity() {
         let error = check(
             "module x; \
-             newtype A : B -> . { constructor mk_a; projector un_a; }; \
-             newtype B : A { constructor mk_b; projector un_b; };",
+             type { A: B -> . { mk; get; }; }; \
+             type { B: A { mk; get; }; };",
         )
         .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(diagnostic) = error else {
@@ -9635,7 +9637,7 @@ mod tests {
         let valid = check(
             "module x; \
              type A[*F] = B[F]; \
-             newtype B[*G] : A[G] { constructor mk_b; projector un_b; };",
+             type { B[*G]: A[G] { mk; get; }; };",
         )
         .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(valid) = valid else {
@@ -9650,7 +9652,7 @@ mod tests {
         let invalid = check(
             "module x; \
              type A[X] = B[X]; \
-             newtype B[*G] : A[.] { constructor mk_b; projector un_b; };",
+             type { B[*G]: A[.] { mk; get; }; };",
         )
         .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(invalid) = invalid else {
@@ -9667,7 +9669,7 @@ mod tests {
         let error = elaborate_error(
             "module x; rec { \
                type A = B; type B = A | Box; \
-               newtype Box : A { constructor mk; projector un; }; \
+               type { Box: A { mk; get; }; }; \
              }",
         );
         let Error::Totality(diagnostic) = error else {
@@ -9681,8 +9683,8 @@ mod tests {
         let error = elaborate_error(
             "module x; rec { \
                type Helper = .; \
-               newtype A : B { constructor mk_a; projector un_a; }; \
-               newtype B : A { constructor mk_b; projector un_b; }; \
+               type { A: B { mk; get; }; }; \
+               type { B: A { mk; get; }; }; \
              }",
         );
         let Error::Parse(diagnostic) = error else {
@@ -9753,8 +9755,8 @@ mod tests {
         let mut source = String::from("module x;");
         for index in 0..PAIRS {
             source.push_str(&format!(
-                " newtype Left{index} : Right{index} {{ constructor mk_left{index}; projector un_left{index}; }};\
-                 newtype Right{index} : Left{index} {{ constructor mk_right{index}; projector un_right{index}; }};"
+                " type {{ Left{index}: Right{index} {{ mk; get; }}; }};\
+                 type {{ Right{index}: Left{index} {{ mk; get; }}; }};"
             ));
         }
         let module = parse_module(&source);
@@ -9775,9 +9777,7 @@ mod tests {
             .join(" | ");
         let mut source = String::from("module x;");
         for index in 0..NODES {
-            source.push_str(&format!(
-                " newtype T{index} : {heads} {{ constructor mk{index}; projector un{index}; }};"
-            ));
+            source.push_str(&format!(" type {{ T{index}: {heads} {{ mk; get; }}; }};"));
         }
         let module = parse_module(&source);
 

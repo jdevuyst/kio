@@ -1,3 +1,0 @@
-module main;
-
-type {view} = {missing};

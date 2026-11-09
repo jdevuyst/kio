@@ -237,11 +237,7 @@ fn lsp_protocol_completion_closed_contexts_are_exact_after_open_and_change() {
             "signature app v(1); v(1) { |",
             vec!["breaking", "nonbreaking", "with"],
         ),
-        (
-            "",
-            "module app; newtype A : . { constructor mk; |",
-            vec!["projector", "pub"],
-        ),
+        ("", "module app; type { A: . { mk; |", vec!["get", "pub"]),
     ] {
         assert_eq!(
             exact_labels(&open_change_and_complete(kind, source)),

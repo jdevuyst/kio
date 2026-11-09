@@ -22,59 +22,46 @@
 module cpu/pipeline;
 
 import cpu/hazard(
+, Hit_ex_mem
+, Hit_mem_wb
 , Load_use_stall
 , Proceed
 , Raw_stall
 , Read
+, Value
 , hazard
 , read_source
-, {hit_ex_mem}
-, {hit_mem_wb}
-, {load_use_stall}
-, {raw_stall}
-, {value}
-);
-import cpu/isa(
-, Instr
-, dest_of
-, is_halt
-, is_load
-, is_store
-, reg_text
-, slot_text
-, {code}
-, {imm}
-, {rs}
-, {rt}
 );
 import cpu/isa(Add, Beq, Halt, Load, Loadi, Mul, Nop, Store, Sub);
+import cpu/isa(Code, Imm, Instr, Rs, Rt, dest_of, is_halt, is_load, is_store, reg_text, slot_text);
 import cpu/machine(
-, {bubbles}
-, {cycle}
-, {ex_mem}
-, {flushes}
-, {forwarding}
-, {fwd_ex_mem}
-, {fwd_mem_wb}
-, {mem_wb}
-, {mem}
-, {pc}
-, {prog}
-, {regs}
-, {retired}
-, {sealed}
-, {st_ex}
-, {st_id}
-, {st_if}
-, {st_mem}
-, {st_wb}
-, {stalls}
+, Bubbles
+, Cycle
+, Ex_mem
+, Flushes
+, Forwarding
+, Fwd_ex_mem
+, Fwd_mem_wb
+, Mem
+, Mem_wb
+, Pc
+, Prog
+, Regs
+, Retired
+, Sealed
+, St_ex
+, St_id
+, St_if
+, St_mem
+, St_wb
+, Stalls
 );
 import cpu/machine(Cpu, Machine, empty_stage, pipeline_empty, stage_empty, stage_filled);
 import cpu/num(cat, cat3, int_eq);
 import cpu/report(Event, noted, pipeline_row, quiet);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, mul_i32, sub_i32);
@@ -82,21 +69,26 @@ import testapi/array(array_get, array_set);
 import testapi/iter(loop);
 
 /// A branch's decision, produced in EX.
-labels Redirect = { jump: I32 } | { straight: . };
+type Redirect = { Jump: I32 } | { Straight: . };
 
 /// Everything the EX stage produced this cycle: the value that goes into
 /// the EX/MEM latch, how many operands each bypass path served, and what
 /// the branch unit decided.
-labels Ex_out = { ex_value: I32, ex_hits: I32, mem_hits: I32, decision: Redirect };
+type Ex_out = { Ex_value: I32; Ex_hits: I32; Mem_hits: I32; Decision: Redirect };
 
 /// The next cycle's state, plus the one-line event the diagram shows
 /// against the cycle that produced it.
-labels Step = { next: Machine, note: Event };
+type Step = { Next: Machine; Note: Event };
 
-fn straight() -> Redirect { ({straight=}.>widen_sum)[Redirect] }
+fn straight() -> Redirect { (Straight.mk(()).>widen_sum)[Redirect] }
 
 fn ex_out(value_now: I32, ex_hits_now: I32, mem_hits_now: I32, decision: Redirect) -> Ex_out {
-  {ex_value = value_now, ex_hits = ex_hits_now, mem_hits = mem_hits_now, decision}
+  (
+  , Ex_value.mk(value_now)
+  , Ex_hits.mk(ex_hits_now)
+  , Mem_hits.mk(mem_hits_now)
+  , Decision.mk(decision)
+  )
 }
 
 /// An instruction that reads no register and takes no branch: LOADI's
@@ -107,16 +99,16 @@ fn ex_quiet(value_now: I32) -> Ex_out { ex_out(value_now, 0, 0, straight()) }
 fn ex_reads(a: Read, b: Read, value_now: I32, decision: Redirect) -> Ex_out {
   ex_out(
   , value_now
-  , add_i32(a.?{hit_ex_mem}, b.?{hit_ex_mem})
-  , add_i32(a.?{hit_mem_wb}, b.?{hit_mem_wb})
+  , add_i32(a.>select { Hit_ex_mem.get }, b.>select { Hit_ex_mem.get })
+  , add_i32(a.>select { Hit_mem_wb.get }, b.>select { Hit_mem_wb.get })
   , decision
   )
 }
 
 fn ex_alu(cpu: Cpu, m: Machine, inst: Instr, combine: (I32 & I32) -> I32) -> Ex_out {
-  let a = read_source(cpu, m, inst.?{rs});
-  let b = read_source(cpu, m, inst.?{rt});
-  ex_reads(a, b, combine(a.?{value}, b.?{value}), straight())
+  let a = read_source(cpu, m, inst.>select { Rs.get });
+  let b = read_source(cpu, m, inst.>select { Rt.get });
+  ex_reads(a, b, combine(a.>select { Value.get }, b.>select { Value.get }), straight())
 }
 
 /// The branch unit. It compares two registers, so it is an ordinary
@@ -125,11 +117,11 @@ fn ex_alu(cpu: Cpu, m: Machine, inst: Instr, combine: (I32 & I32) -> I32) -> Ex_
 /// anything else. Resolving here, in EX, is what costs a taken branch the
 /// two instructions already fetched behind it.
 fn ex_branch(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
-  let a = read_source(cpu, m, inst.?{rs});
-  let b = read_source(cpu, m, inst.?{rt});
+  let a = read_source(cpu, m, inst.>select { Rs.get });
+  let b = read_source(cpu, m, inst.>select { Rt.get });
   let decision =
-    if(int_eq(a.?{value}, b.?{value})) {
-      ({jump = inst.?{imm}}.>widen_sum)[Redirect]
+    if(int_eq(a.>select { Value.get }, b.>select { Value.get })) {
+      (Jump.mk(inst.>select { Imm.get }).>widen_sum)[Redirect]
     } else {
       straight()
     };
@@ -141,8 +133,13 @@ fn ex_branch(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
 /// instruction word. So a store is a consumer too, and a value it is
 /// about to spill can be bypassed to it.
 fn ex_store(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
-  let a = read_source(cpu, m, inst.?{rs});
-  ex_out(a.?{value}, a.?{hit_ex_mem}, a.?{hit_mem_wb}, straight())
+  let a = read_source(cpu, m, inst.>select { Rs.get });
+  ex_out(
+  , a.>select { Value.get }
+  , a.>select { Hit_ex_mem.get }
+  , a.>select { Hit_mem_wb.get }
+  , straight()
+  )
 }
 
 /// Execute. Whatever the functional unit produces is what lands in the
@@ -151,7 +148,7 @@ fn ex_store(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
 /// the address it is about to read from; the load-use stall exists so
 /// that never happens.
 fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
-  let code = inst.?{code};
+  let code = inst.>select { Code.get };
   match(code) {
     (
     , .(_a: Add) {
@@ -163,8 +160,12 @@ fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
     , .(_m: Mul) {
         ex_alu(cpu, m, inst, .(x, y) { mul_i32(x, y) })
       }
-    , .(_li: Loadi) { ex_quiet(inst.?{imm}) }
-    , .(_ld: Load) { ex_quiet(inst.?{imm}) }
+    , .(_li: Loadi) {
+        ex_quiet(inst.>select { Imm.get })
+      }
+    , .(_ld: Load) {
+        ex_quiet(inst.>select { Imm.get })
+      }
     , .(_st: Store) { ex_store(cpu, m, inst) }
     , .(_b: Beq) { ex_branch(cpu, m, inst) }
     , .(_n: Nop) { ex_quiet(0) }
@@ -179,16 +180,16 @@ fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
 /// the same word always sees the store first -- there is no memory hazard
 /// to detect.
 fn memory(cpu: Cpu, m: Machine) -> I32 {
-  let slot = m.?{st_mem};
+  let slot = m.>select { St_mem.get };
   if(stage_empty(slot)) {
     0
   } else {
-    let inst = array_get(cpu.?{prog}, slot);
-    let carried = m.?{ex_mem};
+    let inst = array_get(cpu.>select { Prog.get }, slot);
+    let carried = m.>select { Ex_mem.get };
     if(is_load(inst)) {
-      array_get(cpu.?{mem}, carried)
+      array_get(cpu.>select { Mem.get }, carried)
     } else if(is_store(inst)) {
-      array_set(cpu.?{mem}, inst.?{imm}, carried);
+      array_set(cpu.>select { Mem.get }, inst.>select { Imm.get }, carried);
       carried
     } else {
       carried
@@ -200,11 +201,16 @@ fn memory(cpu: Cpu, m: Machine) -> I32 {
 /// of the cycle, which is exactly why the hazard unit never has to worry
 /// about the instruction in WB.
 fn write_back(cpu: Cpu, m: Machine) {
-  let slot = m.?{st_wb};
+  let slot = m.>select { St_wb.get };
   if(stage_empty(slot)) {
     ()
-  } else match(dest_of(array_get(cpu.?{prog}, slot))) {
-    (.(d: I32) { array_set(cpu.?{regs}, d, m.?{mem_wb}) }, .(_writes_nothing: .) { () })
+  } else match(dest_of(array_get(cpu.>select { Prog.get }, slot))) {
+    (
+    , .(d: I32) {
+        array_set(cpu.>select { Regs.get }, d, m.>select { Mem_wb.get })
+      }
+    , .(_writes_nothing: .) { () }
+    )
   }
 }
 
@@ -214,21 +220,31 @@ fn write_back(cpu: Cpu, m: Machine) {
 /// cycle's counters are settled. The three endings then differ only in
 /// what they do to the *front* of the pipeline.
 fn carried(m: Machine, ex: Ex_out, latched: I32) -> Machine {
-  let done = if(stage_filled(m.?{st_wb})) { add_i32(m.?{retired}, 1) } else { m.?{retired} };
-  let idle = if(stage_empty(m.?{st_ex})) { add_i32(m.?{bubbles}, 1) } else { m.?{bubbles} };
-  m.!{
-  , st_mem = m.?{st_ex}
-  , st_wb = m.?{st_mem}
-  , ex_mem = ex.?{ex_value}
-  , mem_wb = latched
-  , retired = done
-  , bubbles = idle
-  , fwd_ex_mem = add_i32(m.?{fwd_ex_mem}, ex.?{ex_hits})
-  , fwd_mem_wb = add_i32(m.?{fwd_mem_wb}, ex.?{mem_hits})
+  let done =
+    if(stage_filled(m.>select { St_wb.get })) {
+      add_i32(m.>select { Retired.get }, 1)
+    } else {
+      m.>select { Retired.get }
+    };
+  let idle =
+    if(stage_empty(m.>select { St_ex.get })) {
+      add_i32(m.>select { Bubbles.get }, 1)
+    } else {
+      m.>select { Bubbles.get }
+    };
+  m.>with {
+    St_mem.mk(m.>select { St_ex.get });
+    St_wb.mk(m.>select { St_mem.get });
+    Ex_mem.mk(ex.>select { Ex_value.get });
+    Mem_wb.mk(latched);
+    Retired.mk(done);
+    Bubbles.mk(idle);
+    Fwd_ex_mem.mk(add_i32(m.>select { Fwd_ex_mem.get }, ex.>select { Ex_hits.get }));
+    Fwd_mem_wb.mk(add_i32(m.>select { Fwd_mem_wb.get }, ex.>select { Mem_hits.get }))
   }
 }
 
-fn step(state: Machine, note: Event) -> Step { {next = state, note} }
+fn step(state: Machine, note: Event) -> Step { (Next.mk(state), Note.mk(note)) }
 
 fn killed(slot: I32) -> I32 {
   if(stage_filled(slot)) { 1 } else { 0 }
@@ -244,20 +260,20 @@ fn squashed_text(slot: I32) -> String {
 /// with them: a HALT can only have been fetched *after* this branch, so it
 /// is one of the two being squashed.
 fn squash_step(base: Machine, target: I32) -> Step {
-  let wrong_path = add_i32(killed(base.?{st_id}), killed(base.?{st_if}));
+  let wrong_path = add_i32(killed(base.>select { St_id.get }), killed(base.>select { St_if.get }));
   step(
-  , base.!{
-    , pc = target
-    , st_if = empty_stage()
-    , st_id = empty_stage()
-    , st_ex = empty_stage()
-    , sealed = .f
-    , flushes = add_i32(base.?{flushes}, wrong_path)
+  , base.>with {
+      Pc.mk(target);
+      St_if.mk(empty_stage());
+      St_id.mk(empty_stage());
+      St_ex.mk(empty_stage());
+      Sealed.mk(.f);
+      Flushes.mk(add_i32(base.>select { Flushes.get }, wrong_path))
     }
   , noted(cat3(
     , cat("branch taken -> ", slot_text(target))
     , ", squash"
-    , cat(squashed_text(base.?{st_id}), squashed_text(base.?{st_if}))
+    , cat(squashed_text(base.>select { St_id.get }), squashed_text(base.>select { St_if.get }))
     ))
   )
 }
@@ -265,23 +281,44 @@ fn squash_step(base: Machine, target: I32) -> Step {
 /// A stall. IF and ID hold what they have, the program counter freezes
 /// with them, and EX gets a bubble instead of the instruction it was owed.
 fn stall_step(base: Machine, note: Event) -> Step {
-  step(base.!{st_ex = empty_stage(), stalls = add_i32(base.?{stalls}, 1)}, note)
+  step(
+  , base.>with {
+      St_ex.mk(empty_stage());
+      Stalls.mk(add_i32(base.>select { Stalls.get }, 1))
+    }
+  , note
+  )
 }
 
 /// The ordinary cycle: the front of the pipeline shifts down one and
 /// fetches, unless a HALT has already sealed it.
 fn issue_step(cpu: Cpu, base: Machine) -> Step {
-  let shut = base.?{sealed};
-  let fetched = if(shut) { empty_stage() } else { base.?{pc} };
-  let pc_next = if(shut) { base.?{pc} } else { add_i32(base.?{pc}, 1) };
-  let sealed_next = if(shut) { .t } else { is_halt(array_get(cpu.?{prog}, base.?{pc})) };
+  let shut = base.>select { Sealed.get };
+  let fetched =
+    if(shut) {
+      empty_stage()
+    } else {
+      base.>select { Pc.get }
+    };
+  let pc_next =
+    if(shut) {
+      base.>select { Pc.get }
+    } else {
+      add_i32(base.>select { Pc.get }, 1)
+    };
+  let sealed_next =
+    if(shut) {
+      .t
+    } else {
+      is_halt(array_get(cpu.>select { Prog.get }, base.>select { Pc.get }))
+    };
   step(
-  , base.!{
-    , pc = pc_next
-    , st_if = fetched
-    , st_id = base.?{st_if}
-    , st_ex = base.?{st_id}
-    , sealed = sealed_next
+  , base.>with {
+      Pc.mk(pc_next);
+      St_if.mk(fetched);
+      St_id.mk(base.>select { St_if.get });
+      St_ex.mk(base.>select { St_id.get });
+      Sealed.mk(sealed_next)
     }
   , quiet()
   )
@@ -293,27 +330,35 @@ fn issue_step(cpu: Cpu, base: Machine) -> Step {
 /// into the future and miss every hazard.
 fn advance(cpu: Cpu, m: Machine) -> Step {
   let ex =
-    if(stage_filled(m.?{st_ex})) {
-      execute(cpu, m, array_get(cpu.?{prog}, m.?{st_ex}))
+    if(stage_filled(m.>select { St_ex.get })) {
+      execute(cpu, m, array_get(cpu.>select { Prog.get }, m.>select { St_ex.get }))
     } else {
       ex_quiet(0)
     };
   let latched = memory(cpu, m);
   write_back(cpu, m);
   let base = carried(m, ex, latched);
-  let decision = ex.?{decision};
+  let decision = ex.>select { Decision.get };
   match(decision) {
     (
-    , .(taken: Jump) { squash_step(base, taken.?{jump}) }
+    , .(taken: Jump) {
+        squash_step(base, taken.>select { Jump.get })
+      }
     , .(_fell_through: Straight) {
         match(hazard(cpu, m)) {
           (
           , .(_go: Proceed) { issue_step(cpu, base) }
           , .(held: Raw_stall) {
-              stall_step(base, noted(cat("stall: RAW on ", reg_text(held.?{raw_stall}))))
+              stall_step(
+              , base
+              , noted(cat("stall: RAW on ", reg_text(held.>select { Raw_stall.get })))
+              )
             }
           , .(held: Load_use_stall) {
-              stall_step(base, noted(cat("stall: load-use on ", reg_text(held.?{load_use_stall}))))
+              stall_step(
+              , base
+              , noted(cat("stall: load-use on ", reg_text(held.>select { Load_use_stall.get })))
+              )
             }
           )
         }
@@ -322,7 +367,9 @@ fn advance(cpu: Cpu, m: Machine) -> Step {
   }
 }
 
-fn with_cycle(m: Machine, cycle_now: I32) -> Machine { m.!{cycle = cycle_now} }
+fn with_cycle(m: Machine, cycle_now: I32) -> Machine {
+  m.>with { Cycle.mk(cycle_now) }
+}
 
 /// Run cycles until the pipeline drains. The row is printed for the state
 /// the cycle *ran with*, and the event alongside it is the decision that
@@ -334,11 +381,11 @@ fn with_cycle(m: Machine, cycle_now: I32) -> Machine { m.!{cycle = cycle_now} }
 /// happens only behind a HALT.
 pub rec(loop) fn run(cpu: Cpu, m: Machine) -> Machine {
   let taken = advance(cpu, m);
-  pipeline_row(m, taken.?{note});
-  let next = taken.?{next};
+  pipeline_row(m, taken.>select { Note.get });
+  let next = taken.>select { Next.get };
   if(pipeline_empty(next)) {
     next
   } else {
-    recur run(cpu, with_cycle(next, add_i32(m.?{cycle}, 1)))
+    recur run(cpu, with_cycle(next, add_i32(m.>select { Cycle.get }, 1)))
   }
 }

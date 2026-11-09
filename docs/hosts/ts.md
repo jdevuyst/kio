@@ -211,7 +211,7 @@ word casing. An export `main` from module
 `greeter/main` is therefore reached as
 `pkg.greeter.KioModule_main.main`.
 
-A public `newtype` adds a typed namespace containing only its public
+A public nominal type adds a typed namespace containing only its public
 constructor and projector. A nonexistential newtype with both operations
 public uses the visible `{TypeName: payload}` shape unless its payload has an
 uncut payload-visible recursive cycle. Member-hidden and existential newtypes,

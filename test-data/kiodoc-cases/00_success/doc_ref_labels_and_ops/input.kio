@@ -1,13 +1,13 @@
-/// Module demonstrating that label entries and op functions are valid intra-doc targets.
+/// Module demonstrating that nominal entries and op functions are valid intra-doc targets.
 ///
-/// Labels like [`some`] and [`none`] are collected from the `labels` block entries.
+/// Nominals like [`Some`] and [`None`] are collected from the compact type entries.
 /// The underlying function for the `+` operator is [`add`], which is also in scope.
 module docref/labelsops;
 
-/// Option type — labels become valid intra-doc ref targets.
+/// Option type — nominal entries become valid intra-doc ref targets.
 ///
-/// Variants are [`some`] (a value is present) and [`none`] (absent).
-labels Option = { some: ., none: . };
+/// Variants are [`Some`] (a value is present) and [`None`] (absent).
+type Option = { Some: .; None: .; };
 
 /// Adds two units together.
 ///

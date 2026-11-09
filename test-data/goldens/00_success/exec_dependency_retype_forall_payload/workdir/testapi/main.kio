@@ -1,6 +1,6 @@
 /// Diamond `retype` over a **polymorphic** `newtype` payload.
 /// `core/store` (the `idlib` package) and `widget/store` (the
-/// `widget` package) each declare `newtype Dict : [A] A -> A` — the
+/// `widget` package) each declare `type { Dict: [A] A -> A }` — the
 /// dictionary / identity-function pattern, a `Forall` payload. Identity-
 /// exact nominal typing keeps the two `Dict`s distinct, so threading
 /// `widget`'s relayed `Dict` into `core`'s `apply_dict` would be a type

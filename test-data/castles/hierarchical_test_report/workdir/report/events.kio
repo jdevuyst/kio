@@ -10,35 +10,36 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
-pub labels Event =
-  { open_suite: String }
-  | { close_suite: String & I32 }
-  | { passed_case: model.Case }
-  | { failed_case: model.Case }
-  | { skipped_case: model.Case }
-  | { invalid: String };
+pub type Event =
+  | { Open_suite: String }
+  | { Close_suite: String & I32 }
+  | { Passed_case: model.Case }
+  | { Failed_case: model.Case }
+  | { Skipped_case: model.Case }
+  | { Invalid: String }
+  ;
 
-fn invalid(reason: String) -> Event { {invalid = reason}.>widen_sum }
+fn invalid(reason: String) -> Event { Invalid.mk(reason).>widen_sum }
 
 fn decode(tag: String, name: String, message: String, count: I32) -> Event {
   if(arith.lt_i32(count, 0)) {
     invalid("negative count")
   } else if(text.string_eq(tag, "suite")) {
     if(arith.leq_i32(count, 0)) {
-      {open_suite = name}.>widen_sum
+      Open_suite.mk(name).>widen_sum
     } else {
       invalid("suite count must be zero")
     }
   } else if(text.string_eq(tag, "end")) {
-    {close_suite = (name, count)}.>widen_sum
+    Close_suite.mk((name, count)).>widen_sum
   } else {
-    let test = {model.name, model.message, model.count};
+    let test = (model.Name.mk(name), model.Message.mk(message), model.Count.mk(count));
     if(text.string_eq(tag, "pass")) {
-      {passed_case = test}.>widen_sum
+      Passed_case.mk(test).>widen_sum
     } else if(text.string_eq(tag, "fail")) {
-      {failed_case = test}.>widen_sum
+      Failed_case.mk(test).>widen_sum
     } else if(text.string_eq(tag, "skip")) {
-      {skipped_case = test}.>widen_sum
+      Skipped_case.mk(test).>widen_sum
     } else {
       invalid(text.string_concat("unknown event: ", tag))
     }

@@ -195,6 +195,7 @@ function sourceInfo(source) {
     const line = lines[i].trim();
     if (!/^#\[cfg\(.*\btest\b/.test(line)) continue;
     if (line === '#[cfg(any(feature = "repl-core", test))]') { replCfg++; continue; }
+    if (line === '#[cfg(any(all(feature = "surface", feature = "cli"), test))]') continue;
     const all = /^#\[cfg\(all\((.*)\)\)\]$/.exec(line);
     const atoms = all?.[1].split(",").map((atom) => atom.trim());
     const testOnly = line === "#[cfg(test)]" || atoms?.includes("test") && atoms.every((atom) =>
@@ -354,6 +355,13 @@ function selfTest([productionSource]) {
   need(uncovered.zeroExecutedFunctions.length === 1 && uncovered.zeroExecutedFunctions[0].name === "cold" && uncovered.zeroExecutableLineRanges[0].lineCount === 7 && uncovered.retainedReplCoreCfgSites === 1, "uncovered/test-exclusion fixture failed");
   const clear = analyzeValues(lcov(1), make(1), source, aliases);
   need(!clear.zeroExecutedFunctions.length && !clear.zeroExecutableLineRanges.length, "no-findings fixture failed");
+  const mixedSource = source.replace('#[cfg(any(feature = "repl-core", test))]', '#[cfg(any(all(feature = "surface", feature = "cli"), test))]').replace("fn repl()", "fn surface_cli()");
+  const mixedCoverage = make(0);
+  mixedCoverage.data[0].functions[4].name = "crate::surface_cli";
+  mixedCoverage.data[0].functions[4].regions[0][4] = 0;
+  const mixedLcov = lcov(0).replace("DA:16,1\nDA:17,1\nDA:18,1", "DA:16,0\nDA:17,0\nDA:18,0");
+  const mixed = analyzeValues(mixedLcov, mixedCoverage, mixedSource, aliases);
+  need(mixed.zeroExecutedFunctions.some((fn) => fn.name === "surface_cli") && mixed.zeroExecutableLineRanges.some((range) => range.startLine === 16 && range.endLine === 18), "production surface/CLI-or-test function was excluded");
   const oversized = Number(0x7fffffffffffffffn);
   const unsafeOnly = analyzeValues(lcov(0), make(oversized), source, aliases);
   need(unsafeOnly.evidenceStatus === "incomplete" && unsafeOnly.unknownExecutionFunctions.some((fn) => fn.name === "cold") && !unsafeOnly.zeroExecutedFunctions.some((fn) => fn.name === "cold"), "unknown-only function was classified as zero or reached");

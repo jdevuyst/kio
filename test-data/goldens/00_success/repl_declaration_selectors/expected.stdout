@@ -18,21 +18,21 @@ demo/ops.(op _ + _)
   demo/ops.choose
   demo/other.choose
 references to `op _ + _`:
-  demo/main:4:44  in module demo/main
+  demo/main:4:51  in module demo/main
   demo/main:8:18  in fn use
   demo/ops:19:5  in op _ + _
   demo/ops:26:21  in fn local
 references to `varop [* *]`:
-  demo/main:4:54  in module demo/main
+  demo/main:4:61  in module demo/main
   demo/main:10:3  in fn use
   demo/ops:24:5  in varop [* *]
-pub type {field} = {original};
+pub type Field = Original;
 pub fn field()
-references to `{field}`:
-  demo/main:4:68  in module demo/main
-  demo/main:13:23  in fn label_use
-  demo/main:13:33  in fn label_use
-  demo/ops:16:11  in type {field}
+references to `Field`:
+  demo/main:4:17  in module demo/main
+  demo/main:13:22  in fn alias_use
+  demo/main:13:32  in fn alias_use
+  demo/ops:16:10  in type Field
 references to `fn`:
   demo/main:17:35  in fn keyword_use
   demo/ops:28:8  in fn fn

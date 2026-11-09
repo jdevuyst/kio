@@ -3,11 +3,11 @@ module api/main;
 import api(I32);
 import api(String);
 import api/labels(Choice);
+import api/labels(Counter);
+import api/labels(Name);
 import api/labels(Pair);
-import api/labels({counter});
-import api/labels({name});
 
-pub fn make(n: String, c: I32) -> Pair { {name = n, counter = c} }
+pub fn make(n: String, c: I32) -> Pair { (Name.mk(n), Counter.mk(c)) }
 
 pub fn echo_pair(x: Pair) -> Pair { x }
 

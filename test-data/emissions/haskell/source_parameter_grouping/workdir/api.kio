@@ -43,4 +43,4 @@ pub fn returned(first: Text) -> Text -> (Text & Text) {
   .(last: Text) { mark("tail"); (first, last) }
 }
 
-pub newtype Pair[A] : A & A { pub constructor pair; pub projector un_pair }
+pub type { Pair[A]: A & A { pub mk; pub get } }

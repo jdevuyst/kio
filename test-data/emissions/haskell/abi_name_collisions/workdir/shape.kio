@@ -2,11 +2,11 @@ module shape;
 
 import slot0 as s;
 
-pub newtype Y : s.Value { constructor mk_y; projector un_y }
+pub type { Y: s.Value { mk; get } }
 
-pub fn make_y(value: s.Value) -> Y { Y.mk_y(value) }
+pub fn make_y(value: s.Value) -> Y { Y.mk(value) }
 
-pub fn read_y(value: Y) -> s.Value { value.>Y.un_y }
+pub fn read_y(value: Y) -> s.Value { value.>Y.get }
 
 pub fn selector_collision(value: (. & . & Y) & . & s.Y) -> (. & . & Y) & . & s.Y { value }
 

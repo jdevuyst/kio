@@ -2,17 +2,17 @@ module api;
 
 host type Box[T];
 
-pub newtype Wrap[A] : A { pub constructor mk; pub projector get }
+pub type { Wrap[A]: A { pub mk; pub get } }
 
-pub newtype Token : . { pub constructor mk; pub projector get }
+pub type { Token: . { pub mk; pub get } }
 
-pub rec newtype Loop : . | Loop { pub constructor mk; pub projector get }
+pub rec type { Loop: . | Loop { pub mk; pub get } }
 
-pub newtype Pack <U> : U { pub constructor mk; pub projector get }
+pub type { Pack <U>: U { pub mk; pub get } }
 
-pub newtype Holder[*F] : . { pub constructor mk; pub projector get }
+pub type { Holder[*F]: . { pub mk; pub get } }
 
-pub newtype Mapper[*F] : [A] F[A] -> F[A] { pub constructor mk; pub projector get }
+pub type { Mapper[*F]: [A] F[A] -> F[A] { pub mk; pub get } }
 
 host fn wrap_seed() -> Box[Wrap[.]];
 

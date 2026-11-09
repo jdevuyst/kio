@@ -2,15 +2,15 @@ module roster/types;
 
 import testapi(I32, String);
 
-pub labels Shift = { day: I32, slot: I32, worker: I32, demand: I32, skill: I32, preference: I32 };
+pub type Shift = { Day: I32; Slot: I32; Worker: I32; Demand: I32; Skill: I32; Preference: I32 };
 
-pub labels Scorecard = {
-, skill_shortfalls: I32
-, same_day_conflicts: I32
-, rest_conflicts: I32
-, fairness_penalty: I32
-, preference_penalty: I32
-, total_score: I32
+pub type Scorecard = {
+  Skill_shortfalls: I32;
+  Same_day_conflicts: I32;
+  Rest_conflicts: I32;
+  Fairness_penalty: I32;
+  Preference_penalty: I32;
+  Total_score: I32
 };
 
-pub labels Worker_load = { load: I32, worker_name: String };
+pub type Worker_load = { Load: I32; Worker_name: String };

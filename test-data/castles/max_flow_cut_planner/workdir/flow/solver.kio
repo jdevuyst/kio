@@ -5,6 +5,7 @@ import flow/network as net;
 import flow/search as search;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -12,9 +13,9 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Augmentation = { route: String, amount: I32, cancelled: I32 };
+pub type Augmentation = { Route: String; Amount: I32; Cancelled: I32 };
 
-pub labels Solution = { residual: Array[I32], value: I32, history: Array[Augmentation] };
+pub type Solution = { Residual: Array[I32]; Value: I32; History: Array[Augmentation] };
 
 rec(loop) fn bottleneck(path: Array[I32], residual: Array[I32], index: I32, limit: I32) -> I32 {
   if(math.less(index, ar.array_len(path))) {
@@ -39,11 +40,11 @@ rec(loop) fn send(
 ) -> I32 {
   if(math.less(index, ar.array_len(path))) {
     let edge_index = ar.array_get(path, index);
-    let edge = ar.array_get(network.?{net.edges}, edge_index);
-    let back = edge.?{net.reverse};
+    let edge = ar.array_get(network.>select { net.Edges.get }, edge_index);
+    let back = edge.>select { net.Reverse.get };
     ar.array_set(residual, edge_index, a.sub_i32(ar.array_get(residual, edge_index), amount));
     ar.array_set(residual, back, a.add_i32(ar.array_get(residual, back), amount));
-    let cancellation = if(edge.?{net.backward}) { amount } else { 0 };
+    let cancellation = if(edge.>select { net.Backward.get }) { amount } else { 0 };
     recur send(
     , network
     , residual
@@ -59,11 +60,11 @@ rec(loop) fn send(
 
 rec(loop) fn describe_path(network: net.Network, path: Array[I32], index: I32, route: String) -> String {
   if(a.leq_i32(0, index)) {
-    let edge = ar.array_get(network.?{net.edges}, ar.array_get(path, index));
-    let .(arrow: String) = if(edge.?{net.backward}) { "-cancel->" } else { "->" };
+    let edge = ar.array_get(network.>select { net.Edges.get }, ar.array_get(path, index));
+    let .(arrow: String) = if(edge.>select { net.Backward.get }) { "-cancel->" } else { "->" };
     let next = text.string_concat(
     , route
-    , text.string_concat(arrow, fmt.int_to_string(edge.?{net.to}))
+    , text.string_concat(arrow, fmt.int_to_string(edge.>select { net.To.get }))
     );
     recur describe_path(network, path, a.sub_i32(index, 1), next)
   } else {
@@ -85,10 +86,10 @@ rec(loop) fn improve(
       let route =
         describe_path(network, path, a.sub_i32(ar.array_len(path), 1), fmt.int_to_string(source));
       let cancelled = send(network, residual, path, amount, 0, 0);
-      ar.array_push(history, {route, amount, cancelled});
+      ar.array_push(history, (Route.mk(route), Amount.mk(amount), Cancelled.mk(cancelled)));
       recur improve(network, source, sink, residual, a.add_i32(value, amount), history)
     };
-    .(_done: .) { {residual, value, history} }
+    .(_done: .) { (Residual.mk(residual), Value.mk(value), History.mk(history)) }
   }
 }
 

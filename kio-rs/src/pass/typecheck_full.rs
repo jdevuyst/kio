@@ -1,13 +1,12 @@
 //! Type checking for full Kio (System F core + the elaboration-aware
-//! positions for user-macro calls and field syntax).
+//! positions for user-macro calls).
 //!
 //! Most of the typer machinery is shared with the kio-prime binary's
 //! standalone Kio'-only typer through [`crate::pass::typecheck_core`]
 //! (`ModuleEnv<P>`, `TypeCtx<P>`, the synth/check/apply family,
 //! the `Typer<P>` dispatch trait, …). This module retains only the
 //! pieces that depend on the elaboration table — recursive-order obligations,
-//! user-macro action preparation, `synth_field_access` / `synth_field_update`
-//! — plus the [`Elaborations`]
+//! user-macro action preparation — plus the [`Elaborations`]
 //! type itself and the `LoweredTyper` that wires `Typer<Lowered>`
 //! to the elaboration-aware `synth_expr` / `check_value_against`.
 //! The `kio` binary's [`check_package`] entry point at the bottom drives the
@@ -69,17 +68,15 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 // The typer consumes the `Lowered` phase: label elaboration has run,
-// so `Expr::Tuple`, `Expr::LabelValue`, `Type::LabelSugar`, and
-// `Item::Labels` are statically uninhabited here. Local aliases pin
+// so `Expr::Tuple` and `Item::Labels` are statically uninhabited here. Local aliases pin
 // every parametrized AST type to `Lowered`. The checking core records its
 // boundary-local outputs in `Elaborations`; `check_package` then substitutes
 // them into Prime and runs standalone Prime validation.
 #[cfg(test)]
 use crate::ast::Role;
 use crate::ast::{
-    ElaboratorCall, ElaboratorKind, FieldAccessLabel, FieldUpdateLabel, Import, ImportKind, Item,
-    Lowered, Meta, NodeId, PathSegment, Prime, RecOrderDisposition, RecOrderPlan, RecOrderTypeFlow,
-    RoleShape, TypeParam, UncheckedPrime,
+    Import, ImportKind, Item, Lowered, Meta, NodeId, PathSegment, Prime, RecOrderDisposition,
+    RecOrderPlan, RecOrderTypeFlow, RoleShape, TypeParam, UncheckedPrime,
 };
 use crate::pass::substitute;
 use crate::pass::typecheck_core::apply::{CallArgRef, call_arg_refs};
@@ -92,9 +89,8 @@ use crate::pass::typecheck_core::{
     UserMacroEvalArtifactPair, UserMacroMemoInputKey, UserMacroMemoKey, UserMacroPreparedKey,
     UserMacroPreparedPurpose, UserMacroTemplate, UserMacroTemplateGeneratedImport,
     UserMacroTemplateResult, check_well_formed_type, collect_free_type_vars, compute_kind,
-    display_type, fresh_type_var, intrinsic_call, lookup_newtype_by_name, right_fold_product,
-    source_type_spelling, subst_type, synth_literal, synth_path, synth_seq, ty_path, ty_product,
-    ty_sum,
+    display_type, fresh_type_var, source_type_spelling, subst_type, synth_literal, synth_path,
+    synth_seq, ty_path, ty_product,
 };
 type InternedType = crate::pass::typecheck_core::InternedType<Lowered>;
 type RecordedTypeResolution = crate::pass::typecheck_core::RecordedTypeResolution<Lowered>;
@@ -407,6 +403,16 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
             .record_fn_param_type(&mp, fn_site.id, value_param_index, resolved);
     }
 
+    fn record_proof_fn_body_type<'m>(
+        fn_site: crate::ast::ExpressionSite,
+        resolved: InternedType,
+        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
+    ) {
+        let mp = tcx.env.module_path.clone();
+        tcx.elaborations
+            .record_proof_fn_body_type(&mp, fn_site.id, resolved);
+    }
+
     fn record_newtype_member_binder_at<'m>(
         segment_span: crate::span::Span,
         declaring_module_path: &str,
@@ -501,16 +507,6 @@ fn fill_ctx_type(span: Span) -> Type {
     refl_type("__Fill_ctx__", span)
 }
 
-fn optional_type_slot_type(span: Span) -> Type {
-    ty_sum(
-        refl_type("__Type__", span),
-        Type::Unit {
-            meta: Meta::new(span),
-        },
-        span,
-    )
-}
-
 #[derive(Clone)]
 enum UserMacroSignatureSlot {
     Type {
@@ -588,6 +584,8 @@ pub(crate) enum ProjectedUserMacroSlot {
         layer: usize,
         slot: usize,
         result_focus: bool,
+        natural_result: bool,
+        required_result: bool,
         residual: Option<ProjectedResidualTypeInput>,
     },
     Value {
@@ -601,13 +599,47 @@ pub(crate) enum ProjectedUserMacroSlot {
 
 pub(crate) struct ProjectedResidualTypeInput {
     pub(crate) ty: InternedType,
-    pub(crate) lexical_binders: Vec<TypeParam>,
+    pub(crate) lexical_binders: Vec<FrozenResidualTypeBinder>,
 }
 
 pub(crate) struct ProjectedResidualValueInput {
     pub(crate) name: String,
     pub(crate) ty: InternedType,
-    pub(crate) lexical_binders: Vec<TypeParam>,
+    pub(crate) lexical_binders: Vec<FrozenResidualTypeBinder>,
+}
+
+impl ProjectedResidualTypeInput {
+    pub(crate) fn lexical_type_params(&self) -> Vec<TypeParam> {
+        self.lexical_binders
+            .iter()
+            .map(|binder| binder.param.clone())
+            .collect()
+    }
+
+    pub(crate) fn reflection_bindings(
+        &self,
+    ) -> impl Iterator<Item = (String, crate::normalization::ReflectedVariable)> + '_ {
+        self.lexical_binders
+            .iter()
+            .map(|binder| (binder.param.name.clone(), binder.binding.clone()))
+    }
+}
+
+impl ProjectedResidualValueInput {
+    pub(crate) fn lexical_type_params(&self) -> Vec<TypeParam> {
+        self.lexical_binders
+            .iter()
+            .map(|binder| binder.param.clone())
+            .collect()
+    }
+
+    pub(crate) fn reflection_bindings(
+        &self,
+    ) -> impl Iterator<Item = (String, crate::normalization::ReflectedVariable)> + '_ {
+        self.lexical_binders
+            .iter()
+            .map(|binder| (binder.param.name.clone(), binder.binding.clone()))
+    }
 }
 
 pub(crate) struct ProjectedUserMacroCallShape {
@@ -623,8 +655,24 @@ pub(crate) struct ProjectedUserMacroCallLayerShape {
 }
 
 #[derive(Clone)]
+pub(crate) struct FrozenResidualTypeBinder {
+    pub(crate) param: TypeParam,
+    pub(crate) binding: crate::normalization::ReflectedVariable,
+}
+
+impl FrozenResidualTypeBinder {
+    fn new(param: TypeParam) -> Self {
+        let binding = crate::normalization::ReflectedVariable::live(
+            param.name.clone(),
+            param.effective_kind().arity(),
+        );
+        Self { param, binding }
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct FrozenProjectedResidualAbi {
-    generated_type_params: Vec<Option<TypeParam>>,
+    generated_type_params: Vec<Option<FrozenResidualTypeBinder>>,
     bound_value_names: Vec<Option<String>>,
 }
 
@@ -642,79 +690,6 @@ pub(crate) struct ProjectedUserMacroAbiPlan {
 }
 
 impl<'m> PreparedUserMacroAction<'m> {
-    fn validate_trailing_call(
-        &self,
-        call: &TypedUserMacroCall,
-        tcx: &TypeCtx<'_, '_>,
-    ) -> Result<(), Error> {
-        let blocks = &self.macro_def.trailing_blocks;
-        if blocks.is_empty() {
-            return Ok(());
-        }
-        let error = |span, message: &str| {
-            trailing_block_declaration_error(span, message, self.macro_def, self.macro_module, tcx)
-        };
-        for (index, declared) in self.layout.layers.iter().enumerate() {
-            let Some(selected) = call.layers.get(index) else {
-                return Err(error(
-                    self.span,
-                    "a trailing-block call must supply every public value input",
-                ));
-            };
-            if (declared.value_param.is_some() && !selected.value_layer_consumed)
-                || selected.type_slots.len() != declared.type_params.len()
-            {
-                return Err(error(
-                    self.span,
-                    "a trailing-block call cannot retain unsupplied public inputs",
-                ));
-            }
-        }
-        let mut sources: Vec<_> = call
-            .layers
-            .iter()
-            .flat_map(|layer| &layer.sources)
-            .collect();
-        sources.sort_by_key(|source| source.source_index);
-        let first = sources.len().checked_sub(blocks.len()).ok_or_else(|| {
-            error(
-                self.span,
-                "each declared trailing block requires one value source",
-            )
-        })?;
-        for (source, descriptor) in sources[first..].iter().zip(blocks) {
-            let valid = match descriptor.exposure {
-                crate::ast::BlockExposure::Product => true,
-                crate::ast::BlockExposure::Thunk => {
-                    let (ty, _) = crate::pass::typecheck_core::canonicalize_deep_for_comparison(
-                        source.expected.as_type(),
-                        &tcx.env.alias_ctx(),
-                        source.expected.identity_is_canonical(),
-                    );
-                    matches!(ty, Type::Function { param, .. } if matches!(*param, Type::Unit { .. }))
-                }
-                crate::ast::BlockExposure::Sequence => {
-                    sequence_slot_type(&source.expected, &tcx.env.alias_ctx())
-                }
-            };
-            if !valid {
-                return Err(error(
-                    source.source.span(),
-                    match descriptor.exposure {
-                        crate::ast::BlockExposure::Thunk => {
-                            "a thunk block requires an ordinary `. -> R` value slot"
-                        }
-                        crate::ast::BlockExposure::Sequence => {
-                            "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
-                        }
-                        crate::ast::BlockExposure::Product => unreachable!(),
-                    },
-                ));
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn node_id(&self) -> NodeId {
         self.node_id
     }
@@ -788,7 +763,7 @@ impl<'m> PreparedUserMacroAction<'m> {
         Some((self.layout.layers.len() - 1, &terminal.type_params))
     }
 
-    pub(crate) fn type_slot_is_optional(&self, layer: usize, slot: usize) -> bool {
+    pub(crate) fn type_slot_is_natural(&self, layer: usize, slot: usize) -> bool {
         let preceding_slots = self
             .layout
             .layers
@@ -802,8 +777,13 @@ impl<'m> PreparedUserMacroAction<'m> {
         );
         matches!(
             self.type_slot_modes[preceding_slots + slot],
-            UserMacroTypeSlotMode::Optional
+            UserMacroTypeSlotMode::NaturalResult
         )
+    }
+
+    pub(crate) fn has_natural_result(&self) -> bool {
+        self.type_slot_modes
+            .contains(&UserMacroTypeSlotMode::NaturalResult)
     }
 
     pub(crate) fn type_slot_param(&self, layer: usize, slot: usize) -> &TypeParam {
@@ -865,9 +845,12 @@ impl<'m> PreparedUserMacroAction<'m> {
                     generated_type_params.push(None);
                     None
                 } else {
-                    let generated = generated_macro_type_param(param, &mut reserved);
+                    let generated = FrozenResidualTypeBinder::new(generated_macro_type_param(
+                        param,
+                        &mut reserved,
+                    ));
                     let generated_ty = InternedType::fresh_canonical(Type::Path {
-                        segments: vec![PathSegment::new(generated.name.clone(), self.span)],
+                        segments: vec![PathSegment::new(generated.param.name.clone(), self.span)],
                         args: Vec::new(),
                         meta: Meta::new(self.span),
                     });
@@ -879,10 +862,14 @@ impl<'m> PreparedUserMacroAction<'m> {
                         lexical_binders: lexical_binders.clone(),
                     })
                 };
+                let mode = self.type_slot_modes[generated_type_params.len() - 1];
                 slots.push(ProjectedUserMacroSlot::Type {
                     layer: layer_index,
                     slot: layer_slot,
-                    result_focus: !shadowed
+                    natural_result: mode == UserMacroTypeSlotMode::NaturalResult,
+                    required_result: mode == UserMacroTypeSlotMode::RequiredResult,
+                    result_focus: mode != UserMacroTypeSlotMode::NaturalResult
+                        && !shadowed
                         && type_mentions_free_param(self.layout.result_ty.as_type(), &param.name),
                     residual,
                 });
@@ -977,9 +964,8 @@ impl<'m> PreparedUserMacroAction<'m> {
     /// Whether this private ABI slot may be absent when an already-selected
     /// public call becomes an executable action. This is an action-readiness
     /// fact only; the shared call planner never consults it.
-    pub(crate) fn optional_type_slot_can_be_absent(&self, layer: usize, slot: usize) -> bool {
-        self.type_slot_is_optional(layer, slot)
-            && type_slot_occurs_only_in_result(&self.layout, layer, slot)
+    pub(crate) fn natural_type_slot_can_be_absent(&self, layer: usize, slot: usize) -> bool {
+        self.type_slot_is_natural(layer, slot)
     }
 
     pub(crate) fn into_ready(
@@ -999,7 +985,6 @@ impl<'m> PreparedUserMacroAction<'m> {
         frozen_residual: Option<&FrozenProjectedResidualAbi>,
         tcx: &mut TypeCtx<'m, '_>,
     ) -> Result<ReadyUserMacroAction, Error> {
-        self.validate_trailing_call(&typed, tcx)?;
         let completed = complete_user_macro_abi(
             &self.layout,
             &self.type_slot_modes,
@@ -1030,6 +1015,7 @@ impl<'m> PreparedUserMacroAction<'m> {
             value_adapter: completed.value_adapter,
             residual_abstraction: completed.residual_abstraction,
             ambient_type_names: completed.ambient_type_names,
+            residual_reflection_bindings: completed.residual_reflection_bindings,
             terminal_result_ty: completed.terminal_result_ty,
             span: self.span,
         })
@@ -1046,9 +1032,16 @@ impl<'m> PreparedUserMacroAction<'m> {
         assert_eq!(self.macro_def.schedule, crate::ast::MacroSchedule::Fills);
         assert!(fills.matches_proof(&proof));
         assert_eq!(declared_inputs.len(), self.layout.slots.len());
+        let mut modes = self.type_slot_modes.iter();
         for (slot, value) in self.layout.slots.iter().zip(&declared_inputs) {
             match slot {
                 UserMacroSignatureSlot::Type { .. } => {
+                    if *modes.next().expect("every type slot has a mode")
+                        == UserMacroTypeSlotMode::NaturalResult
+                    {
+                        assert!(matches!(value, crate::normalization::Value::Unit));
+                        continue;
+                    }
                     let projected = crate::normalization::projected_value_from_value(value)
                         .expect("a projected macro type slot retained an ordinary value");
                     assert!(projected.is_type() && projected.matches_proof(&proof));
@@ -1091,8 +1084,18 @@ impl ReadyProjectedUserMacroAction<'_> {
 
     /// Exact declaration-order binders shared by residual input scopes and the
     /// eventual eta plan; recipe closure must not reconstruct them from names.
-    pub(crate) fn residual_lexical_binders(&self) -> impl Iterator<Item = &TypeParam> {
+    pub(crate) fn residual_type_binders(&self) -> impl Iterator<Item = &FrozenResidualTypeBinder> {
         self.frozen_residual.generated_type_params.iter().flatten()
+    }
+
+    pub(crate) fn residual_reflection_bindings(
+        &self,
+    ) -> impl Iterator<Item = (String, crate::normalization::ReflectedVariable)> + '_ {
+        self.frozen_residual
+            .generated_type_params
+            .iter()
+            .flatten()
+            .map(|binder| (binder.param.name.clone(), binder.binding.clone()))
     }
 
     /// Whether materialization would wrap the evaluator recipe in a callable
@@ -1121,15 +1124,16 @@ impl ReadyProjectedUserMacroAction<'_> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UserMacroTypeSlotMode {
-    Required,
-    Optional,
+    Input,
+    RequiredResult,
+    NaturalResult,
 }
 
 #[derive(Clone, Debug)]
 enum UserMacroTemplateInput {
     ComptimeProof,
     Type(ReflectableType),
-    OptionalType(UserMacroOptionalTypeInput),
+    NaturalResult,
     Term {
         value_index: usize,
         value_ty: ReflectableType,
@@ -1144,20 +1148,13 @@ enum UserMacroTemplateInput {
 }
 
 #[derive(Clone, Debug)]
-enum UserMacroOptionalTypeInput {
-    Known(ReflectableType),
-    Infer,
-}
-
-#[derive(Clone, Debug)]
 enum UserMacroTemplateInputKey {
     ComptimeProof,
-    Type(crate::ast::Type<UncheckedPrime>),
-    OptionalTypeKnown(crate::ast::Type<UncheckedPrime>),
-    OptionalTypeInfer,
-    Term(crate::ast::Type<UncheckedPrime>),
+    Type(ReflectableType),
+    NaturalResult,
+    Term(ReflectableType),
     ResidualShape(crate::ast::Type<UncheckedPrime>),
-    CapturedTerm(crate::ast::Type<UncheckedPrime>),
+    CapturedTerm(crate::normalization::EvalRef<crate::normalization::CheckedTerm>),
 }
 
 #[derive(Clone)]
@@ -1273,6 +1270,131 @@ fn user_macro_signature_layout(
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct TrailingProjectionCheck {
+    has_final_prefix: bool,
+    blocks: Vec<(crate::ast::BlockExposure, Error)>,
+    binders: HashSet<String>,
+}
+
+impl TrailingProjectionCheck {
+    pub(crate) fn validate(
+        self,
+        expected: InternedType,
+        tcx: &TypeCtx<'_, '_>,
+    ) -> Result<(), Error> {
+        let aliases = tcx.binder_alias_ctx(&self.binders);
+        let (packet_ty, identity_canonical) =
+            crate::pass::typecheck_core::canonicalize_deep_for_comparison(
+                expected.as_type(),
+                &aliases,
+                expected.identity_is_canonical(),
+            );
+        let mut remaining = &packet_ty;
+        if self.has_final_prefix {
+            let Type::Product { right, .. } = remaining else {
+                unreachable!("ordinary checking validates the prefix-and-block product")
+            };
+            remaining = right;
+        }
+        // These paths come from projection syntax. The final block retains its
+        // whole type, including any product belonging to the block itself.
+        let block_count = self.blocks.len();
+        for (index, (exposure, error)) in self.blocks.into_iter().enumerate() {
+            let block_ty = if index + 1 == block_count {
+                remaining
+            } else {
+                let Type::Product { left, right, .. } = remaining else {
+                    unreachable!("ordinary checking validates the projected block product")
+                };
+                remaining = right;
+                left
+            };
+            let valid = match exposure {
+                crate::ast::BlockExposure::Product => true,
+                crate::ast::BlockExposure::Thunk => {
+                    matches!(block_ty, Type::Function { param, .. } if matches!(param.as_ref(), Type::Unit { .. }))
+                }
+                crate::ast::BlockExposure::Sequence => sequence_slot_type(
+                    &InternedType::fresh_with_identity(block_ty.clone(), identity_canonical),
+                    &aliases,
+                ),
+            };
+            if !valid {
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn trailing_projection_check(
+    original: &Expr,
+    candidate: &Expr,
+    tcx: &TypeCtx<'_, '_>,
+) -> Result<Option<TrailingProjectionCheck>, Error> {
+    let Expr::UserMacro {
+        name,
+        stages,
+        form: crate::ast::UserMacroCallForm::TrailingBlocks { has_final_prefix },
+        ..
+    } = original
+    else {
+        return Ok(None);
+    };
+    let [CallArg::Value(packet)] = stages
+        .last()
+        .expect("block projection creates a final value stage")
+        .args
+        .as_slice()
+    else {
+        unreachable!("block projection packs its final stage as one value")
+    };
+    if packet.site().id != candidate.site().id {
+        return Ok(None);
+    }
+    let (macro_def, macro_module) = resolve_user_macro_for_call(name, original.span(), tcx)?;
+    if macro_def
+        .trailing_blocks
+        .iter()
+        .all(|block| block.exposure == crate::ast::BlockExposure::Product)
+    {
+        return Ok(None);
+    }
+    let blocks = macro_def
+        .trailing_blocks
+        .iter()
+        .map(|descriptor| {
+            let message = match descriptor.exposure {
+                crate::ast::BlockExposure::Thunk => {
+                    "a thunk block requires an ordinary `. -> R` value slot"
+                }
+                crate::ast::BlockExposure::Sequence => {
+                    "a sequence block requires an ordinary `Bind[F] -> F[R]` value slot"
+                }
+                crate::ast::BlockExposure::Product => {
+                    "a product block requires an ordinary value slot"
+                }
+            };
+            (
+                descriptor.exposure,
+                trailing_block_declaration_error(
+                    packet.span(),
+                    message,
+                    macro_def,
+                    macro_module,
+                    tcx,
+                ),
+            )
+        })
+        .collect();
+    Ok(Some(TrailingProjectionCheck {
+        has_final_prefix: *has_final_prefix,
+        blocks,
+        binders: tcx.in_scope_type_param_binders(),
+    }))
+}
+
 fn trailing_block_declaration_error(
     span: Span,
     message: &str,
@@ -1296,222 +1418,6 @@ fn trailing_block_declaration_error(
         }
         _ => error.with_secondary(macro_def.name_span, "trailing blocks declared here"),
     }
-}
-
-fn validate_trailing_declaration(
-    macro_def: &crate::ast::UserMacroDef<Lowered>,
-    layout: &UserMacroSignatureLayout,
-    aliases: &AliasCtx<'_, '_>,
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<(), Error> {
-    if macro_def.trailing_blocks.is_empty() {
-        return Ok(());
-    }
-    let mut bound = aliases.binder_local_names();
-    let mut params = Vec::new();
-    let mut slots = Vec::new();
-    for layer in &layout.layers {
-        bound.extend(layer.type_params.iter().map(|param| param.name.clone()));
-        params.extend(layer.type_params.iter().cloned());
-        let Some(param) = &layer.value_param else {
-            continue;
-        };
-        let scoped = AliasCtx {
-            binder_locals: Some(&bound),
-            ..*aliases
-        };
-        let (domain, _) = crate::pass::typecheck_core::canonicalize_deep_for_comparison(
-            param.as_type(),
-            &scoped,
-            param.identity_is_canonical(),
-        );
-        slots.push((domain.clone(), domain, params.len()));
-    }
-    let blocks = &macro_def.trailing_blocks;
-    if let Some(first) = slots.len().checked_sub(blocks.len())
-        && trailing_declaration_candidate(&slots[first..], &params, blocks, tcx)?
-    {
-        return Ok(());
-    }
-
-    Err(Error::type_(
-        blocks[0].meta.span,
-        "trailing block descriptors are incompatible with the final public value inputs",
-    )
-    .with_secondary(macro_def.call_ty.span(), "public call type declared here"))
-}
-
-fn trailing_declaration_candidate(
-    slots: &[(Type, Type, usize)],
-    params: &[TypeParam],
-    blocks: &[crate::ast::TrailingBlockDecl<Lowered>],
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<bool, Error> {
-    use crate::pass::typecheck_core::{
-        GoalOrigin, GoalOwnerKind, GoalRole, GoalSolutionPolicy, GoalStore, ScopedType,
-    };
-
-    fn abstract_params(params: &[TypeParam], ty: Type, span: Span) -> Type {
-        params.iter().rev().fold(ty, |body, param| Type::Forall {
-            param: param.clone(),
-            body: Box::new(body),
-            meta: Meta::new(span),
-        })
-    }
-
-    fn allocate(
-        store: &mut GoalStore,
-        owner: crate::ast::TypeGoalOwner,
-        param: &TypeParam,
-        tcx: &TypeCtx<'_, '_>,
-    ) -> Result<ScopedType, Error> {
-        let goal = store.alloc_goal(
-            owner,
-            param.effective_kind(),
-            GoalSolutionPolicy::PolytypeAllowed,
-            GoalOrigin::named(param.span, GoalRole::TypeArgument, &param.name),
-        )?;
-        Ok(store
-            .scoped_goal_at(goal, Vec::new(), owner, param.span)?
-            .canonicalized_for_comparison(tcx))
-    }
-
-    let span = blocks[0].meta.span;
-    let mut store = GoalStore::new();
-    let owner = store.begin_owner(
-        None,
-        store.scope_from_type_ctx(tcx),
-        GoalOwnerKind::Application,
-        span,
-    )?;
-    let arguments = params
-        .iter()
-        .map(|param| allocate(&mut store, owner, param, tcx))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut equations = Vec::new();
-    for (index, (block, (value, tail, count))) in blocks.iter().zip(slots).enumerate() {
-        if block.exposure == crate::ast::BlockExposure::Product {
-            continue;
-        }
-        let ty = if index + 1 == blocks.len() {
-            tail
-        } else {
-            value
-        };
-        let Some((required, extra)) =
-            trailing_declaration_slot_schema(ty, block.exposure, index, span)
-        else {
-            return Ok(false);
-        };
-        let found = store.scoped_type(
-            owner,
-            InternedType::fresh_canonical(abstract_params(&params[..*count], ty.clone(), span)),
-            span,
-        )?;
-        let found = found
-            .projected_public_forall_prefix_application(&arguments[..*count])
-            .expect("public declaration arguments share their root scope");
-        let mut expected_args = arguments[..*count].to_vec();
-        for param in &extra {
-            expected_args.push(allocate(&mut store, owner, param, tcx)?);
-        }
-        let required = abstract_params(&extra, required, span);
-        let expected = store.scoped_type(
-            owner,
-            InternedType::fresh_canonical(abstract_params(&params[..*count], required, span)),
-            span,
-        )?;
-        let expected = expected
-            .projected_public_forall_prefix_application(&expected_args)
-            .expect("descriptor schema arguments share their root scope");
-        equations.push((found, expected, span));
-    }
-    // This disposable relation checks compatibility only. Unsolved public
-    // parameters remain for ordinary calls; no substitution or publication
-    // from a declaration check enters a caller's inference domain.
-    let mut delta = store.begin_delta(owner, span)?;
-    Ok(store
-        .constrain_equations_atomically(&mut delta, equations, tcx)
-        .is_ok())
-}
-
-fn trailing_declaration_slot_schema(
-    ty: &Type,
-    exposure: crate::ast::BlockExposure,
-    index: usize,
-    span: Span,
-) -> Option<(Type, Vec<TypeParam>)> {
-    let binder = |role: &str, kind| TypeParam {
-        presentation: Default::default(),
-        name: format!("\0block-descriptor-{index}-{role}"),
-        span,
-        kind,
-    };
-    let result = binder("result", None);
-    let result_ty = Type::synth_path(vec![result.name.clone()], Vec::new(), span);
-    if exposure == crate::ast::BlockExposure::Thunk {
-        return Some((
-            Type::synth_function(Vec::new(), result_ty, span),
-            vec![result],
-        ));
-    }
-    assert_eq!(exposure, crate::ast::BlockExposure::Sequence);
-    let mut extra = vec![result];
-    let known_carrier = match ty {
-        Type::Function { param, .. } => match param.as_ref() {
-            Type::Forall { param: a, body, .. } => match body.as_ref() {
-                Type::Forall { param: b, body, .. } => match body.as_ref() {
-                    Type::Function { param, .. } => match param.as_ref() {
-                        Type::Product { left, .. } => {
-                            Some((a.clone(), b.clone(), left.as_ref().clone()))
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        },
-        _ => None,
-    };
-    let (a, b, fa) = known_carrier.unwrap_or_else(|| {
-        let a = binder("input", None);
-        let b = binder("output", None);
-        let carrier = binder("carrier", Some(Box::new(crate::ast::Kind::arrow_chain(1))));
-        let fa = Type::synth_path(
-            vec![carrier.name.clone()],
-            vec![Type::synth_path(vec![a.name.clone()], Vec::new(), span)],
-            span,
-        );
-        extra.push(carrier);
-        (a, b, fa)
-    });
-    if a.effective_kind() != crate::ast::Kind::Star
-        || b.effective_kind() != crate::ast::Kind::Star
-        || a.name == b.name
-        || type_mentions_free_param(&fa, &b.name)
-    {
-        return None;
-    }
-    let a_ty = Type::synth_path(vec![a.name.clone()], Vec::new(), span);
-    let b_ty = Type::synth_path(vec![b.name.clone()], Vec::new(), span);
-    let fb = subst_type(&fa, &HashMap::from([(a.name.clone(), b_ty)]));
-    let result_ty = subst_type(&fa, &HashMap::from([(a.name.clone(), result_ty)]));
-    let bind = Type::synth_function(
-        vec![fa, Type::synth_function(vec![a_ty], fb.clone(), span)],
-        fb,
-        span,
-    );
-    let bind = [a, b]
-        .into_iter()
-        .rev()
-        .fold(bind, |body, param| Type::Forall {
-            param,
-            body: Box::new(body),
-            meta: Meta::new(span),
-        });
-    Some((Type::synth_function(vec![bind], result_ty, span), extra))
 }
 
 fn sequence_slot_type(ty: &InternedType, aliases: &AliasCtx<'_, '_>) -> bool {
@@ -1661,6 +1567,7 @@ struct CompletedUserMacroAbi {
     /// Enclosing source binders complete the replay allocator's namespace but
     /// do not affect the reusable macro template or its memo key.
     ambient_type_names: HashSet<String>,
+    residual_reflection_bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
     terminal_result_ty: Option<InternedType>,
 }
 
@@ -1798,6 +1705,7 @@ fn type_slot_occurs_only_in_result(
     layout: &UserMacroSignatureLayout,
     layer_index: usize,
     layer_slot: usize,
+    aliases: &AliasCtx<'_, '_>,
 ) -> bool {
     // A later same-spelled binder shadows this one, so any result occurrence
     // after that boundary belongs to the later binder rather than this slot.
@@ -1811,15 +1719,46 @@ fn type_slot_occurs_only_in_result(
         if later_params.iter().any(|param| param.name == *name) {
             return false;
         }
-        if layer
-            .value_param
-            .as_ref()
-            .is_some_and(|value| type_mentions_free_param(value.as_type(), name))
-        {
+        if layer.value_param.as_ref().is_some_and(|value| {
+            let mut binders = aliases.binder_local_names();
+            for prior in &layout.layers[..=index] {
+                binders.extend(prior.type_params.iter().map(|param| param.name.clone()));
+            }
+            let aliases = AliasCtx {
+                binder_locals: Some(&binders),
+                ..*aliases
+            };
+            let semantic = crate::pass::typecheck_core::materialize_aliases_in_scope(
+                value.as_type(),
+                aliases.source_module,
+                aliases.package,
+                Some(&binders),
+                value.identity_is_canonical(),
+            );
+            type_mentions_free_param(&semantic, name)
+        }) {
             return false;
         }
     }
-    type_mentions_free_param(layout.result_ty.as_type(), name)
+    let mut binders = aliases.binder_local_names();
+    binders.extend(
+        layout
+            .layers
+            .iter()
+            .flat_map(|layer| layer.type_params.iter().map(|param| param.name.clone())),
+    );
+    let aliases = AliasCtx {
+        binder_locals: Some(&binders),
+        ..*aliases
+    };
+    let result = crate::pass::typecheck_core::materialize_aliases_in_scope(
+        layout.result_ty.as_type(),
+        aliases.source_module,
+        aliases.package,
+        Some(&binders),
+        layout.result_ty.identity_is_canonical(),
+    );
+    type_mentions_free_param(&result, name)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1847,7 +1786,7 @@ fn complete_user_macro_abi(
         for source in &layer.sources {
             let reflected = reflect_macro_interned_type(&source.expected, tcx)?;
             let replacement = crate::normalization::CheckedTermTemplateSource {
-                ty: reflected.as_type().clone(),
+                ty: reflected,
                 force_if_unused: layout.layers[layer_index].value_abi_arity == 0,
             };
             assert!(
@@ -1910,7 +1849,7 @@ fn complete_user_macro_abi(
                         resolved
                     }
                     None => {
-                        if !matches!(mode, UserMacroTypeSlotMode::Optional) {
+                        if !matches!(mode, UserMacroTypeSlotMode::NaturalResult) {
                             return Err(Error::type_(
                                 span,
                                 format!(
@@ -1919,16 +1858,10 @@ fn complete_user_macro_abi(
                                 ),
                             ));
                         }
-                        assert!(
-                            type_slot_occurs_only_in_result(layout, layer_index, layer_slot),
-                            "an open macro ABI dependency passed action-readiness checking"
-                        );
                         if let Some(occurrence) = &slot.occurrence {
                             substitutions.insert(param.name.clone(), occurrence.clone_type());
                         }
-                        inputs.push(UserMacroTemplateInput::OptionalType(
-                            UserMacroOptionalTypeInput::Infer,
-                        ));
+                        inputs.push(UserMacroTemplateInput::NaturalResult);
                         continue;
                     }
                 }
@@ -1937,31 +1870,33 @@ fn complete_user_macro_abi(
                     .and_then(|frozen| frozen.generated_type_params[frozen_type_index].as_ref())
                     .cloned()
                     .unwrap_or_else(|| {
-                        generated_macro_type_param(param, &mut generated_type_names)
+                        FrozenResidualTypeBinder::new(generated_macro_type_param(
+                            param,
+                            &mut generated_type_names,
+                        ))
                     });
                 let generated_ty = Type::Path {
-                    segments: vec![PathSegment::new(generated.name.clone(), span)],
+                    segments: vec![PathSegment::new(generated.param.name.clone(), span)],
                     args: Vec::new(),
                     meta: Meta::new(span),
                 };
-                residual_type_params.push(generated.clone());
+                residual_type_params.push(generated.param.clone());
                 residual_reflection_binders.push(generated);
                 InternedType::fresh_canonical(generated_ty)
             };
             substitutions
                 .entry(param.name.clone())
                 .or_insert_with(|| resolved.clone_type());
-            let reflected = reflect_macro_interned_type_with_binders(
-                &resolved,
-                tcx,
-                &residual_reflection_binders,
-            )?;
-            inputs.push(match mode {
-                UserMacroTypeSlotMode::Required => UserMacroTemplateInput::Type(reflected),
-                UserMacroTypeSlotMode::Optional => UserMacroTemplateInput::OptionalType(
-                    UserMacroOptionalTypeInput::Known(reflected),
-                ),
-            });
+            if mode == UserMacroTypeSlotMode::NaturalResult {
+                inputs.push(UserMacroTemplateInput::NaturalResult);
+            } else {
+                let reflected = reflect_macro_interned_type_with_binders(
+                    &resolved,
+                    tcx,
+                    &residual_reflection_binders,
+                )?;
+                inputs.push(UserMacroTemplateInput::Type(reflected));
+            }
         }
 
         let source_slots = typed_layer
@@ -2010,10 +1945,7 @@ fn complete_user_macro_abi(
                             source_slot: expanded_slot - source.expanded_start,
                             source_slot_tys: slot_tys
                                 .iter()
-                                .map(|ty| {
-                                    reflect_macro_interned_type(ty, tcx)
-                                        .map(|reflected| reflected.as_type().clone())
-                                })
+                                .map(|ty| reflect_macro_interned_type(ty, tcx))
                                 .collect::<Result<_, _>>()?,
                         });
                         continue;
@@ -2032,7 +1964,7 @@ fn complete_user_macro_abi(
                         "only a source-empty implicit Unit may omit a macro source"
                     );
                     let source_index = values.len();
-                    let source_ty = reflected.as_type().clone();
+                    let source_ty = reflected.clone();
                     values.push(Expr::Unit {
                         source_trivia: Default::default(), occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                         meta: Meta::new(span),
@@ -2124,6 +2056,10 @@ fn complete_user_macro_abi(
             layers: residual_layers,
         },
         ambient_type_names: tcx.in_scope_type_param_binders(),
+        residual_reflection_bindings: residual_reflection_binders
+            .into_iter()
+            .map(|binder| (binder.param.name, binder.binding))
+            .collect(),
         terminal_result_ty,
     })
 }
@@ -2736,7 +2672,6 @@ fn captured_type_for_term_replay<'m>(
         Type::Goal { .. } => unreachable!(
             "captured term replay requires a closed type; Type::Goal must be zonked first"
         ),
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -2776,7 +2711,7 @@ fn canonicalize_captured_generated_imports<P>(
     imports: &[UserMacroTemplateGeneratedImport],
 ) -> crate::ast::Type<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     canonicalize_captured_generated_imports_with_bound(ty, imports, &HashSet::new())
 }
@@ -2787,7 +2722,7 @@ fn canonicalize_captured_generated_imports_with_bound<P>(
     bound: &HashSet<String>,
 ) -> crate::ast::Type<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     match ty {
         crate::ast::Type::Path {
@@ -2883,7 +2818,6 @@ where
             meta: meta.clone(),
             ext: ext.clone(),
         },
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -3027,11 +2961,8 @@ fn resolve_user_macro_captures<'m>(
                     source_ty
                 };
                 let replay_ty = canonicalize_captured_generated_imports(&replay_ty, &imports);
-                let reflected = if host_capture {
-                    reflect_macro_type(replay_ty, tcx)?
-                } else {
-                    user_macro_reflectable_type(replay_ty)?
-                };
+                let reflected =
+                    reflect_macro_type_with_binders(replay_ty, tcx, &[], !host_capture)?;
                 inputs.push(UserMacroTemplateInput::Type(reflected));
             }
             UserMacroCaptureSpelling::Value => {
@@ -3064,8 +2995,13 @@ fn resolve_user_macro_captures<'m>(
                     env.package,
                     Some(env.module),
                 );
-                let term_ty = crate::ast::convert_type::<Lowered, UncheckedPrime>(&term_ty);
-                let term = crate::normalization::CheckedTerm::new(term_expr, term_ty);
+                let term_ty = reflect_macro_type_with_binders(
+                    term_ty,
+                    tcx,
+                    &[],
+                    synth.ty.identity_is_canonical(),
+                )?;
+                let term = crate::normalization::CheckedTerm::new_reflected(term_expr, term_ty);
                 inputs.push(UserMacroTemplateInput::CapturedTerm {
                     term: crate::normalization::EvalRef::new(term),
                 });
@@ -3101,8 +3037,13 @@ fn resolve_user_macro_captures<'m>(
                     env.package,
                     Some(env.module),
                 );
-                let term_ty = crate::ast::convert_type::<Lowered, UncheckedPrime>(&term_ty);
-                let term = crate::normalization::CheckedTerm::new(term_expr, term_ty);
+                let term_ty = reflect_macro_type_with_binders(
+                    term_ty,
+                    tcx,
+                    &[],
+                    synth.ty.identity_is_canonical(),
+                )?;
+                let term = crate::normalization::CheckedTerm::new_reflected(term_expr, term_ty);
                 inputs.push(UserMacroTemplateInput::CapturedTerm {
                     term: crate::normalization::EvalRef::new(term),
                 });
@@ -3210,7 +3151,9 @@ fn user_macro_implementation_type_slot_modes<'m>(
     let span = macro_def.meta.span;
     let refl_type_ty = refl_type("__Type__", span);
     let checked_term_ty = checked_term_type(span);
-    let optional_type_ty = optional_type_slot_type(span);
+    let natural_type_ty = Type::Unit {
+        meta: Meta::new(span),
+    };
     let alias_ctx = tcx.env.alias_ctx();
     let implementation = &macro_def.implementation;
     #[cfg(test)]
@@ -3295,6 +3238,13 @@ fn user_macro_implementation_type_slot_modes<'m>(
         param_index += 1;
     }
 
+    let eligible = layout
+        .layers
+        .iter()
+        .enumerate()
+        .flat_map(|(layer, details)| (0..details.type_params.len()).map(move |slot| (layer, slot)))
+        .map(|(layer, slot)| type_slot_occurs_only_in_result(layout, layer, slot, &alias_ctx))
+        .collect::<Vec<_>>();
     let mut type_slot_modes = Vec::new();
     for slot in &layout.slots {
         match slot {
@@ -3310,11 +3260,15 @@ fn user_macro_implementation_type_slot_modes<'m>(
                 )
                 .is_ok()
                 {
-                    type_slot_modes.push(UserMacroTypeSlotMode::Required);
-                } else if !fills_schedule
+                    type_slot_modes.push(if eligible[type_slot_modes.len()] {
+                        UserMacroTypeSlotMode::RequiredResult
+                    } else {
+                        UserMacroTypeSlotMode::Input
+                    });
+                } else if eligible[type_slot_modes.len()]
                     && crate::pass::typecheck_core::require_type_equiv_state(
                         actual.as_type(),
-                        &optional_type_ty,
+                        &natural_type_ty,
                         span,
                         &alias_ctx,
                         actual.identity_is_canonical(),
@@ -3322,12 +3276,12 @@ fn user_macro_implementation_type_slot_modes<'m>(
                     )
                     .is_ok()
                 {
-                    type_slot_modes.push(UserMacroTypeSlotMode::Optional);
+                    type_slot_modes.push(UserMacroTypeSlotMode::NaturalResult);
                 } else {
-                    let expected = if fills_schedule {
-                        "`__Type__`"
+                    let expected = if eligible[type_slot_modes.len()] {
+                        "either `__Type__` or `.` for a result-only slot"
                     } else {
-                        "either `__Type__` or `__Type__ | .`"
+                        "`__Type__` for an input-related or unused slot"
                     };
                     return Err(Error::type_(
                         span,
@@ -3399,7 +3353,6 @@ fn check_user_macro_item<'m>(
     let alias_ctx = env.alias_ctx();
     let call_ty = InternedType::fresh(macro_def.call_ty.clone());
     let layout = user_macro_signature_layout(&call_ty, &alias_ctx);
-    validate_trailing_declaration(macro_def, &layout, &alias_ctx, &tcx)?;
     validate_user_macro_capture_source_order(macro_def, item_index, env)?;
     resolve_user_macro_captures(macro_def, env, &mut tcx)?;
     tcx.pure_context = true;
@@ -3519,8 +3472,8 @@ impl crate::pass::typecheck_core::DeclarationPhase for Lowered {
 /// package with the standalone Kio' typer. Bails on the first error.
 ///
 /// `Package<Prime>` is the semantic contract every backend
-/// ultimately realizes: the Prime AST carries no `Expr::Elaborator`
-/// / `Expr::UserMacro` nodes (their extension types are `Never`),
+/// ultimately realizes: the Prime AST carries no `Expr::UserMacro` nodes
+/// (their extension type is `Never`),
 /// so the elaboration the typer recorded lives in-tree rather than
 /// in a pointer-keyed side table — the type system enforces the contract.
 pub fn check_package(
@@ -3772,12 +3725,13 @@ pub struct Elaborations {
         (String, crate::ast::ExpressionOccurrenceId),
         (RecordedTypeResolution, bool, Option<String>),
     >,
-    /// Checked value-parameter types for `Expr::FnExpr` nodes. These
-    /// are needed when a lambda was checked against a call-site
-    /// expected function type and its parameter type is not recoverable
-    /// from the lambda body alone.
-    fn_param_types:
-        HashMap<(String, crate::ast::ExpressionOccurrenceId, usize), RecordedTypeResolution>,
+    /// Checked lambda parameter types, plus the body result for proof-gated
+    /// lambdas whose body is erased before Prime. `Some(index)` identifies a
+    /// value parameter; `None` identifies that checked body result.
+    fn_signature_types: HashMap<
+        (String, crate::ast::ExpressionOccurrenceId, Option<usize>),
+        RecordedTypeResolution,
+    >,
     generated_imports: HashMap<String, Vec<UserMacroTemplateGeneratedImport>>,
     prime_requalification_imports: HashMap<String, Vec<UserMacroTemplateGeneratedImport>>,
     generated_type_aliases: HashMap<String, Vec<PrimeLocalTypeAlias>>,
@@ -3857,6 +3811,7 @@ pub(crate) struct DeferredUserMacroElaboration {
     value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
+    residual_reflection_bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
     result_ty: Option<InternedType>,
     precomputed_template: Option<UserMacroTemplateResult>,
     quoted_public_recipe: Option<Box<QuotedPublicRecipe>>,
@@ -3875,32 +3830,15 @@ pub(crate) struct ReadyUserMacroAction {
     value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
+    residual_reflection_bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
     terminal_result_ty: Option<InternedType>,
     span: Span,
     result_span: Span,
 }
 
-pub(crate) struct StagedReadyUserMacroEvaluation {
-    obligation: DeferredUserMacroElaboration,
-    returned: crate::normalization::Value,
-    initial_fill_context: crate::normalization::Value,
-    artifact: std::sync::Arc<UserMacroEvalArtifactPair>,
-}
-
 pub(crate) struct StagedReadyProjectedUserMacroEvaluation<'m> {
     ready: ReadyProjectedUserMacroAction<'m>,
     returned: crate::normalization::Value,
-}
-
-struct EvaluatedUserMacroPacket {
-    returned: crate::normalization::Value,
-    artifact: std::sync::Arc<UserMacroEvalArtifactPair>,
-}
-
-impl StagedReadyUserMacroEvaluation {
-    pub(crate) fn eval_ctx(&self) -> crate::normalization::AuthenticatedEvalCtx<'_> {
-        user_macro_eval_ctx_from_artifact(&self.artifact)
-    }
 }
 
 impl ReadyUserMacroAction {
@@ -3928,6 +3866,7 @@ impl ReadyUserMacroAction {
             value_adapter: self.value_adapter,
             residual_abstraction: self.residual_abstraction,
             ambient_type_names: self.ambient_type_names,
+            residual_reflection_bindings: self.residual_reflection_bindings,
             result_ty,
             precomputed_template,
             quoted_public_recipe: None,
@@ -3976,33 +3915,6 @@ pub(crate) fn evaluate_ready_user_macro_action<'m>(
     Ok((obligation, result_ty))
 }
 
-pub(crate) fn evaluate_ready_fills_user_macro_action<'m>(
-    ready: ReadyUserMacroAction,
-    proof: crate::normalization::Value,
-    fills: crate::normalization::Value,
-    tcx: &TypeCtx<'m, '_>,
-) -> Result<StagedReadyUserMacroEvaluation, Error> {
-    assert_eq!(ready.schedule, crate::ast::MacroSchedule::Fills);
-    let obligation = ready.into_obligation(None, None);
-    let initial_fill_context = fills.clone();
-    let packet =
-        user_macro_eval_packet_with_capabilities(&obligation.abi_inputs, Some((proof, fills)));
-    let evaluated = evaluate_user_macro_packet(
-        &obligation.name,
-        obligation.macro_module_path.as_deref(),
-        &obligation.capture_imports,
-        obligation.span,
-        packet,
-        tcx,
-    )?;
-    Ok(StagedReadyUserMacroEvaluation {
-        obligation,
-        returned: evaluated.returned,
-        initial_fill_context,
-        artifact: evaluated.artifact,
-    })
-}
-
 pub(crate) fn evaluate_ready_projected_user_macro_action<'m>(
     ready: ReadyProjectedUserMacroAction<'m>,
     tcx: &TypeCtx<'m, '_>,
@@ -4018,7 +3930,7 @@ pub(crate) fn evaluate_ready_projected_user_macro_action<'m>(
     )?;
     Ok(StagedReadyProjectedUserMacroEvaluation {
         ready,
-        returned: evaluated.returned,
+        returned: evaluated,
     })
 }
 
@@ -4135,6 +4047,7 @@ pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
     quoted_public_recipe: Option<Box<QuotedPublicRecipe>>,
     tcx: &mut TypeCtx<'m, '_>,
 ) -> Result<DeferredUserMacroElaboration, Error> {
+    let residual_bindings: Vec<_> = ready.residual_reflection_bindings().collect();
     let ReadyProjectedUserMacroAction {
         action,
         captures,
@@ -4147,8 +4060,12 @@ pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
     let mut adapter_slots = Vec::with_capacity(projected_sources.len());
     let mut values = Vec::with_capacity(projected_sources.len());
     for (index, source) in projected_sources.into_iter().enumerate() {
-        let reflected = reflect_macro_interned_type(&source.ty, tcx)?;
-        let reflected_ty = reflected.as_type().clone();
+        let reflected_ty = reflect_projected_type(
+            &source.ty,
+            tcx,
+            &source.reflection_scope,
+            residual_bindings.iter().cloned(),
+        )?;
         adapter_sources.push(crate::normalization::CheckedTermTemplateSource {
             ty: reflected_ty.clone(),
             force_if_unused: source
@@ -4186,7 +4103,9 @@ pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
         public_terminal_result.identity_is_canonical(),
         ordinary_terminal_result.identity_is_canonical(),
     )?;
-    let lowered_checked_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(checked.ty());
+    let template = trusted_user_macro_template(checked.as_ref().clone(), &residual_bindings);
+    let lowered_checked_ty =
+        crate::ast::convert_type::<UncheckedPrime, Lowered>(template.checked.ty());
     crate::pass::typecheck_core::require_type_equiv_state(
         &lowered_checked_ty,
         checked_result.as_type(),
@@ -4195,10 +4114,7 @@ pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
         true,
         checked_result.identity_is_canonical(),
     )?;
-    let mut obligation = ordinary.into_obligation(
-        Some(checked_result),
-        Some(Ok(trusted_user_macro_template(checked.as_ref().clone()))),
-    );
+    let mut obligation = ordinary.into_obligation(Some(checked_result), Some(Ok(template)));
     obligation.quoted_public_recipe = quoted_public_recipe;
     Ok(obligation)
 }
@@ -4210,7 +4126,7 @@ fn evaluate_user_macro_packet<'m>(
     span: Span,
     packet: crate::normalization::Value,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<EvaluatedUserMacroPacket, Error> {
+) -> Result<crate::normalization::Value, Error> {
     let macro_module = macro_module_for_path(tcx.env, macro_module_path);
     let macro_module_path = macro_module
         .map(module_path_string)
@@ -4280,64 +4196,10 @@ fn evaluate_user_macro_packet<'m>(
                 .record_user_macro_eval_metrics(metrics.snapshot());
         }
     }
-    if let Some(message) = crate::normalization::structural_recur_stuck_message(&returned, &ctx) {
-        return Err(Error::totality(span, message));
+    if let Some(fault) = crate::normalization::comptime_fault(&returned, &ctx) {
+        return Err(fault.into_error(span));
     }
-    drop(ctx);
-    Ok(EvaluatedUserMacroPacket {
-        returned,
-        artifact: artifact_pair,
-    })
-}
-
-pub(crate) fn complete_ready_fills_user_macro_action(
-    mut evaluation: StagedReadyUserMacroEvaluation,
-) -> Result<
-    (
-        DeferredUserMacroElaboration,
-        InternedType,
-        crate::pass::typecheck_core::apply::fills::FillContext,
-    ),
-    Error,
-> {
-    let span = evaluation.obligation.span;
-    let Some((checked, returned_context)) =
-        crate::normalization::core_product_value_parts(&evaluation.returned)
-    else {
-        return Err(Error::macro_error(
-            span,
-            "fills macro returned a value other than `__Checked_term__ & __Fill_ctx__`",
-        ));
-    };
-    let initial_context =
-        crate::normalization::fill_context_from_value(&evaluation.initial_fill_context)
-            .expect("a marked macro evaluation retains its fresh fill context");
-    let returned_context = crate::normalization::fill_context_from_value(returned_context)
-        .filter(|context| context.matches(initial_context))
-        .cloned()
-        .ok_or_else(|| {
-            Error::macro_error(
-                span,
-                "fills macro returned a `__Fill_ctx__` from another invocation",
-            )
-        })?;
-    let ctx = evaluation.eval_ctx();
-    let checked = match decode_user_macro_result(checked.clone(), &ctx) {
-        Ok(checked) => checked,
-        Err(UserMacroDecodeError::Diagnostic(message)) => {
-            return Err(Error::macro_error(span, message));
-        }
-        Err(UserMacroDecodeError::Type(message)) => return Err(Error::type_(span, message)),
-        Err(UserMacroDecodeError::Totality(message)) => {
-            return Err(Error::totality(span, message));
-        }
-    };
-    let lowered_result_ty = crate::ast::convert_type::<UncheckedPrime, Lowered>(checked.ty());
-    check_well_formed_type(&lowered_result_ty)?;
-    let lowered_result_ty = InternedType::fresh_canonical(lowered_result_ty);
-    evaluation.obligation.result_ty = Some(lowered_result_ty.clone());
-    evaluation.obligation.precomputed_template = Some(Ok(trusted_user_macro_template(checked)));
-    Ok((evaluation.obligation, lowered_result_ty, returned_context))
+    Ok(returned)
 }
 
 /// Position-keyed index of the typer's output. For every expression
@@ -5502,7 +5364,7 @@ impl Elaborations {
             type_resolutions: HashMap::new(),
             call_plans: HashMap::new(),
             literal_resolutions: HashMap::new(),
-            fn_param_types: HashMap::new(),
+            fn_signature_types: HashMap::new(),
             generated_imports: HashMap::new(),
             prime_requalification_imports: HashMap::new(),
             generated_type_aliases: HashMap::new(),
@@ -5767,16 +5629,22 @@ impl Elaborations {
                 continue;
             }
             let key = user_macro_template_memo_key(ob, env);
-            let unique_index = match unique_by_key.get_key_value(&key) {
-                Some((stored, &index)) if key.presentation_matches(stored) => index,
-                existing => {
-                    let index = unique.len();
-                    if existing.is_none() {
-                        unique_by_key.insert(key.clone(), index);
+            let unique_index = if let Some(key) = key {
+                match unique_by_key.get_key_value(&key) {
+                    Some((stored, &index)) if key.reuse_matches(stored) => index,
+                    existing => {
+                        let index = unique.len();
+                        if existing.is_none() {
+                            unique_by_key.insert(key.clone(), index);
+                        }
+                        unique.push((ob_index, Some(key)));
+                        index
                     }
-                    unique.push((ob_index, key));
-                    index
                 }
+            } else {
+                let index = unique.len();
+                unique.push((ob_index, None));
+                index
             };
             obligation_unique_indices.push(Some(unique_index));
         }
@@ -5833,6 +5701,7 @@ impl Elaborations {
                         value_adapter: Some(&ob.value_adapter),
                         residual_eta: Some(&ob.residual_abstraction),
                         ambient_type_names: &ob.ambient_type_names,
+                        residual_reflection_bindings: &ob.residual_reflection_bindings,
                         capture_imports: &ob.capture_imports,
                         quoted: Some((ob.node_id, ob.quoted_public_recipe.as_deref())),
                     },
@@ -5850,6 +5719,7 @@ impl Elaborations {
                             value_adapter: Some(&ob.value_adapter),
                             residual_eta: Some(&ob.residual_abstraction),
                             ambient_type_names: &ob.ambient_type_names,
+                            residual_reflection_bindings: &ob.residual_reflection_bindings,
                             capture_imports: &ob.capture_imports,
                             quoted: Some((ob.node_id, ob.quoted_public_recipe.as_deref())),
                         },
@@ -6094,8 +5964,8 @@ impl Elaborations {
         value_param_index: usize,
         resolved: InternedType,
     ) {
-        self.fn_param_types.insert(
-            (module_path.to_owned(), fn_id, value_param_index),
+        self.fn_signature_types.insert(
+            (module_path.to_owned(), fn_id, Some(value_param_index)),
             resolved.into(),
         );
     }
@@ -6106,8 +5976,27 @@ impl Elaborations {
         fn_id: crate::ast::ExpressionOccurrenceId,
         value_param_index: usize,
     ) -> Option<&RecordedTypeResolution> {
-        self.fn_param_types
-            .get(&(module_path.to_owned(), fn_id, value_param_index))
+        self.fn_signature_types
+            .get(&(module_path.to_owned(), fn_id, Some(value_param_index)))
+    }
+
+    pub(crate) fn record_proof_fn_body_type(
+        &mut self,
+        module_path: &str,
+        fn_id: crate::ast::ExpressionOccurrenceId,
+        resolved: InternedType,
+    ) {
+        self.fn_signature_types
+            .insert((module_path.to_owned(), fn_id, None), resolved.into());
+    }
+
+    pub(crate) fn proof_fn_body_type_for(
+        &self,
+        module_path: &str,
+        fn_id: crate::ast::ExpressionOccurrenceId,
+    ) -> Option<&RecordedTypeResolution> {
+        self.fn_signature_types
+            .get(&(module_path.to_owned(), fn_id, None))
     }
 
     pub fn generated_imports_for(&self, module_path: &str) -> &[UserMacroTemplateGeneratedImport] {
@@ -6221,8 +6110,8 @@ impl Elaborations {
         for (key, value) in other.literal_resolutions {
             self.literal_resolutions.insert(key, value);
         }
-        for (key, value) in other.fn_param_types {
-            self.fn_param_types.insert(key, value);
+        for (key, value) in other.fn_signature_types {
+            self.fn_signature_types.insert(key, value);
         }
         for (module_path, imports) in other.generated_imports {
             self.record_generated_imports(&module_path, &imports);
@@ -6242,7 +6131,6 @@ impl Elaborations {
 /// `None` for variants without a keyed replacement.
 fn elaboration_node_id(e: &Expr) -> Option<NodeId> {
     match e {
-        Expr::Elaborator { ext, .. } => Some(*ext),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => Some(*ext),
         Expr::UserMacro { ext, .. } => Some(*ext),
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -6547,23 +6435,6 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
         Expr::RecCall { ext, .. } => match *ext {},
         // Statically uninhabited in `Lowered`.
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator {
-            kind,
-            call,
-            meta: Meta { span, .. },
-            ..
-        } => match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => {
-                debug_assert_eq!(*kind, ElaboratorKind::Access);
-                synth_field_access(e, receiver, labels, *span, tcx)
-            }
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                debug_assert_eq!(*kind, ElaboratorKind::Filtered);
-                synth_field_update(e, base, updates, None, *span, tcx)
-            }
-        },
         Expr::RecOrder { plan, .. } => synth_rec_order(e, plan, tcx),
         Expr::RecQuote { .. } => {
             crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
@@ -6596,17 +6467,6 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
         | Expr::LowHostFnValueRef { ext, .. }
         | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
     }
-}
-
-fn field_prime_requalifier(
-    original: &Expr,
-    tcx: &TypeCtx<'_, '_>,
-) -> crate::pass::typecheck_core::PrimeTypeRequalifier {
-    let node_id = elaboration_node_id(original)
-        .expect("field elaborations carry a stable node id")
-        .0;
-    let module_hex = prime_binding_module_hex(&tcx.env.module_path);
-    prime_requalifier_with_namespace(&format!("f{module_hex}_{node_id}"), tcx)
 }
 
 pub(crate) fn prepare_literal_annotation(
@@ -6738,636 +6598,6 @@ fn record_prime_bindings(
         .record_generated_type_aliases(&module_path, aliases);
 }
 
-pub(crate) struct PreparedFieldElaboration {
-    pub(crate) result_ty: InternedType,
-    pub(crate) replacement: Expr,
-    pub(crate) imports: Vec<UserMacroTemplateGeneratedImport>,
-    pub(crate) aliases: Vec<PrimeLocalTypeAlias>,
-}
-
-pub(crate) fn prepare_field_access_elaboration<'m>(
-    original: &'m Expr,
-    receiver: &'m Expr,
-    labels: &'m [FieldAccessLabel<Lowered>],
-    receiver_ty: InternedType,
-    span: Span,
-    tcx: &mut TypeCtx<'m, '_>,
-) -> Result<PreparedFieldElaboration, Error> {
-    // The receiver type is unfolded for projection under the in-scope
-    // scheme binders so a rigid `[A]` shadowing a label-generated `A`
-    // stays a type variable (no product slots) rather than being
-    // mis-qualified to the label record. `x.?{a}` on a rigid `x: A` is
-    // then the slot-miss type error it should be, not a wrong-slot read.
-    let binders = tcx.in_scope_type_param_binders();
-    let alias_ctx = tcx.binder_alias_ctx(&binders);
-    let mut prime_requalifier = field_prime_requalifier(original, tcx);
-    let visible = visible_product_slots(&receiver_ty, &alias_ctx);
-    let receiver_tmp = field_temp_name("recv", span, 0);
-    let mut values = Vec::new();
-
-    for (index, label) in labels.iter().enumerate() {
-        let label_type = resolved_label_type(label.label_type.as_deref(), label.label_span);
-        let (slot_index, type_args, payload_ty) =
-            resolve_field_access_slot(label, &visible, &receiver_ty, tcx)?;
-        let projected = project_visible_slot(
-            path_expr(&receiver_tmp, label.meta.span),
-            &receiver_ty,
-            slot_index,
-            &alias_ctx,
-            label.meta.span,
-            &mut prime_requalifier,
-            &binders,
-        );
-        let emitted_type_args = type_args
-            .iter()
-            .map(|ty| prime_requalifier.rewrite(ty, &binders))
-            .collect();
-        let unwrapped = newtype_member_call(
-            label_type,
-            "get",
-            emitted_type_args,
-            projected,
-            label.meta.span,
-        );
-        values.push((unwrapped, payload_ty));
-        debug_assert_eq!(index + 1, values.len());
-    }
-
-    let (result_ty, body) =
-        finish_field_result(values, span, &alias_ctx, &mut prime_requalifier, &binders);
-    let replacement = let_chain(vec![(receiver_tmp, receiver.clone())], body, span);
-    let (imports, aliases) = take_prime_bindings(&mut prime_requalifier);
-    Ok(PreparedFieldElaboration {
-        result_ty,
-        replacement,
-        imports,
-        aliases,
-    })
-}
-
-fn resolve_field_access_slot(
-    label: &FieldAccessLabel<Lowered>,
-    visible: &[InternedType],
-    receiver_ty: &InternedType,
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<(usize, Vec<Type>, InternedType), Error> {
-    let label_type = resolved_label_type(label.label_type.as_deref(), label.label_span);
-    let Some(index) = find_visible_label_slot(visible, label_type, tcx.env) else {
-        return Err(missing_field_error(
-            &label.label,
-            label.label_span,
-            receiver_ty.as_type(),
-        ));
-    };
-    let type_args = label_slot_type_args(&visible[index], label_type, label.label_span, tcx.env)?;
-    let payload = label_payload_type(label_type, &type_args, label.label_span, tcx)?;
-    Ok((index, type_args, payload))
-}
-
-pub(crate) fn field_access_header_type(
-    labels: &[FieldAccessLabel<Lowered>],
-    receiver_ty: &InternedType,
-    span: Span,
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<InternedType, Error> {
-    let binders = tcx.in_scope_type_param_binders();
-    let alias_ctx = tcx.binder_alias_ctx(&binders);
-    let visible = visible_product_slots(receiver_ty, &alias_ctx);
-    let payloads = labels
-        .iter()
-        .map(|label| {
-            resolve_field_access_slot(label, &visible, receiver_ty, tcx)
-                .map(|(_, _, payload)| payload)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(field_result_type(payloads.iter(), span, &alias_ctx))
-}
-
-fn synth_field_access<'m>(
-    original: &'m Expr,
-    receiver: &'m Expr,
-    labels: &'m [FieldAccessLabel<Lowered>],
-    span: Span,
-    tcx: &mut TypeCtx<'m, '_>,
-) -> Result<Synth, Error> {
-    let receiver_ty = crate::pass::typecheck_core::synth_value_arg_interned(receiver, tcx)?;
-    let prepared =
-        prepare_field_access_elaboration(original, receiver, labels, receiver_ty, span, tcx)?;
-    tcx.elaborations
-        .record_elaboration(&tcx.env.module_path, original, prepared.replacement);
-    record_prime_bindings(tcx, &prepared.imports, &prepared.aliases);
-    Ok(Synth::value_interned(prepared.result_ty))
-}
-
-pub(crate) fn construction_slot_matches_label(
-    update: &FieldUpdateLabel<Lowered>,
-    slot: &InternedType,
-    tcx: &TypeCtx<'_, '_>,
-) -> bool {
-    let label_type = resolved_label_type(update.label_type.as_deref(), update.label_span);
-    label_slot_type_args(slot, label_type, update.label_span, tcx.env).is_ok()
-}
-
-pub(crate) fn field_update_expected_type<'m>(
-    update: &'m FieldUpdateLabel<Lowered>,
-    expected: Option<&InternedType>,
-    tcx: &mut TypeCtx<'m, '_>,
-) -> Result<Option<InternedType>, Error> {
-    let label_type = resolved_label_type(update.label_type.as_deref(), update.label_span);
-    if let Some(newtype) = lookup_newtype_by_name(tcx.env, label_type)
-        && newtype.type_params.is_empty()
-        && newtype.existential_params.is_empty()
-    {
-        return label_payload_type(label_type, &[], update.label_span, tcx).map(Some);
-    }
-    if !tcx.has_pending_rec_order() || !tcx.is_pending_rec_order_path(&update.value) {
-        return Ok(None);
-    }
-    let Some(expected) = expected else {
-        return Ok(None);
-    };
-    let binders = tcx.in_scope_type_param_binders();
-    let alias_ctx = tcx.binder_alias_ctx(&binders);
-    let expected_slots = visible_product_slots(expected, &alias_ctx);
-    let Some(slot_index) = find_visible_label_slot(&expected_slots, label_type, tcx.env) else {
-        return Ok(None);
-    };
-    let type_args = label_slot_type_args(
-        &expected_slots[slot_index],
-        label_type,
-        update.label_span,
-        tcx.env,
-    )?;
-    label_payload_type(label_type, &type_args, update.label_span, tcx).map(Some)
-}
-
-#[allow(clippy::too_many_arguments)] // field elaboration needs the complete source update context
-pub(crate) fn prepare_field_update_elaboration<'m>(
-    original: &'m Expr,
-    base: &'m crate::ast::FieldUpdateBase<Lowered>,
-    updates: &'m [FieldUpdateLabel<Lowered>],
-    receiver_ty: InternedType,
-    rhs_types: &[InternedType],
-    expected: Option<&InternedType>,
-    span: Span,
-    tcx: &mut TypeCtx<'m, '_>,
-) -> Result<PreparedFieldElaboration, Error> {
-    assert_eq!(
-        updates.len(),
-        rhs_types.len(),
-        "field-update preparation requires one completed RHS type per update"
-    );
-    let receiver_tmp = field_temp_name("recv", span, 0);
-    let mut rhs_bindings = Vec::new();
-    let mut replacement_specs = Vec::new();
-    let mut seen_labels = HashSet::new();
-    let mut removed_slots = HashSet::new();
-    // Unfold the receiver under the in-scope scheme binders so a rigid
-    // `[A]` shadowing a label-generated `A` is not mis-qualified to the
-    // label record. The set is fixed across the loop (no binder is
-    // pushed here).
-    let binders = tcx.in_scope_type_param_binders();
-    let mut prime_requalifier = field_prime_requalifier(original, tcx);
-    let expected_slots = if tcx.has_pending_rec_order() {
-        expected
-            .map(|expected| {
-                let alias_ctx = tcx.binder_alias_ctx(&binders);
-                visible_product_slots(expected, &alias_ctx)
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    for (index, (update, rhs_ty)) in updates.iter().zip(rhs_types).enumerate() {
-        if !seen_labels.insert(update.label.clone()) {
-            return Err(Error::type_(
-                update.label_span,
-                format!("duplicate update label `{}`", update.label),
-            ));
-        }
-        let label_type = resolved_label_type(update.label_type.as_deref(), update.label_span);
-        if matches!(base, crate::ast::FieldUpdateBase::Construction) {
-            let rhs_tmp = field_temp_name("rhs", span, index);
-            rhs_bindings.push((rhs_tmp.clone(), update.value.clone()));
-            replacement_specs.push((path_expr(&rhs_tmp, update.meta.span), rhs_ty.clone()));
-            continue;
-        }
-        let is_rec_order_carrier = tcx.is_pending_rec_order_path(&update.value);
-        let expected_slot_index = is_rec_order_carrier
-            .then(|| find_visible_label_slot(&expected_slots, label_type, tcx.env))
-            .flatten();
-        let expected_slot = expected_slot_index.map(|index| &expected_slots[index]);
-        let alias_ctx = tcx.binder_alias_ctx(&binders);
-        let slots = visible_product_slots(&receiver_ty, &alias_ctx);
-        let existing_slot_index = find_visible_label_slot(&slots, label_type, tcx.env);
-        if let Some(slot_index) = existing_slot_index {
-            removed_slots.insert(slot_index);
-        }
-        let existing_slot = existing_slot_index.map(|slot_index| &slots[slot_index]);
-        let (replacement_ty, constructor_type_args) = label_constructor_result(
-            label_type,
-            &update.label,
-            rhs_ty,
-            expected_slot.or(existing_slot),
-            update.label_span,
-            tcx,
-        )?;
-        let constructor_type_args = constructor_type_args
-            .iter()
-            .map(|ty| prime_requalifier.rewrite(ty, &binders))
-            .collect();
-        let rhs_tmp = field_temp_name("rhs", span, index);
-        rhs_bindings.push((rhs_tmp.clone(), update.value.clone()));
-        replacement_specs.push((
-            newtype_member_call(
-                label_type,
-                "mk",
-                constructor_type_args,
-                path_expr(&rhs_tmp, update.meta.span),
-                update.meta.span,
-            ),
-            replacement_ty,
-        ));
-    }
-
-    let alias_ctx = tcx.binder_alias_ctx(&binders);
-    let slots = visible_product_slots(&receiver_ty, &alias_ctx);
-    let mut result_items = replacement_specs;
-    for (slot_index, slot_ty) in slots.iter().enumerate() {
-        if removed_slots.contains(&slot_index) {
-            continue;
-        }
-        let projected = project_visible_slot(
-            path_expr(&receiver_tmp, span),
-            &receiver_ty,
-            slot_index,
-            &alias_ctx,
-            span,
-            &mut prime_requalifier,
-            &binders,
-        );
-        result_items.push((projected, slot_ty.clone()));
-    }
-
-    if let Some(expected) = expected
-        && let Some(reordered) =
-            reorder_row_items_to_expected(&result_items, expected, span, &alias_ctx)
-    {
-        result_items = reordered;
-    }
-    let (result_ty, body) = finish_field_result(
-        result_items,
-        span,
-        &alias_ctx,
-        &mut prime_requalifier,
-        &binders,
-    );
-    let mut bindings = Vec::with_capacity(rhs_bindings.len() + 1);
-    if let Some(receiver) = base.receiver() {
-        bindings.push((receiver_tmp, receiver.clone()));
-    }
-    bindings.extend(rhs_bindings);
-    let replacement = let_chain(bindings, body, span);
-    let (imports, aliases) = take_prime_bindings(&mut prime_requalifier);
-    Ok(PreparedFieldElaboration {
-        result_ty,
-        replacement,
-        imports,
-        aliases,
-    })
-}
-
-fn synth_field_update<'m>(
-    original: &'m Expr,
-    base: &'m crate::ast::FieldUpdateBase<Lowered>,
-    updates: &'m [FieldUpdateLabel<Lowered>],
-    expected: Option<&InternedType>,
-    span: Span,
-    tcx: &mut TypeCtx<'m, '_>,
-) -> Result<Synth, Error> {
-    let Some(receiver) = base.receiver() else {
-        return crate::pass::typecheck_core::apply::run_general_ordinary_value(
-            original, expected, tcx,
-        );
-    };
-    let receiver_ty = crate::pass::typecheck_core::synth_value_arg_interned(receiver, tcx)?;
-    let mut rhs_types = Vec::with_capacity(updates.len());
-    for update in updates {
-        let rhs_ty = if let Some(payload_ty) = field_update_expected_type(update, expected, tcx)? {
-            check_value_against(&update.value, &payload_ty, tcx)?;
-            payload_ty
-        } else {
-            crate::pass::typecheck_core::synth_value_arg_interned(&update.value, tcx)?
-        };
-        rhs_types.push(rhs_ty);
-    }
-    let prepared = prepare_field_update_elaboration(
-        original,
-        base,
-        updates,
-        receiver_ty,
-        &rhs_types,
-        expected,
-        span,
-        tcx,
-    )?;
-    tcx.elaborations
-        .record_elaboration(&tcx.env.module_path, original, prepared.replacement);
-    record_prime_bindings(tcx, &prepared.imports, &prepared.aliases);
-    Ok(Synth::value_interned(prepared.result_ty))
-}
-
-fn identity_exact_outer_path_head(
-    ty: &InternedType,
-    alias_ctx: &AliasCtx<'_, '_>,
-) -> Option<Vec<PathSegment>> {
-    // Arguments remain ordinary constraints in the final row equation; using
-    // them to select a slot here would create a second inference search.
-    let (canonical, identity_canonical) = canonicalize_projection_type(ty, alias_ctx);
-    let Type::Path { segments, .. } = canonical else {
-        return None;
-    };
-    if !identity_canonical
-        || matches!(segments.as_slice(), [name] if alias_ctx
-            .binder_locals
-            .is_some_and(|binders| binders.contains(&name.name)))
-    {
-        return None;
-    }
-    Some(segments)
-}
-
-fn reorder_row_items_to_expected(
-    items: &[(Expr, InternedType)],
-    expected: &InternedType,
-    span: Span,
-    alias_ctx: &AliasCtx<'_, '_>,
-) -> Option<Vec<(Expr, InternedType)>> {
-    let expected_slots = visible_product_slots(expected, alias_ctx);
-    if items.len() != expected_slots.len() {
-        return None;
-    }
-    let mut remaining: Vec<Option<(Expr, InternedType)>> =
-        items.iter().cloned().map(Some).collect();
-    let mut out = vec![None; expected_slots.len()];
-    let equivalent = |ty: &InternedType, expected_slot: &InternedType| {
-        crate::pass::typecheck_core::require_type_equiv_state(
-            ty.as_type(),
-            expected_slot.as_type(),
-            span,
-            alias_ctx,
-            ty.identity_is_canonical(),
-            expected_slot.identity_is_canonical(),
-        )
-        .is_ok()
-    };
-    for (expected_index, expected_slot) in expected_slots.iter().enumerate() {
-        if crate::pass::typecheck_core::type_contains_goal(expected_slot.as_type()) {
-            continue;
-        }
-        let Some(index) = remaining.iter().position(|candidate| {
-            candidate
-                .as_ref()
-                .is_some_and(|(_, ty)| equivalent(ty, expected_slot))
-        }) else {
-            continue;
-        };
-        out[expected_index] = Some(
-            remaining[index]
-                .take()
-                .expect("selected row item is present"),
-        );
-    }
-    if out.iter().all(Option::is_some) {
-        return out.into_iter().collect();
-    }
-    let expected_heads = expected_slots
-        .iter()
-        .map(|slot| identity_exact_outer_path_head(slot, alias_ctx))
-        .collect::<Vec<_>>();
-    let candidate_heads = items
-        .iter()
-        .map(|(_, slot)| identity_exact_outer_path_head(slot, alias_ctx))
-        .collect::<Vec<_>>();
-    let mut anchored = out.iter().any(Option::is_some);
-    for expected_index in 0..expected_slots.len() {
-        if out[expected_index].is_some() {
-            continue;
-        }
-        let Some(expected_head) = &expected_heads[expected_index] else {
-            continue;
-        };
-        let mut candidates = remaining
-            .iter()
-            .enumerate()
-            .filter(|(candidate_index, candidate)| {
-                candidate.is_some()
-                    && candidate_heads[*candidate_index].as_ref() == Some(expected_head)
-            });
-        let Some((candidate_index, _)) = candidates.next() else {
-            continue;
-        };
-        if candidates.next().is_some() {
-            continue;
-        }
-        out[expected_index] = Some(
-            remaining[candidate_index]
-                .take()
-                .expect("the unique nominal row anchor is present"),
-        );
-        anchored = true;
-    }
-    let unresolved = out
-        .iter()
-        .enumerate()
-        .filter_map(|(index, item)| item.is_none().then_some(index))
-        .collect::<Vec<_>>();
-    if !anchored
-        || unresolved
-            .iter()
-            .any(|index| expected_heads[*index].is_some())
-    {
-        return None;
-    }
-    // A generic slot contributes no candidate preference. Once exact anchors
-    // are fixed, the remaining values retain their authored relative order.
-    let residual = remaining.into_iter().flatten();
-    for (expected_index, item) in unresolved.into_iter().zip(residual) {
-        out[expected_index] = Some(item);
-    }
-    debug_assert_eq!(
-        out.len(),
-        items.len(),
-        "row reorder lost a slot at {span:?}"
-    );
-    out.into_iter().collect()
-}
-
-fn finish_field_result(
-    items: Vec<(Expr, InternedType)>,
-    span: Span,
-    alias_ctx: &AliasCtx<'_, '_>,
-    prime_requalifier: &mut crate::pass::typecheck_core::PrimeTypeRequalifier,
-    binders: &HashSet<String>,
-) -> (InternedType, Expr) {
-    let result_ty = field_result_type(items.iter().map(|(_, ty)| ty), span, alias_ctx);
-    let mut emitted_items = Vec::with_capacity(items.len());
-    for (value, ty) in items {
-        let emitted_ty = if ty.identity_is_canonical() {
-            prime_requalifier.rewrite(ty.as_type(), binders)
-        } else {
-            ty.clone_type()
-        };
-        emitted_items.push((value, emitted_ty));
-    }
-    let (body, _) = right_fold_pair_values(emitted_items, span);
-    (result_ty, body)
-}
-
-fn field_result_type<'a>(
-    payloads: impl ExactSizeIterator<Item = &'a InternedType>,
-    span: Span,
-    alias_ctx: &AliasCtx<'_, '_>,
-) -> InternedType {
-    let mut result_tys = Vec::with_capacity(payloads.len());
-    let mut all_identity_canonical = true;
-    for ty in payloads {
-        let (canonical_ty, identity_canonical) =
-            crate::pass::typecheck_core::canonicalize_for_comparison(
-                ty.as_type(),
-                alias_ctx,
-                ty.identity_is_canonical(),
-            );
-        all_identity_canonical &= identity_canonical;
-        result_tys.push(canonical_ty);
-    }
-    InternedType::fresh_with_identity(
-        right_fold_product(&result_tys, span),
-        all_identity_canonical,
-    )
-}
-
-/// The bare name of a label newtype identity path — its last segment,
-/// for diagnostics. The path is `[Foo]` (local) or `[m…, Foo]`
-/// (cross-module); the user reads the label by its leaf either way.
-fn label_type_name(label_type: &[PathSegment]) -> &str {
-    label_type
-        .last()
-        .map(PathSegment::as_str)
-        .unwrap_or("<label>")
-}
-
-/// The identity-exact path of a field label's generated newtype,
-/// populated by label elaboration ([`crate::pass::label_elab`]). A
-/// `None` here means the macro never ran — an earlier-phase
-/// contract violation, not a user error.
-fn resolved_label_type(label_type: Option<&[PathSegment]>, span: Span) -> &[PathSegment] {
-    label_type.unwrap_or_else(|| {
-        unreachable!(
-            "field label at span {:?} reached the typer before label elaboration resolved it",
-            span
-        )
-    })
-}
-
-fn missing_field_error(label: &str, span: Span, receiver_ty: &Type) -> Error {
-    Error::type_(
-        span,
-        format!(
-            "field `{label}` is not visible on receiver type `{}`",
-            display_type(receiver_ty)
-        ),
-    )
-}
-
-fn canonicalize_projection_type(ty: &InternedType, alias_ctx: &AliasCtx<'_, '_>) -> (Type, bool) {
-    crate::pass::typecheck_core::canonicalize_for_comparison(
-        ty.as_type(),
-        alias_ctx,
-        ty.identity_is_canonical(),
-    )
-}
-
-fn visible_product_slots(ty: &InternedType, alias_ctx: &AliasCtx<'_, '_>) -> Vec<InternedType> {
-    let mut slots = Vec::new();
-    let mut cur = ty.clone();
-    let mut first = true;
-    loop {
-        let (unfolded, identity_canonical) = canonicalize_projection_type(&cur, alias_ctx);
-        match unfolded {
-            Type::Unit { .. } if first => return slots,
-            Type::Product { left, right, .. } => {
-                slots.push(InternedType::fresh_with_identity(*left, identity_canonical));
-                cur = InternedType::fresh_with_identity(*right, identity_canonical);
-                first = false;
-            }
-            other => {
-                slots.push(InternedType::fresh_with_identity(other, identity_canonical));
-                break;
-            }
-        }
-    }
-    slots
-}
-
-fn find_visible_label_slot(
-    slots: &[InternedType],
-    label_type: &[PathSegment],
-    env: &ModuleEnv<'_, Lowered>,
-) -> Option<usize> {
-    slots
-        .iter()
-        .position(|slot| label_slot_type_args(slot, label_type, slot.span(), env).is_ok())
-}
-
-/// Whether a slot's nominal head is the **same generated label newtype**
-/// as `label_type` — by identity-exact `(module, name)`, not bare leaf.
-/// Two modules whose labels mint the same leaf `Foo` resolve to distinct
-/// `(module, Foo)` keys, so this refuses the bare-last-segment relaxation
-/// `type_equiv` itself refuses: a `{l1.a, t2.a}` record's
-/// projection of `l1.a` selects the `testapi/labs1.A` slot, not the first
-/// slot whose leaf happens to read `A`. When neither head carries a
-/// module identity (an ad-hoc env with no package, some unit contexts),
-/// the comparison falls back to full-segment equality.
-fn label_slot_type_args(
-    slot_ty: &InternedType,
-    label_type: &[PathSegment],
-    span: Span,
-    env: &ModuleEnv<'_, Lowered>,
-) -> Result<Vec<Type>, Error> {
-    let (unfolded, slot_identity_canonical) = if slot_ty.identity_is_canonical() {
-        crate::pass::typecheck_core::canonicalize_for_comparison(
-            slot_ty.as_type(),
-            &env.alias_ctx(),
-            true,
-        )
-    } else {
-        (slot_ty.clone_type(), false)
-    };
-    let Type::Path { segments, args, .. } = unfolded else {
-        return Err(Error::type_(span, "not a generated label type"));
-    };
-    let slot_identity = if slot_identity_canonical {
-        canonical_nominal_identity(&segments)
-    } else {
-        None
-    };
-    let matches = match (slot_identity, env.nominal_ref_identity(label_type)) {
-        (Some(slot_id), Some(label_id)) => slot_id == label_id,
-        // Ad-hoc unit environments can lack both identities. Compare their
-        // written paths, but never equate a resolved label with an unresolved
-        // receiver slot (which may be a rigid same-named type binder).
-        (None, None) => segments == label_type,
-        _ => false,
-    };
-    if matches {
-        Ok(args)
-    } else {
-        Err(Error::type_(span, "not the requested generated label type"))
-    }
-}
-
 fn canonical_nominal_identity(segments: &[PathSegment]) -> Option<(String, String)> {
     let (name, module_segments) = segments.split_last()?;
     if module_segments.is_empty() {
@@ -7381,364 +6611,6 @@ fn canonical_nominal_identity(segments: &[PathSegment]) -> Option<(String, Strin
             .join("/"),
         name.as_str().to_owned(),
     ))
-}
-
-fn label_payload_type(
-    label_type: &[PathSegment],
-    type_args: &[Type],
-    span: Span,
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<InternedType, Error> {
-    let label_name = label_type_name(label_type);
-    let Some(newtype) = lookup_newtype_by_name(tcx.env, label_type) else {
-        return Err(Error::type_(
-            span,
-            format!("label type `{label_name}` is not in scope"),
-        ));
-    };
-    if !newtype.existential_params.is_empty() {
-        return Err(Error::type_(
-            span,
-            format!("field access cannot unwrap existential label type `{label_name}`"),
-        )
-        .with_help("use the generated projector member directly with an explicit continuation"));
-    }
-    if newtype.type_params.len() != type_args.len() {
-        return Err(Error::type_(
-            span,
-            format!(
-                "label type `{label_name}` expects {} type argument(s), but this receiver slot has {}",
-                newtype.type_params.len(),
-                type_args.len()
-            ),
-        ));
-    }
-    let subst: HashMap<String, Type> = newtype
-        .type_params
-        .iter()
-        .zip(type_args)
-        .map(|(param, arg)| (param.name.clone(), arg.clone()))
-        .collect();
-    // Qualify the projected payload's nominal heads in the label
-    // newtype's *declaring* module before substituting: a bare
-    // cross-module head (`Pin_a : I32` over a dependency's `I32`) must
-    // keep that module's `(module, name)` identity, not re-qualify in the
-    // checking module. The binders in scope are the newtype's type-params
-    // (none of the substituted args are nominal heads to re-resolve).
-    let (payload, identity_canonical) = match tcx.env.cross_module_newtype_owner(label_type) {
-        Some(owner) => {
-            let mut binder_kinds = HashMap::new();
-            for tp in &newtype.type_params {
-                binder_kinds.insert(tp.name.clone(), tp.effective_kind());
-            }
-            (
-                crate::pass::resolve::qualify_contract_type_in_module(
-                    &newtype.payload,
-                    owner,
-                    &binder_kinds,
-                ),
-                true,
-            )
-        }
-        None => {
-            let binders: HashSet<String> = newtype
-                .type_params
-                .iter()
-                .map(|param| param.name.clone())
-                .collect();
-            let alias_ctx = AliasCtx {
-                binder_locals: Some(&binders),
-                ..tcx.env.alias_ctx()
-            };
-            crate::pass::typecheck_core::canonicalize_for_comparison(
-                &newtype.payload,
-                &alias_ctx,
-                false,
-            )
-        }
-    };
-    Ok(InternedType::fresh_with_identity(
-        subst_type(&payload, &subst),
-        identity_canonical,
-    ))
-}
-
-fn label_constructor_result(
-    label_type: &[PathSegment],
-    label: &str,
-    rhs_ty: &InternedType,
-    existing_slot: Option<&InternedType>,
-    span: Span,
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<(InternedType, Vec<Type>), Error> {
-    let label_name = label_type_name(label_type);
-    let Some(newtype) = lookup_newtype_by_name(tcx.env, label_type) else {
-        return Err(Error::type_(
-            span,
-            format!("label type `{label_name}` is not in scope"),
-        ));
-    };
-    let mut type_params = HashSet::new();
-    for param in &newtype.type_params {
-        type_params.insert(param.name.clone());
-    }
-    for param in &newtype.existential_params {
-        type_params.insert(param.name.clone());
-    }
-    // Qualify the constructor payload's nominal heads in the label
-    // newtype's *declaring* module before unifying against the value:
-    // a labels record literal `{first, second}` elaborates to
-    // a field-update whose `First : Step` constructor payload must keep
-    // the declaring module's `(module, Step)` identity, so it matches the
-    // value's (also qualified) type instead of conflating by leaf name.
-    let (payload, payload_is_canonical) = match tcx.env.cross_module_newtype_owner(label_type) {
-        Some(owner) => {
-            let mut binder_kinds = HashMap::new();
-            for tp in newtype
-                .type_params
-                .iter()
-                .chain(newtype.existential_params.iter())
-            {
-                binder_kinds.insert(tp.name.clone(), tp.effective_kind());
-            }
-            (
-                crate::pass::resolve::qualify_contract_type_in_module(
-                    &newtype.payload,
-                    owner,
-                    &binder_kinds,
-                ),
-                true,
-            )
-        }
-        None => (newtype.payload.clone(), false),
-    };
-    let binders = tcx.in_scope_type_param_binders();
-    let mut subst = HashMap::new();
-    crate::pass::typecheck_core::unify_pattern_with_holes_state(
-        &payload,
-        rhs_ty.as_type(),
-        &type_params,
-        &HashSet::new(),
-        &mut subst,
-        span,
-        &tcx.binder_alias_ctx(&binders),
-        payload_is_canonical,
-        rhs_ty.identity_is_canonical(),
-    )?;
-
-    if let Some(existing_slot) = existing_slot {
-        let existing_args = label_slot_type_args(existing_slot, label_type, span, tcx.env)?;
-        if existing_args.len() == newtype.type_params.len() {
-            for (param, arg) in newtype.type_params.iter().zip(existing_args) {
-                subst.entry(param.name.clone()).or_insert(arg);
-            }
-        }
-    }
-
-    let mut result_args = Vec::new();
-    for param in &newtype.type_params {
-        let Some(arg) = subst.get(&param.name) else {
-            return Err(Error::type_(
-                span,
-                format!(
-                    "cannot infer type argument `[{}]` for label `{label}`",
-                    param.name
-                ),
-            ));
-        };
-        result_args.push(arg.clone());
-    }
-    let mut constructor_args = result_args.clone();
-    for param in &newtype.existential_params {
-        let Some(arg) = subst.get(&param.name) else {
-            return Err(Error::type_(
-                span,
-                format!(
-                    "cannot infer existential type argument `[{}]` for label `{label}`",
-                    param.name
-                ),
-            ));
-        };
-        constructor_args.push(arg.clone());
-    }
-    let result_head = Type::synth_path_segments(label_type.to_vec(), Vec::new(), span);
-    let (result_head, result_identity_canonical) =
-        crate::pass::typecheck_core::canonicalize_for_comparison(
-            &result_head,
-            &tcx.env.alias_ctx(),
-            false,
-        );
-    let Type::Path {
-        segments: result_segments,
-        ..
-    } = result_head
-    else {
-        unreachable!("label result head canonicalizes to a nominal path")
-    };
-    Ok((
-        // The constructed slot keeps the label newtype's canonical nominal
-        // identity, so two same-leaf labels build distinctly-typed slots.
-        // Generated Prime type positions re-spell that identity through the
-        // module's existing bindings or a collision-proof private binding.
-        InternedType::fresh_with_identity(
-            Type::synth_path_segments(result_segments, result_args, span),
-            result_identity_canonical,
-        ),
-        constructor_args,
-    ))
-}
-
-fn project_visible_slot(
-    receiver: Expr,
-    receiver_ty: &InternedType,
-    index: usize,
-    alias_ctx: &AliasCtx<'_, '_>,
-    span: Span,
-    prime_requalifier: &mut crate::pass::typecheck_core::PrimeTypeRequalifier,
-    binders: &HashSet<String>,
-) -> Expr {
-    // Resolve the slot types in the receiver alias's owner module, then
-    // re-spell their canonical identities through bindings valid in the
-    // emitted Prime module. This keeps the synthesized `__fst__` / `__snd__`
-    // type arguments stable across the Kio' re-check.
-    let (unfolded, identity_canonical) = canonicalize_projection_type(receiver_ty, alias_ctx);
-    match unfolded {
-        Type::Product { left, right, .. } => {
-            let semantic_left_ty = *left;
-            let semantic_right_ty = *right;
-            let left_ty = prime_requalifier.rewrite(&semantic_left_ty, binders);
-            let right_ty = prime_requalifier.rewrite(&semantic_right_ty, binders);
-            if index == 0 {
-                intrinsic_call(
-                    "__fst__",
-                    vec![
-                        CallArg::Type(left_ty),
-                        CallArg::Type(right_ty),
-                        CallArg::Value(receiver),
-                    ],
-                    span,
-                )
-            } else {
-                let tail = intrinsic_call(
-                    "__snd__",
-                    vec![
-                        CallArg::Type(left_ty),
-                        CallArg::Type(right_ty.clone()),
-                        CallArg::Value(receiver),
-                    ],
-                    span,
-                );
-                project_visible_slot(
-                    tail,
-                    &InternedType::fresh_with_identity(semantic_right_ty, identity_canonical),
-                    index - 1,
-                    alias_ctx,
-                    span,
-                    prime_requalifier,
-                    binders,
-                )
-            }
-        }
-        _ => {
-            debug_assert_eq!(index, 0);
-            receiver
-        }
-    }
-}
-
-/// Build the `mk` / `get` call for a label slot. `label_type` carries the
-/// ordinary source binding produced by label lowering: a bare local name,
-/// a selective import name, or a user-written qualified alias. Generated
-/// semantic type arguments are re-spelled separately before this helper.
-fn newtype_member_call(
-    label_type: &[PathSegment],
-    member: &str,
-    type_args: Vec<Type>,
-    value: Expr,
-    span: Span,
-) -> Expr {
-    let mut args: Vec<CallArg> = type_args.into_iter().map(CallArg::Type).collect();
-    args.push(CallArg::Value(value));
-    let mut segments: Vec<PathSegment> = label_type
-        .iter()
-        .map(|s| PathSegment::new(s.name.clone(), span))
-        .collect();
-    segments.push(PathSegment::new(member.to_owned(), span));
-    Expr::synth_call(
-        Expr::Path {
-            occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
-            segments,
-            meta: Meta::new(span),
-            ext: (),
-        },
-        args,
-        span,
-    )
-    .with_fresh_occurrence()
-}
-
-fn right_fold_pair_values(items: Vec<(Expr, Type)>, span: Span) -> (Expr, Type) {
-    let mut iter = items.into_iter().rev();
-    let Some((mut acc_expr, mut acc_ty)) = iter.next() else {
-        return (
-            Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
-                meta: Meta::new(span),
-            },
-            Type::Unit {
-                meta: Meta::new(span),
-            },
-        );
-    };
-    for (expr, ty) in iter {
-        let pair_ty = Type::Product {
-            left: Box::new(ty.clone()),
-            right: Box::new(acc_ty.clone()),
-            meta: Meta::new(span),
-        };
-        acc_expr = intrinsic_call(
-            "__pair__",
-            vec![
-                CallArg::Type(ty),
-                CallArg::Type(acc_ty),
-                CallArg::Value(expr),
-                CallArg::Value(acc_expr),
-            ],
-            span,
-        );
-        acc_ty = pair_ty;
-    }
-    (acc_expr, acc_ty)
-}
-
-fn let_chain(bindings: Vec<(String, Expr)>, body: Expr, span: Span) -> Expr {
-    bindings
-        .into_iter()
-        .rev()
-        .fold(body, |acc, (name, value)| Expr::Let {
-            occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
-            name,
-            name_span: span,
-            ty: None,
-            pattern: (),
-            value: Box::new(value),
-            body: Box::new(acc),
-            meta: Meta::new(span),
-        })
-}
-
-fn path_expr(name: &str, span: Span) -> Expr {
-    Expr::Path {
-        occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
-        segments: vec![PathSegment::new(name.to_owned(), span)],
-        meta: Meta::new(span),
-        ext: (),
-    }
-}
-
-fn field_temp_name(kind: &str, span: Span, index: usize) -> String {
-    format!("__field_{kind}_s{}_e{}_i{index}__", span.start, span.end)
 }
 
 // The synth/check/apply family — `synth_literal`, `synth_path`,
@@ -7788,43 +6660,6 @@ fn check_value_against<'m>(
         return crate::pass::typecheck_core::annotation_plan::check_lowered_let_against(
             e, expected, tcx,
         );
-    }
-    // Pre-handle the remaining Lowered-only elaboration-bearing variants
-    // (field syntax and user-macro calls) in check mode. Everything
-    // else — shared function/path/literal handling
-    // and the synth-and-equiv fallback — lives in
-    // `default_check_value_against` and is shared with PrimeTyper.
-    if let Expr::Elaborator {
-        kind,
-        call,
-        meta: Meta { span, .. },
-        ..
-    } = e
-    {
-        let synth = match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => {
-                debug_assert_eq!(*kind, ElaboratorKind::Access);
-                synth_field_access(e, receiver, labels, *span, tcx)?
-            }
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                debug_assert_eq!(*kind, ElaboratorKind::Filtered);
-                synth_field_update(e, base, updates, Some(expected), *span, tcx)?
-            }
-        };
-        crate::pass::typecheck_core::require_type_equiv_state(
-            synth.ty.as_type(),
-            expected.as_type(),
-            *span,
-            &tcx.env.alias_ctx(),
-            synth.ty.identity_is_canonical(),
-            expected.identity_is_canonical(),
-        )?;
-        // Field names and delimiters present the complete row's type.
-        let mp = tcx.env.module_path.clone();
-        let binders = tcx.in_scope_type_param_presentation();
-        tcx.elaborations
-            .record_position_type(&mp, *span, synth.ty.clone(), binders);
-        return Ok(());
     }
     if let Expr::RecOrder { plan, .. } = e {
         if crate::pass::typecheck_core::apply::is_rec_order_function_shell(plan)
@@ -7881,76 +6716,133 @@ fn type_has_free_macro_param(ty: &Type, names: &HashSet<String>) -> bool {
                 .collect();
             type_has_free_macro_param(body, &masked)
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
 fn reflect_macro_type_with_binders(
     ty: Type,
     tcx: &TypeCtx<'_, '_>,
-    additional_binders: &[TypeParam],
+    additional_binders: &[FrozenResidualTypeBinder],
+    identity_canonical: bool,
 ) -> Result<ReflectableType, Error> {
-    let reflected = tcx
-        .env
-        .package
-        .and_then(|package| package.module(&tcx.env.module_path))
-        .map(|entry| {
-            let mut binder_kinds: HashMap<String, crate::ast::Kind> = tcx
-                .in_scope_type_param_binders()
-                .into_iter()
-                .map(|name| {
-                    let kind = tcx.type_param_kind(&name).unwrap_or(crate::ast::Kind::Star);
-                    (name, kind)
-                })
-                .collect();
-            for binder in additional_binders {
-                assert!(
-                    binder_kinds
-                        .insert(binder.name.clone(), binder.effective_kind())
-                        .is_none(),
-                    "a generated macro binder collided with an ambient type binder"
-                );
-            }
-            crate::pass::resolve::exported_contract_type(&ty, entry, &binder_kinds)
+    let mut bindings: Vec<_> = tcx
+        .in_scope_type_param_bindings()
+        .map(|(name, kind, identity)| {
+            (
+                name.to_owned(),
+                crate::normalization::ReflectedVariable::caller(
+                    name.to_owned(),
+                    kind.arity(),
+                    identity,
+                ),
+            )
         })
-        .unwrap_or_else(|| ty.clone());
-    // Preserve an alias head until compile-time evaluation so its declaring
-    // module remains available when the evaluator unfolds an owner-local body.
-    user_macro_reflectable_type(reflected)
+        .collect();
+    let mut names = tcx.in_scope_type_param_binders();
+    for binder in additional_binders {
+        assert!(
+            names.insert(binder.param.name.clone()),
+            "a generated macro binder collided with an ambient type binder"
+        );
+        bindings.push((binder.param.name.clone(), binder.binding.clone()));
+    }
+    reflect_macro_type_in_bindings(ty, tcx, bindings, identity_canonical)
 }
 
+fn reflect_macro_type_in_bindings(
+    ty: Type,
+    tcx: &TypeCtx<'_, '_>,
+    bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
+    identity_canonical: bool,
+) -> Result<ReflectableType, Error> {
+    let mut names = bindings
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect::<HashSet<_>>();
+    if identity_canonical {
+        // Protect canonical free heads from ambient alias expansion.
+        // The explicit bindings supply any lexical identity.
+        collect_free_type_vars(&ty, &mut names);
+    }
+    let reflected = crate::pass::typecheck_core::materialize_aliases_in_scope(
+        &ty,
+        Some(tcx.env.module),
+        tcx.env.package,
+        Some(&names),
+        identity_canonical,
+    );
+    user_macro_reflectable_type(reflected).map(|ty| ty.with_lexical_bindings(bindings))
+}
+
+#[cfg(test)]
 fn reflect_macro_type(ty: Type, tcx: &TypeCtx<'_, '_>) -> Result<ReflectableType, Error> {
-    reflect_macro_type_with_binders(ty, tcx, &[])
+    reflect_macro_type_with_binders(ty, tcx, &[], false)
 }
 
 fn reflect_macro_interned_type(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
 ) -> Result<ReflectableType, Error> {
-    if ty.identity_is_canonical() {
-        user_macro_reflectable_type(ty.clone_type())
-    } else {
-        reflect_macro_type(ty.clone_type(), tcx)
-    }
+    reflect_macro_interned_type_with_binders(ty, tcx, &[])
 }
 
 pub(crate) fn reflect_projected_type(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
+    scope: &crate::pass::typecheck_core::ScopedType,
+    overlay: impl IntoIterator<Item = (String, crate::normalization::ReflectedVariable)>,
 ) -> Result<crate::normalization::ReflectedType, Error> {
-    reflect_macro_interned_type(ty, tcx)
+    let lexical = scope.projected_reflection_bindings();
+    let mut names: HashSet<_> = lexical.iter().map(|(name, _, _)| name.clone()).collect();
+    if ty.identity_is_canonical() {
+        collect_free_type_vars(ty.as_type(), &mut names);
+    }
+    let reflected = crate::pass::typecheck_core::materialize_aliases_in_scope(
+        ty.as_type(),
+        Some(tcx.env.module),
+        tcx.env.package,
+        Some(&names),
+        ty.identity_is_canonical(),
+    );
+    let mut used = HashSet::new();
+    collect_free_type_vars(&reflected, &mut used);
+    let overlay: HashMap<_, _> = overlay.into_iter().collect();
+    let bindings = lexical
+        .into_iter()
+        .filter(|(name, _, _)| used.contains(name))
+        .map(|(name, kind, identity)| {
+            let binding = match identity {
+                Some(identity) => crate::normalization::ReflectedVariable::caller(
+                    name.clone(),
+                    kind.arity(),
+                    identity,
+                ),
+                None => overlay
+                    .get(&name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "a reflected lexical binder `{name}` lost its retained semantic reference"
+                        )
+                    })
+                    .clone(),
+            };
+            (name, binding)
+        })
+        .collect::<Vec<_>>();
+    user_macro_reflectable_type(reflected).map(|ty| ty.with_lexical_bindings(bindings))
 }
 
 fn reflect_macro_interned_type_with_binders(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
-    additional_binders: &[TypeParam],
+    additional_binders: &[FrozenResidualTypeBinder],
 ) -> Result<ReflectableType, Error> {
-    if ty.identity_is_canonical() {
-        user_macro_reflectable_type(ty.clone_type())
-    } else {
-        reflect_macro_type_with_binders(ty.clone_type(), tcx, additional_binders)
-    }
+    reflect_macro_type_with_binders(
+        ty.clone_type(),
+        tcx,
+        additional_binders,
+        ty.identity_is_canonical(),
+    )
 }
 
 fn user_macro_input_keys(inputs: &[UserMacroTemplateInput]) -> Vec<UserMacroTemplateInputKey> {
@@ -7958,21 +6850,16 @@ fn user_macro_input_keys(inputs: &[UserMacroTemplateInput]) -> Vec<UserMacroTemp
         .iter()
         .map(|input| match input {
             UserMacroTemplateInput::ComptimeProof => UserMacroTemplateInputKey::ComptimeProof,
-            UserMacroTemplateInput::Type(t) => UserMacroTemplateInputKey::Type(t.as_type().clone()),
-            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Known(t)) => {
-                UserMacroTemplateInputKey::OptionalTypeKnown(t.as_type().clone())
-            }
-            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Infer) => {
-                UserMacroTemplateInputKey::OptionalTypeInfer
-            }
+            UserMacroTemplateInput::Type(t) => UserMacroTemplateInputKey::Type(t.clone()),
+            UserMacroTemplateInput::NaturalResult => UserMacroTemplateInputKey::NaturalResult,
             UserMacroTemplateInput::Term { value_ty, .. } => {
-                UserMacroTemplateInputKey::Term(value_ty.as_type().clone())
+                UserMacroTemplateInputKey::Term(value_ty.clone())
             }
             UserMacroTemplateInput::BoundTerm { value_ty, .. } => {
-                UserMacroTemplateInputKey::Term(value_ty.as_type().clone())
+                UserMacroTemplateInputKey::Term(value_ty.clone())
             }
             UserMacroTemplateInput::CapturedTerm { term } => {
-                UserMacroTemplateInputKey::CapturedTerm(term.clone_type())
+                UserMacroTemplateInputKey::CapturedTerm(term.clone())
             }
         })
         .collect()
@@ -8119,23 +7006,14 @@ pub(crate) fn prepare_user_macro_action<'m>(
         .flat_map(|stage| call_arg_refs(&stage.args))
         .collect();
     let (macro_def, macro_module) = resolve_user_macro_for_call(name, span, tcx)?;
-    let trailing_call = matches!(
-        original,
+    let trailing_final_prefix = match original {
         Expr::UserMacro {
-            form: crate::ast::UserMacroCallForm::TrailingBlocks,
+            form: crate::ast::UserMacroCallForm::TrailingBlocks { has_final_prefix },
             ..
-        }
-    );
-    if !macro_def.trailing_blocks.is_empty() && !trailing_call {
-        return Err(trailing_block_declaration_error(
-            span,
-            "this macro requires its declared trailing blocks in a direct call",
-            macro_def,
-            macro_module,
-            tcx,
-        ));
-    }
-    if trailing_call
+        } => Some(*has_final_prefix),
+        _ => None,
+    };
+    if trailing_final_prefix.is_some()
         && source_args
             .iter()
             .any(|arg| matches!(arg, CallArgRef::Type(_)))
@@ -8324,9 +7202,6 @@ fn collect_eval_fn_refs(
         | crate::ast::Expr::BoolLit { .. } => {}
         crate::ast::Expr::Tuple { ext, .. }
         | crate::ast::Expr::FnPlaceholder { ext, .. }
-        | crate::ast::Expr::LabelValue { ext, .. }
-        | crate::ast::Expr::RowLet { ext, .. }
-        | crate::ast::Expr::Elaborator { ext, .. }
         | crate::ast::Expr::RecOrder { ext, .. }
         | crate::ast::Expr::RecQuote { ext, .. }
         | crate::ast::Expr::UserMacro { ext, .. }
@@ -8921,57 +7796,62 @@ fn user_macro_reflectable_type(ty: Type) -> Result<ReflectableType, Error> {
 
 fn compute_user_macro_deferred_template<'m>(
     ob: &DeferredUserMacroElaboration,
-    key: UserMacroMemoKey,
+    key: Option<UserMacroMemoKey>,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     elaborations: &Elaborations,
     memo: &crate::pass::typecheck_core::MemoCtx<Lowered>,
 ) -> Result<UserMacroTemplateResult, Error> {
     let macro_module = macro_module_for_path(env, ob.macro_module_path.as_deref());
     let memo_start = crate::timing::user_macro_frontend_enabled().then(Instant::now);
-    let result = memo.user_macro_template_or_compute(
-        key,
-        || {
-            let record_timing = crate::timing::user_macro_frontend_enabled();
-            let computed = compute_user_macro_template(
-                UserMacroTemplateRequest {
-                    macro_name: &ob.name,
-                    macro_module,
-                    abi_inputs: ob.abi_inputs.clone(),
-                    capture_imports: ob.capture_imports.clone(),
-                    result_ty: ob.result_ty.as_ref(),
-                    span: ob.span,
-                },
-                env,
-                elaborations,
-                memo,
-                record_timing,
-            )?;
-            Ok(computed)
-        },
-        |cached| {
-            let fresh = compute_user_macro_template(
-                UserMacroTemplateRequest {
-                    macro_name: &ob.name,
-                    macro_module,
-                    abi_inputs: ob.abi_inputs.clone(),
-                    capture_imports: ob.capture_imports.clone(),
-                    result_ty: ob.result_ty.as_ref(),
-                    span: ob.span,
-                },
-                env,
-                elaborations,
-                memo,
-                false,
+    let compute = || {
+        let record_timing = crate::timing::user_macro_frontend_enabled();
+        let computed = compute_user_macro_template(
+            UserMacroTemplateRequest {
+                macro_name: &ob.name,
+                macro_module,
+                abi_inputs: ob.abi_inputs.clone(),
+                capture_imports: ob.capture_imports.clone(),
+                result_ty: ob.result_ty.as_ref(),
+                ambient_type_names: &ob.ambient_type_names,
+                residual_reflection_bindings: &ob.residual_reflection_bindings,
+                span: ob.span,
+            },
+            env,
+            elaborations,
+            memo,
+            record_timing,
+        )?;
+        Ok(computed)
+    };
+    let verify = |cached: &UserMacroTemplateResult| {
+        let fresh = compute_user_macro_template(
+            UserMacroTemplateRequest {
+                macro_name: &ob.name,
+                macro_module,
+                abi_inputs: ob.abi_inputs.clone(),
+                capture_imports: ob.capture_imports.clone(),
+                result_ty: ob.result_ty.as_ref(),
+                ambient_type_names: &ob.ambient_type_names,
+                residual_reflection_bindings: &ob.residual_reflection_bindings,
+                span: ob.span,
+            },
+            env,
+            elaborations,
+            memo,
+            false,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "KIO_DEBUG_MEMO_VERIFY=1: user macro fresh validation failed: {}",
+                error.diagnostic().message
             )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "KIO_DEBUG_MEMO_VERIFY=1: user macro fresh validation failed: {}",
-                    error.diagnostic().message
-                )
-            });
-            verify_user_macro_template_memo(cached, &fresh, ob, macro_module, env);
-        },
-    );
+        });
+        verify_user_macro_template_memo(cached, &fresh, ob, macro_module, env);
+    };
+    let result = match key {
+        Some(key) => memo.user_macro_template_or_compute(key, compute, verify),
+        None => compute(),
+    };
     if let Some(memo_start) = memo_start {
         memo.record_user_macro_template_memo_total(memo_start.elapsed());
     }
@@ -8981,8 +7861,42 @@ fn compute_user_macro_deferred_template<'m>(
 fn user_macro_template_memo_key(
     ob: &DeferredUserMacroElaboration,
     env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
-) -> UserMacroMemoKey {
-    UserMacroMemoKey::new(
+) -> Option<UserMacroMemoKey> {
+    user_macro_template_memo_key_with_budget(
+        ob,
+        env,
+        crate::normalization::EXACT_CALL_MEMO_KEY_BUDGET,
+    )
+}
+
+fn user_macro_template_memo_key_with_budget(
+    ob: &DeferredUserMacroElaboration,
+    env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
+    mut budget: usize,
+) -> Option<UserMacroMemoKey> {
+    enum Guard {
+        Type(crate::normalization::ReflectedSnapshotKey),
+        Captured(crate::normalization::CheckedSnapshotKey),
+    }
+    let mut guards = Vec::new();
+    for input in &ob.input_keys {
+        match input {
+            UserMacroTemplateInputKey::Type(ty) | UserMacroTemplateInputKey::Term(ty) => {
+                guards.push(Guard::Type(
+                    crate::normalization::ReflectedSnapshotKey::new(ty, &mut budget)?,
+                ));
+            }
+            UserMacroTemplateInputKey::CapturedTerm(term) => {
+                guards.push(Guard::Captured(
+                    crate::normalization::CheckedSnapshotKey::new(term, &mut budget)?,
+                ));
+            }
+            UserMacroTemplateInputKey::ComptimeProof
+            | UserMacroTemplateInputKey::NaturalResult
+            | UserMacroTemplateInputKey::ResidualShape(_) => {}
+        }
+    }
+    let mut key = UserMacroMemoKey::new(
         ob.macro_module_path
             .clone()
             .unwrap_or_else(|| env.module_path.clone()),
@@ -8996,29 +7910,31 @@ fn user_macro_template_memo_key(
         ob.result_ty
             .as_ref()
             .map(|ty| crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty.as_type())),
-    )
+    );
+    for guard in guards {
+        match guard {
+            Guard::Type(guard) => key.push_type_reflection_guard(guard),
+            Guard::Captured(guard) => key.push_captured_reflection_guard(guard),
+        }
+    }
+    Some(key)
 }
 
 fn user_macro_memo_input_key(input: &UserMacroTemplateInputKey) -> UserMacroMemoInputKey {
     match input {
         UserMacroTemplateInputKey::ComptimeProof => UserMacroMemoInputKey::ComptimeProof,
         UserMacroTemplateInputKey::Type(ty) => UserMacroMemoInputKey::Type(
-            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty.as_type()),
         ),
-        UserMacroTemplateInputKey::OptionalTypeKnown(ty) => {
-            UserMacroMemoInputKey::OptionalTypeKnown(
-                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
-            )
-        }
-        UserMacroTemplateInputKey::OptionalTypeInfer => UserMacroMemoInputKey::OptionalTypeInfer,
+        UserMacroTemplateInputKey::NaturalResult => UserMacroMemoInputKey::NaturalResult,
         UserMacroTemplateInputKey::Term(ty) => UserMacroMemoInputKey::Term(
-            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty.as_type()),
         ),
         UserMacroTemplateInputKey::ResidualShape(ty) => UserMacroMemoInputKey::ResidualShape(
             crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
         ),
-        UserMacroTemplateInputKey::CapturedTerm(ty) => UserMacroMemoInputKey::CapturedTerm(
-            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+        UserMacroTemplateInputKey::CapturedTerm(term) => UserMacroMemoInputKey::CapturedTerm(
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(term.ty()),
         ),
     }
 }
@@ -9043,6 +7959,8 @@ struct UserMacroTemplateRequest<'a, 'm> {
     abi_inputs: Vec<UserMacroTemplateInput>,
     capture_imports: Vec<UserMacroTemplateGeneratedImport>,
     result_ty: Option<&'a InternedType>,
+    ambient_type_names: &'a HashSet<String>,
+    residual_reflection_bindings: &'a [(String, crate::normalization::ReflectedVariable)],
     span: Span,
 }
 
@@ -9096,7 +8014,7 @@ fn user_macro_template_input_value(input: &UserMacroTemplateInput) -> crate::nor
             crate::normalization::Value::CheckedTerm(term.clone())
         }
         UserMacroTemplateInput::ComptimeProof
-        | UserMacroTemplateInput::OptionalType(_)
+        | UserMacroTemplateInput::NaturalResult
         | UserMacroTemplateInput::Term { .. }
         | UserMacroTemplateInput::BoundTerm { .. } => {
             unreachable!("a capture resolved as a declaration ABI slot")
@@ -9131,24 +8049,21 @@ fn user_macro_eval_packet_with_capabilities(
                 value_index,
                 value_ty,
             } => Value::CheckedTerm(crate::normalization::EvalRef::new(
-                crate::normalization::CheckedTerm::template_value(
+                crate::normalization::CheckedTerm::template_value_reflected(
                     *value_index,
-                    value_ty.as_type().clone(),
+                    value_ty.clone(),
                 ),
             )),
-            UserMacroTemplateInput::BoundTerm { name, value_ty } => Value::CheckedTerm(
-                crate::normalization::EvalRef::new(crate::normalization::CheckedTerm::local(
-                    name.clone(),
-                    value_ty.as_type().clone(),
-                )),
-            ),
+            UserMacroTemplateInput::BoundTerm { name, value_ty } => {
+                Value::CheckedTerm(crate::normalization::EvalRef::new(
+                    crate::normalization::CheckedTerm::local_reflected(
+                        name.clone(),
+                        value_ty.clone(),
+                    ),
+                ))
+            }
             UserMacroTemplateInput::CapturedTerm { term } => Value::CheckedTerm(term.clone()),
-            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Known(ty)) => {
-                crate::normalization::data_value("__left__", vec![Value::ReflType(ty.clone())])
-            }
-            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Infer) => {
-                crate::normalization::data_value("__right__", vec![Value::Unit])
-            }
+            UserMacroTemplateInput::NaturalResult => Value::Unit,
         };
         values.push(value);
     }
@@ -9292,6 +8207,9 @@ fn compute_user_macro_template<'m>(
     }
     match decode_user_macro_result(result, &ctx) {
         Ok(checked) => {
+            let template =
+                trusted_user_macro_template(checked, request.residual_reflection_bindings);
+            let checked = &template.checked;
             if let Some(target) = request.result_ty {
                 let artifact = artifact_pair.artifact();
                 let artifact_module = &artifact
@@ -9312,12 +8230,27 @@ fn compute_user_macro_template<'m>(
                     env.module,
                     target.identity_is_canonical(),
                 );
+                let mut binders = request.ambient_type_names.clone();
+                if target.identity_is_canonical() {
+                    collect_free_type_vars(target.as_type(), &mut binders);
+                }
+                let target_alias_ctx = AliasCtx {
+                    binder_locals: Some(&binders),
+                    ..env.alias_ctx()
+                };
                 let (canonical_target, target_is_canonical) =
                     crate::pass::typecheck_core::canonicalize_for_comparison(
                         target.as_type(),
-                        &env.alias_ctx(),
+                        &target_alias_ctx,
                         target.identity_is_canonical(),
                     );
+                let canonical_target = crate::pass::typecheck_core::materialize_aliases_in_scope(
+                    &canonical_target,
+                    Some(env.module),
+                    env.package,
+                    Some(&binders),
+                    target_is_canonical,
+                );
                 let target_eval = substitute::substitute_type_for_eval(
                     &canonical_target,
                     elaborations,
@@ -9325,7 +8258,14 @@ fn compute_user_macro_template<'m>(
                     env.package,
                     Some(env.module),
                 );
-                let alias_ctx = artifact_env.alias_ctx();
+                collect_free_type_vars(checked.ty(), &mut binders);
+                if target_is_canonical {
+                    collect_free_type_vars(&target_eval, &mut binders);
+                }
+                let alias_ctx = crate::pass::typecheck_core::AliasCtx {
+                    binder_locals: Some(&binders),
+                    ..artifact_env.alias_ctx()
+                };
                 if crate::pass::typecheck_core::require_type_equiv_state(
                     checked.ty(),
                     &target_eval,
@@ -9345,11 +8285,11 @@ fn compute_user_macro_template<'m>(
                     )));
                 }
             }
-            Ok(Ok(trusted_user_macro_template(checked)))
+            Ok(Ok(template))
         }
         Err(UserMacroDecodeError::Diagnostic(message)) => Ok(Err(message)),
         Err(UserMacroDecodeError::Type(message)) => Err(Error::type_(request.span, message)),
-        Err(UserMacroDecodeError::Totality(message)) => Err(Error::totality(request.span, message)),
+        Err(UserMacroDecodeError::Evaluation(fault)) => Err(fault.into_error(request.span)),
     }
 }
 
@@ -9358,6 +8298,7 @@ struct UserMacroReplayInputs<'a> {
     value_adapter: Option<&'a crate::normalization::CheckedTermTemplateValueAdapter>,
     residual_eta: Option<&'a crate::pass::substitute::EtaPlan<UncheckedPrime>>,
     ambient_type_names: &'a HashSet<String>,
+    residual_reflection_bindings: &'a [(String, crate::normalization::ReflectedVariable)],
     capture_imports: &'a [UserMacroTemplateGeneratedImport],
     quoted: Option<(NodeId, Option<&'a QuotedPublicRecipe>)>,
 }
@@ -9378,6 +8319,7 @@ fn user_macro_template_to_elaboration(
         value_adapter,
         residual_eta,
         ambient_type_names,
+        residual_reflection_bindings,
         capture_imports,
         quoted,
     } = inputs;
@@ -9490,6 +8432,7 @@ fn user_macro_template_to_elaboration(
             replay
                 .elaborations
                 .record_generated_imports(replay.module_path, &generated_imports);
+            let checked = checked.align_for_export(residual_reflection_bindings);
             let mut serialization_type_binders = checked.serialization_type_binders();
             serialization_type_binders.extend(ambient_type_names.iter().cloned());
             if let Some(residual_eta) = residual_eta {
@@ -9630,8 +8573,13 @@ fn user_macro_template_to_elaboration(
     result
 }
 
-fn trusted_user_macro_template(checked: crate::normalization::CheckedTerm) -> UserMacroTemplate {
-    UserMacroTemplate { checked }
+fn trusted_user_macro_template(
+    checked: crate::normalization::CheckedTerm,
+    preferred: &[(String, crate::normalization::ReflectedVariable)],
+) -> UserMacroTemplate {
+    UserMacroTemplate {
+        checked: checked.align_for_export(preferred),
+    }
 }
 
 fn user_macro_result_type_verification_key(
@@ -9661,9 +8609,7 @@ fn user_macro_result_type_verification_key(
                 collect_abi_arities(right, arities);
             }
             crate::ast::Type::Forall { body, .. } => collect_abi_arities(body, arities),
-            crate::ast::Type::LabelSugar { ext, .. } | crate::ast::Type::Infer { ext, .. } => {
-                match *ext {}
-            }
+            crate::ast::Type::Infer { ext, .. } => match *ext {},
             crate::ast::Type::Goal { ext, .. } => match *ext {},
         }
     }
@@ -9720,8 +8666,8 @@ fn verify_user_macro_template_memo<'m>(
                 ),
                 Err(fault) => panic!(
                     "KIO_DEBUG_MEMO_VERIFY=1: user macro memo verification triggered {}",
-                    crate::normalization::structural_recur_stuck_message(&fault, &ctx)
-                        .expect("checked NF equality returns a structural-recursion fault")
+                    crate::normalization::comptime_fault_message(&fault, &ctx)
+                        .expect("checked NF equality returns an evaluation fault")
                 ),
             }
         }
@@ -9771,7 +8717,7 @@ fn user_macro_template_verification_expr(
 enum UserMacroDecodeError {
     Diagnostic(String),
     Type(String),
-    Totality(String),
+    Evaluation(crate::normalization::ComptimeFault),
 }
 
 fn decode_user_macro_result(
@@ -9779,8 +8725,8 @@ fn decode_user_macro_result(
     ctx: &crate::normalization::EvalCtx<'_>,
 ) -> Result<crate::normalization::CheckedTerm, UserMacroDecodeError> {
     use crate::normalization::Value;
-    if let Some(message) = crate::normalization::structural_recur_stuck_message(&value, ctx) {
-        return Err(UserMacroDecodeError::Totality(message));
+    if let Some(fault) = crate::normalization::comptime_fault(&value, ctx) {
+        return Err(UserMacroDecodeError::Evaluation(fault));
     }
     match value {
         Value::CheckedTerm(term) => {
@@ -9829,7 +8775,7 @@ fn decode_user_macro_result(
 // `intrinsic_scheme` lives in `crate::pass::typecheck_core`. Imported via
 // the use clause at the top of this module.
 
-// `intrinsic_call`, `synth_env_fn_def`,
+// `synth_env_fn_def`,
 // `newtype_member_scheme`, `ty_nominal_segments`,
 // `clone_with_span`, and the tiny scheme constructors (`tp` /
 // `vp` / `ty_path` / `ty_sum` / `ty_product` / `ty_func`) all
@@ -9844,6 +8790,9 @@ fn decode_user_macro_result(
 
 // `display_type` and the underlying `write_type` walker live in
 // `crate::pass::typecheck_core`. Imported at the top of this module.
+
+#[cfg(test)]
+mod result_split_tests;
 
 #[cfg(test)]
 mod tests {
@@ -9980,9 +8929,8 @@ mod tests {
                 _s: __Type__, _r: __Type__, callback: __Checked_term__, _later: __Checked_term__
             ) -> (__Checked_term__ & __Fill_ctx__) {
                 let unit = __reflect_type__(ct)[.];
-                let zero = __type_arity_zero__(ct);
-                let thunk = __type_arrow__(ct, unit, zero, unit);
-                let callback_type = __type_arrow__(ct, unit, zero, thunk);
+                let thunk = __type_arrow__(ct, unit, unit);
+                let callback_type = __type_arrow__(ct, unit, thunk);
                 (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
             }
             macro invoke_then : [S][R] (S -> R) -> Later -> R { impl(fills) invoke_then_impl; };
@@ -10546,7 +9494,7 @@ mod tests {
             "module main; \
              rec { \
                type A_n2 = Wrap; \
-               newtype Wrap : A_n2 { constructor mk; projector un; }; \
+               type { Wrap: A_n2 { mk; get; }; }; \
              }",
         );
         let mut reserved = HashSet::from(["A".to_owned()]);
@@ -10653,7 +9601,7 @@ mod tests {
                  pub fn residual[B_n2]() -> [B] . { phantom(())[.] }",
                 "module main; import macros(macro phantom); rec { \
                    type B_n2 = Wrap; \
-                   newtype Wrap : B_n2 { constructor mk; projector un; }; \
+                   type { Wrap: B_n2 { mk; get; }; }; \
                  } pub fn residual() -> [B] . { phantom(())[.] }",
             ] {
                 let emitted = emit_and_recheck(&[
@@ -10868,7 +9816,7 @@ mod tests {
                 "types.kio",
                 "module types;
                  rec {
-                   pub newtype Node : Node_payload { pub constructor mk; pub projector un; };
+                   pub type { Node: Node_payload { pub mk; pub get; }; };
                    pub type Node_payload = Node;
                  }",
             ),
@@ -11197,10 +10145,10 @@ pure fn common2_impl(
   left: __Checked_term__,
   _right_type: __Type__,
   right: __Checked_term__,
-  target: __Type__
+  _target: .
 ) -> (__Checked_term__ & __Fill_ctx__) {
-  let with_left = __fill__(ct, fills, target, __term_type__(ct, left));
-  let with_right = __fill__(ct, with_left, target, __term_type__(ct, right));
+  let with_left = __fill_result__(ct, fills, __term_type__(ct, left));
+  let with_right = __fill_result__(ct, with_left, __term_type__(ct, right));
   (left, with_right)
 }
 
@@ -11213,11 +10161,11 @@ pure fn common3_impl(
   second: __Checked_term__,
   _third_type: __Type__,
   third: __Checked_term__,
-  target: __Type__
+  _target: .
 ) -> (__Checked_term__ & __Fill_ctx__) {
-  let with_first = __fill__(ct, fills, target, __term_type__(ct, first));
-  let with_second = __fill__(ct, with_first, target, __term_type__(ct, second));
-  let with_third = __fill__(ct, with_second, target, __term_type__(ct, third));
+  let with_first = __fill_result__(ct, fills, __term_type__(ct, first));
+  let with_second = __fill_result__(ct, with_first, __term_type__(ct, second));
+  let with_third = __fill_result__(ct, with_second, __term_type__(ct, third));
   (first, with_third)
 }
 
@@ -11322,8 +10270,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let (checked, scope) = check_retained_success(&package);
         let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
         assert_eq!(
-            work.final_selected_layer_continues, 6,
-            "each of the two nested calls selects its three public Function stages once"
+            work.final_selected_layer_continues, 2,
+            "each of the two nested calls selects its one public packet stage once"
         );
         assert_eq!(
             scope.memo().user_macro_template_executions(),
@@ -11694,55 +10642,51 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn inference_only_label_construction_uses_ordinary_constructor_context() {
+    fn nominal_constructors_preserve_contextual_literal_inference() {
         for (role, literal) in [
             ("i32", "7"),
             ("f64", "1.5"),
             ("bool", ".t"),
             ("str", "\"text\""),
         ] {
-            for value in [
-                format!("{{box = .(_next: Carrier -> Carrier) {{ {literal} }} }}"),
-                format!("Box.mk(.(_next: Carrier -> Carrier) {{ {literal} }})"),
-            ] {
-                let source = format!(
-                    "module main; host type Carrier role({role}); host type Other role({role}); labels {{ box[A]: (A -> A) -> A }}; fn value() {{ let selected = {value}; () }}"
-                );
-                let package = lowered_control_package(&[("main.kio", &source)]);
-                let (checked, _) = check_retained_success(&package);
-                validate_substituted_package(checked.substituted())
-                    .expect("construction and its ordinary constructor share contextual inference");
-            }
+            let source = format!(
+                "module main; host type Carrier role({role}); host type Other role({role}); type {{ Box[A]: (A -> A) -> A {{ mk; get; }}; }}; fn value() {{ let selected = Box.mk(.(_next: Carrier -> Carrier) {{ {literal} }}); () }}"
+            );
+            let package = lowered_control_package(&[("main.kio", &source)]);
+            let (checked, _) = check_retained_success(&package);
+            validate_substituted_package(checked.substituted())
+                .expect("the written callback parameter determines the constructor payload");
             for arguments in [
-                format!("{{item = {literal}}}, known"),
-                format!("known, {{item = {literal}}}"),
+                format!("Item.mk({literal}), known"),
+                format!("known, Item.mk({literal})"),
             ] {
                 let source = format!(
-                    "module main; host type Carrier role({role}); labels {{ item[A]: A }}; fn common[A](left: A, _right: A) -> A {{ left }} fn value(known: Item[Carrier]) {{ let selected = common({arguments}); () }}"
+                    "module main; host type Carrier role({role}); type {{ Item[A]: A {{ mk; get; }}; }}; fn common[A](left: A, _right: A) -> A {{ left }} fn value(known: Item[Carrier]) {{ let selected = common({arguments}); () }}"
                 );
                 check_package_sources(&[&source])
-                    .expect("a later sibling supplies the retained constructor's exact result");
+                    .expect("either sibling supplies the retained constructor's exact result");
             }
         }
         for source in [
-            "module main; host type Scalar role(i32); host type String role(str); labels { number[A]: A, text[A]: A }; fn value() -> Text[String] & Number[Scalar] { {number = 7, text = \"text\"} }",
-            "module main; host type Number role(i32); host type Token; labels { pack[A] <U>: A & U }; fn value(token: Token) -> Pack[Number] { {pack = (7, token)} }",
-            "module main; host type Number role(i32); labels { poly[A]: [B] B -> A }; fn value() -> Poly[Number] { {poly = .[B](_value: B) { 7 }} }",
+            "module main; host type Scalar role(i32); host type String role(str); type { Number[A]: A { mk; get; }; Text[A]: A { mk; get; }; }; fn value() -> Text[String] & Number[Scalar] { (Text.mk(\"text\"), Number.mk(7)) }",
+            "module main; host type Number role(i32); host type Token; type { Pack[A] <U>: A & U { mk; get; }; }; fn value(token: Token) -> Pack[Number] { Pack.mk((7, token)) }",
+            "module main; host type Number role(i32); type { Poly[A]: [B] B -> A { mk; get; }; }; fn value() -> Poly[Number] { Poly.mk(.[B](_value: B) { 7 }) }",
         ] {
-            check_package_sources(&[source])
-                .expect("construction preserves order, existential and higher-rank public schemes");
+            check_package_sources(&[source]).expect(
+                "constructor contexts preserve products, existentials and higher-rank schemes",
+            );
         }
         for (source, diagnostic) in [
             (
-                "module main; host type Small role(i8); labels { value[A]: A }; fn bad() -> Value[Small] { {value = 128} }",
+                "module main; host type Small role(i8); type { Value[A]: A { mk; get; }; }; fn bad() -> Value[Small] { Value.mk(128) }",
                 "range",
             ),
             (
-                "module main; host type Number role(i32); labels { value[A]: A }; fn bad() -> Value[Number] { {value = \"wrong\"} }",
+                "module main; host type Number role(i32); type { Value[A]: A { mk; get; }; }; fn bad() -> Value[Number] { Value.mk(\"wrong\") }",
                 "string literal cannot have the expected type",
             ),
             (
-                "module main; host type A role(i32); labels { value[B]: B }; fn bad[A]() -> Value[A] { {value = 7} }",
+                "module main; host type A role(i32); type { Value[B]: B { mk; get; }; }; fn bad[A]() -> Value[A] { Value.mk(7) }",
                 "role-bearing",
             ),
         ] {
@@ -11754,21 +10698,21 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[cfg(feature = "prime")]
     #[test]
-    fn label_construction_preserves_forwarded_identity_and_literal_admission() {
+    fn nominal_constructors_preserve_alias_identity_and_literal_admission() {
         use crate::backends::kio_prime::emit_module;
         use crate::pipeline::Pipeline;
         use crate::prime::pipeline::PrimePipeline;
 
         let sources = [
-            ("origin.kio", "module origin; pub labels { item[A]: A };"),
-            ("other.kio", "module other; pub labels { item[A]: A };"),
+            ("origin.kio", "module origin; pub type { Item[A]: A; };"),
+            ("other.kio", "module other; pub type { Item[A]: A; };"),
             (
                 "relay.kio",
-                "module relay; import origin as o; pub type {entry} = {o.item};",
+                "module relay; import origin as o; pub type Entry[A] = o.Item[A];",
             ),
             (
                 "main.kio",
-                "module main; import origin as o; import other as d; import relay as r; host type Number role(i32); host type String role(str); fn value() -> d.Item[String] & o.Item[Number] { {r.entry = 7, d.item = \"other\"} }",
+                "module main; import origin as o; import other as d; import relay as r; host type Number role(i32); host type String role(str); fn value() -> d.Item[String] & o.Item[Number] { (d.Item.mk(\"other\"), r.Entry.mk(7)) }",
             ),
         ];
         let parsed = sources
@@ -11776,11 +10720,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             .map(|(path, source)| (PathBuf::from(path), parse(source).expect("source module")))
             .collect();
         let (modules, _) = FullPipeline::lower_package(parsed, None)
-            .expect("lower the complete label environment");
+            .expect("lower the complete nominal environment");
         let package = Package::build(Path::new(""), modules, None).expect("construction package");
         package.resolve_imports().expect("resolve source imports");
         let checked =
-            check_package(&package).expect("forwarded and same-leaf labels stay distinct");
+            check_package(&package).expect("aliased and same-leaf nominal owners stay distinct");
         let parsed = checked
             .modules()
             .map(|(path, module)| {
@@ -11799,136 +10743,160 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             .expect("explicit generated imports resolve");
         fresh
             .check_binding_origins()
-            .expect("forwarded bindings retain origin");
+            .expect("aliased bindings retain origin");
         fresh
             .check_in_body_resolution()
             .expect("fresh constructor calls resolve");
         PrimePipeline::typecheck(&fresh).expect("fresh Prime preserves exact nominal identities");
 
-        for sources in [
-            vec![
-                "module origin; labels { item[A]: A };",
-                "module main; import origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7[Number]}; () }",
-            ],
-            vec![
-                "module scope/origin; pub(scope) labels { item[A]: A };",
-                "module outside; import scope/origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7[Number]}; () }",
-            ],
+        for (sources, consumer) in [
+            (
+                vec![
+                    "module origin; type { Item[A]: A; };",
+                    "module main; import origin as o; host type Number role(i32); fn bad() { let selected = o.Item.mk(7[Number]); () }",
+                ],
+                "main",
+            ),
+            (
+                vec![
+                    "module scope/origin; pub(scope) type { Item[A]: A; };",
+                    "module outside; import scope/origin as o; host type Number role(i32); fn bad() { let selected = o.Item.mk(7[Number]); () }",
+                ],
+                "outside",
+            ),
         ] {
             let error = check_package_sources(&sources)
-                .expect_err("construction cannot bypass label visibility");
-            let message = error.diag().1;
-            assert!(
-                message.contains("private") || message.contains("restricted"),
-                "{error:?}"
+                .expect_err("construction cannot bypass nominal visibility");
+            let Error::Type(diagnostic) = error else {
+                panic!("expected ordinary nominal visibility error, got {error:?}");
+            };
+            assert_eq!(
+                diagnostic.message,
+                format!("newtype `o.Item` is not visible from module `{consumer}`")
             );
         }
         check_package_sources(&[
-            "module scope/origin; pub(scope) labels { item[A]: A };",
-            "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item[Number] { {o.item = 7} }",
+            "module scope/origin; pub(scope) type { Item[A]: A; };",
+            "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item[Number] { o.Item.mk(7) }",
         ]).expect("ordinary scoped visibility admits the constructor in its subtree");
 
-        for source in [
-            "module main; host type Number role(i32); labels { pack<U>: U }; fn bad() -> Pack { {pack = 7} }",
-            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn bad() -> Item[Number] & Item[String] { {first = 7, second = \"second\"} }",
+        let error = check_package_sources(&[
+            "module main; host type Number role(i32); type { Pack <U>: U { mk; get; }; }; fn bad() -> Pack { Pack.mk(7) }",
+        ]).expect_err("an existential result does not determine its hidden literal carrier");
+        assert!(error.diag().1.contains("cannot determine"), "{error:?}");
+        for body in [
+            "(First.mk(7), Second.mk(\"second\"))",
+            "(First.mk(7[Number]), Second.mk(\"second\"[String]))",
         ] {
-            let error = check_package_sources(&[source])
-                .expect_err("no unique carrier follows from the result");
-            assert!(error.diag().1.contains("cannot determine"), "{error:?}");
+            check_package_sources(&[&format!(
+                "module main; host type Number role(i32); host type String role(str); type {{ Item[A]: A {{ mk; get; }}; }}; type First[A] = Item[A]; type Second[A] = Item[A]; fn value() -> Item[Number] & Item[String] {{ {body} }}"
+            )]).expect("each positional constructor uses its own alias and carrier context");
         }
         check_package_sources(&[
-            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn value() -> Item[Number] & Item[String] { {first = 7[Number], second = \"second\"[String]} }",
-        ]).expect("explicit carriers keep repeated nominal heads admissible");
-        check_package_sources(&[
-            "module main; labels { box[A]: A }; fn value[Box](known: Box) { let selected = {box = known}; () }",
-        ]).expect("an enclosing binder cannot capture the resolved label constructor");
+            "module owner; pub type { Box[A]: A; };",
+            "module main; import owner as o; fn value[Box](known: Box) { let selected = o.Box.mk(known); () }",
+        ]).expect("a qualified nominal owner remains distinct from the same-named type binder");
     }
 
     #[test]
-    fn label_construction_binds_payloads_before_expected_row_permutation() {
-        let package = lowered_package(&[(
-            "main.kio",
-            "module main; host type Number role(i32); host fn first_effect() -> Number; host fn second_effect() -> Number; labels { first[A]: A, second[A]: A }; fn value() -> Second[Number] & First[Number] { {first = first_effect(), second = second_effect()} }",
-        )]);
+    fn record_binds_effectful_source_before_expected_product_permutation() {
+        type PrimeExpr = crate::ast::Expr<Prime>;
+        type PrimeArg = crate::ast::CallArg<Prime>;
+
+        fn values<'a>(expression: &'a PrimeExpr, name: &str) -> Vec<&'a PrimeExpr> {
+            let PrimeExpr::Call { callee, args, .. } = expression else {
+                panic!("expected {name} call, got {expression:?}")
+            };
+            let PrimeExpr::Path { segments, .. } = callee.as_ref() else {
+                panic!("expected {name} path")
+            };
+            assert_eq!(segments.last().expect("callee").as_str(), name);
+            args.iter()
+                .filter_map(|arg| match arg {
+                    PrimeArg::Value(value) => Some(value),
+                    PrimeArg::Type(_) => None,
+                })
+                .collect()
+        }
+        fn local(expression: &PrimeExpr, name: &str) {
+            let PrimeExpr::Path { segments, .. } = expression else {
+                panic!("expected the bound {name}, got {expression:?}")
+            };
+            assert_eq!(segments.len(), 1);
+            assert_eq!(segments[0].as_str(), name);
+        }
+
+        let package = lowered_control_package(&[
+            (
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+            ),
+            (
+                "main.kio",
+                "module main; import row_macros(macro record); host type Number role(i32); host fn first_effect() -> Number; host fn second_effect() -> Number; type { First[A]: A { mk; get; }; Second[A]: A { mk; get; }; }; fn value() -> Second[Number] & First[Number] { record { First.mk(first_effect()); Second.mk(second_effect()) } }",
+            ),
+        ]);
         let (checked, _) = check_retained_success(&package);
-        let module = &checked.package().module("main").expect("module").module;
+        let substituted = checked.substituted();
+        let module = &substituted.package().module("main").expect("module").module;
         let function = module
             .items
             .iter()
             .find_map(|item| match item {
-                Item::FnDef(function) if function.name == "value" => Some(function),
+                crate::ast::Item::FnDef(function) if function.name == "value" => Some(function),
                 _ => None,
             })
             .expect("function");
-        let RecordedElaboration::Lowered(replacement) = checked
-            .elaborations()
-            .elaboration_for("main", &function.body)
-            .expect("construction replacement")
-        else {
-            panic!("construction records an ordinary lowered let/product")
-        };
-        let Expr::Let {
-            name: first,
-            value: first_value,
+        let PrimeExpr::Let {
+            name: packet,
+            value,
             body,
             ..
-        } = replacement
+        } = &function.body
         else {
-            panic!("first source is bound once")
+            panic!(
+                "the complete source packet is bound once: {:?}",
+                function.body
+            )
         };
-        let Expr::Let {
-            name: second,
-            value: second_value,
+        let source = values(value, "__pair__");
+        assert_eq!(source.len(), 2);
+        for (value, owner, effect) in [
+            (source[0], "First", "first_effect"),
+            (source[1], "Second", "second_effect"),
+        ] {
+            let PrimeExpr::Call { callee, .. } = value else {
+                panic!("nominal constructor")
+            };
+            let PrimeExpr::Path { segments, .. } = callee.as_ref() else {
+                panic!("constructor path")
+            };
+            assert_eq!(segments[segments.len() - 2].as_str(), owner);
+            let payload = values(value, "mk");
+            assert_eq!(payload.len(), 1);
+            let effect_args = values(payload[0], effect);
+            assert!(matches!(effect_args.as_slice(), [PrimeExpr::Unit { .. }]));
+        }
+        let PrimeExpr::Let {
+            name: tail,
+            value,
             body,
             ..
         } = body.as_ref()
         else {
-            panic!("second source is bound once")
+            panic!("the remaining source slot is bound before permutation")
         };
-        for (value, constructor, effect) in [
-            (first_value, "First", "first_effect"),
-            (second_value, "Second", "second_effect"),
-        ] {
-            let Expr::Call { callee, args, .. } = value.as_ref() else {
-                panic!("ordinary constructor")
-            };
-            let Expr::Path { segments, .. } = callee.as_ref() else {
-                panic!("constructor path")
-            };
-            assert_eq!(segments[segments.len() - 2].as_str(), constructor);
-            let [CallArg::Value(Expr::Call { callee, args, .. })] = args.as_slice() else {
-                panic!("one payload call")
-            };
-            assert!(matches!(
-                args.as_slice(),
-                [CallArg::Value(Expr::Unit { .. })]
-            ));
-            let Expr::Path { segments, .. } = callee.as_ref() else {
-                panic!("host effect path")
-            };
-            assert_eq!(segments.last().expect("effect").as_str(), effect);
-        }
-        let Expr::Call { callee, args, .. } = body.as_ref() else {
-            panic!("reordered product")
-        };
-        let Expr::Path { segments, .. } = callee.as_ref() else {
-            panic!("pair path")
-        };
-        assert_eq!(segments.last().expect("pair").as_str(), "__pair__");
-        let [
-            CallArg::Type(_),
-            CallArg::Type(_),
-            CallArg::Value(Expr::Path { segments: left, .. }),
-            CallArg::Value(Expr::Path {
-                segments: right, ..
-            }),
-        ] = args.as_slice()
-        else {
-            panic!("product contains only bound references")
-        };
-        assert_eq!(left[0].as_str(), second);
-        assert_eq!(right[0].as_str(), first);
-        validate_substituted_package(checked.substituted())
+        assert_ne!(packet, tail);
+        let projected_tail = values(value, "__snd__");
+        assert_eq!(projected_tail.len(), 1);
+        local(projected_tail[0], packet);
+        let result = values(body, "__pair__");
+        assert_eq!(result.len(), 2);
+        local(result[0], tail);
+        let projected_head = values(result[1], "__fst__");
+        assert_eq!(projected_head.len(), 1);
+        local(projected_head[0], packet);
+        validate_substituted_package(substituted)
             .expect("the source-ordered permutation validates as Prime");
     }
 
@@ -12629,62 +11597,73 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn label_payload_context_checks_factories_and_lambdas() {
+    fn nominal_payload_context_checks_factories_lambdas_and_single_slot_updates() {
         for body in [
             "First.mk(empty())",
-            "{first = empty()}",
-            "let value = {first = empty()}; value",
-            "identity({first = empty()})",
-            "{first = empty()}.!{first = empty()}",
+            "let value = First.mk(empty()); value",
+            "identity(First.mk(empty()))",
+            "First.mk(empty()).>with_ { First.mk(empty()) }",
         ] {
-            ok(&format!(
+            let source = format!(
                 "module main;
-                 newtype Box[A] : . {{ pub constructor make; pub projector unpack }}
-                 fn empty[A]() -> Box[A] {{ Box.make(()) }}
+                 import row_macros(macro with_);
+                 type {{ Box[A]: . {{ pub mk; pub get; }}; }};
+                 fn empty[A]() -> Box[A] {{ Box.mk(()) }}
                  fn identity[A](value: A) -> A {{ value }}
-                 labels {{ first: Box[.] }};
+                 type {{ First: Box[.] {{ mk; get; }}; }};
                  fn run() -> First {{ {body} }}"
-            ));
+            );
+            let package = lowered_control_package(&[
+                (
+                    "row_macros.kio",
+                    include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+                ),
+                ("main.kio", &source),
+            ]);
+            let (checked, _) = check_retained_success(&package);
+            validate_substituted_package(checked.substituted())
+                .expect("each payload factory receives the constructor's ordinary context");
         }
         ok("module main;
-            labels { callback: . -> . };
-            fn run() -> Callback { {callback = .(value) { value }} }");
+            type { Callback: . -> . { mk; get; }; };
+            fn run() -> Callback { Callback.mk(.(value) { value }) }");
     }
 
     #[test]
-    fn label_payload_context_preserves_cross_module_identity() {
+    fn nominal_payload_context_preserves_cross_module_identity() {
         check_package_sources(&[
             "module payload;
-             pub newtype Box[A] : . { pub constructor make; pub projector unpack }
-             pub fn empty[A]() -> Box[A] { Box.make(()) }
-             pub labels State = { first: Box[.], second: Box[. -> .] };",
+             pub type { Box[A]: . { pub mk; pub get; }; };
+             pub fn empty[A]() -> Box[A] { Box.mk(()) }
+             pub type { First: Box[.] { pub mk; pub get; }; Second: Box[. -> .] { pub mk; pub get; }; };
+             pub type State = First & Second;",
             "module main;
              import payload as p;
-             newtype Box[A] : A { pub constructor make; pub projector unpack }
-             fn run() -> p.State { {p.first = p.empty(), p.second = p.empty()} }",
+             type { Box[A]: A { pub mk; pub get; }; };
+             fn run() -> p.State { (p.First.mk(p.empty()), p.Second.mk(p.empty())) }",
         ])
-        .expect("a label payload keeps its declaring module's nominal identity");
+        .expect("a nominal payload keeps its declaring module's nominal identity");
     }
 
     #[test]
-    fn label_payload_context_preserves_generic_and_existential_inference() {
+    fn nominal_payload_context_preserves_generic_and_existential_inference() {
         ok("module main;
-            labels { generic[A]: A, hidden <A>: A };
-            fn generic[A](value: A) -> Generic[A] { {generic = value} }
-            fn hidden[A](value: A) -> Hidden { {hidden = value} }");
+            type { Generic[A]: A { mk; get; }; Hidden <A>: A { mk; get; }; };
+            fn generic[A](value: A) -> Generic[A] { Generic.mk(value) }
+            fn hidden[A](value: A) -> Hidden { Hidden.mk(value) }");
         let message = err("module main;
-            labels { callback: . -> . };
-            fn run() -> Callback { {callback = ()} }");
+            type { Callback: . -> . { mk; get; }; };
+            fn run() -> Callback { Callback.mk(()) }");
         assert!(message.contains("type mismatch"), "{message}");
     }
 
     #[test]
-    fn resumed_label_field_access_reuses_receiver_publication() {
+    fn nominal_projector_accepts_a_completed_constructor_receiver() {
         check_package_sources(&["module main;
             host type String role(str);
-            labels { hello: String };
-            fn body() -> String { Hello.get({hello = \"hi\"}) }"])
-        .expect("resuming a label field access reuses its completed receiver child");
+            type { Hello: String { mk; get; }; };
+            fn body() -> String { Hello.get(Hello.mk(\"hi\")) }"])
+        .expect("a nominal projector accepts its completed constructor receiver");
     }
 
     fn check_package_collect_elaborations(package: &Package) -> Result<Elaborations, LocatedError> {
@@ -12696,7 +11675,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn artifact_source_diagnostic_survives_package_module_and_aux_collectors() {
         let caller =
             "module a;\nimport control(macro scope);\npub fn unrelated() -> . { scope { () } }";
-        let declaration = "module z;\nimport a as unrelated;\ntype Hidden = .;\npub newtype Exposed : Hidden { pub constructor mk; projector un }";
+        let declaration = "module z;\nimport a as unrelated;\ntype Hidden = .;\npub type { Exposed: Hidden { pub mk; get; }; }";
         let package = lowered_control_package(&[("a.kio", caller), ("z.kio", declaration)]);
         let assert_origin = |error: &LocatedError| {
             let start = declaration.rfind("Hidden").expect("payload") as u32;
@@ -12738,7 +11717,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn artifact_source_diagnostic_in_callers_file_keeps_its_declaration_span() {
-        let source = "module a;\nimport control(macro scope);\ntype Hidden = .;\npub newtype Exposed : Hidden { pub constructor mk; projector un }\nfn unrelated() -> . { scope { () } }";
+        let source = "module a;\nimport control(macro scope);\ntype Hidden = .;\npub type { Exposed: Hidden { pub mk; get; }; }\nfn unrelated() -> . { scope { () } }";
         let package = lowered_control_package(&[("a.kio", source)]);
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
         let typecheck_scope =
@@ -12846,9 +11825,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_accepts_nominal_and_identity_receivers() {
         ok("module main; import sequence(macro do);
-            newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
-            fn run() -> Box[.] { do (bind) { let x <- Box.box(()); Box.box(x) } }");
+            type { Box[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
+            fn run() -> Box[.] { do (bind) { let x <- Box.mk(()); Box.mk(x) } }");
         ok("module main; import sequence(macro do);
             type Identity[A] = A;
             fn bind[A][B](value: Identity[A], next: A -> Identity[B]) -> Identity[B] { next(value) }
@@ -12858,41 +11837,41 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_rejects_changed_container_but_preserves_ordinary_calls() {
         let declarations = "module main; import sequence(macro do);
-            newtype Box[A] : A { constructor box; projector unbox; };
-            newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box[A], next: A -> Other[B]) -> Other[B] { next(Box.unbox(value)) }";
+            type { Box[A]: A { mk; get; }; };
+            type { Other[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Other[B]) -> Other[B] { next(Box.get(value)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Other[.] {{ do(bind) {{ let x <- Box.box(()); Other.other(x) }} }}"
+            fn run() -> Other[.] {{ do(bind) {{ let x <- Box.mk(()); Other.mk(x) }} }}"
         ));
         assert_eq!(
             message,
-            "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
+            "a sequence block requires an ordinary `Bind[F] -> F[R]` value slot"
         );
         ok(&format!(
             "{declarations}
-            fn run() -> Other[.] {{ bind(Box.box(()), .(x) {{ Other.other(x) }}) }}"
+            fn run() -> Other[.] {{ bind(Box.mk(()), .(x) {{ Other.mk(x) }}) }}"
         ));
     }
 
     #[test]
     fn do_contract_sequence_requires_unit_but_explicit_discard_accepts_another_payload() {
         let declarations = "module main; import sequence(macro do);
-            newtype Value : . { constructor value; projector unvalue; };
-            newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(input)) }";
+            type { Value: . { mk; get; }; };
+            type { Box[A]: A { mk; get; }; };
+            fn bind[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(input)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Box[.] {{ do(bind) {{ Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ Box.mk(Value.mk(())); Box.mk(()) }} }}"
         ));
         assert!(message.contains("type mismatch"), "{message}");
         ok(&format!(
             "{declarations}
-            fn run() -> Box[.] {{ do(bind) {{ let _ <- Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ let _ <- Box.mk(Value.mk(())); Box.mk(()) }} }}"
         ));
         ok(&format!(
             "{declarations}
-            fn run() -> Box[.] {{ do(bind) {{ Box.box(()); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ Box.mk(()); Box.mk(()) }} }}"
         ));
     }
 
@@ -12911,14 +11890,14 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_rejects_factory_container_changes() {
         let message = err("module main; import sequence(macro do);
-            newtype Box[A] : A { constructor box; projector unbox; };
-            newtype Other[A] : A { constructor other; projector unother; };
+            type { Box[A]: A { mk; get; }; };
+            type { Other[A]: A { mk; get; }; };
             host fn make_bind[*M][*N]() -> [A][B](M[A] & (A -> N[B])) -> N[B];
             fn run() -> Other[.] {
                 do (make_bind[Box][Other]()) {
-                    let first <- Box.box(());
-                    let second <- Other.other(());
-                    Other.other(second)
+                    let first <- Box.mk(());
+                    let second <- Other.mk(());
+                    Other.mk(second)
                 }
             }");
         assert_eq!(
@@ -12937,9 +11916,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_final_only_factory_obeys_ordinary_argument_purity() {
         let message = err("module main; import sequence(macro do);
-            newtype Box[A] : A { constructor box; projector unbox; };
+            type { Box[A]: A { mk; get; }; };
             host fn make_bind[*M]() -> [A][B](M[A] & (A -> M[B])) -> M[B];
-            pure fn run() -> Box[.] { do (make_bind[Box]()) { Box.box(()) } }");
+            pure fn run() -> Box[.] { do (make_bind[Box]()) { Box.mk(()) } }");
         assert_eq!(
             message,
             "pure function cannot reference host fn `make_bind`; `pure` means that its call graph contains no host-function calls"
@@ -12949,13 +11928,13 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_final_only_rejects_another_container() {
         let message = err("module main; import sequence(macro do);
-            newtype Box[A] : A { constructor box; projector unbox; };
-            newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
-            fn run() -> Other[.] { do (bind) { Other.other(()) } }");
+            type { Box[A]: A { mk; get; }; };
+            type { Other[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
+            fn run() -> Other[.] { do (bind) { Other.mk(()) } }");
         assert_eq!(
             message,
-            "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
+            "a sequence block requires an ordinary `Bind[F] -> F[R]` value slot"
         );
     }
 
@@ -12963,12 +11942,12 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_final_only_cps_checks_the_original_result() {
         ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
-            newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            type { Box[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
             rec(loop) fn go(value: .) -> . {
-                Box.unbox(do (bind) {
+                Box.get(do (bind) {
                     let next = recur(cont) go(value);
-                    Box.box(next)
+                    Box.mk(next)
                 })
             }");
     }
@@ -13022,11 +12001,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             pub macro invoke : [Result] (. -> Result) -> Result { impl(fills) invoke_impl }";
         let main = "module main; import macros(macro invoke); \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
-            newtype Box[A] : A { constructor box; projector unbox; }; \
-            newtype Other[A] : A { constructor other; projector unother; }; \
+            type { Box[A]: A { mk; get; }; }; \
+            type { Other[A]: A { mk; get; }; }; \
             rec(loop) fn go(value: .) -> . { \
-                Box.unbox(invoke(.(unit: .) -> Box[.] { \
-                    let next = recur(cont) go(value); Box.box(next) \
+                Box.get(invoke(.(unit: .) -> Box[.] { \
+                    let next = recur(cont) go(value); Box.mk(next) \
                 })) \
             }";
         for annotation in ["Box[.]", "Box[_]", "_", "Other[.]"] {
@@ -13251,11 +12230,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let main = "module main; import macros(macro select); \
             host type Bool role(bool); \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
-            newtype Box[A] : A { constructor box; projector unbox; }; \
+            type { Box[A]: A { mk; get; }; }; \
             rec(loop) fn go(condition: Bool) -> . { \
-                Box.unbox(select(condition)(.() { \
-                    let next = recur(cont) go(condition); Box.box(next) \
-                })(Box.box(()))) \
+                Box.get(select(condition)(.() { \
+                    let next = recur(cont) go(condition); Box.mk(next) \
+                })(Box.mk(()))) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let (checked, scope) = check_retained_success(&package);
@@ -13276,10 +12255,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let main = "module main; import macros(macro invoke); import carrier as c; \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             host fn finish(value: .) -> c.Wrap; \
-            newtype Box[A] : A { constructor box; projector unbox; }; \
+            type { Box[A]: A { mk; get; }; }; \
             rec(loop) fn go(value: .) -> c.Wrap { \
-                finish(Box.unbox(invoke(.(unit: .) -> Box[.] { \
-                    let next = recur(cont) go(value); Box.box(()) \
+                finish(Box.get(invoke(.(unit: .) -> Box[.] { \
+                    let next = recur(cont) go(value); Box.mk(()) \
                 }))) \
             }";
         let package = lowered_package(&[
@@ -13296,18 +12275,18 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_final_only_cps_rejects_a_different_original_container() {
         let message = err("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
-            newtype Box[A] : A { constructor box; projector unbox; };
-            newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            type { Box[A]: A { mk; get; }; };
+            type { Other[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
             rec(loop) fn go(value: .) -> . {
-                Other.unother(do (bind) {
+                Other.get(do (bind) {
                     let next = recur(cont) go(value);
-                    Other.other(next)
+                    Other.mk(next)
                 })
             }");
         assert_eq!(
             message,
-            "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
+            "a sequence block requires an ordinary `Bind[F] -> F[R]` value slot"
         );
     }
 
@@ -13369,10 +12348,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_cps_observes_a_recursive_final_public_result() {
         ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
-            newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            type { Box[A]: A { mk; get; }; };
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
             rec(loop) fn go(value: Box[.]) -> Box[.] {
-                Box.box(Box.unbox(do (bind) { recur(cont) go(value) }))
+                Box.mk(Box.get(do (bind) { recur(cont) go(value) }))
             }");
     }
 
@@ -13426,14 +12405,14 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             let output = if invalid { "Other" } else { "Box" };
             let package = lowered_macro_package(&format!("module main;
                 import sequence(macro do);
-                newtype Box[A] : A {{ constructor box; projector unbox; }};
-                newtype Other[A] : A {{ constructor box; projector unbox; }};
-                fn good[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ next(Box.unbox(input)) }}
-                fn second[A][B](input: Box[A], next: A -> {output}[B]) -> {output}[B] {{ next(Box.unbox(input)) }}
+                type {{ Box[A]: A {{ mk; get; }}; }};
+                type {{ Other[A]: A {{ mk; get; }}; }};
+                fn good[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ next(Box.get(input)) }}
+                fn second[A][B](input: Box[A], next: A -> {output}[B]) -> {output}[B] {{ next(Box.get(input)) }}
                 fn collect(_first: Box[.], _second: {output}[.]) -> . {{ () }}
                 fn run() -> . {{ collect(
-                    do (good) {{ let x <- Box.box(()); Box.box(x) }},
-                    do(second) {{ let x <- Box.box(()); {output}.box(x) }}
+                    do (good) {{ let x <- Box.mk(()); Box.mk(x) }},
+                    do(second) {{ let x <- Box.mk(()); {output}.mk(x) }}
                 ) }}")).expect("lower ordinary sequence package");
             let normalized = crate::pass::alpha_normalize::normalize_package(&package);
             let scope =
@@ -13464,13 +12443,13 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             if invalid {
                 assert_eq!(
                     result.err().expect("invalid receiver").diag().1,
-                    "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
+                    "a sequence block requires an ordinary `Bind[F] -> F[R]` value slot"
                 );
                 assert!(elabs.entries.is_empty());
                 assert!(elabs.type_resolutions.is_empty());
                 assert!(elabs.call_plans.is_empty());
                 assert!(elabs.literal_resolutions.is_empty());
-                assert!(elabs.fn_param_types.is_empty());
+                assert!(elabs.fn_signature_types.is_empty());
                 assert!(elabs.deferred.is_empty());
                 assert!(
                     elabs
@@ -13486,7 +12465,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                     .discharge_deferred(&env)
                     .expect("publish successful recipes");
                 assert!(!elabs.type_resolutions.is_empty());
-                assert!(!elabs.fn_param_types.is_empty());
+                assert!(!elabs.fn_signature_types.is_empty());
                 let Expr::Call { args, .. } = &run.body else {
                     panic!("collect")
                 };
@@ -13830,9 +12809,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             fn visit_expr(&mut self, expr: &mut Expr) {
                 if let Expr::Call { callee, .. } = expr
                     && let Expr::Path { segments, .. } = callee.as_ref()
-                    && segments
-                        .last()
-                        .is_some_and(|segment| segment.name == "unbox")
+                    && segments.len() == 2
+                    && segments[0].name == "Box"
+                    && segments[1].name == "get"
                 {
                     self.0.push(expr.site());
                 }
@@ -13841,13 +12820,13 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         }
 
         let source = r#"module main; import sequence(macro do);
-newtype Left : . { constructor left; projector unleft; };
-newtype Right : . { constructor right; projector unright; };
-newtype Box[A] : A { constructor box; projector unbox; };
-fn pure[A](value: A) -> Box[A] { Box.box(value) }
+type { Left: . { mk; get; }; };
+type { Right: . { mk; get; }; };
+type { Box[A]: A { mk; get; }; };
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 fn run[A](first: Left, second: Right) -> Box[Right] {
   do (.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-    next(Box.unbox(value))
+    next(Box.get(value))
   }) {
     let first_value <- pure(first);
     let second_value <- pure(second);
@@ -13883,9 +12862,9 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
                         })
                         .collect::<Vec<_>>();
                     if types.len() == 2
-                        && !segments
-                            .last()
-                            .is_some_and(|segment| segment.as_str() == "__pair__")
+                        && !segments.last().is_some_and(|segment| {
+                            matches!(segment.as_str(), "__pair__" | "__fst__" | "__snd__")
+                        })
                     {
                         self.0.push((segments.clone(), types));
                     }
@@ -13955,12 +12934,12 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             })",
         ] {
             let source = "module main; import sequence(macro do);
-            newtype Left : . { constructor left; projector unleft; };
-            newtype Right : . { constructor right; projector unright; };
-            newtype Box[A] : A { constructor box; projector unbox; };
-            fn pure[A](value: A) -> Box[A] { Box.box(value) }
+            type { Left: . { mk; get; }; };
+            type { Right: . { mk; get; }; };
+            type { Box[A]: A { mk; get; }; };
+            fn pure[A](value: A) -> Box[A] { Box.mk(value) }
             fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-                next(Box.unbox(value))
+                next(Box.get(value))
             }
             fn run(first: Left, second: Right) -> Box[Right] { BODY }"
                 .replace("BODY", body);
@@ -13976,7 +12955,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     fn monadic_polymorphic_receiver_and_ordinary_lambda_calls() {
         for (receiver, first, second, final_expr, result, typed_continuations) in [
             (
-                ".[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }",
+                ".[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }",
                 "pure(first)",
                 "pure(second)",
                 "pure(second_value)",
@@ -14018,10 +12997,10 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             }
             for body in bodies {
                 let source = "module main; import sequence(macro do);
-                    newtype Left : . { constructor left; projector unleft; };
-                    newtype Right : . { constructor right; projector unright; };
-                    newtype Box[A] : A { constructor box; projector unbox; };
-                    fn pure[A](value: A) -> Box[A] { Box.box(value) }
+                    type { Left: . { mk; get; }; };
+                    type { Right: . { mk; get; }; };
+                    type { Box[A]: A { mk; get; }; };
+                    fn pure[A](value: A) -> Box[A] { Box.mk(value) }
                     fn run(first: Left, second: Right) -> RESULT { BODY }"
                     .replace("RESULT", result)
                     .replace("BODY", &body);
@@ -14050,9 +13029,9 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     #[test]
     fn explicit_nominal_type_argument_keeps_callee_binder_local_across_phases() {
         let source = "module pkg/provider;\n\
-            pub newtype Token : . { pub constructor mk; pub projector get; };\n\
+            pub type { Token: . { pub mk; pub get; }; };\n\
             type Alias = Token;\n\
-            newtype Carrier : Token { constructor pack; projector unpack; };\n\
+            type { Carrier: Token { mk; get; }; };\n\
             type Pair = Token & Token;\n\
             type Choice = Token | .;\n\
             type Applied[A] = A;\n\
@@ -14094,7 +13073,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         for callee in ["Token", "A"] {
             let source = format!(
                 "module x;
-                 newtype Token : . {{ constructor mk; projector get; }};
+                 type {{ Token: . {{ mk; get; }}; }};
                  fn generic[{callee}](value: {callee}) -> {callee} {{ value }}
                  fn caller[Token](value: Token) -> Token {{ generic[Token](value) }}"
             );
@@ -14105,8 +13084,8 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
                 .expect("standalone Prime preserves the caller's real type binder");
         }
         let source = "module x;
-            newtype Token : . { constructor mk; projector get; };
-            newtype Other : . { constructor mk_other; projector get_other; };
+            type { Token: . { mk; get; }; };
+            type { Other: . { mk; get; }; };
             fn generic[Token](value: Token) -> Token { value }
             fn mismatch(value: Other) -> Token { generic[Token](value) }";
         let diagnostic = type_diag(source);
@@ -14122,7 +13101,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     #[test]
     fn nested_lambda_preserves_outer_type_binder_over_same_named_nominal() {
         check_package_sources(&["module x; \
-             newtype A : . { constructor mk_a; projector un_a; }; \
+             type { A: . { mk; get; }; }; \
              fn outer[A](value: A) -> A { \
                let identity = .(inner: A) -> A { inner }; \
                identity(value) \
@@ -14240,7 +13219,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     #[test]
     fn empty_call_unit_argument_type_mismatch_errors() {
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector foo; };\
+                       type { Foo: . { pub mk; pub get; }; };\
                        fn helper(x: Foo) -> . { let _ = x; () } \
                        fn caller() -> . { helper() }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
@@ -14249,7 +13228,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     #[test]
     fn call_arg_type_mismatch_errors() {
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector foo; };\
+                       type { Foo: . { pub mk; pub get; }; };\
                        fn helper(x: Foo) -> . { () } \
                        fn caller(y: .) -> . { helper(y) }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
@@ -14478,7 +13457,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         check_package_sources(&[
             "module dep; \
              host type Host; \
-             pub newtype Box : . { constructor mk; projector un; }; \
+             pub type { Box: . { mk; get; }; }; \
              pub type Alias = .;",
             "module main; import dep as d; \
              fn keep_host(value: d.Host) -> d.Host { value } \
@@ -14513,7 +13492,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         let consumer = "module main; import proxy as p; fn bad(value: p.Tag) -> . { () }";
         let error = check_package_sources(&[
             "module origin; \
-             pub newtype Tag : . { constructor mk; projector un; };",
+             pub type { Tag: . { mk; get; }; };",
             "module proxy; import origin(Tag);",
             consumer,
         ])
@@ -14537,8 +13516,8 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             fn keep(value: Pair[String][ String]) -> Pair[String][ String] { value }");
 
         ok("module x; \
-            newtype Either[E][A] : E | A { constructor mk_either; projector un_either; }; \
-            newtype Carrier[*F] : . { constructor mk_carrier; projector un_carrier; }; \
+            type { Either[E][A]: E | A { mk; get; }; }; \
+            type { Carrier[*F]: . { mk; get; }; }; \
             fn keep(value: Carrier[Either[.]]) -> Carrier[Either[.]] { value }");
     }
 
@@ -14547,7 +13526,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         ok("module x; \
             host type Scalar; \
             host type Box[T]; \
-            newtype Carrier[*F] : . { constructor mk; projector un; }; \
+            type { Carrier[*F]: . { mk; get; }; }; \
             fn keep_partial(value: Carrier[Box]) -> Carrier[Box] { value } \
             fn keep_saturated(value: Box[Scalar]) -> Box[Scalar] { value }");
 
@@ -14635,12 +13614,10 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     #[test]
     fn selective_imported_newtype_members_honor_member_visibility() {
         let provider = "module scope/box; \
-             pub newtype Box[A] : A { \
-               pub(scope) constructor mk; pub(scope) projector un; \
-             };";
+             pub type { Box[A]: A { pub(scope) mk; pub(scope) get; }; };";
         for (member, signature, body) in [
             ("mk", "(value: .) -> Box[.]", "Box.mk(value)"),
-            ("un", "(value: Box[.]) -> .", "Box.un(value)"),
+            ("get", "(value: Box[.]) -> .", "Box.get(value)"),
         ] {
             let consumer =
                 format!("module outside; import scope/box(Box); fn bad{signature} {{ {body} }}");
@@ -14674,35 +13651,35 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
 
         let mixed_visibility = package_type_err(&[
             "module provider; \
-             pub newtype Box : . { pub constructor make; projector seal; };",
+             pub type { Box: . { pub mk; get; }; };",
             "module outside; import provider(Box); \
-             fn bad(value: .) -> Box { Box.seel(value) }",
+             fn bad(value: .) -> Box { Box.gat(value) }",
         ]);
         assert_eq!(
             mixed_visibility,
-            "newtype `Box` has no member `seel` (expected `make`)"
+            "newtype `Box` has no member `gat` (expected `mk`)"
         );
 
         let inverse_visibility = package_type_err(&[
             "module provider; \
-             pub newtype Box : . { constructor seal; pub projector open; };",
+             pub type { Box: . { mk; pub get; }; };",
             "module outside; import provider(Box); \
-             fn bad(value: Box) -> . { Box.opne(value) }",
+             fn bad(value: Box) -> . { Box.gte(value) }",
         ]);
         assert_eq!(
             inverse_visibility,
-            "newtype `Box` has no member `opne` (expected `open`)"
+            "newtype `Box` has no member `gte` (expected `get`)"
         );
 
         let both_visible = package_type_err(&[
             "module provider; \
-             pub newtype Box : . { pub constructor make; pub projector open; };",
+             pub type { Box: . { pub mk; pub get; }; };",
             "module outside; import provider(Box); \
              fn bad(value: .) -> Box { Box.missing(value) }",
         ]);
         assert_eq!(
             both_visible,
-            "newtype `Box` has no member `missing` (expected `make` or `open`)"
+            "newtype `Box` has no member `missing` (expected `mk` or `get`)"
         );
     }
 
@@ -14710,11 +13687,11 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     fn qualified_imported_newtype_members_honor_member_visibility() {
         let provider = "module provider; \
              rec { \
-               pub newtype Box : Peer { pub constructor make; projector seal; }; \
-               pub newtype Peer : Box { constructor make_peer; projector un_peer; }; \
+               pub type { Box: Peer { pub mk; get; }; }; \
+               pub type { Peer: Box { mk; get; }; }; \
              }";
         let private_consumer = "module outside; import provider as p; \
-             fn bad(value: p.Box) -> . { p.Box.seal(value) }";
+             fn bad(value: p.Box) -> . { p.Box.get(value) }";
         let error = check_package_sources(&[provider, private_consumer])
             .expect_err("a private qualified newtype member must remain inaccessible");
         let Error::Type(diagnostic) = error else {
@@ -14722,41 +13699,72 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         };
         assert_eq!(
             diagnostic.message,
-            "newtype member `p.Box.seal` is not visible from module `outside`"
+            "newtype member `p.Box.get` is not visible from module `outside`"
         );
         assert_eq!(diagnostic.help(), None);
-        let member_start = private_consumer.rfind("seal").expect("member call") as u32;
-        assert_eq!(diagnostic.span, Span::new(member_start, member_start + 4));
+        let member_start = private_consumer.rfind("get").expect("member call") as u32;
+        assert_eq!(diagnostic.span, Span::new(member_start, member_start + 3));
 
         let unknown = package_type_err(&[
             provider,
             "module outside; import provider as p; \
-             fn bad(value: .) -> p.Box { p.Box.seel(value) }",
+             fn bad(value: .) -> p.Box { p.Box.gat(value) }",
         ]);
         assert_eq!(
             unknown,
-            "newtype `p.Box` has no member `seel` (expected `make`)"
+            "newtype `p.Box` has no member `gat` (expected `mk`)"
         );
+    }
+
+    #[test]
+    fn qualified_scoped_nominal_constructor_is_visible_only_in_its_subtree() {
+        for declaration in [
+            "pub(scope) type { Item: .; }",
+            "pub(scope) type { Item: . { pub(scope) mk; pub(scope) get; }; }",
+        ] {
+            let provider = format!("module scope/origin; {declaration}");
+            let inside = "module scope/inside; import scope/origin as o; \
+                          fn f() { let _item = o.Item.mk(()); () }";
+            check_package_sources(&[&provider, inside])
+                .expect("the qualified scoped constructor is visible in its subtree");
+            let outside = "module outside; import scope/origin as o; \
+                           fn f() { let _item = o.Item.mk(()); () }";
+            let error = check_package_sources(&[&provider, outside])
+                .expect_err("the qualified scoped constructor is hidden outside its subtree");
+            let diagnostic = error.diagnostic();
+            assert!(
+                diagnostic.message.contains("Item")
+                    && diagnostic.message.contains("not visible")
+                    && diagnostic.message.contains("outside"),
+                "expected scoped visibility failure: {diagnostic:?}"
+            );
+            assert!(
+                diagnostic
+                    .help()
+                    .is_some_and(|help| help.contains("pub(scope)")),
+                "diagnostic must identify the declaring scope: {diagnostic:?}"
+            );
+        }
     }
 
     #[test]
     fn identity_aliases_preserve_newtype_members_in_every_import_spelling() {
         check_package_sources(&[
             "module origin; \
-             pub newtype Box[A] : A { pub constructor make; pub projector open; };",
+             pub type { Box[A]: A { pub mk; pub get; }; };",
             "module relay; \
              import origin as source; \
              pub type Box[A] = source.Box[A]; \
-             pub fn local[A](value: A) -> Box[A] { Box.make[A](value) }",
+             pub fn local[A](value: A) -> Box[A] { Box.mk[A](value) }",
             "module facade; \
              import relay as source; \
              pub type Box[A] = source.Box[A];",
             "module consumer; \
              import facade(Box); \
              import relay as qualified; \
-             fn selective[A](value: A) -> Box[A] { Box.make[A](value) } \
+             fn selective[A](value: A) -> Box[A] { Box.mk[A](value) } \
              fn qualified[A](value: A) -> qualified.Box[A] { \
-               qualified.Box.make[A](value) \
+               qualified.Box.mk[A](value) \
              }",
         ])
         .expect("identity aliases expose the terminal newtype member surface");
@@ -14767,8 +13775,8 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         let source = "module local; \
              import local as self_module; \
              type Alias = self_module.Later; \
-             pub newtype Later : . { pub constructor make; pub projector open; }; \
-             fn after(value: .) -> Later { Alias.make(value) }";
+             pub type { Later: . { pub mk; pub get; }; }; \
+             fn after(value: .) -> Later { Alias.mk(value) }";
         let error = check_module(&lowered_module(source))
             .expect_err("the later target cannot grant the earlier alias a member namespace");
         let Error::Type(diagnostic) = error else {
@@ -14777,7 +13785,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         assert!(
             diagnostic
                 .message
-                .contains("dotted-path `Alias.make` is not a recognised value reference"),
+                .contains("dotted-path `Alias.mk` is not a recognised value reference"),
             "ordinary expression typing must not re-authenticate the invalid alias edge: {diagnostic:?}"
         );
     }
@@ -14823,7 +13831,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         // parameter slot makes the body's synthesized type `.`, which the
         // require_type_equiv against `Foo` rejects.
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector foo; };\
+                       type { Foo: . { pub mk; pub get; }; };\
                        fn make() -> (. -> Foo) { .(x) { x } }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
     }
@@ -15003,21 +14011,30 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     }
 
     #[test]
-    fn conditional_field_update_uses_an_early_expected_in_both_arm_orders() {
+    fn conditional_required_row_update_uses_an_early_expected_in_both_arm_orders() {
         for body in [
-            "if (condition) { state.!{second = replacement} } else { state }",
-            "if (condition) { state } else { state.!{second = replacement} }",
+            "if (condition) { state.>with { Second.mk(replacement) } } else { state }",
+            "if (condition) { state } else { state.>with { Second.mk(replacement) } }",
         ] {
-            control_ok(&format!(
-                "module main; import control(Bool, macro if); \
+            let source = format!(
+                "module main; import control(Bool, macro if); import row_macros(macro with); \
                   \
                  host type First_payload; \
                  host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
+                 type {{ First: First_payload {{ mk; get; }}; Second: Second_payload {{ mk; get; }}; }}; type State = First & Second; \
                  fn update(condition: Bool, state: State, replacement: Second_payload) -> State {{ \
                    {body} \
                  }}"
-            ));
+            );
+            let package = lowered_control_package(&[
+                (
+                    "row_macros.kio",
+                    include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+                ),
+                ("main.kio", &source),
+            ]);
+            check_package(&package)
+                .expect("the early result target reaches either required update arm");
         }
     }
 
@@ -15235,100 +14252,144 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
         }
     }
 
-    #[test]
-    fn conditional_field_updates_do_not_adopt_a_same_wave_peer_default() {
-        for (label, body) in [
+    fn natural_row_relation_case(
+        conditional: bool,
+        nested: bool,
+        action: bool,
+        reversed: bool,
+        conflict: bool,
+    ) {
+        let first = "state.>with_ { replacement_first }";
+        let second = if action {
+            "finish(state)"
+        } else if conflict {
+            "state.>with_ { replacement_second }"
+        } else {
+            first
+        };
+        // finish(state) has State's First & Second order; the conflicting patch puts Second first.
+        let first = if action && conflict {
+            "state.>with_ { replacement_second }"
+        } else {
+            first
+        };
+        let (left, right) = if reversed {
+            (second, first)
+        } else {
+            (first, second)
+        };
+        let (left, right) = if nested {
+            (format!("({left}, ())"), format!("({right}, ())"))
+        } else {
+            (left.to_owned(), right.to_owned())
+        };
+        let expression = if conditional {
+            format!("ignore(if (condition) {{ {left} }} else {{ {right} }})")
+        } else {
+            format!("let _selected = common2(.() {{ {left} }})(.() {{ {right} }}); ()")
+        };
+        let main = format!(
+            "module main; import control(Bool, macro if); import common(macro common2); \
+             import row_macros(macro with_); import macros(macro finish); \
+             host type First_payload; host type Second_payload; \
+             type {{ First: First_payload {{ mk; get }}; Second: Second_payload {{ mk; get }}; }} \
+             type State = First & Second; fn ignore[A](_value: A) -> . {{ () }} \
+             fn run(condition: Bool, state: State, replacement_first: First, replacement_second: Second) -> . {{ {expression} }}"
+        );
+        let package = lowered_control_package(&[
+            ("common.kio", COMMON_RESULT_FILLS),
+            ("macros.kio", FINAL_SUCCESSOR_MACROS),
             (
-                "update second first",
-                "if (condition) { state.!{second = second} } else { state.!{first = first} }",
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
             ),
-            (
-                "update first first",
-                "if (condition) { state.!{first = first} } else { state.!{second = second} }",
-            ),
-        ] {
-            let source = format!(
-                "module main; import control(Bool, macro if); \
-                  \
-                 host type First_payload; \
-                 host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
-                 fn ignore[A](_value: A) -> . {{ () }} \
-                 fn run( \
-                   condition: Bool, \
-                   state: State, \
-                   first: First_payload, \
-                   second: Second_payload \
-                 ) -> . {{ \
-                   ignore({body}) \
-                 }}"
+            ("main.kio", &main),
+        ]);
+        if !conflict {
+            let (checked, scope) = check_retained_success(&package);
+            // Identical natural updates share their memoized template.
+            assert_eq!(
+                scope
+                    .memo()
+                    .user_macro_template_executions_for("row_macros", "with_"),
+                1
             );
-            let package = lowered_control_package(&[("main.kio", &source)]);
-            let error = check_retained_error(&package);
-            assert!(
-                matches!(
-                    &error,
-                    Error::Type(diagnostic) if diagnostic.message.contains("type mismatch")
-                ),
-                "the {label} independent field defaults must remain incompatible, got: {error:#?}"
-            );
+            if action {
+                assert_eq!(
+                    scope
+                        .memo()
+                        .user_macro_template_executions_for("macros", "finish"),
+                    1
+                );
+            }
+            validate_substituted_package(checked.substituted())
+                .expect("same-order producers survive Prime validation");
+            return;
         }
-    }
-
-    #[test]
-    fn conditional_field_update_and_action_keep_independent_same_wave_defaults() {
-        for (label, body) in [
-            (
-                "field update first",
-                "if (condition) { state.!{second = replacement} } else { finish(state)[_] }",
-            ),
-            (
-                "action first",
-                "if (condition) { finish(state)[_] } else { state.!{second = replacement} }",
-            ),
-        ] {
-            let main = format!(
-                "module main; import control(Bool, macro if); \
-                 import macros(macro finish); \
-                  \
-                 host type First_payload; \
-                 host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
-                 fn ignore[A](_value: A) -> . {{ () }} \
-                 fn run( \
-                   condition: Bool, state: State, replacement: Second_payload \
-                 ) -> . {{ \
-                   ignore({body}) \
-                 }}"
-            );
-            let package = lowered_control_package(&[
-                ("macros.kio", FINAL_SUCCESSOR_MACROS),
-                ("main.kio", &main),
-            ]);
-            let (error, scope) = check_retained_error_with_scope(&package);
-
-            assert!(
-                error.diagnostic().message.contains("type mismatch")
-                    || error
-                        .diagnostic()
-                        .message
-                        .contains("returned a checked term"),
-                "the {label} source and replacement-first defaults must remain incompatible: {error:#?}"
-            );
+        crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
+        let (error, scope) = check_retained_error_with_scope(&package);
+        assert!(
+            matches!(&error, Error::Type(diagnostic) if diagnostic.message.contains("type mismatch")),
+            "independent product orders must conflict: {error:#?}"
+        );
+        let expected_updates = if action { 1 } else { 2 };
+        assert_eq!(
+            scope
+                .memo()
+                .user_macro_template_executions_for("row_macros", "with_"),
+            expected_updates,
+            "both independently produced orders must be observed; diagnostic: {error:#?}"
+        );
+        if action {
             assert_eq!(
                 scope
                     .memo()
                     .user_macro_template_executions_for("macros", "finish"),
                 1,
-                "the {label} rejected relation must execute finish exactly once"
+                "independent finish action must execute; diagnostic: {error:#?}"
             );
+        }
+        if conditional {
             assert_eq!(
                 scope
                     .memo()
                     .user_macro_template_executions_for("control", "if"),
-                1
+                1,
+                "conditional action must execute; diagnostic: {error:#?}"
             );
-            assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        } else {
+            assert_eq!(
+                scope
+                    .memo()
+                    .user_macro_template_executions_for("common", "common2"),
+                1,
+                "common-result action must execute; diagnostic: {error:#?}"
+            );
+            let work = crate::pass::typecheck_core::apply::fills::fill_relation_work();
+            assert!(
+                work.batch_attempts >= 1
+                    && work.equations_submitted >= 2
+                    && work.batch_commits == 0
+                    && work.accepted_producers == 0
+                    && work.physical_closes == 0,
+                "the conflicting relation wave must reject all producers without a commit: {work:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn conditional_field_updates_do_not_adopt_a_same_wave_peer_default() {
+        for reversed in [false, true] {
+            natural_row_relation_case(true, false, false, reversed, true);
+            natural_row_relation_case(true, false, false, reversed, false);
+        }
+    }
+
+    #[test]
+    fn conditional_field_update_and_action_keep_independent_same_wave_defaults() {
+        for reversed in [false, true] {
+            natural_row_relation_case(true, false, true, reversed, true);
+            natural_row_relation_case(true, false, true, reversed, false);
         }
     }
 
@@ -15338,24 +14399,24 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             (
                 "update second first",
                 "if (condition) { \
-                   let held = state.!{second = second}; \
+                   let held = state.>with_ { Second.mk(second) }; \
                    held \
-                 } else { state.!{first = first} }",
+                 } else { state.>with_ { First.mk(first) } }",
             ),
             (
                 "update first first",
                 "if (condition) { \
-                   let held = state.!{first = first}; \
+                   let held = state.>with_ { First.mk(first) }; \
                    held \
-                 } else { state.!{second = second} }",
+                 } else { state.>with_ { Second.mk(second) } }",
             ),
         ] {
             let source = format!(
-                "module main; import control(Bool, macro if); \
+                "module main; import control(Bool, macro if); import row_macros(macro with_); \
                   \
                  host type First_payload; \
                  host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
+                 type {{ First: First_payload {{ mk; get; }}; Second: Second_payload {{ mk; get; }}; }}; type State = First & Second; \
                  fn ignore[A](_value: A) -> . {{ () }} \
                  fn run( \
                    condition: Bool, \
@@ -15366,16 +14427,28 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
                    ignore({body}) \
                  }}"
             );
-            let message = control_err(&source);
+            let package = lowered_control_package(&[
+                (
+                    "row_macros.kio",
+                    include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+                ),
+                ("main.kio", &source),
+            ]);
+            let error =
+                check_package(&package).expect_err("independent natural row orders must conflict");
+            let Error::Type(diagnostic) = error.error else {
+                panic!("expected Type error, got: {error:?}")
+            };
+            let message = diagnostic.message;
             assert!(
                 message.contains("type mismatch"),
-                "the {label} wrapped field defaults must remain incompatible, got: {message}"
+                "the {label} wrapped natural row results must remain incompatible, got: {message}"
             );
         }
     }
 
     #[test]
-    fn conditional_relation_probe_executes_an_optional_target_once_in_both_arm_orders() {
+    fn conditional_relation_probe_executes_a_natural_target_once_in_both_arm_orders() {
         for (label, body) in [
             (
                 "generic first",
@@ -15566,154 +14639,30 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
 
     #[test]
     fn fills_field_updates_do_not_adopt_a_same_wave_peer_default() {
-        for (label, left, right) in [
-            (
-                "update second first",
-                "state.!{second = replacement_second}",
-                "state.!{first = replacement_first}",
-            ),
-            (
-                "update first first",
-                "state.!{first = replacement_first}",
-                "state.!{second = replacement_second}",
-            ),
-        ] {
-            let main = format!(
-                "module main; \
-                 import common(macro common2); \
-                 host type First_payload; \
-                 host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
-                 fn reject( \
-                   state: State, \
-                   replacement_first: First_payload, \
-                   replacement_second: Second_payload \
-                 ) -> . {{ \
-                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
-                   () \
-                 }}"
-            );
-            let error = check_package_sources(&[COMMON_RESULT_FILLS, &main])
-                .expect_err("independent replacement-first defaults must remain incompatible");
-            let Error::Type(Diagnostic { message, .. }) = error else {
-                panic!("expected Type error for {label}, got {error:?}")
-            };
-            assert!(
-                message.contains("type mismatch"),
-                "the {label} fills defaults must remain incompatible, got: {message}"
-            );
+        for reversed in [false, true] {
+            natural_row_relation_case(false, false, false, reversed, true);
+            natural_row_relation_case(false, false, false, reversed, false);
         }
     }
 
     #[test]
     fn fills_field_update_and_action_keep_independent_same_wave_defaults() {
-        for (label, left, right) in [
-            (
-                "field update first",
-                "state.!{second = replacement}",
-                "finish(state)[_]",
-            ),
-            (
-                "action first",
-                "finish(state)[_]",
-                "state.!{second = replacement}",
-            ),
-        ] {
-            let main = format!(
-                "module main; \
-                 import common(macro common2); \
-                 import macros(macro finish); \
-                 host type First_payload; \
-                 host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
-                 fn reject(state: State, replacement: Second_payload) -> . {{ \
-                   let _selected = common2(.() {{ {left} }})(.() {{ {right} }}); \
-                   () \
-                 }}"
-            );
-            let package = lowered_package(&[
-                ("common.kio", COMMON_RESULT_FILLS),
-                ("macros.kio", FINAL_SUCCESSOR_MACROS),
-                ("main.kio", &main),
-            ]);
-            crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
-            let (error, scope) = check_retained_error_with_scope(&package);
-
-            assert!(
-                error.diagnostic().message.contains("type mismatch")
-                    || error
-                        .diagnostic()
-                        .message
-                        .contains("returned a checked term"),
-                "the {label} fills source and replacement-first defaults must remain incompatible: {error:#?}"
-            );
-            assert_eq!(
-                scope.memo().user_macro_template_executions(),
-                2,
-                "the {label} rejected relation must execute common2 and finish exactly once each"
-            );
-            let work = crate::pass::typecheck_core::apply::fills::fill_relation_work();
-            assert_eq!(
-                work,
-                crate::pass::typecheck_core::apply::fills::FillRelationWork {
-                    batch_attempts: 1,
-                    batch_commits: 0,
-                    equations_submitted: 2,
-                    accepted_producers: 0,
-                    soft_restarts: 0,
-                    physical_closes: 0,
-                    producer_request_visits: 6,
-                    producer_advance_visits: 4,
-                    relation_wave_scan_visits: 2,
-                },
-                "the {label} independent defaults must conflict in one atomic relation wave"
-            );
+        for reversed in [false, true] {
+            natural_row_relation_case(false, false, true, reversed, true);
+            natural_row_relation_case(false, false, true, reversed, false);
         }
     }
 
     #[test]
     fn fills_nested_field_updates_do_not_adopt_a_same_wave_peer_default() {
-        for (label, left, right) in [
-            (
-                "update second first",
-                "(state.!{second = replacement_second}, ())",
-                "(state.!{first = replacement_first}, ())",
-            ),
-            (
-                "update first first",
-                "(state.!{first = replacement_first}, ())",
-                "(state.!{second = replacement_second}, ())",
-            ),
-        ] {
-            let main = format!(
-                "module main; \
-                 import common(macro common2); \
-                 host type First_payload; \
-                 host type Second_payload; \
-                 labels State = {{ first: First_payload, second: Second_payload }}; \
-                 fn reject( \
-                   state: State, \
-                   replacement_first: First_payload, \
-                   replacement_second: Second_payload \
-                 ) -> . {{ \
-                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
-                   () \
-                 }}"
-            );
-            let error = check_package_sources(&[COMMON_RESULT_FILLS, &main])
-                .expect_err("nested independent field defaults must remain incompatible");
-            let Error::Type(Diagnostic { message, .. }) = error else {
-                panic!("expected Type error for {label}, got {error:?}")
-            };
-            assert!(
-                message.contains("type mismatch"),
-                "the {label} nested fills defaults must remain incompatible, got: {message}"
-            );
+        for reversed in [false, true] {
+            natural_row_relation_case(false, true, false, reversed, true);
+            natural_row_relation_case(false, true, false, reversed, false);
         }
     }
 
     #[test]
-    fn fills_relation_probe_executes_an_optional_target_once_in_both_producer_orders() {
+    fn fills_relation_probe_executes_a_natural_target_once_in_both_producer_orders() {
         for (label, left, right) in [
             ("generic first", "make()", "finish(())[_]"),
             ("action first", "finish(())[_]", "make()"),
@@ -15862,26 +14811,55 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             .expect("the two-wave fills result survives standalone Prime validation");
     }
 
+    fn row_update_ok(source: &str) {
+        check_package(&lowered_control_package(&[
+            (
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+            ),
+            ("main.kio", source),
+        ]))
+        .expect("ordinary row update source checks");
+    }
+
+    fn row_update_macro_err(source: &str) -> String {
+        let error = check_package(&lowered_control_package(&[
+            (
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+            ),
+            ("main.kio", source),
+        ]))
+        .expect_err("ordinary row update source rejects");
+        match error.error {
+            Error::Macro(diagnostic) => diagnostic.message,
+            other => panic!("expected Macro error, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn field_update_uses_a_goal_free_anchor_in_a_partial_expected_row() {
-        ok("module main; \
+    fn required_row_update_receives_closed_target_from_a_later_witness() {
+        row_update_ok(
+            "module main; import row_macros(macro with); \
             host type First_payload; \
             host type Second_payload; \
-            labels State = { first: First_payload, second: Second_payload }; \
+            type { First: First_payload { mk; get; }; Second: Second_payload { mk; get; }; }; type State = First & Second; \
             fn consume[T](_row: T & Second, _witness: T) -> . { () } \
             fn run( \
               state: State, first: First_payload, second: Second_payload \
             ) -> . { \
-              consume(state.!{second = second}, {first = first}) \
-            }");
+              consume(state.>with { Second.mk(second) }, First.mk(first)) \
+            }",
+        );
     }
 
     #[test]
-    fn field_update_uses_nominal_heads_with_open_arguments_as_stable_anchors() {
-        ok("module main; \
+    fn required_row_update_uses_later_nominal_arguments_for_its_target() {
+        row_update_ok(
+            "module main; import row_macros(macro with); \
             host type First_payload; \
             host type Second_payload; \
-            labels { first[A]: A, second[A]: A }; \
+            type { First[A]: A { mk; get; }; Second[A]: A { mk; get; }; }; \
             fn consume[A][B]( \
               _row: First[A] & Second[B], _first: A, _second: B \
             ) -> . { () } \
@@ -15890,87 +14868,224 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
               first: First_payload, \
               second: Second_payload \
             ) -> . { \
-              consume(state.!{second = second}, first, second) \
-            }");
+              consume(state.>with { Second.mk(second) }, first, second) \
+            }",
+        );
     }
 
     #[test]
-    fn field_update_uses_nominal_heads_when_candidate_arguments_are_open() {
+    fn contextual_product_reconstruction_solves_open_nominal_arguments() {
         let source = "module main; \
             host type Item_payload; \
             host type Replacement_payload; \
-            labels { first[A]: A, second[A]: A }; \
+            type { First[A]: A { mk; get; }; Second[A]: A { mk; get; }; }; \
             fn consume[A]( \
               _update: (First[A] & Second[Replacement_payload]) \
                 -> (First[Item_payload] & Second[Replacement_payload]) \
             ) -> . { () } \
             fn run(replacement: Replacement_payload) -> . { \
-              consume(.(state) { state.!{second = replacement} }) \
+              consume(.(first, _second) { (first, Second.mk(replacement)) }) \
             }";
         let package = lowered_package(&[("main.kio", source)]);
         let (checked, _scope) = check_retained_success(&package);
-        validate_substituted_package(checked.substituted())
-            .expect("the candidate-open nominal row alignment survives Prime validation");
+        validate_substituted_package(checked.substituted()).expect(
+            "ordinary reconstruction solves the open nominal argument and validates as Prime",
+        );
     }
 
     #[test]
-    fn field_update_preserves_equivalent_residual_order_around_a_stable_anchor() {
-        ok("module main; \
+    fn required_row_update_preserves_residual_order_from_later_witnesses() {
+        row_update_ok(
+            "module main; import row_macros(macro with); \
             host type First_payload; \
-            labels { first: First_payload }; \
+            type { First: First_payload { mk; get; }; }; \
             fn consume[A][B](_row: A & First & B, _left: A, _right: B) -> . { () } \
             fn run(state: . & First & ., first: First_payload) -> . { \
-              consume(state.!{first = first}, (), ()) \
-            }");
+              consume(state.>with { First.mk(first) }, (), ()) \
+            }",
+        );
     }
 
     #[test]
-    fn field_update_keeps_replacement_first_for_an_all_generic_expected_row() {
-        ok("module main; \
+    fn natural_row_update_keeps_replacement_first_for_an_all_generic_expected_row() {
+        row_update_ok(
+            "module main; import row_macros(macro with_); \
             host type First_payload; \
             host type Second_payload; \
-            labels State = { first: First_payload, second: Second_payload }; \
+            type { First: First_payload { mk; get; }; Second: Second_payload { mk; get; }; }; type State = First & Second; \
             fn consume[A][B](_row: A & B, _left: A, _right: B) -> . { () } \
             fn run( \
               state: State, first: First_payload, second: Second_payload \
             ) -> . { \
               consume( \
-                state.!{second = second}, {second = second}, {first = first} \
+                state.>with_ { Second.mk(second) }, Second.mk(second), First.mk(first) \
               ) \
-            }");
-        let message = err("module main; \
+            }",
+        );
+        let message = row_update_macro_err(
+            "module main; import row_macros(macro with_); \
             host type First_payload; \
             host type Second_payload; \
-            labels State = { first: First_payload, second: Second_payload }; \
+            type { First: First_payload { mk; get; }; Second: Second_payload { mk; get; }; }; type State = First & Second; \
             fn consume[A][B](_row: A & B, _left: A, _right: B) -> . { () } \
             fn run( \
               state: State, first: First_payload, second: Second_payload \
             ) -> . { \
               consume( \
-                state.!{second = second}, {first = first}, {second = second} \
+                state.>with_ { Second.mk(second) }, First.mk(first), Second.mk(second) \
               ) \
-            }");
-        assert!(message.contains("type mismatch"), "got: {message}");
+            }",
+        );
+        assert!(
+            message.contains("returned a checked term of type `main.Second & main.First`")
+                && message.contains("declared result type was `First & Second`"),
+            "the natural result must retain its source order: {message}"
+        );
     }
 
     #[test]
     fn ordinary_arguments_keep_completed_sibling_priority() {
-        ok("module main; \
+        row_update_ok(
+            "module main; import row_macros(macro with, macro with_); \
             host type First_payload; \
             host type Second_payload; \
-            labels State = { first: First_payload, second: Second_payload }; \
+            type { First: First_payload { mk; get; }; Second: Second_payload { mk; get; }; }; type State = First & Second; \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn run( \
               state: State, first: First_payload, second: Second_payload \
             ) -> . { \
               let _second_first = choose( \
-                state.!{second = second}, state.!{first = first} \
+                state.>with { Second.mk(second) }, state.>with_ { First.mk(first) } \
               ); \
               let _first_first = choose( \
-                state.!{first = first}, state.!{second = second} \
+                state.>with_ { First.mk(first) }, state.>with { Second.mk(second) } \
               ); \
               () \
-            }");
+            }",
+        );
+    }
+
+    #[test]
+    fn completed_macro_waits_for_an_independent_sibling_without_replay() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn required_checked(ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: __Type__) -> __Checked_term__ { value }
+            pure fn natural_checked(ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pub macro required : [Source] Source -> [Target] Target { impl required_checked }
+            pub macro natural : [Source] Source -> [Target] Target { impl natural_checked }
+        "#;
+        let required = "required(.(_left: .) { () })";
+        let natural = "natural(.(_right: .) { () })";
+        for (arguments, waits) in [
+            (format!("{required}, {natural}"), 1),
+            (format!("{natural}, {required}"), 0),
+            (format!("identity({required}), {natural}"), 1),
+        ] {
+            let main = format!(
+                "module main; import macros(macro required, macro natural); \
+                 fn identity[A](value: A) -> A {{ value }} \
+                 fn choose[A](left: A, _right: A) -> A {{ left }} \
+                 fn run() -> . {{ let _chosen = choose({arguments}); () }}"
+            );
+            let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+            crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+            crate::pass::typecheck_core::apply::reset_macro_completion_work();
+            let (checked, scope) = check_retained_success(&package);
+            assert_eq!(scope.memo().user_macro_template_executions(), 2);
+            assert_eq!(
+                crate::pass::typecheck_core::apply::macro_completion_work(),
+                (waits, waits),
+                "only the blocked completed macro parks in Final and resumes once: {arguments}"
+            );
+            let entries = crate::pass::typecheck_core::apply::take_lambda_body_entries();
+            for lambda in [".(_left: .) { () }", ".(_right: .) { () }"] {
+                let start = main.find(lambda).expect("written callback");
+                let span = Span::new(start as u32, (start + lambda.len()) as u32);
+                assert_eq!(
+                    entries.iter().filter(|entry| entry.span == span).count(),
+                    1,
+                    "a completed callback body cannot replay when its macro wakes: {entries:?}"
+                );
+            }
+            assert_eq!(entries.len(), 2);
+            validate_substituted_package(checked.substituted())
+                .expect("sibling completion survives standalone Prime validation");
+        }
+        for body in [
+            format!("let value = {required}; let _chosen = choose(value, {natural}); ()"),
+            format!("let _chosen = choose({required}, required(.(_right: .) {{ () }})); ()"),
+        ] {
+            let main = format!(
+                "module main; import macros(macro required, macro natural); \
+                 fn choose[A](left: A, _right: A) -> A {{ left }} \
+                 fn run() -> . {{ {body} }}"
+            );
+            let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+            let (error, scope) = check_retained_error_with_scope(&package);
+            assert!(matches!(error, Error::Type(_)), "{error:?}");
+            assert!(
+                error.diagnostic().message.contains("cannot infer"),
+                "{error:?}"
+            );
+            assert_eq!(scope.memo().user_macro_template_executions(), 0);
+        }
+    }
+
+    #[test]
+    fn completed_macro_scans_required_inputs_before_retaining_a_wait() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn split_checked(ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _left: __Type__, _right: __Type__)
+                -> __Checked_term__ { value }
+            pure fn extra_checked(ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: __Type__, _extra: __Type__)
+                -> __Checked_term__ { value }
+            pure fn natural_checked(ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pub macro split : [Source] Source -> [Left][Right] (Left & Right) {
+                impl split_checked
+            }
+            pub macro extra : [Source] Source -> [Target][Extra] Target {
+                impl extra_checked
+            }
+            pub macro natural : [Source] Source -> [Target] Target {
+                impl natural_checked
+            }
+        "#;
+        let main = "module main; import macros(macro split, macro natural); \
+            fn choose[A][B](left: A & B, _right: A & B) -> A & B { left } \
+            fn run() -> . { let _chosen = choose(split(((), ())), natural(((), ()))); () }";
+        let package = lowered_package(&[("macros.kio", macros), ("main.kio", main)]);
+        crate::pass::typecheck_core::apply::reset_macro_completion_work();
+        let (checked, scope) = check_retained_success(&package);
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::macro_completion_work(),
+            (1, 1)
+        );
+        validate_substituted_package(checked.substituted())
+            .expect("one sibling can close both required ancestor inputs");
+
+        let main = "module main; import macros(macro extra, macro natural); \
+            fn choose[A](left: A, _right: A) -> A { left } \
+            fn run() -> . { let _chosen = choose(extra(((), ())), natural(((), ()))); () }";
+        let package = lowered_package(&[("macros.kio", macros), ("main.kio", main)]);
+        crate::pass::typecheck_core::apply::reset_macro_completion_work();
+        let (error, scope) = check_retained_error_with_scope(&package);
+        assert!(matches!(error, Error::Type(_)), "{error:?}");
+        assert!(
+            error
+                .diagnostic()
+                .message
+                .contains("cannot infer type argument `[Extra]`"),
+            "{error:?}"
+        );
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::macro_completion_work(),
+            (0, 0)
+        );
     }
 
     #[test]
@@ -16130,11 +15245,11 @@ fn generic_last() -> . {
     fn user_macro_captures_prepend_implementation_abi() {
         ok("module pkg/main; \
             import __comptime__; \
-            pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; }; \
+            pub type { Rep: . { pub mk; pub get; }; }; \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
                 __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
               } \
-            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
+            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
     }
 
@@ -16143,13 +15258,13 @@ fn generic_last() -> . {
         ok("module pkg/main; \
             import __comptime__; \
             rec { \
-              pub newtype Rep : Rep_payload { pub constructor mk_rep; pub projector un_rep; }; \
+              pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
               pub type Rep_payload = Rep; \
             } \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
                 __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
               } \
-            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
+            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
     }
 
@@ -16256,7 +15371,7 @@ fn generic_last() -> . {
              import __comptime__; \
              pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
              macro demo : . -> . { captures Later.mk; impl implementation; }; \
-             newtype Later : . { constructor mk; projector get; };",
+             type { Later: . { mk; get; }; };",
         );
         assert!(
             message.contains("capture `Later.mk` is not in scope before macro `demo`"),
@@ -16269,10 +15384,10 @@ fn generic_last() -> . {
         let error = capture_source_order_check(
             &[
                 "module origin; \
-                 pub newtype Token : . { pub constructor make; pub projector open; };",
+                 pub type { Token: . { pub mk; pub get; }; };",
                 "module x; \
                  import origin as imported; \
-                 macro demo : . -> . { captures Later.make; impl later; }; \
+                 macro demo : . -> . { captures Later.mk; impl later; }; \
                  type Later = imported.Token; \
                  fn later() -> . { () }",
             ],
@@ -16285,7 +15400,7 @@ fn generic_last() -> . {
         assert!(
             diagnostic
                 .message
-                .contains("capture `Later.make` is not in scope before macro `demo`"),
+                .contains("capture `Later.mk` is not in scope before macro `demo`"),
             "got: {}",
             diagnostic.message
         );
@@ -16296,11 +15411,11 @@ fn generic_last() -> . {
         capture_source_order_check(
             &[
                 "module origin; \
-                 pub newtype Token : . { pub constructor make; pub projector open; };",
+                 pub type { Token: . { pub mk; pub get; }; };",
                 "module x; \
                  import origin as imported; \
                  type Earlier = imported.Token; \
-                 macro demo : . -> . { captures Earlier.make; impl later; }; \
+                 macro demo : . -> . { captures Earlier.mk; impl later; }; \
                  fn later() -> . { () }",
             ],
             "x",
@@ -16310,13 +15425,13 @@ fn generic_last() -> . {
         capture_source_order_check(
             &[
                 "module origin; \
-                 pub newtype Token : . { pub constructor make; pub projector open; };",
+                 pub type { Token: . { pub mk; pub get; }; };",
                 "module relay; \
                  import origin as imported; \
                  pub type Token = imported.Token;",
                 "module x; \
                  import relay(Token); \
-                 macro demo : . -> . { captures Token.make; impl later; }; \
+                 macro demo : . -> . { captures Token.mk; impl later; }; \
                  fn later() -> . { () }",
             ],
             "x",
@@ -16344,7 +15459,7 @@ fn generic_last() -> . {
             "module x; \
              import x as self_module; \
              macro demo : . -> . { captures self_module.Later.mk; impl later; }; \
-             newtype Later : . { constructor mk; projector get; };",
+             type { Later: . { mk; get; }; };",
         );
         assert!(
             message.contains("capture `self_module.Later.mk` is not in scope before macro `demo`"),
@@ -16561,8 +15676,7 @@ fn generic_last() -> . {
               _s: __Type__, callback: __Checked_term__, _later: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { \
               let unit_type = __reflect_type__(ct)[.]; \
-              let zero = __type_arity_zero__(ct); \
-              let callback_type = __type_arrow__(ct, unit_type, zero, unit_type); \
+              let callback_type = __type_arrow__(ct, unit_type, unit_type); \
               (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills) \
             } \
             macro invoke_then : [S] (S -> S) -> Later -> . { \
@@ -16590,12 +15704,12 @@ fn generic_last() -> . {
     #[test]
     fn projected_residual_abi_classifies_every_callable_layer() {
         let type_only = FrozenProjectedResidualAbi {
-            generated_type_params: vec![Some(TypeParam {
+            generated_type_params: vec![Some(FrozenResidualTypeBinder::new(TypeParam {
                 presentation: Default::default(),
                 name: "Later".into(),
                 span: test_span(),
                 kind: None,
-            })],
+            }))],
             bound_value_names: Vec::new(),
         };
         assert!(type_only.has_residual_abstraction());
@@ -16664,7 +15778,8 @@ fn generic_last() -> . {
                  import __comptime__; \
                  pure fn solve_impl( \
                    ct: __Comptime__, fills: __Fill_ctx__, \
-                   a: __Type__, b: __Type__, fixed: __Type__, value: __Checked_term__ \
+                   a: __Type__, b: __Type__, fixed: __Type__, \
+                   _first: __Checked_term__, _second: __Checked_term__, value: __Checked_term__ \
                  ) -> (__Checked_term__ & __Fill_ctx__) {{ \
                    ( \
                      __intrinsic_pair__( \
@@ -16674,13 +15789,17 @@ fn generic_last() -> . {
                      {relations} \
                    ) \
                  }} \
-                 macro solve : [A] [B] [Fixed] Fixed -> (A & B & Fixed) {{ \
+                 macro solve : [A] [B] [Fixed] (. -> A) -> (. -> B) -> Fixed -> (A & B & Fixed) {{ \
                    impl(fills) solve_impl; \
                  }}; \
-                 fn run() -> . {{ let _result = solve(()); () }}"
+                 fn run() -> . {{ let _result = solve(.() {{ () }})(.() {{ () }})(()); () }}"
             );
             let package = lowered_package(&[("main.kio", &source)]);
-            let original = retained_call_at(&package, "main", source_span(&source, "solve(())"));
+            let original = retained_call_at(
+                &package,
+                "main",
+                source_span(&source, "solve(.() { () })(.() { () })(())"),
+            );
             let observer =
                 crate::pass::typecheck_core::apply::fills::observe_returned_fill_relations_at(
                     "main",
@@ -16700,7 +15819,9 @@ fn generic_last() -> . {
             assert_eq!(
                 observed
                     .iter()
-                    .map(|relation| relation.destination_root)
+                    .map(|relation| relation
+                        .destination_root
+                        .expect("destination-specific test relation"))
                     .collect::<Vec<_>>(),
                 expected_roots,
                 "{case} changed the independent public destination order"
@@ -16736,7 +15857,7 @@ fn generic_last() -> . {
         let contradictory = "module main; \
             import __comptime__; \
             pure fn conflict_impl( \
-              ct: __Comptime__, fills: __Fill_ctx__, a: __Type__ \
+              ct: __Comptime__, fills: __Fill_ctx__, a: __Type__, _body: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { \
               ( \
                 __term_unit__(ct), \
@@ -16748,11 +15869,14 @@ fn generic_last() -> . {
                 ) \
               ) \
             } \
-            macro conflict : [A] . -> A { impl(fills) conflict_impl; }; \
-            fn run() -> . { let _result = conflict(()); () }";
+            macro conflict : [A] (. -> A) -> A { impl(fills) conflict_impl; }; \
+            fn run() -> . { let _result = conflict(.() { () }); () }";
         let package = lowered_package(&[("main.kio", contradictory)]);
-        let original =
-            retained_call_at(&package, "main", source_span(contradictory, "conflict(())"));
+        let original = retained_call_at(
+            &package,
+            "main",
+            source_span(contradictory, "conflict(.() { () })"),
+        );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert!(
             errors.iter().any(|error| matches!(
@@ -16910,7 +16034,7 @@ fn generic_last() -> . {
             import __intrinsics__; \
             import __comptime__; \
             type Type_pair = __Type__ & __Type__; \
-            type Function_view = __Type__ & __Type_arity__ & __Type__; \
+            type Function_view = __Type__ & __Type__; \
             type Forall_view = __Type_var__ & __Type_arity__ & __Type__; \
             type Type_view_tail7 = __Type_name__; \
             type Type_view_tail6 = __Type_var__ | Type_view_tail7; \
@@ -17216,7 +16340,7 @@ fn generic_last() -> . {
     fn user_macro_newtype_member_gets_directed_abi_error() {
         let error = check_module(&module(
             "module main; \
-             newtype Box : . { constructor mk; projector get; }; \
+             type { Box: . { mk; get; }; }; \
              macro demo : . -> . { impl Box.mk; };",
         ))
         .expect_err("newtype member cannot satisfy the macro ABI");
@@ -17289,7 +16413,7 @@ fn generic_last() -> . {
     fn public_user_macro_cannot_capture_private_type() {
         let message = err("module pkg/main; \
             import __comptime__; \
-            newtype Hidden : . { pub constructor mk_hidden; pub projector un_hidden; }; \
+            type { Hidden: . { pub mk; pub get; }; }; \
             pub pure fn capture_impl() -> . { () } \
             pub macro capture_demo : [T] . -> . { captures Hidden; impl capture_impl; }; \
             fn keep() -> . { () }");
@@ -17341,7 +16465,7 @@ fn generic_last() -> . {
     fn qualified_newtype_member_macro_target_gets_directed_abi_error() {
         let error = check_package_sources(&[
             "module pkg/provider; \
-             pub newtype Box : . { pub constructor mk; pub projector get; };",
+             pub type { Box: . { pub mk; pub get; }; };",
             "module pkg/main; \
              import pkg/provider as provider; \
              macro demo : . -> . { impl provider.Box.mk; };",
@@ -17377,7 +16501,7 @@ fn generic_last() -> . {
         let diagnostic = type_diag(
             "module main; \
              import __comptime__; \
-             pub newtype Token : . { constructor mk; pub projector get; }; \
+             pub type { Token: . { mk; pub get; }; }; \
              pub pure fn capture_impl( \
                _ct: __Comptime__, \
                _captured: __Checked_term__, \
@@ -17402,7 +16526,7 @@ fn generic_last() -> . {
     #[test]
     fn local_identity_alias_capture_checks_source_and_terminal_visibility_owners() {
         let origin = "module pkg/origin; \
-            pub newtype Token : . { pub constructor make; pub projector open; };";
+            pub type { Token: . { pub mk; pub get; }; };";
         let private_consumer = "module pkg/private_consumer; \
             import __comptime__; \
             import pkg/origin as imported; \
@@ -17411,7 +16535,7 @@ fn generic_last() -> . {
               ct: __Comptime__, \
               _captured: __Checked_term__ \
             ) -> __Checked_term__ { __term_unit__(ct) } \
-            macro demo : . -> . { captures Tag.make; impl capture_impl; };";
+            macro demo : . -> . { captures Tag.mk; impl capture_impl; };";
         check_package_sources(&[origin, private_consumer])
             .expect("a private local alias is visible to a private local macro");
 
@@ -17441,7 +16565,7 @@ fn generic_last() -> . {
     fn imported_identity_alias_capture_uses_the_imported_source_visibility() {
         check_package_sources(&[
             "module pkg/origin; \
-             pub newtype Token : . { pub constructor make; pub projector open; };",
+             pub type { Token: . { pub mk; pub get; }; };",
             "module pkg/relay; \
              import pkg/origin as imported; \
              pub type Tag = imported.Token;",
@@ -17452,7 +16576,7 @@ fn generic_last() -> . {
                ct: __Comptime__, \
                _captured: __Checked_term__ \
              ) -> __Checked_term__ { __term_unit__(ct) } \
-             pub macro demo : . -> . { captures Tag.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures Tag.mk; impl capture_impl; };",
         ])
         .expect("a public imported identity alias supports a public capture");
     }
@@ -17461,7 +16585,7 @@ fn generic_last() -> . {
     fn imported_macro_capture_reports_private_newtype_not_public_member() {
         let error = check_package_sources(&[
             "module provider; \
-             newtype Box : . { pub constructor make; pub projector unmake; };",
+             type { Box: . { pub mk; pub get; }; };",
             "module consumer; \
              import __comptime__; \
              import provider as p; \
@@ -17471,7 +16595,7 @@ fn generic_last() -> . {
                _source: __Type__, \
                value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             pub macro demo : . -> . { captures p.Box.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures p.Box.mk; impl capture_impl; };",
         ])
         .expect_err("a public macro cannot expose a private captured newtype");
         let Error::Type(diagnostic) = error else {
@@ -17488,7 +16612,7 @@ fn generic_last() -> . {
     fn imported_macro_capture_does_not_offer_to_edit_private_provider_member() {
         let error = check_package_sources(&[
             "module provider; \
-             pub newtype Box : . { constructor make; pub projector unmake; };",
+             pub type { Box: . { mk; pub get; }; };",
             "module consumer; \
              import __comptime__; \
              import provider as p; \
@@ -17498,7 +16622,7 @@ fn generic_last() -> . {
                _source: __Type__, \
                value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             pub macro demo : . -> . { captures p.Box.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures p.Box.mk; impl capture_impl; };",
         ])
         .expect_err("a public macro cannot expose a private captured member");
         let Error::Type(diagnostic) = error else {
@@ -17506,7 +16630,7 @@ fn generic_last() -> . {
         };
         assert_eq!(
             diagnostic.message,
-            "captured member `p.Box.make` must be at least as visible as macro `demo`"
+            "captured member `p.Box.mk` must be at least as visible as macro `demo`"
         );
         assert_eq!(diagnostic.help(), None);
     }
@@ -17523,7 +16647,7 @@ fn generic_last() -> . {
         );
         let refl = lowered_module(
             "module pkg/refl; \
-             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; }; \
+             pub type { Rep: . { pub mk; pub get; }; }; \
              pub type Shared = Rep;",
         );
         let package = Package::build(
@@ -17544,7 +16668,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn imported_macro_and_field_slots_keep_declaring_module_identity() {
+    fn imported_macro_and_nominal_types_keep_declaring_module_identity() {
         use crate::pass::resolve::Package;
         use crate::pass::typecheck_core::ModuleEnv;
         use std::path::{Path, PathBuf};
@@ -17576,14 +16700,14 @@ fn generic_last() -> . {
                 PathBuf::from("label_dep.kio"),
                 lowered_module(
                     "module label_dep; import types as types; \
-                     pub newtype Slot : types.Value { constructor mk; projector un; };",
+                     pub type { Slot: types.Value { mk; get; }; };",
                 ),
             ),
             (
                 PathBuf::from("label_shadow.kio"),
                 lowered_module(
                     "module label_shadow; import other as other; \
-                     pub newtype Slot : other.Value { constructor mk; projector un; };",
+                     pub type { Slot: other.Value { mk; get; }; };",
                 ),
             ),
             (
@@ -17627,10 +16751,17 @@ fn generic_last() -> . {
         );
         assert!(abi_slots[0].identity_is_canonical());
 
-        let visible_slots = visible_product_slots(&canonical_pair, &env.alias_ctx());
-        assert_eq!(visible_slots.len(), 2);
-        for slot in visible_slots {
-            let Type::Path { segments, .. } = slot.as_type() else {
+        let (expanded_pair, canonical) = crate::pass::typecheck_core::canonicalize_for_comparison(
+            canonical_pair.as_type(),
+            &env.alias_ctx(),
+            true,
+        );
+        assert!(canonical);
+        let Type::Product { left, right, .. } = expanded_pair else {
+            panic!("expected canonical product");
+        };
+        for slot in [left, right] {
+            let Type::Path { segments, .. } = slot.as_ref() else {
                 panic!("expected nominal visible slot");
             };
             assert_eq!(
@@ -17640,23 +16771,38 @@ fn generic_last() -> . {
                     .collect::<Vec<_>>(),
                 vec!["types", "Value"]
             );
-            assert!(slot.identity_is_canonical());
         }
 
-        let canonical_slot = InternedType::fresh_canonical(Type::synth_path(
+        let canonical_slot = Type::synth_path(
             vec!["label_dep".to_owned(), "Slot".to_owned()],
             Vec::new(),
             test_span(),
-        ));
-        let selective_slot = vec![PathSegment::new("Slot".to_owned(), test_span())];
-        label_slot_type_args(&canonical_slot, &selective_slot, test_span(), &env)
-            .expect("canonical label_dep.Slot matches its selective binding");
-        let shadow_slot = vec![
-            PathSegment::new("label_dep".to_owned(), test_span()),
-            PathSegment::new("Slot".to_owned(), test_span()),
-        ];
+        );
+        let selective_slot = Type::synth_path(vec!["Slot".to_owned()], Vec::new(), test_span());
+        let shadow_slot = Type::synth_path(
+            vec!["label_dep".to_owned(), "Slot".to_owned()],
+            Vec::new(),
+            test_span(),
+        );
+        crate::pass::typecheck_core::require_type_equiv_state(
+            &canonical_slot,
+            &selective_slot,
+            test_span(),
+            &env.alias_ctx(),
+            true,
+            false,
+        )
+        .expect("canonical label_dep.Slot matches its selective binding");
         assert!(
-            label_slot_type_args(&canonical_slot, &shadow_slot, test_span(), &env).is_err(),
+            crate::pass::typecheck_core::require_type_equiv_state(
+                &canonical_slot,
+                &shadow_slot,
+                test_span(),
+                &env.alias_ctx(),
+                true,
+                false,
+            )
+            .is_err(),
             "the source-spelled label_dep.Slot resolves through the shadow alias"
         );
 
@@ -17762,7 +16908,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn reflected_imported_alias_keeps_its_owner_identity() {
+    fn reflected_imported_alias_expands_in_its_owner_scope() {
         let api = lowered_module(
             "module testapi; \
              host type String role(str);",
@@ -17801,7 +16947,7 @@ fn generic_last() -> . {
         )
         .expect("reflect type");
         let crate::ast::Type::Path { segments, args, .. } = reflected.as_type() else {
-            panic!("expected reflected alias path");
+            panic!("expected reflected host type path");
         };
         assert!(args.is_empty());
         assert_eq!(
@@ -17809,7 +16955,7 @@ fn generic_last() -> . {
                 .iter()
                 .map(|segment| segment.as_str())
                 .collect::<Vec<_>>(),
-            vec!["testapi", "types", "String"]
+            vec!["testapi", "String"]
         );
     }
 
@@ -17817,7 +16963,7 @@ fn generic_last() -> . {
     fn reflected_caller_binder_stays_bare_under_nominal_collision() {
         let consumer = lowered_module(
             "module testapi/main; \
-             newtype A : . { constructor mk_a; projector un_a; };",
+             type { A: . { mk; get; }; };",
         );
         let package = Package::build(
             Path::new(""),
@@ -17851,6 +16997,219 @@ fn generic_last() -> . {
                 .collect::<Vec<_>>(),
             vec!["A"]
         );
+        let repeated = reflect_macro_type(
+            Type::synth_path(vec!["A".to_owned()], Vec::new(), test_span()),
+            &tcx,
+        )
+        .expect("reflect same caller");
+        let mut other_elaborations = Elaborations::new();
+        let mut other_tcx = TypeCtx::new(&env, &mut other_elaborations);
+        other_tcx.push_type_param("A", test_span());
+        let other = reflect_macro_type(
+            Type::synth_path(vec!["A".to_owned()], Vec::new(), test_span()),
+            &other_tcx,
+        )
+        .expect("reflect distinct caller");
+        let eval = crate::normalization::EvalCtx::new();
+        let original = crate::normalization::Value::ReflType(reflected);
+        assert!(crate::normalization::nf_eq(
+            &original,
+            &crate::normalization::Value::ReflType(repeated),
+            &eval
+        ));
+        assert!(!crate::normalization::nf_eq(
+            &original,
+            &crate::normalization::Value::ReflType(other),
+            &eval
+        ));
+    }
+
+    #[test]
+    fn projected_reflection_preserves_frozen_caller_over_current_shadow() {
+        let module = lowered_module("module main;");
+        let env = ModuleEnv::build(&module, None, None, None).expect("env");
+        let mut elaborations = Elaborations::new();
+        let mut tcx = TypeCtx::new(&env, &mut elaborations);
+        tcx.push_type_param("A", test_span());
+        let ty = Type::synth_path(vec!["A".into()], Vec::new(), test_span());
+        let before = reflect_macro_type(ty.clone(), &tcx).expect("original scope");
+        let mut store = crate::pass::typecheck_core::GoalStore::new();
+        let owner = store
+            .begin_owner(
+                None,
+                store.scope_from_type_ctx(&tcx),
+                crate::pass::typecheck_core::GoalOwnerKind::Application,
+                test_span(),
+            )
+            .expect("owner");
+        let scope = store
+            .scoped_type(
+                owner,
+                InternedType::fresh_canonical(ty.clone()),
+                test_span(),
+            )
+            .expect("frozen type");
+        tcx.push_type_param("A", test_span());
+        let shadow = reflect_macro_type(ty.clone(), &tcx).expect("shadow scope");
+        let frozen = reflect_projected_type(&InternedType::fresh_canonical(ty), &tcx, &scope, [])
+            .expect("frozen scope");
+        let eval = crate::normalization::EvalCtx::new();
+        let frozen = crate::normalization::Value::ReflType(frozen);
+        assert!(crate::normalization::nf_eq(
+            &frozen,
+            &crate::normalization::Value::ReflType(before),
+            &eval
+        ));
+        assert!(!crate::normalization::nf_eq(
+            &frozen,
+            &crate::normalization::Value::ReflType(shadow),
+            &eval
+        ));
+    }
+
+    #[test]
+    fn projected_reflection_requires_only_used_alpha_overlays() {
+        let module = lowered_module("module main;");
+        let env = ModuleEnv::build(&module, None, None, None).expect("env");
+        let mut elaborations = Elaborations::new();
+        let tcx = TypeCtx::new(&env, &mut elaborations);
+        let binder = FrozenResidualTypeBinder::new(TypeParam {
+            name: "Residual".into(),
+            presentation: Default::default(),
+            kind: None,
+            span: test_span(),
+        });
+        let mut store = crate::pass::typecheck_core::GoalStore::new();
+        let owner = store
+            .begin_owner(
+                None,
+                store.scope_from_type_ctx(&tcx),
+                crate::pass::typecheck_core::GoalOwnerKind::Application,
+                test_span(),
+            )
+            .expect("owner");
+        let unit = InternedType::fresh_canonical(Type::Unit {
+            meta: Meta::new(test_span()),
+        });
+        let scope = store
+            .scoped_type_with_lexical_foralls(
+                owner,
+                unit.clone(),
+                std::slice::from_ref(&binder.param),
+                test_span(),
+            )
+            .expect("residual scope");
+        assert!(matches!(
+            reflect_projected_type(&unit, &tcx, &scope, [])
+                .expect("unused alpha metadata")
+                .as_type(),
+            crate::ast::Type::Unit { .. }
+        ));
+        let used = InternedType::fresh_canonical(Type::synth_path(
+            vec![binder.param.name.clone()],
+            Vec::new(),
+            test_span(),
+        ));
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reflect_projected_type(
+                &used,
+                &tcx,
+                &scope,
+                []
+            )))
+            .is_err(),
+            "used Alpha cannot silently become a nominal or fresh caller"
+        );
+        let reflected = reflect_projected_type(
+            &used,
+            &tcx,
+            &scope,
+            [(binder.param.name.clone(), binder.binding.clone())],
+        )
+        .expect("retained alpha overlay");
+        let ordinary = reflect_macro_interned_type_with_binders(&used, &tcx, &[binder])
+            .expect("same retained binder");
+        assert!(crate::normalization::nf_eq(
+            &crate::normalization::Value::ReflType(reflected),
+            &crate::normalization::Value::ReflType(ordinary),
+            &crate::normalization::EvalCtx::new()
+        ));
+    }
+
+    #[test]
+    fn frozen_residual_reflection_binding_survives_clone_and_repeated_input() {
+        let module = lowered_module("module main;");
+        let env = ModuleEnv::build(&module, None, None, None).expect("env");
+        let mut elaborations = Elaborations::new();
+        let tcx = TypeCtx::new(&env, &mut elaborations);
+        let param = TypeParam {
+            name: "Residual".into(),
+            presentation: Default::default(),
+            kind: None,
+            span: test_span(),
+        };
+        let binder = FrozenResidualTypeBinder::new(param.clone());
+        let independent = FrozenResidualTypeBinder::new(param);
+        let reflect = |binding| {
+            reflect_macro_interned_type_with_binders(
+                &InternedType::fresh_canonical(Type::synth_path(
+                    vec!["Residual".into()],
+                    Vec::new(),
+                    test_span(),
+                )),
+                &tcx,
+                &[binding],
+            )
+            .expect("residual input")
+        };
+        let first = crate::normalization::Value::ReflType(reflect(binder.clone()));
+        let repeated = crate::normalization::Value::ReflType(reflect(binder));
+        let other = crate::normalization::Value::ReflType(reflect(independent));
+        let eval = crate::normalization::EvalCtx::new();
+        assert!(crate::normalization::nf_eq(&first, &repeated, &eval));
+        assert!(!crate::normalization::nf_eq(&first, &other, &eval));
+        eprintln!(
+            "frozen residual binder={} param={} reference={} abi={}",
+            std::mem::size_of::<FrozenResidualTypeBinder>(),
+            std::mem::size_of::<TypeParam>(),
+            std::mem::size_of::<crate::normalization::ReflectedVariable>(),
+            std::mem::size_of::<FrozenProjectedResidualAbi>(),
+        );
+    }
+
+    #[test]
+    fn reflected_canonical_rigid_heads_do_not_resolve_to_ambient_aliases() {
+        let consumer = lowered_module("module testapi/main; type A = .; type F[T] = T;");
+        let package = Package::build(
+            Path::new(""),
+            vec![(PathBuf::from("testapi/main.kio"), consumer)],
+            None,
+        )
+        .expect("package");
+        let consumer = &package
+            .module("testapi/main")
+            .expect("consumer module")
+            .module;
+        let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("env");
+        let mut elaborations = Elaborations::new();
+        let tcx = TypeCtx::new(&env, &mut elaborations);
+        let rigid = Type::synth_path(
+            vec!["F".to_owned()],
+            vec![Type::synth_path(
+                vec!["A".to_owned()],
+                Vec::new(),
+                test_span(),
+            )],
+            test_span(),
+        );
+        let reflected =
+            reflect_macro_interned_type(&InternedType::fresh_canonical(rigid.clone()), &tcx)
+                .expect("reflect canonical rigid application");
+        assert_eq!(
+            reflected.as_type(),
+            &crate::ast::convert_type::<Lowered, UncheckedPrime>(&rigid),
+            "free canonical F and A must stay rigid without an ambient local-stack entry"
+        );
     }
 
     #[test]
@@ -17867,7 +17226,7 @@ fn generic_last() -> . {
             "module pkg/refl; \
              import __comptime__; \
              import pkg/helper as h; \
-             pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__, _target: __Type__ | .) -> __Checked_term__ { \
+             pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
                  __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
                } \
              pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
@@ -17913,7 +17272,7 @@ fn generic_last() -> . {
     fn imported_type_capture_enters_evaluation_with_canonical_identity() {
         let types = lowered_module(
             "module pkg/types; \
-             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
+             pub type { Rep: . { pub mk; pub get; }; };",
         );
         let macros = lowered_module(
             "module pkg/macros; \
@@ -17960,7 +17319,7 @@ fn generic_last() -> . {
     fn imported_type_capture_is_not_re_resolved_through_source_alias() {
         let types = lowered_module(
             "module foo/types; \
-             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
+             pub type { Rep: . { pub mk; pub get; }; };",
         );
         let other = lowered_module("module other;");
         let macros = lowered_module(
@@ -18012,7 +17371,7 @@ fn generic_last() -> . {
             (
                 "_q0/types.kio",
                 "module _q0/types; \
-                 pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
+                 pub type { Rep: . { pub mk; pub get; }; };",
             ),
             (
                 "pkg/macros.kio",
@@ -18025,7 +17384,7 @@ fn generic_last() -> . {
                    __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
                  } \
                  pub macro make_rep : [T] . -> Rep { \
-                   captures (Rep, Rep.mk_rep); impl make_rep_impl; \
+                   captures (Rep, Rep.mk); impl make_rep_impl; \
                  };",
             ),
             (
@@ -18439,7 +17798,7 @@ fn generic_last() -> . {
                 "probe/b.kio",
                 "module probe/b; \
                  import probe/macros(macro artifact_build_probe); \
-                 newtype Wrapped : . { constructor wrap; projector unwrap; }; \
+                 type { Wrapped: . { mk; get; }; }; \
                  fn keep(value: Wrapped) -> Wrapped { artifact_build_probe(value) }",
             ),
         ]);
@@ -18487,7 +17846,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  pure fn eager_deferred_artifact_probe_impl( \
                    _ct: __Comptime__, _source: __Type__, value: __Checked_term__, \
-                   _target: __Type__ | . \
+                   _target: . \
                  ) -> __Checked_term__ { value } \
                  pub macro eager_deferred_artifact_probe : [Source] Source -> [Target] Target { \
                    impl eager_deferred_artifact_probe_impl; \
@@ -18612,7 +17971,7 @@ fn generic_last() -> . {
             arg,
             unit.clone(),
         );
-        let template = Ok(trusted_user_macro_template(checked));
+        let template = Ok(trusted_user_macro_template(checked, &[]));
         let memo = crate::pass::typecheck_core::MemoCtx::default();
         let mut replay = UserMacroReplayEnv {
             module_path: "caller",
@@ -18628,6 +17987,7 @@ fn generic_last() -> . {
                 value_adapter: None,
                 residual_eta: None,
                 ambient_type_names,
+                residual_reflection_bindings: &[],
                 capture_imports,
                 quoted: None,
             },
@@ -18835,7 +18195,7 @@ fn generic_last() -> . {
             },
             unit.clone(),
         );
-        let template = Ok(trusted_user_macro_template(checked));
+        let template = Ok(trusted_user_macro_template(checked, &[]));
         let current_capture_imports = [UserMacroTemplateGeneratedImport {
             module_path: "current/helper".to_owned(),
             alias: "_q0".to_owned(),
@@ -18857,6 +18217,7 @@ fn generic_last() -> . {
                 value_adapter: None,
                 residual_eta: None,
                 ambient_type_names: &HashSet::new(),
+                residual_reflection_bindings: &[],
                 capture_imports: &current_capture_imports,
                 quoted: None,
             },
@@ -18877,15 +18238,270 @@ fn generic_last() -> . {
     }
 
     #[test]
+    fn user_macro_alias_and_rigid_results_share_only_their_exact_input_key() {
+        let definitions = [
+            "fn alias(value: A) -> A { identity[A](value) }",
+            "fn rigid[A](value: A) -> A { identity[A](value) }",
+            "fn rigid_more[A][B](value: A) -> A { identity[A](value) }",
+        ];
+        for reverse in [false, true] {
+            for batch in [false, true] {
+                let functions = if reverse {
+                    definitions.iter().rev().copied().collect::<Vec<_>>()
+                } else {
+                    definitions.to_vec()
+                };
+                let source = format!(
+                    "module main; import __comptime__;
+                     pure fn identity_impl(_ct: __Comptime__, _typ: __Type__,
+                         value: __Checked_term__) -> __Checked_term__ {{ value }}
+                     macro identity : [T] T -> T {{ impl identity_impl }}
+                     type A = .; {}",
+                    functions.join("\n"),
+                );
+                let package = lowered_package(&[("main.kio", &source)]);
+                let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+                let scope = crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                    &normalized,
+                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::<Lowered>::default()),
+                );
+                let package = normalized.package();
+                let module = &package.module("main").unwrap().module;
+                let env =
+                    ModuleEnv::build_with_typecheck_scope(module, None, None, Some(package), scope)
+                        .unwrap();
+                let mut elaborations = Elaborations::new();
+                for (index, item) in module.items.iter().enumerate() {
+                    if let Item::FnDef(function) = item {
+                        crate::pass::typecheck_core::check_fn_def(
+                            function,
+                            index,
+                            &env,
+                            &mut elaborations,
+                        )
+                        .unwrap();
+                    }
+                }
+                let mut obligations = std::mem::take(&mut elaborations.deferred)
+                    .into_iter()
+                    .map(|deferred| match deferred {
+                        DeferredElaboration::UserMacro(obligation) => *obligation,
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(obligations.len(), 3);
+                let scoped = |count| {
+                    obligations
+                        .iter()
+                        .find(|ob| ob.ambient_type_names.len() == count)
+                        .unwrap()
+                };
+                let alias = scoped(0);
+                let rigid = scoped(1);
+                let rigid_more = scoped(2);
+                let alias_key = user_macro_template_memo_key(alias, &env).expect("small alias key");
+                let rigid_key =
+                    user_macro_template_memo_key(rigid, &env).expect("small caller key");
+                let more_key =
+                    user_macro_template_memo_key(rigid_more, &env).expect("small caller key");
+                assert!(alias_key != rigid_key);
+                assert!(rigid_key == more_key);
+                assert!(!rigid_key.reuse_matches(&more_key));
+                assert!(
+                    rigid
+                        .ambient_type_names
+                        .is_subset(&rigid_more.ambient_type_names)
+                );
+                assert!(
+                    matches!(&alias.abi_inputs[1], UserMacroTemplateInput::Type(ty)
+                    if matches!(ty.as_type(), crate::ast::Type::Unit { .. }))
+                );
+                assert!(
+                    matches!(&rigid.abi_inputs[1], UserMacroTemplateInput::Type(ty)
+                    if matches!(ty.as_type(), crate::ast::Type::Path { segments, args, .. }
+                        if segments.len() == 1 && args.is_empty()
+                            && rigid.ambient_type_names.contains(segments[0].as_str())))
+                );
+                if batch {
+                    let nodes = obligations.iter().map(|ob| ob.node_id).collect::<Vec<_>>();
+                    elaborations
+                        .discharge_user_macro_batch(
+                            &mut obligations,
+                            &env,
+                            &env.memo,
+                            crate::pass::typecheck_core::TypecheckExecution::Sequential,
+                        )
+                        .unwrap();
+                    for node in nodes {
+                        assert!(
+                            elaborations
+                                .entries
+                                .contains_key(&("main".to_owned(), node))
+                        );
+                    }
+                    validate_substituted_package(substitute::substitute_normalized_package(
+                        normalized.clone(),
+                        &elaborations,
+                    ))
+                    .expect("all three consumers retain their exact types in standalone Prime");
+                } else {
+                    for ob in &obligations {
+                        let key = user_macro_template_memo_key(ob, &env);
+                        let cached = compute_user_macro_deferred_template(
+                            ob,
+                            key,
+                            &env,
+                            &elaborations,
+                            &env.memo,
+                        )
+                        .unwrap();
+                        assert!(cached.is_ok());
+                        let macro_module =
+                            macro_module_for_path(&env, ob.macro_module_path.as_deref());
+                        let fresh = compute_user_macro_template(
+                            UserMacroTemplateRequest {
+                                macro_name: &ob.name,
+                                macro_module,
+                                abi_inputs: ob.abi_inputs.clone(),
+                                capture_imports: ob.capture_imports.clone(),
+                                result_ty: ob.result_ty.as_ref(),
+                                ambient_type_names: &ob.ambient_type_names,
+                                residual_reflection_bindings: &ob.residual_reflection_bindings,
+                                span: ob.span,
+                            },
+                            &env,
+                            &elaborations,
+                            &env.memo,
+                            false,
+                        )
+                        .unwrap();
+                        assert!(fresh.is_ok());
+                        verify_user_macro_template_memo(&cached, &fresh, ob, macro_module, &env);
+                        if ob.ambient_type_names.is_empty() {
+                            let hit = compute_user_macro_deferred_template(
+                                ob,
+                                user_macro_template_memo_key(ob, &env),
+                                &env,
+                                &elaborations,
+                                &env.memo,
+                            )
+                            .expect("same input cache hit");
+                            verify_user_macro_template_memo(&hit, &fresh, ob, macro_module, &env);
+                            let missing = user_macro_template_memo_key_with_budget(ob, &env, 0);
+                            assert!(
+                                missing.is_none(),
+                                "zero admission budget must decline the reflected guard"
+                            );
+                            let executions = env
+                                .memo
+                                .user_macro_template_executions_for("main", "identity");
+                            let uncached = compute_user_macro_deferred_template(
+                                ob,
+                                missing,
+                                &env,
+                                &elaborations,
+                                &env.memo,
+                            )
+                            .expect("uncached evaluation");
+                            assert_eq!(
+                                env.memo
+                                    .user_macro_template_executions_for("main", "identity"),
+                                executions + 1
+                            );
+                            verify_user_macro_template_memo(
+                                &uncached,
+                                &fresh,
+                                ob,
+                                macro_module,
+                                &env,
+                            );
+                        }
+                    }
+                }
+                let observed = env.memo.snapshot().user_macro;
+                assert_eq!(observed.misses, 3);
+                assert_eq!(observed.first_writes, 2);
+                assert_eq!(observed.hits, usize::from(!batch));
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_reflection_guards_skip_batch_reuse_without_replaying_actions() {
+        let typ = format!("{}.", ". & ".repeat(64));
+        let source = format!(
+            "module main; import __comptime__;
+             pure fn identity_impl(_ct: __Comptime__, _typ: __Type__, value: __Checked_term__) -> __Checked_term__ {{ value }}
+             macro identity : [T] T -> T {{ impl identity_impl }}
+             fn first(value: {typ}) -> {typ} {{ identity(value) }}
+             fn second(value: {typ}) -> {typ} {{ identity(value) }}"
+        );
+        let package = lowered_package(&[("main.kio", &source)]);
+        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+        let scope =
+            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                &normalized,
+                std::sync::Arc::new(
+                    crate::pass::typecheck_core::TypeInterner::<Lowered>::default(),
+                ),
+            );
+        let package = normalized.package();
+        let module = &package.module("main").expect("module").module;
+        let env = ModuleEnv::build_with_typecheck_scope(module, None, None, Some(package), scope)
+            .expect("env");
+        let mut elaborations = Elaborations::new();
+        for (index, item) in module.items.iter().enumerate() {
+            if let Item::FnDef(function) = item {
+                crate::pass::typecheck_core::check_fn_def(function, index, &env, &mut elaborations)
+                    .expect("function");
+            }
+        }
+        let mut obligations: Vec<_> = std::mem::take(&mut elaborations.deferred)
+            .into_iter()
+            .map(|deferred| match deferred {
+                DeferredElaboration::UserMacro(obligation) => *obligation,
+            })
+            .collect();
+        assert_eq!(obligations.len(), 2);
+        assert!(
+            obligations
+                .iter()
+                .all(|ob| user_macro_template_memo_key(ob, &env).is_none())
+        );
+        let executions = env
+            .memo
+            .user_macro_template_executions_for("main", "identity");
+        elaborations
+            .discharge_user_macro_batch(
+                &mut obligations,
+                &env,
+                &env.memo,
+                crate::pass::typecheck_core::TypecheckExecution::Sequential,
+            )
+            .expect("uncached batch");
+        assert_eq!(
+            env.memo
+                .user_macro_template_executions_for("main", "identity"),
+            executions + 2
+        );
+        assert_eq!(env.memo.snapshot().user_macro.first_writes, 0);
+        assert_eq!(env.memo.snapshot().user_macro.hits, 0);
+        validate_substituted_package(substitute::substitute_normalized_package(
+            normalized.clone(),
+            &elaborations,
+        ))
+        .expect("standalone Prime");
+    }
+
+    #[test]
     fn user_macro_memo_verification_ignores_call_site_spans() {
         let template_at = |span| {
             let ty = crate::ast::Type::<UncheckedPrime>::Unit {
                 meta: Meta::new(span),
             };
-            trusted_user_macro_template(crate::normalization::CheckedTerm::template_value(
-                0,
-                ty.clone(),
-            ))
+            trusted_user_macro_template(
+                crate::normalization::CheckedTerm::template_value(0, ty.clone()),
+                &[],
+            )
         };
         let first = template_at(Span::new(10, 11));
         let second = template_at(Span::new(90, 91));
@@ -19131,9 +18747,9 @@ fn generic_last() -> . {
     #[test]
     fn newtype_constructor_and_projector_roundtrip() {
         ok("module x; \
-            newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
-            fn make() -> Foo { Foo.mk_foo(()) } \
-            fn open(v: Foo) -> . { Foo.foo(v) }");
+            type { Foo: . { pub mk; pub get; }; }; \
+            fn make() -> Foo { Foo.mk(()) } \
+            fn open(v: Foo) -> . { Foo.get(v) }");
     }
 
     #[test]
@@ -19142,16 +18758,16 @@ fn generic_last() -> . {
         // this must reach semantic type checking rather than fail during
         // call-argument classification.
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
-                       newtype Bar : . { pub constructor mk_bar; pub projector bar; }; \
-                       fn make(b: Bar) -> Foo { Foo.mk_foo(b) }");
+                       type { Foo: . { pub mk; pub get; }; }; \
+                       type { Bar: . { pub mk; pub get; }; }; \
+                       fn make(b: Bar) -> Foo { Foo.mk(b) }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
     }
 
     #[test]
     fn newtype_unknown_member_errors() {
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
+                       type { Foo: . { pub mk; pub get; }; }; \
                        fn make() -> Foo { Foo.nope(()) }");
         assert!(msg.contains("no member"), "got: {msg}");
     }
@@ -19159,9 +18775,9 @@ fn generic_last() -> . {
     #[test]
     fn parametric_newtype_member_instantiates() {
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn wrap[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
-            fn unwrap[A](b: Box[A]) -> A { Box.un_box[A](b) }");
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn wrap[A](x: A) -> Box[A] { Box.mk[A](x) } \
+            fn unwrap[A](b: Box[A]) -> A { Box.get[A](b) }");
     }
 
     // ---- Existential type binders --------------------------------------
@@ -19170,27 +18786,27 @@ fn generic_last() -> . {
     fn existential_construction_infers_existential_from_header() {
         // `Pack[A] <U> : A & U` — `U` is the newtype's existential
         // binder. The constructor scheme treats it as an additional
-        // inference-driven binder on `mk_pack`, recovered from the
+        // inference-driven binder on `mk`, recovered from the
         // value-arg's type at the construction call site.
         ok("module x; \
             import __intrinsics__; \
-            newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn make_pack[A][U](x: A, y: U) -> Pack[A] { Pack.mk_pack[A][U](__pair__[A][U](x, y)) }");
+            type { Pack[A] <U>: A & U { pub mk; pub get; }; }; \
+            fn make_pack[A][U](x: A, y: U) -> Pack[A] { Pack.mk[A][U](__pair__[A][U](x, y)) }");
     }
 
     #[test]
     fn existential_projector_is_curried_cps_form() {
         // Existential-bearing newtypes get a curried CPS projector
         // `[A](v: Pack(A)) -> [R](k: [U](A & U) -> R) -> R`.
-        // Calling `Pack.un_pack[A](p)` returns the inner CPS function;
+        // Calling `Pack.get[A](p)` returns the inner CPS function;
         // applying that function to `((), .[U](pair) { … })` runs
         // the continuation under the existential's witness.
         ok("module x; \
             import __intrinsics__; \
             fn discard[A][B](_p: A & B) -> . { () } \
-            newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
+            type { Pack[A] <U>: A & U { pub mk; pub get; }; }; \
             fn open[A](p: Pack[A]) -> . { \
-              Pack.un_pack[A](p)[.](.[U](pair) { discard[A][U](pair) }) \
+              Pack.get[A](p)[.](.[U](pair) { discard[A][U](pair) }) \
             }");
     }
 
@@ -19201,9 +18817,9 @@ fn generic_last() -> . {
         // and not in scope outside.
         let msg = err("module x; \
             import __intrinsics__; \
-            newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
+            type { Pack[A] <U>: A & U { pub mk; pub get; }; }; \
             fn open[A](p: Pack[A]) -> . { \
-              Pack.un_pack[A](p)[.](.[U](pair: A & U) -> U { __snd__[A][U](pair) }) \
+              Pack.get[A](p)[.](.[U](pair: A & U) -> U { __snd__[A][U](pair) }) \
             }");
         assert!(
             !msg.is_empty(),
@@ -19213,12 +18829,12 @@ fn generic_last() -> . {
 
     #[test]
     fn existential_projector_inner_under_arity_is_error() {
-        // The outer call `Pack.un_pack[A](p)` returns a polymorphic
+        // The outer call `Pack.get[A](p)` returns a polymorphic
         // CPS function; the inner call requires both `[R]` and the
         // continuation.
         let msg = err("module x; \
-            newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn open[A](p: Pack[A]) -> . { let _ = Pack.un_pack[A](p)(()); () }");
+            type { Pack[A] <U>: A & U { pub mk; pub get; }; }; \
+            fn open[A](p: Pack[A]) -> . { let _ = Pack.get[A](p)(()); () }");
         assert!(
             !msg.is_empty(),
             "expected an error from missing CPS continuation"
@@ -19234,9 +18850,9 @@ fn generic_last() -> . {
         // inferred from the continuation's body type.
         ok("module x; \
             import __intrinsics__; \
-            newtype Pack <U> : U & . { pub constructor mk_pack; pub projector un_pack; }; \
+            type { Pack <U>: U & . { pub mk; pub get; }; }; \
             fn open(p: Pack) -> . { \
-              let .(<U> pair) = Pack.un_pack(p); \
+              let .(<U> pair) = Pack.get(p); \
               __snd__[U][.](pair) \
             }");
     }
@@ -19248,10 +18864,10 @@ fn generic_last() -> . {
         // unit-returning body so the typer accepts it.
         ok("module x; \
             import __intrinsics__; \
-            newtype Pair_pack <L> <R2> : L & R2 { pub constructor mk_pair_pack; pub projector un_pair_pack; }; \
+            type { Pair_pack <L> <R2>: L & R2 { pub mk; pub get; }; }; \
             fn discard[A][B](_p: A & B) -> . { () } \
             fn open(p: Pair_pack) -> . { \
-              let .(<L> <R2> pair) = Pair_pack.un_pair_pack(p); \
+              let .(<L> <R2> pair) = Pair_pack.get(p); \
               discard[L][R2](pair) \
             }");
     }
@@ -19265,11 +18881,9 @@ fn generic_last() -> . {
         // matches a `fn` whose declared return spells out the
         // unfolded sum directly.
         ok("module x; \
-            rec newtype List[A] : (. | (A & (List[A]))) { \
-              pub constructor cons; pub projector un_list; \
-            }; \
+            rec type { List[A]: (. | (A & (List[A]))) { pub mk; pub get; }; }; \
             fn destruct[A](l: List[A]) -> (. | (A & List[A])) { \
-              List.un_list[A](l) \
+              List.get[A](l) \
             }");
     }
 
@@ -19280,10 +18894,8 @@ fn generic_last() -> . {
         // `__left__[.][Tree](())` builds such a value.
         ok("module x; \
             import __intrinsics__; \
-            rec newtype Tree : (. | (Tree)) { \
-              pub constructor mk_tree; pub projector un_tree; \
-            }; \
-            fn empty() -> Tree { Tree.mk_tree(__left__[.][Tree](())) }");
+            rec type { Tree: (. | (Tree)) { pub mk; pub get; }; }; \
+            fn empty() -> Tree { Tree.mk(__left__[.][Tree](())) }");
     }
 
     #[test]
@@ -19291,9 +18903,7 @@ fn generic_last() -> . {
         // `(Bad) -> .` puts `Bad` on the contravariant side of `->`.
         let msg = err_totality(
             "module x; \
-                       rec newtype Bad : (Bad -> .) { \
-                         pub constructor mk_bad; pub projector un_bad; \
-                       };",
+                       rec type { Bad: (Bad -> .) { pub mk; pub get; }; };",
         );
         assert!(msg.contains("strictly positive"), "got: {msg}");
     }
@@ -19302,9 +18912,7 @@ fn generic_last() -> . {
     fn valid_unmarked_recursive_newtype_reports_the_marker_and_fix() {
         let error = check_module(&module(
             "module x; \
-             newtype Tree : . | Tree { \
-               pub constructor mk_tree; pub projector un_tree; \
-             };",
+             type { Tree: . | Tree { pub mk; pub get; }; };",
         ))
         .expect_err("a valid recursive singleton needs an explicit marker");
         let Error::NameRes(diagnostic) = error else {
@@ -19322,11 +18930,9 @@ fn generic_last() -> . {
 
     #[test]
     fn valid_unmarked_recursive_labels_reports_the_marker_and_fix() {
-        let error = check_module(&module(
-            "module x; \
-             labels Tree = { leaf: . } | { branch: Tree & Tree };",
-        ))
-        .expect_err("a valid recursive labels declaration needs an explicit marker");
+        let source = "module x; type Tree = { Leaf: . } | { Branch: Tree & Tree };";
+        let error = check_module(&module(source))
+            .expect_err("a valid recursive type declaration needs an explicit marker");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected missing-marker name error, got {error:?}");
         };
@@ -19335,16 +18941,25 @@ fn generic_last() -> . {
             "recursive data declaration requires `rec`"
         );
         assert_eq!(
-            diagnostic.fixes()[0].title,
-            "Add `rec` to this recursive labels declaration"
+            diagnostic.help(),
+            Some("add `rec` before `type` to declare these recursive types")
         );
+        let fix = &diagnostic.fixes()[0];
+        assert_eq!(fix.title, "Make this type declaration recursive");
+        let edit = &fix.edits[0];
+        let declaration = source.find("type Tree").expect("type declaration") as u32;
+        assert_eq!(edit.span, Span::new(declaration, declaration));
+        assert_eq!(edit.replacement, "rec ");
+        let mut fixed = source.to_owned();
+        fixed.insert_str(edit.span.start as usize, &edit.replacement);
+        check_module(&module(&fixed)).expect("the suggested recursive type parses and checks");
     }
 
     #[test]
     fn negative_unmarked_recursion_reports_positivity_before_the_marker() {
         let message = err_totality(
             "module x; \
-             newtype Bad : Bad -> . { constructor mk; projector un; };",
+             type { Bad: Bad -> . { mk; get; }; };",
         );
         assert!(message.contains("strictly positive"), "got: {message}");
     }
@@ -19352,19 +18967,19 @@ fn generic_last() -> . {
     #[test]
     fn arity_invalid_unmarked_recursion_reports_arity_before_the_marker() {
         let message = err("module x; \
-             newtype Bad[A] : Bad { constructor mk; projector un; };");
+             type { Bad[A]: Bad { mk; get; }; };");
         assert!(message.contains("arity mismatch"), "got: {message}");
     }
 
     #[test]
     fn negative_unmarked_recursive_labels_reports_positivity_before_the_marker() {
-        let message = err_totality("module x; labels Loop = { step: Loop -> . };");
+        let message = err_totality("module x; type Loop = { Step: Loop -> . };");
         assert!(message.contains("strictly positive"), "got: {message}");
     }
 
     #[test]
     fn arity_invalid_unmarked_recursive_labels_reports_arity_before_the_marker() {
-        let message = err("module x; labels Loop[A] = { step[A]: Loop };");
+        let message = err("module x; type Loop[A] = { Step[A]: Loop };");
         assert!(
             message.contains("requires 1 type argument"),
             "got: {message}"
@@ -19379,9 +18994,7 @@ fn generic_last() -> . {
         let msg = err_totality(
             "module x; \
                        type Negate[A] = (A -> .); \
-                       rec newtype Bad : Negate[Bad] { \
-                         pub constructor mk_bad; pub projector un_bad; \
-                       };",
+                       rec type { Bad: Negate[Bad] { pub mk; pub get; }; };",
         );
         assert!(msg.contains("strictly positive"), "got: {msg}");
     }
@@ -19389,9 +19002,7 @@ fn generic_last() -> . {
     #[test]
     fn rec_arity_mismatch_errors() {
         let msg = err("module x; \
-                       rec newtype List[A] : (. | (List)) { \
-                         pub constructor cons; pub projector un_list; \
-                       };");
+                       rec type { List[A]: (. | (List)) { pub mk; pub get; }; };");
         assert!(msg.contains("arity mismatch"), "got: {msg}");
     }
 
@@ -19401,22 +19012,18 @@ fn generic_last() -> . {
         // genuinely mutual component.
         ok("module x; \
             rec { \
-              newtype A : (. | (B)) { pub constructor mk_a; pub projector un_a; }; \
-              newtype B : (. | (A)) { pub constructor mk_b; pub projector un_b; }; \
+              type { A: (. | (B)) { pub mk; pub get; }; }; \
+              type { B: (. | (A)) { pub mk; pub get; }; }; \
             }");
     }
 
     #[test]
     fn mutual_type_group_preserves_higher_kinded_binder_shadowing() {
         ok("module x; \
-            newtype Box[A] : A { \
-              pub constructor box; pub projector unbox; \
-            }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
             rec { \
               type Family = Node[Box]; \
-              newtype Node[*Family] : Family[.] & Tail { \
-                pub constructor mk_node; pub projector un_node; \
-              }; \
+              type { Node[*Family]: Family[.] & Tail { pub mk; pub get; }; }; \
               type Tail = Family; \
             }");
     }
@@ -19432,9 +19039,7 @@ fn generic_last() -> . {
         // chains of newtypes — is strictly more permissive on
         // single-newtype double-negation patterns.)
         ok("module x; \
-                       rec newtype T : ((T -> .) -> .) { \
-                         pub constructor mk_t; pub projector un_t; \
-                       };");
+                       rec type { T: ((T -> .) -> .) { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -19447,9 +19052,9 @@ fn generic_last() -> . {
         // `*` and the strict-positivity check rejects.
         let msg = err_totality(
             "module x; \
-            newtype Bar[A] : (A -> A) { pub constructor mk_b; pub projector un_b; }; \
-            newtype Foo[B] : Bar[B] { pub constructor mk_f; pub projector un_f; }; \
-            rec newtype Loop : Foo[Loop] { pub constructor mk_l; pub projector un_l; };",
+            type { Bar[A]: (A -> A) { pub mk; pub get; }; }; \
+            type { Foo[B]: Bar[B] { pub mk; pub get; }; }; \
+            rec type { Loop: Foo[Loop] { pub mk; pub get; }; };",
         );
         assert!(msg.contains("strictly positive"), "got: {msg}");
     }
@@ -19464,7 +19069,7 @@ fn generic_last() -> . {
         let m = module(
             "module main; \
              host type Stream[A]; \
-             rec newtype Bad : Stream[Bad] { pub constructor mk_b; pub projector un_b; };",
+             rec type { Bad: Stream[Bad] { pub mk; pub get; }; };",
         );
         let res = check_module(&m);
         match res {
@@ -19595,7 +19200,7 @@ fn generic_last() -> . {
                 "module consumer; \
              import provider(Box); \
              import provider as p; \
-             newtype Takes[*F] : . { constructor mk; projector un; }; \
+             type { Takes[*F]: . { mk; get; }; }; \
              fn before(value: Takes[Box]) -> . { let _ = value; () } \
              type Box[A] = p.Box[A];",
             ),
@@ -19612,7 +19217,7 @@ fn generic_last() -> . {
             "module provider; pub host type Box[A];",
             "module consumer; \
              import provider as p; \
-             newtype Takes[*F] : . { constructor mk; projector un; }; \
+             type { Takes[*F]: . { mk; get; }; }; \
              type Box[A] = p.Box[A]; \
              fn bad(value: Takes[Box]) -> . { let _ = value; () }",
         ]);
@@ -20029,7 +19634,7 @@ fn generic_last() -> . {
             type Unit_alias = .; \
             host fn host_nil[A]() -> A; \
             host fn host_identity[A](value: A) -> A; \
-            newtype Box[A] : A { constructor mk_box; projector un_box; }; \
+            type { Box[A]: A { mk; get; }; }; \
             fn identity[A](value: A) -> A { value } \
             fn unit_nullary[A]() -> . { () } \
             fn staged[A]()(value: A) -> A { value } \
@@ -20061,7 +19666,7 @@ fn generic_last() -> . {
               identity[.](()); \
               ().>identity[.]; \
               consume_unit_function(host_identity[.]); \
-              consume_unit_box_constructor(Box.mk_box[.]); \
+              consume_unit_box_constructor(Box.mk[.]); \
               host_identity[.](()); \
               ().>host_identity[.]; \
               consume_unit_to_n_function(host_nil[N]); \
@@ -20338,45 +19943,43 @@ fn generic_last() -> . {
 
     #[test]
     fn one_sum_target_inferred_from_uniform_arms() {
-        // `one_sum` accepts target elision when every non-`!` arm
-        // of the source has the same type. Source is `(. | .)`;
-        // the inferred target is `.`, and `one_sum(e)` synthesizes
-        // type `.`.
-        ok("module x; \
+        // The natural form synthesizes `.` from uniform source arms.
+        check_macro_src(
+            "module x; import spine_macros(macro one_sum_); \
             fn collapse(x: (. | .)) -> . { \
-                let y = one_sum(x); y \
-            }");
+                let y = one_sum_(x); y \
+            }",
+        )
+        .expect("the natural sum result is inferred from the source arms");
     }
 
     #[test]
     fn one_prod_target_inferred_from_uniform_slots() {
-        // `one_prod` accepts target elision when every product slot
-        // has the same type. Source is `(. & .)`; the inferred
-        // target is `.`, and `one_prod(e)` synthesizes type `.`.
-        ok("module x; \
+        // The natural form synthesizes `.` from uniform product slots.
+        check_macro_src(
+            "module x; import spine_macros(macro one_prod_); \
             fn pick(x: (. & .)) -> . { \
-                let y = one_prod(x); y \
-            }");
+                let y = one_prod_(x); y \
+            }",
+        )
+        .expect("the natural product result is inferred from the source slots");
     }
 
     #[test]
     fn fit_no_target_errors_in_synth_mode() {
-        // Spine forms other than `one_sum` / `one_prod` require an
-        // explicit target or a surrounding expected type. In a `let`
-        // RHS with no annotation, `fit(e)` has neither and must
-        // error.
+        // A target-driven macro needs an explicit or expected result type.
         let res = check_macro_src(
             "module x; \
              fn lone(x: .) -> . { let _y = fit(x); () }",
         );
         match res {
-            Err(Error::Macro(Diagnostic { message, .. })) => {
+            Err(Error::Type(Diagnostic { message, .. })) => {
                 assert!(
-                    message.contains("macro needs an explicit or expected target type"),
+                    message.contains("cannot infer type argument `[Target]`"),
                     "got: {message}"
                 );
             }
-            other => panic!("expected missing-target macro error, got {other:?}"),
+            other => panic!("expected an uninferred target type error, got {other:?}"),
         }
     }
 
@@ -20497,21 +20100,19 @@ fn generic_last() -> . {
 
     #[test]
     fn flatten_sum_no_target_errors_in_synth_mode() {
-        // Spine forms (other than `one_sum` / `one_prod`) require
-        // explicit target or surrounding expected type. Without
-        // either, error.
+        // A target-driven macro needs an explicit or expected result type.
         let res = check_macro_src(
             "module x; host type Bool; \
              fn lone(x: ((. | Bool) | Bool)) -> . { let _y = flatten_sum(x); () }",
         );
         match res {
-            Err(Error::Macro(Diagnostic { message, .. })) => {
+            Err(Error::Type(Diagnostic { message, .. })) => {
                 assert!(
-                    message.contains("macro needs an explicit or expected target type"),
+                    message.contains("cannot infer type argument `[Target]`"),
                     "got: {message}"
                 );
             }
-            other => panic!("expected missing-target macro error, got {other:?}"),
+            other => panic!("expected an uninferred target type error, got {other:?}"),
         }
     }
 
@@ -20585,16 +20186,16 @@ fn generic_last() -> . {
         // through to `require_type_equiv`, which rejects the
         // inferred-binder shape against the concrete one.
         ok("module pkg/main; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn lift[A](x: A) -> Box[A] { Box.mk_box(x) } \
-            fn peel[A](x: Box[A]) -> A { Box.un_box(x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn lift[A](x: A) -> Box[A] { Box.mk(x) } \
+            fn peel[A](x: Box[A]) -> A { Box.get(x) } \
             fn round_trip() -> . { peel(lift(())) }");
     }
 
     #[test]
     fn type_arg_inference_directly_solves_applied_hkt_head() {
         ok("module pkg/main; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
             fn keep[*F][A](value: F[A]) -> F[A] { value } \
             fn round_trip(value: Box[.]) -> Box[.] { keep(value) }");
     }
@@ -20793,8 +20394,8 @@ fn generic_last() -> . {
     #[test]
     fn ufcs_whole_receiver_matches_product_param() {
         ok("module x; \
-            newtype A : . { pub constructor mk_a; pub projector un_a; }; \
-            newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+            type { A: . { pub mk; pub get; }; }; \
+            type { B: . { pub mk; pub get; }; }; \
             fn target(self: (A & B)) -> . { () } \
             fn caller(r: (A & B)) -> . { r.>target }");
     }
@@ -20807,8 +20408,8 @@ fn generic_last() -> . {
     fn ufcs_whole_receiver_mismatch_rejected() {
         let m = module(
             "module x; \
-             newtype A : . { pub constructor mk_a; pub projector un_a; }; \
-             newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+             type { A: . { pub mk; pub get; }; }; \
+             type { B: . { pub mk; pub get; }; }; \
              fn target(self: A) -> . { () } \
              fn caller(r: (A & B)) -> . { r.>target }",
         );
@@ -20827,8 +20428,8 @@ fn generic_last() -> . {
     #[test]
     fn ufcs_n_right_folded_params_receiver_fills_first() {
         ok("module x; \
-            newtype A : . { pub constructor mk_a; pub projector un_a; }; \
-            newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+            type { A: . { pub mk; pub get; }; }; \
+            type { B: . { pub mk; pub get; }; }; \
             fn target(a: A, b: B) -> . { () } \
             fn caller(a_val: A, b_val: B) -> . { a_val.>target(b_val) }");
     }
@@ -20836,7 +20437,7 @@ fn generic_last() -> . {
     #[test]
     fn ufcs_unit_receiver_fills_first_polymorphic_value_arg() {
         ok("module x; \
-            newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+            type { B: . { pub mk; pub get; }; }; \
             fn const2[A][B](x: A, y: B) -> B { y } \
             fn caller(b: B) -> B { ().>const2(b) }");
     }
@@ -20847,8 +20448,8 @@ fn generic_last() -> . {
     #[test]
     fn ufcs_mono_callee_whole_receiver() {
         ok("module x; \
-            newtype A : . { pub constructor mk_a; pub projector un_a; }; \
-            newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+            type { A: . { pub mk; pub get; }; }; \
+            type { B: . { pub mk; pub get; }; }; \
             fn target(self: (A & B)) -> . { () } \
             fn caller(r: (A & B)) -> . { target(r) }");
     }
@@ -21093,7 +20694,7 @@ fn generic_last() -> . {
 
         let src = concat!(
             "module x;\n",
-            "newtype Marker : . { constructor mark; projector unmark; };\n",
+            "type { Marker: . { mk; get; }; };\n",
             "fn identity[A](value: A) -> A { value }\n",
             "fn keep[A](value: A) -> A { value }\n",
             "fn preserve_marker(value: Marker) -> Marker { value }\n",
@@ -21559,7 +21160,7 @@ fn generic_last() -> . {
         let helper = lowered_module(
             "module pkg/helper; \
              pub fn h() -> . { () } \
-             pub newtype Box : . { pub constructor mk; pub projector get; };",
+             pub type { Box: . { pub mk; pub get; }; };",
         );
         let consumer = lowered_module(
             "module pkg/consumer; \
@@ -21608,17 +21209,17 @@ fn generic_last() -> . {
 
         let origin = lowered_module(
             "module origin; \
-             pub newtype Tag : . { pub constructor make; pub projector open; };",
+             pub type { Tag: . { pub mk; pub get; }; };",
         );
         let relay =
             lowered_module("module relay; import origin as source; pub type Tag = source.Tag;");
         let decoy = lowered_module(
             "module decoy; \
-             pub newtype Tag : . { pub constructor make; pub projector open; };",
+             pub type { Tag: . { pub mk; pub get; }; };",
         );
         let consumer = lowered_module(
             "module consumer; import relay as source; \
-             fn main() -> source.Tag { source.Tag.make(()) }",
+             fn main() -> source.Tag { source.Tag.mk(()) }",
         );
         let package = Package::build(
             Path::new(""),
@@ -21651,7 +21252,7 @@ fn generic_last() -> . {
         assert!(binders.iter().any(|binder| matches!(
             binder,
             ResolvedBinder::NewtypeMember { module_path, newtype, member }
-                if module_path == "origin" && newtype == "Tag" && member == "make"
+                if module_path == "origin" && newtype == "Tag" && member == "mk"
         )));
         assert!(!binders.iter().any(|binder| matches!(
             binder,
@@ -21915,7 +21516,7 @@ fn generic_last() -> . {
             fn concrete() -> . { .(value: .) -> . { value }(()) }");
 
         let mismatch = err("module x; \
-            newtype R : . { pub constructor mk_r; pub projector un_r; }; \
+            type { R: . { pub mk; pub get; }; }; \
             fn run() -> R { .(value: .) -> R { value }(()) }");
         assert!(
             mismatch.contains("type mismatch: expected `R`, found `.`"),
@@ -21926,7 +21527,7 @@ fn generic_last() -> . {
     #[test]
     fn immediate_lambda_concrete_annotations_keep_identity_in_standalone_check() {
         ok("module x; \
-            newtype N : . { pub constructor mk_n; pub projector un_n; }; \
+            type { N: . { pub mk; pub get; }; }; \
             fn nominal(value: N) -> N { .(item: N) -> N { item }(value) } \
             fn rank_n(function: [A] A -> A) -> . { \
               .(candidate: [A] A -> A) { () }(function) \
@@ -21936,10 +21537,10 @@ fn generic_last() -> . {
     #[test]
     fn immediate_lambda_type_arg_modes() {
         ok("module x; \
-            newtype N : . { pub constructor mk_n; pub projector un_n; }; \
+            type { N: . { pub mk; pub get; }; }; \
             fn explicit_dot() -> . { .[A](value: A) { value }[.]( ()) } \
             fn placeholder() -> . { .[A](value: A) { value }[_]( ()) } \
-            fn elided() -> N { .[A](value: A) { value }(N.mk_n(())) } \
+            fn elided() -> N { .[A](value: A) { value }(N.mk(())) } \
             fn explicit_unit_type() -> . { .[A](value: A) { value }[.]( ()) }");
     }
 
@@ -22212,7 +21813,7 @@ fn generic_last() -> . {
     #[test]
     fn immediate_lambda_layer_binder_scope_does_not_shadow_earlier_nominal() {
         ok("module x; \
-            newtype N : . { pub constructor mk_n; pub projector un_n; }; \
+            type { N: . { pub mk; pub get; }; }; \
             fn run(value: N) -> . { \
               .(first: N)[N](second) { () }(value)[.](()) \
             }");
@@ -22223,9 +21824,9 @@ fn generic_last() -> . {
         let package = lowered_package(&[(
             "x.kio",
             "module x; \
-             newtype N : . { pub constructor mk_n; pub projector un_n; }; \
+             type { N: . { pub mk; pub get; }; }; \
              fn run() -> N { \
-               .[T](first: T)[T](second: T) { second }[_](())[N](N.mk_n(())) \
+               .[T](first: T)[T](second: T) { second }[_](())[N](N.mk(())) \
              }",
         )]);
         let prime = check_package(&package).expect("the repeated binders solve independently");
@@ -22534,13 +22135,13 @@ fn generic_last() -> . {
     #[test]
     fn immediate_lambda_explicit_type_arg_checks_synthesized_value() {
         ok("module x; \
-            newtype Expected : . { pub constructor mk_expected; pub projector un_expected; }; \
+            type { Expected: . { pub mk; pub get; }; }; \
             fn consume[A](value: A) -> . { () } \
             fn run(value: Expected) -> . { consume[Expected](value) }");
 
         let mismatch = err("module x; \
-            newtype Expected : . { pub constructor mk_expected; pub projector un_expected; }; \
-            newtype Actual : . { pub constructor mk_actual; pub projector un_actual; }; \
+            type { Expected: . { pub mk; pub get; }; }; \
+            type { Actual: . { pub mk; pub get; }; }; \
             fn consume[A](value: A) -> . { () } \
             fn run(actual: Actual) -> . { consume[Expected](actual) }");
         assert!(
@@ -22575,16 +22176,16 @@ fn generic_last() -> . {
     fn deferred_lambda_pins_from_body_in_partial_slot() {
         // `bind` is the canonical monadic bind shape:
         // `[A][B] (Box(A) & (A -> Box(B))) -> Box(B)`. Slot 0
-        // (`Box.mk_box(., ())` of type `Box(.)`) pins `[A] = .`,
+        // (`Box.mk(., ())` of type `Box(.)`) pins `[A] = .`,
         // leaving `[B]` free in the second slot's expected type
         // `. -> Box(B)`. The deferred lambda routes through the
         // partial-slot path: synth the body, unify against the
         // expected return, pin `[B]`.
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
             fn bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { \
-              k(Box.un_box[A](m)) \
+              k(Box.get[A](m)) \
             } \
             fn run() -> Box[.] { \
               bind(, pure[.](()), .(a) { pure[.](a) }) \
@@ -22594,7 +22195,7 @@ fn generic_last() -> . {
     #[test]
     fn deferred_annotated_lambda_body_receives_elided_expected_result() {
         ok("module x; \
-            newtype Tag[E] : . { pub constructor mk; pub projector un; }; \
+            type { Tag[E]: . { pub mk; pub get; }; }; \
             type Out = . & Tag[.]; \
             fn make[T][E](value: T) -> T & Tag[E] { (value, Tag.mk[E](())) } \
             fn apply[A][B](f: A -> B, value: A) -> B { f(value) } \
@@ -22604,7 +22205,7 @@ fn generic_last() -> . {
     #[test]
     fn deferred_annotated_lambda_body_receives_placeholder_expected_result() {
         ok("module x; \
-            newtype Tag[E] : . { pub constructor mk; pub projector un; }; \
+            type { Tag[E]: . { pub mk; pub get; }; }; \
             type Out = . & Tag[.]; \
             fn make[T][E](value: T) -> T & Tag[E] { (value, Tag.mk[E](())) } \
             fn apply[A][B](f: A -> B, value: A) -> B { f(value) } \
@@ -22713,14 +22314,14 @@ fn generic_last() -> . {
         // `Foo(.)` rejects (no shared head). The diagnostic surfaces
         // as a type mismatch.
         let msg = err("module x; \
-                       newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
-                       fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+                       type { Box[A]: A { pub mk; pub get; }; }; \
+                       type { Foo: . { pub mk; pub get; }; }; \
+                       fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
                        fn bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { \
-                         k(Box.un_box[A](m)) \
+                         k(Box.get[A](m)) \
                        } \
                        fn run() -> Box[.] { \
-                         bind(, pure[.](()), .(a) { Foo.mk_foo(()) }) \
+                         bind(, pure[.](()), .(a) { Foo.mk(()) }) \
                        }");
         // The diagnostic from this path may surface as a type
         // mismatch or as an unsolved binder; both are valid failures
@@ -22886,7 +22487,7 @@ fn generic_last() -> . {
         check_package_sources(&["module x; \
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
             rec(loop) fn value(n: I32) -> Box[I32] { \
               let .(box: Box[_]) = choose_box(0, recur(cont) value(0)); \
@@ -22900,7 +22501,7 @@ fn generic_last() -> . {
         check_package_sources(&["module x; import control(macro scope); \
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
             rec(loop) fn value(n: I32) -> Box[I32] { scope { \
               let .(box: Box[_]) = choose_box(0, recur(cont) value(0)); \
@@ -22914,8 +22515,8 @@ fn generic_last() -> . {
         let message = package_type_err(&["module x; \
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            newtype Other[A] : A { pub constructor mk_other; pub projector un_other; }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            type { Other[A]: A { pub mk; pub get; }; }; \
             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
             rec(loop) fn value(n: I32) -> Box[I32] { \
               let .(box: Other[_]) = choose_box(0, recur(cont) value(0)); \
@@ -23022,8 +22623,8 @@ fn generic_last() -> . {
         // pin it, here, but the test still exercises the let-check-
         // mode arm).
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
             fn caller() -> Box[.] { let _ = (); pure(()) }");
     }
 
@@ -23043,7 +22644,7 @@ fn generic_last() -> . {
         // `x : .` does not equal `Foo`. The check-mode let arm
         // surfaces the body's mismatch against `expected`.
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
+                       type { Foo: . { pub mk; pub get; }; }; \
                        fn caller() -> Foo { let x = (); x }");
         assert!(
             msg.contains("type") || msg.contains("mismatch"),
@@ -23058,8 +22659,8 @@ fn generic_last() -> . {
         // the surrounding expected type. Same threading promise as
         // let; just no binder.
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
             fn caller() -> Box[.] { (); pure(()) }");
     }
 
@@ -23070,8 +22671,8 @@ fn generic_last() -> . {
         // The check-mode Seq arm enforces the same rule as the synth
         // arm.
         let msg = err("module x; \
-                       newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
-                       fn make_foo() -> Foo { Foo.mk_foo(()) } \
+                       type { Foo: . { pub mk; pub get; }; }; \
+                       fn make_foo() -> Foo { Foo.mk(()) } \
                        fn caller() -> . { make_foo(); () }");
         // Diagnostic mentions either the unit expectation or "discard".
         assert!(msg.contains(".") || msg.contains("discard"), "got: {msg}");
@@ -23094,8 +22695,8 @@ fn generic_last() -> . {
         // also feeds the expected `Box(.)` through to the call's
         // inference engine, exercising the threaded path.
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
             fn make_box() -> Box[.] { pure(()) }");
     }
 
@@ -23122,8 +22723,8 @@ fn generic_last() -> . {
         // Without either layer, the inner call's type-arg inference
         // loses `Box(.)` and surfaces "cannot infer".
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn pure[A](x: A) -> Box[A] { Box.mk[A](x) } \
             fn caller() -> Box[.] { let _ = (); pure(()) }");
     }
 
@@ -23137,8 +22738,8 @@ fn generic_last() -> . {
         // equivalence — which must agree on BOTH the param and the ret
         // (a conjunction, not a disjunction).
         let msg = err("module x; \
-            newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
-            newtype Bar : . { pub constructor mk_bar; pub projector bar; }; \
+            type { Foo: . { pub mk; pub get; }; }; \
+            type { Bar: . { pub mk; pub get; }; }; \
             fn apply(k: (. -> Foo)) -> . { () } \
             fn run(h: (. -> Bar)) -> . { apply(h) }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
@@ -23151,8 +22752,8 @@ fn generic_last() -> . {
         // positivity. An all-invariant (empty / `Default`) variance env
         // would compose the slot to `*` and wrongly reject.
         ok("module x; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            rec newtype Rec : Box[Rec] { pub constructor mk_rec; pub projector un_rec; };");
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            rec type { Rec: Box[Rec] { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -23163,9 +22764,9 @@ fn generic_last() -> . {
         // the variance walk would surface the negative `R -> .` occurrence
         // and reject.
         ok("module x; \
-            newtype Other : . { pub constructor mk_o; pub projector un_o; }; \
-            newtype Phantom[A] : Other { pub constructor mk_ph; pub projector un_ph; }; \
-            rec newtype R : Phantom[R -> .] { pub constructor mk_r; pub projector un_r; };");
+            type { Other: . { pub mk; pub get; }; }; \
+            type { Phantom[A]: Other { pub mk; pub get; }; }; \
+            rec type { R: Phantom[R -> .] { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -23423,8 +23024,8 @@ fn generic_last() -> . {
         // expected function type's domain (`Foo`) is rejected by the
         // signature structural match.
         let msg = err("module x; \
-            newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
-            newtype Bar : . { pub constructor mk_bar; pub projector bar; }; \
+            type { Foo: . { pub mk; pub get; }; }; \
+            type { Bar: . { pub mk; pub get; }; }; \
             fn apply(k: (Foo -> .)) -> . { () } \
             fn run() -> . { apply(.(x: Bar) { () }) }");
         assert!(
@@ -23439,8 +23040,8 @@ fn generic_last() -> . {
         // against expected `Box(Foo)`) passes: the same nominal head and
         // arity, with the `_` slot filled by the expected subtree.
         ok("module x; \
-            newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+            type { Foo: . { pub mk; pub get; }; }; \
+            type { Box[A]: A { pub mk; pub get; }; }; \
             fn apply(k: (Box[Foo] -> .)) -> . { () } \
             fn run() -> . { apply(.(x: Box[_]) { () }) }");
     }
@@ -23451,7 +23052,7 @@ fn generic_last() -> . {
         // rejected: the annotation is an expected type for the RHS, not
         // ignored.
         let msg = err("module x; \
-            newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
+            type { Foo: . { pub mk; pub get; }; }; \
             fn f() -> . { let .(x: Foo) = (); () }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
     }
@@ -23464,8 +23065,8 @@ fn generic_last() -> . {
         // type.
         ok("module x; \
             import __intrinsics__; \
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn f[A](y: A) -> . { let .(x: Box[_]) = Box.mk_box[A](y); () }");
+            type { Box[A]: A { pub mk; pub get; }; }; \
+            fn f[A](y: A) -> . { let .(x: Box[_]) = Box.mk[A](y); () }");
     }
 
     #[test]
@@ -23884,24 +23485,24 @@ fn generic_last() -> . {
     fn deferred_omitted_return_lambda_preserves_hkt_expected_result_structure() {
         ok("module x; \
             host type Witness; \
-            pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+            pub type { Box[A]: A { pub mk; pub get; }; }; \
             host fn witness() -> Witness; \
             host fn make_box[A]() -> Box[A]; \
             fn consume[*F][T](_make: . -> F[T], _value: F[T]) -> . { () } \
             fn run() -> . { \
-              consume(.() { make_box() }, Box.mk_box[Witness](witness())) \
+              consume(.() { make_box() }, Box.mk[Witness](witness())) \
             }");
     }
 
     #[test]
-    fn deferred_omitted_return_lambda_accepts_concrete_lowered_field_elaboration() {
+    fn deferred_omitted_return_lambda_accepts_inferred_nominal_constructor() {
         ok("module x; \
             host type Witness; \
-            labels { value[A]: A }; \
+            type { Value[A]: A { mk; get; }; }; \
             host fn witness() -> Witness; \
             fn consume[T](_make: . -> T, _value: T) -> . { () } \
             fn run() -> . { \
-              consume(.() { {value = witness()} }, {value = witness()}) \
+              consume(.() { Value.mk(witness()) }, Value.mk(witness())) \
             }");
     }
 
@@ -23909,16 +23510,7 @@ fn generic_last() -> . {
     fn deferred_omitted_return_lambda_shares_constructor_result_context() {
         ok("module x; \
             host type Witness; \
-            labels { value[A]: A }; \
-            host fn witness() -> Witness; \
-            host fn make[A]() -> A; \
-            fn consume[T](_make: . -> T, _value: T) -> . { () } \
-            fn run() -> . { \
-              consume(.() { {value = make()} }, {value = witness()}) \
-            }");
-        ok("module x; \
-            host type Witness; \
-            labels { value[A]: A }; \
+            type { Value[A]: A { mk; get; }; }; \
             host fn witness() -> Witness; \
             host fn make[A]() -> A; \
             fn consume[T](_make: . -> T, _value: T) -> . { () } \
@@ -23929,19 +23521,32 @@ fn generic_last() -> . {
 
     #[test]
     fn deferred_omitted_return_lambda_does_not_stage_open_field_update() {
-        let message = package_type_err(&["module x; \
-            host type Witness; \
-            labels { value[A]: A }; \
-            host fn witness() -> Witness; \
-            host fn make[A]() -> A; \
-            fn consume[T](_make: . -> T, _value: T) -> . { () } \
-            fn run() -> . { \
-              consume(.() { ().!{value = make()} }, {value = witness()}) \
-            }"]);
-        assert!(
-            message.contains("cannot infer"),
-            "an authored update retains its independent payload boundary, got: {message}"
-        );
+        let error = check_package(&lowered_control_package(&[
+            (
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+            ),
+            (
+                "x.kio",
+                "module x; import row_macros(macro with_); \
+                 host type Witness; \
+                 type { Value[A]: A { mk; get; }; }; \
+                 host fn witness() -> Witness; \
+                 host fn make[A]() -> A; \
+                 fn consume[T](_make: . -> T, _value: T) -> . { () } \
+                 fn run() -> . { \
+                   consume(.() { ().>with_ { Value.mk(make()) } }, Value.mk(witness())) \
+                 }",
+            ),
+        ]))
+        .expect_err("an open update payload must not be staged from a later sibling");
+        match error.error {
+            Error::Type(Diagnostic { message, .. }) => assert!(
+                message.contains("cannot infer"),
+                "an authored update retains its independent payload boundary, got: {message}"
+            ),
+            other => panic!("expected the open update payload type error, got {other:?}"),
+        }
     }
 
     #[test]
@@ -24009,7 +23614,6 @@ fn generic_last() -> . {
 
     const RETAINED_ACTION_MACROS: &str = "module macros; \
         import __comptime__; \
-        type Optional_type = __Type__ | .; \
         pure fn same_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) \
           -> __Checked_term__ { value } \
         pub macro same : [T] T -> T { impl same_impl; }; \
@@ -24017,8 +23621,8 @@ fn generic_last() -> . {
             _ct: __Comptime__, \
             _source: __Type__, \
             value: __Checked_term__, \
-            _a: Optional_type, \
-            _b: Optional_type \
+            _a: ., \
+            _b: . \
           ) -> __Checked_term__ { value } \
         pub macro infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
         pure fn first_impl( \
@@ -24037,9 +23641,9 @@ fn generic_last() -> . {
             fills: __Fill_ctx__, \
             source: __Type__, \
             value: __Checked_term__, \
-            target: __Type__ \
+            _target: . \
           ) -> (__Checked_term__ & __Fill_ctx__) { \
-            (value, __fill__(ct, fills, target, source)) \
+            (value, __fill_result__(ct, fills, source)) \
           } \
         pub macro infer : [Source] Source -> [Target] Target { impl(fills) infer_impl; };";
 
@@ -24047,11 +23651,11 @@ fn generic_last() -> . {
         import __comptime__; \
         pure fn infer_pair_impl( \
             ct: __Comptime__, fills: __Fill_ctx__, \
-            _source: __Type__, value: __Checked_term__, target: __Type__ \
+            source: __Type__, value: __Checked_term__, _target: . \
           ) -> (__Checked_term__ & __Fill_ctx__) { \
             ( \
               __intrinsic_pair__(ct, value, __term_unit__(ct)), \
-              __fill__(ct, fills, target, __type_unit__(ct)) \
+              __fill_result__(ct, fills, __type_product__(ct, source, __type_unit__(ct))) \
             ) \
           } \
         pub macro infer_pair : [Source] Source -> [Target] Source & Target { impl(fills) infer_pair_impl; };";
@@ -24062,9 +23666,9 @@ fn generic_last() -> . {
             ct: __Comptime__, fills: __Fill_ctx__, \
             _source: __Type__, _source_value: __Checked_term__, \
             middle_type: __Type__, middle: __Checked_term__, \
-            target: __Type__ \
+            _target: . \
           ) -> (__Checked_term__ & __Fill_ctx__) { \
-            (middle, __fill__(ct, fills, target, middle_type)) \
+            (middle, __fill_result__(ct, fills, middle_type)) \
           } \
         pub macro relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl(fills) relay_impl; };";
 
@@ -24072,28 +23676,27 @@ fn generic_last() -> . {
         import __comptime__; \
         pure fn relay_impl( \
             ct: __Comptime__, fills: __Fill_ctx__, \
-            target: __Type__, source: __Type__, value: __Checked_term__ \
+            _target: ., source: __Type__, value: __Checked_term__ \
           ) -> (__Checked_term__ & __Fill_ctx__) { \
-            (value, __fill__(ct, fills, target, source)) \
+            (value, __fill_result__(ct, fills, source)) \
           } \
         pub macro relay : [Target][Source] Source -> Target { impl(fills) relay_impl; };";
 
     const FINAL_SUCCESSOR_MACROS: &str = "module macros; \
         import __comptime__; \
-        type Optional_type = __Type__ | .; \
         pure fn identity_target_impl( \
-            _ct: __Comptime__, _a: Optional_type, \
+            _ct: __Comptime__, _a: __Type__, \
             _source: __Checked_term__, value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
         pub macro identity_target : [A] (A -> A) -> (A -> A) { impl identity_target_impl; }; \
         pure fn finish_impl( \
             _ct: __Comptime__, _source: __Type__, value: __Checked_term__, \
-            _target: Optional_type \
+            _target: . \
           ) -> __Checked_term__ { value } \
         pub macro finish : [Source] Source -> [Target] Target { impl finish_impl; }; \
         pure fn relay_impl( \
             _ct: __Comptime__, _source: __Type__, _source_value: __Checked_term__, \
-            _middle: __Type__, middle: __Checked_term__, _target: Optional_type \
+            _middle: __Type__, middle: __Checked_term__, _target: . \
           ) -> __Checked_term__ { middle } \
         pub macro relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl relay_impl; };";
 
@@ -24169,7 +23772,6 @@ fn generic_last() -> . {
 
     const CALL_SHAPE_PARITY_PROVIDER: &str = "module provider; \
         import __comptime__; \
-        type Optional_type = __Type__ | .; \
         pub fn ordinary[Source](_source: Source)[A](value: A) -> A { value } \
         pure fn required_impl( \
             _ct: __Comptime__, \
@@ -24179,14 +23781,6 @@ fn generic_last() -> . {
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
         pub macro required : [Source] Source -> [A] A -> A { impl required_impl; }; \
-        pure fn optional_impl( \
-            _ct: __Comptime__, \
-            _source: __Type__, \
-            _ignored: __Checked_term__, \
-            _a: Optional_type, \
-            value: __Checked_term__ \
-          ) -> __Checked_term__ { value } \
-        pub macro optional : [Source] Source -> [A] A -> A { impl optional_impl; }; \
         pub fn ordinary_phantom[Left][Right][Phantom](left: Left, right: Right) \
           -> Left & Right { (left, right) } \
         pure fn required_phantom_impl( \
@@ -24196,15 +23790,7 @@ fn generic_last() -> . {
             _phantom: __Type__, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub macro required_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl required_phantom_impl; }; \
-        pure fn optional_phantom_impl( \
-            _ct: __Comptime__, \
-            _left: __Type__, \
-            _right: __Type__, \
-            _phantom: Optional_type, \
-            value: __Checked_term__ \
-          ) -> __Checked_term__ { value } \
-        pub macro optional_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl optional_phantom_impl; };";
+        pub macro required_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl required_phantom_impl; };";
 
     fn source_span(source: &str, needle: &str) -> Span {
         let start = source.find(needle).expect("test expression is present");
@@ -24318,47 +23904,6 @@ fn generic_last() -> . {
             [CallArg::Type(Type::Infer { .. })]
         ));
         original
-    }
-
-    fn retained_field_access_at(package: &Package, module_path: &str, span: Span) -> Expr {
-        struct Finder {
-            span: Span,
-            found: Vec<Expr>,
-        }
-
-        impl crate::pass::visit_mut::TypecheckVisitMut<Lowered> for Finder {
-            fn visit_expr(&mut self, expr: &mut Expr) {
-                if matches!(
-                    expr,
-                    Expr::Elaborator {
-                        call: crate::ast::ElaboratorCall::FieldAccess { .. },
-                        ..
-                    }
-                ) && expr.span() == self.span
-                {
-                    self.found.push(expr.clone());
-                }
-                crate::pass::visit_mut::walk_expr(self, expr);
-            }
-        }
-
-        let mut module = package
-            .module(module_path)
-            .expect("test module exists")
-            .module
-            .clone();
-        let mut finder = Finder {
-            span,
-            found: Vec::new(),
-        };
-        crate::pass::visit_mut::TypecheckVisitMut::visit_module(&mut finder, &mut module);
-        assert_eq!(
-            finder.found.len(),
-            1,
-            "expected one retained field access at {span:?}, found {:#?}",
-            finder.found
-        );
-        finder.found.pop().expect("one retained field access")
     }
 
     fn check_retained_success(
@@ -24711,11 +24256,10 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn retained_initial_layer_optional_result_evaluates_once_and_closes_its_goal() {
+    fn retained_initial_layer_natural_result_evaluates_once_and_closes_its_goal() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
-            pure fn infer_unit_impl(ct: __Comptime__, _a: Optional_type) -> __Checked_term__ { \
+            pure fn infer_unit_impl(ct: __Comptime__, _a: .) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
             pub macro infer_unit : [A] . -> A { impl infer_unit_impl; };";
@@ -24742,14 +24286,13 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn optional_absence_requires_the_exact_result_binder() {
+    fn natural_result_does_not_erase_an_unrelated_phantom_binder() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn infer_unit_impl( \
                 ct: __Comptime__, \
-                _phantom: Optional_type, \
-                _result: Optional_type \
+                _phantom: __Type__, \
+                _result: . \
               ) -> __Checked_term__ { __term_unit__(ct) } \
             pub macro infer_unit : [Phantom][Result] . -> Result { impl infer_unit_impl; };";
         let main = "module main; \
@@ -24770,19 +24313,18 @@ fn generic_last() -> . {
         assert_eq!(
             scope.memo().user_macro_template_executions(),
             0,
-            "a phantom Optional slot must block evaluator execution"
+            "an unresolved required phantom slot must block evaluator execution"
         );
     }
 
     #[test]
-    fn optional_absence_rejects_a_binder_shadowed_before_the_result() {
+    fn natural_result_does_not_erase_a_shadowed_binder() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn infer_unit_impl( \
                 ct: __Comptime__, \
-                _outer: Optional_type, \
-                _inner: Optional_type \
+                _outer: __Type__, \
+                _inner: . \
               ) -> __Checked_term__ { __term_unit__(ct) } \
             pub macro infer_unit : [Shadowed] . -> [Shadowed] Shadowed { impl infer_unit_impl; };";
         let main = "module main; \
@@ -24796,7 +24338,7 @@ fn generic_last() -> . {
         assert_eq!(
             scope.memo().user_macro_template_executions(),
             0,
-            "an Optional slot shadowed before the result must block evaluator execution"
+            "an unresolved required slot shadowed before the result must block evaluator execution"
         );
         assert!(
             errors.iter().any(|error| {
@@ -24871,16 +24413,11 @@ fn generic_last() -> . {
                     macro_call.replace("MACRO", "required_phantom"),
                     true,
                 ),
-                (
-                    "Optional",
-                    macro_call.replace("MACRO", "optional_phantom"),
-                    true,
-                ),
             ] {
                 let case = format!("{callable} {form}");
                 let main = format!(
                     "module main; \
-                 import provider(ordinary_phantom, macro required_phantom, macro optional_phantom); \
+                 import provider(ordinary_phantom, macro required_phantom); \
                  host type I32 role(i32); \
                  host type String role(str); \
                  fn run() -> I32 & String {{ {call} }}"
@@ -24914,18 +24451,16 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn optional_macro_abi_cannot_generalize_an_unsolved_public_call() {
+    fn macro_abi_cannot_generalize_an_unsolved_public_call() {
         for (case, call, retained) in [
             ("ordinary prefix", "ordinary(0[I32])[_]", false),
             ("Required prefix", "required(0[I32])[_]", true),
-            ("Optional prefix", "optional(0[I32])[_]", true),
             ("ordinary UFCS", "(0[I32].>ordinary)[_]", false),
             ("Required UFCS", "(0[I32].>required)[_]", true),
-            ("Optional UFCS", "(0[I32].>optional)[_]", true),
         ] {
             let main = format!(
                 "module main; \
-                 import provider(ordinary, macro required, macro optional); \
+                 import provider(ordinary, macro required); \
                  host type I32 role(i32); \
                  fn run() -> . {{ let _residual = {call}; () }}"
             );
@@ -24937,11 +24472,7 @@ fn generic_last() -> . {
                 retained_staged_literal_call_within(
                     &package,
                     source_span(main.as_str(), call),
-                    if case.starts_with("Required") {
-                        "required"
-                    } else {
-                        "optional"
-                    },
+                    "required",
                 )
             });
             let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
@@ -24969,14 +24500,12 @@ fn generic_last() -> . {
         for (case, call, retained) in [
             ("ordinary prefix", "ordinary(0[I32])[_]", false),
             ("Required prefix", "required(0[I32])[_]", true),
-            ("Optional prefix", "optional(0[I32])[_]", true),
             ("ordinary UFCS", "(0[I32].>ordinary)[_]", false),
             ("Required UFCS", "(0[I32].>required)[_]", true),
-            ("Optional UFCS", "(0[I32].>optional)[_]", true),
         ] {
             let main = format!(
                 "module main; \
-                 import provider(ordinary, macro required, macro optional); \
+                 import provider(ordinary, macro required); \
                  host type I32 role(i32); \
                  fn consume[T](_function: T -> T, _value: T) -> . {{ () }} \
                  fn run() -> . {{ consume({call}, ()) }}"
@@ -24989,11 +24518,7 @@ fn generic_last() -> . {
                 retained_staged_literal_call_within(
                     &package,
                     source_span(main.as_str(), call),
-                    if case.starts_with("Required") {
-                        "required"
-                    } else {
-                        "optional"
-                    },
+                    "required",
                 )
             });
             let (checked, scope) = check_retained_success(&package);
@@ -25021,18 +24546,15 @@ fn generic_last() -> . {
     #[test]
     fn exact_polytype_inference_has_ordinary_macro_and_ufcs_parity() {
         let main = "module main; \
-            import provider(ordinary, macro required, macro optional); \
+            import provider(ordinary, macro required); \
             fn identity[A](value: A) -> A { value } \
             fn accept(_value: [A] A -> A) -> . { () } \
             fn ordinary_direct() -> . { accept(ordinary((), identity)) } \
             fn required_direct() -> . { accept(required((), identity)) } \
-            fn optional_direct() -> . { accept(optional((), identity)) } \
             fn ordinary_first() -> . { accept(().>ordinary(identity)) } \
             fn required_first() -> . { accept(().>required(identity)) } \
-            fn optional_first() -> . { accept(().>optional(identity)) } \
             fn ordinary_last() -> . { accept(identity.>>ordinary(())) } \
-            fn required_last() -> . { accept(identity.>>required(())) } \
-            fn optional_last() -> . { accept(identity.>>optional(())) }";
+            fn required_last() -> . { accept(identity.>>required(())) }";
         let package = lowered_package(&[
             ("provider.kio", CALL_SHAPE_PARITY_PROVIDER),
             ("main.kio", main),
@@ -25150,7 +24672,7 @@ fn generic_last() -> . {
             pub macro hkt_identity : [*F][A] F[A] -> F[A] { impl hkt_identity_impl; };";
         let main = "module main; \
             import macros(macro hkt_identity); \
-            newtype Box[A] : A { constructor mk_box; projector un_box; }; \
+            type { Box[A]: A { mk; get; }; }; \
             fn run(value: Box[.]) -> Box[.] { hkt_identity[Box][.](value) }";
         check_package_sources(&[macro_def, main])
             .expect("a named macro callable spine admits a higher-kinded binder");
@@ -25230,6 +24752,211 @@ fn generic_last() -> . {
         assert_terminal_public_layer_work(1, 1, 0, 1, 1, 0);
     }
 
+    const PRE_INPUT_MACROS: &str = "module macros; import __comptime__;
+        pure fn natural_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _result: .)
+            -> __Checked_term__ { value }
+        pub macro natural : [Source] Source -> [Result] Result { impl natural_impl }
+        pure fn marked_impl(_ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, value: __Checked_term__, _result: .)
+            -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+        pub macro marked : [Source] Source -> [Result] Result { impl(fills) marked_impl }
+        pure fn inspect_impl(_ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, value: __Checked_term__)
+            -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+        pub macro inspect : [Source] Source -> Source { impl(fills) inspect_impl }
+        pure fn contextual_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, _value: __Checked_term__, _body: __Checked_term__)
+            -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+        pub macro contextual : [Source] Source -> (Source -> .) -> . { impl(fills) contextual_impl }
+        pub macro contextual_first : [Source] (Source -> .) -> Source -> . { impl(fills) contextual_impl }
+        pure fn contextual_pair_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, _pair: __Checked_term__)
+            -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+        pub macro contextual_pair : [Source] (Source & (Source -> .)) -> . { impl(fills) contextual_pair_impl }
+        pub macro contextual_pair_first : [Source] ((Source -> .) & Source) -> . { impl(fills) contextual_pair_impl }
+        pub macro contextual_nested : [Source] (. & (Source & (Source -> .))) -> . { impl(fills) contextual_pair_impl }
+        pure fn fail_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, _value: __Checked_term__)
+            -> __Checked_term__ & __Fill_ctx__ { (__macro_error__(ct, \"outer failure\"[__Diagnostic_text__]), fills) }
+        pub macro fail : [Source] Source -> . { impl(fills) fail_impl }";
+
+    #[test]
+    fn fills_pre_input_completion_preserves_inline_and_let_results() {
+        for (expression, completed_sources, actions) in [
+            ("inspect(natural(()))", vec!["natural(())"], 2),
+            ("inspect(marked(()))", vec!["marked(())"], 2),
+            ("inspect(pass(marked(())))", vec!["pass(marked(()))"], 2),
+            (
+                "inspect(marked(natural(())))",
+                vec!["natural(())", "marked(natural(()))"],
+                3,
+            ),
+            (
+                "inspect((natural(identity))(()))",
+                vec!["(natural(identity))(())"],
+                2,
+            ),
+        ] {
+            for bound in [false, true] {
+                let initializer = expression
+                    .strip_prefix("inspect(")
+                    .unwrap()
+                    .strip_suffix(')')
+                    .unwrap();
+                let body = if bound {
+                    format!(
+                        "let input = {initializer}; let result = inspect(input); check_unit(result)"
+                    )
+                } else {
+                    format!("let result = {expression}; check_unit(result)")
+                };
+                let main = format!(
+                    "module main; import macros(macro natural, macro marked, macro inspect);
+                    fn identity(value: .) -> . {{ value }} fn pass[A](value: A) -> A {{ value }}
+                    host fn check_unit(value: .) -> .;
+                    fn run() -> . {{ {body} }}"
+                );
+                let package =
+                    lowered_package(&[("macros.kio", PRE_INPUT_MACROS), ("main.kio", &main)]);
+                let outer_source_span = if bound {
+                    None
+                } else {
+                    let original =
+                        retained_call_at(&package, "main", source_span(&main, expression));
+                    let Expr::UserMacro { stages, .. } = original else {
+                        panic!("the fixture retains its outer inspect call")
+                    };
+                    let sources = stages
+                        .iter()
+                        .flat_map(|stage| &stage.args)
+                        .filter_map(|arg| match arg {
+                            crate::ast::CallArg::Value(value) => Some(value.span()),
+                            crate::ast::CallArg::Type(_) => None,
+                        })
+                        .collect::<Vec<_>>();
+                    let [source] = sources.as_slice() else {
+                        panic!("inspect has exactly one authored input")
+                    };
+                    Some(*source)
+                };
+                crate::pass::typecheck_core::apply::fills::reset_pre_input_completions();
+                let (checked, scope) = check_retained_success(&package);
+                validate_substituted_package(checked.substituted())
+                    .expect("completed input is ordinary Prime");
+                assert_eq!(
+                    scope.memo().user_macro_template_executions(),
+                    actions,
+                    "{bound}: {expression}"
+                );
+                let completed =
+                    crate::pass::typecheck_core::apply::fills::take_pre_input_completions();
+                let expected = if bound {
+                    // The inner marked call still prepares its own nested input.
+                    if expression == "inspect(marked(natural(())))" {
+                        vec![source_span(&main, "natural(())")]
+                    } else {
+                        vec![]
+                    }
+                } else {
+                    completed_sources
+                        .iter()
+                        .map(|source| {
+                            if *source == initializer {
+                                outer_source_span
+                                    .expect("inline input retains its parsed source span")
+                            } else {
+                                source_span(&main, source)
+                            }
+                        })
+                        .collect()
+                };
+                assert_eq!(
+                    completed, expected,
+                    "each retained computed source finishes once: {body}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fills_pre_input_result_selects_a_contextual_header_without_entering_its_body() {
+        let callback = ".(value) { value }";
+        for call in [
+            format!("contextual(natural(()))({callback})"),
+            format!("contextual_first({callback})(natural(()))"),
+            format!("contextual_pair((natural(()), {callback}))"),
+            format!("contextual_pair_first(({callback}, natural(())))"),
+            format!("contextual_nested(((), (natural(()), {callback})))"),
+        ] {
+            let main = format!("module main; import macros(macro natural, macro contextual, macro contextual_first, macro contextual_pair, macro contextual_pair_first, macro contextual_nested);
+                fn run() -> . {{ {call} }}");
+            let package = lowered_package(&[("macros.kio", PRE_INPUT_MACROS), ("main.kio", &main)]);
+            let original = retained_call_at(&package, "main", source_span(&main, &call));
+            crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+            crate::pass::typecheck_core::apply::fills::reset_pre_input_completions();
+            let (checked, scope) = check_retained_success(&package);
+            assert_retained_call_published(checked.elaborations(), "main", &original);
+            assert_eq!(scope.memo().user_macro_template_executions(), 2);
+            assert_eq!(
+                crate::pass::typecheck_core::apply::fills::take_pre_input_completions(),
+                vec![source_span(&main, "natural(())")]
+            );
+            assert_eq!(
+                crate::pass::typecheck_core::apply::take_lambda_body_entries(),
+                vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
+                    span: source_span(&main, callback),
+                    macro_executions: 2,
+                }]
+            );
+            validate_substituted_package(checked.substituted())
+                .expect("contextual callback remains ordinary Prime");
+        }
+    }
+
+    #[test]
+    fn fills_pre_input_failure_rolls_back_after_one_inner_completion() {
+        let call = "fail(natural(()))";
+        let main = format!(
+            "module main; import macros(macro natural, macro fail); fn run() -> . {{ {call} }}"
+        );
+        let package = lowered_package(&[("macros.kio", PRE_INPUT_MACROS), ("main.kio", &main)]);
+        let original = retained_call_at(&package, "main", source_span(&main, call));
+        crate::pass::typecheck_core::apply::fills::reset_pre_input_completions();
+        let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
+        assert_eq!(errors.len(), 1, "{errors:#?}");
+        assert!(
+            matches!(&errors[0], Error::Macro(diagnostic) if diagnostic.message == "outer failure")
+        );
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::fills::take_pre_input_completions(),
+            vec![source_span(&main, "natural(())")]
+        );
+        assert_retained_call_unpublished(&elaborations, "main", &original);
+        assert_eq!(elaborations.type_resolution_count(), 0);
+        assert_eq!(elaborations.call_plan_count(), 0);
+    }
+
+    #[test]
+    fn fills_pre_input_cannot_borrow_a_result_from_the_outer_action() {
+        let macros = format!("{PRE_INPUT_MACROS};
+            pure fn force_impl(ct: __Comptime__, fills: __Fill_ctx__, ty: __Type__, _value: __Checked_term__)
+                -> __Checked_term__ & __Fill_ctx__ {{ (__term_unit__(ct), __fill__(ct, fills, ty, __type_unit__(ct))) }}
+            pub macro force : [Source] Source -> Source {{ impl(fills) force_impl }}");
+        for source in ["unknown()", "unknown_callback(.() { () })"] {
+            let call = format!("force({source})");
+            let main = format!(
+                "module main; import macros(macro force); host fn unknown[A]() -> A;
+                host fn unknown_callback[A](body: . -> .) -> A;
+                fn run() -> . {{ let result = {call}; () }}"
+            );
+            let package = lowered_package(&[("macros.kio", &macros), ("main.kio", &main)]);
+            let original = retained_call_at(&package, "main", source_span(&main, &call));
+            let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
+            assert_eq!(errors.len(), 1, "{source}: {errors:#?}");
+            assert!(matches!(&errors[0], Error::Type(_)), "{errors:#?}");
+            assert_eq!(scope.memo().user_macro_template_executions(), 0);
+            assert_retained_call_unpublished(&elaborations, "main", &original);
+            assert_eq!(elaborations.type_resolution_count(), 0);
+            assert_eq!(elaborations.call_plan_count(), 0);
+        }
+    }
+
     #[test]
     fn fills_rejects_an_open_ordinary_source_before_the_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
@@ -25246,20 +24973,15 @@ fn generic_last() -> . {
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         let error = errors
             .iter()
-            .find(|error| {
-                error
-                    .diagnostic()
-                    .message
-                    .contains("value source needs a complete type")
-            })
+            .find(|error| matches!(error, Error::Type(diagnostic)
+                if diagnostic.message == "cannot infer type argument `Source` from the available type information"))
             .unwrap_or_else(|| {
-                panic!("the open source must fail at pre-action eligibility: {errors:#?}")
+                panic!("the open source must remain underdetermined before the action: {errors:#?}")
             });
 
-        assert_eq!(
-            error.diagnostic().span,
-            source_span(main, "make(.() { () })")
-        );
+        // Ordinary completion fails at the public Source goal's call site
+        // before the source-local input eligibility check runs.
+        assert_eq!(error.diagnostic().span, original.span());
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(
             scope.memo().user_macro_template_executions(),
@@ -25429,17 +25151,12 @@ fn generic_last() -> . {
         );
         let error = errors
             .iter()
-            .find(|error| {
-                error
-                    .diagnostic()
-                    .message
-                    .contains("value source needs a complete type")
-            })
+            .find(|error| is_unresolved_fills_source(error))
             .unwrap_or_else(|| panic!("an ignored open recipe must fail eligibility: {errors:#?}"));
 
-        assert_eq!(
+        assert_span_covers(
             error.diagnostic().span,
-            source_span(main, "make(.() { () })")
+            source_span(main, "make(.() { () })"),
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
     }
@@ -25513,7 +25230,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_direct_qualified_field_source_preserves_owner_under_renamed_macro() {
+    fn fills_direct_qualified_nominal_source_preserves_owner_under_renamed_macro() {
         let macro_def = "module provider; \
             import __comptime__; import testapi(Bool); \
             pure fn relay_impl( \
@@ -25522,7 +25239,7 @@ fn generic_last() -> . {
             ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
             pub macro relay : [T] T -> Bool { impl(fills) relay_impl; };";
         for receiver in ["card", "identity(card)"] {
-            let call = format!("relay({receiver}.?{{chosen.flag}})");
+            let call = format!("relay(chosen.Flag.get({receiver}))");
             let main = format!(
                 "module main; \
                  import provider(macro relay); import testapi(Bool); \
@@ -25535,9 +25252,12 @@ fn generic_last() -> . {
                 ("testapi.kio", "module testapi; host type Bool role(bool);"),
                 (
                     "selected.kio",
-                    "module selected; import testapi(Bool); pub labels Card = { flag: Bool };",
+                    "module selected; import testapi(Bool); pub type { Flag: Bool { pub mk; pub get; }; }; pub type Card = Flag;",
                 ),
-                ("decoy.kio", "module decoy; pub labels Card = { flag: . };"),
+                (
+                    "decoy.kio",
+                    "module decoy; pub type { Flag: . { pub mk; pub get; }; }; pub type Card = Flag;",
+                ),
                 ("main.kio", main.as_str()),
             ];
             let parsed = sources
@@ -25545,20 +25265,21 @@ fn generic_last() -> . {
                 .map(|(path, source)| (PathBuf::from(path), parse(source).expect("parse source")))
                 .collect();
             let (modules, _) =
-                FullPipeline::lower_package(parsed, None).expect("lower qualified label package");
+                FullPipeline::lower_package(parsed, None).expect("lower qualified nominal package");
             let package = Package::build(Path::new(""), modules, None).expect("build package");
             package.resolve_imports().expect("resolve imports");
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             let (checked, scope) = check_retained_success(&package);
             assert_retained_call_published(checked.elaborations(), "main", &original);
-            validate_substituted_package(checked.substituted())
-                .expect("qualified field under an ordinary fills macro must remain valid Prime");
+            validate_substituted_package(checked.substituted()).expect(
+                "qualified nominal projector under an ordinary fills macro must remain valid Prime",
+            );
             assert_eq!(scope.memo().user_macro_template_executions(), 1);
         }
     }
 
     #[test]
-    fn fills_generic_call_result_requires_a_completed_source_boundary() {
+    fn fills_generic_call_result_completes_inline_or_at_a_let_boundary() {
         use crate::pass::typecheck_core::apply::fills::ProjectedLeafObservation as Leaf;
 
         struct Case {
@@ -25568,7 +25289,6 @@ fn generic_last() -> . {
             step: &'static str,
             producer: Option<u32>,
             body_execution: Option<usize>,
-            success: bool,
         }
 
         fn retained_value_arg_span(call: &Expr) -> Span {
@@ -25604,7 +25324,6 @@ fn generic_last() -> . {
                 step: ".(current: State) { advance(current) }",
                 producer: None,
                 body_execution: Some(0),
-                success: true,
             },
             Case {
                 label: "inline generic result with an explicit outer result",
@@ -25613,7 +25332,6 @@ fn generic_last() -> . {
                 step: ".(current: State) { advance(current) }",
                 producer: Some(0),
                 body_execution: Some(1),
-                success: true,
             },
             Case {
                 label: "inline generic result with only a concrete step result",
@@ -25624,7 +25342,6 @@ fn generic_last() -> . {
                 step: ".(current: State) -> State | Done { advance(current) }",
                 producer: Some(0),
                 body_execution: Some(1),
-                success: true,
             },
             Case {
                 label: "inline generic result with an omitted step result",
@@ -25634,8 +25351,7 @@ fn generic_last() -> . {
                 call: None,
                 step: ".(current: State) { advance(current) }",
                 producer: Some(0),
-                body_execution: None,
-                success: false,
+                body_execution: Some(0),
             },
         ];
 
@@ -25663,42 +25379,15 @@ fn generic_last() -> . {
                 projected_span,
             );
 
-            let action_executions = if case.success {
-                let (checked, scope) = check_retained_success(&package);
-                assert_retained_call_published(checked.elaborations(), "main", &original);
-                validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
-                    panic!("{} must survive Prime validation: {error:#?}", case.label)
-                });
-                scope.memo().user_macro_template_executions()
-            } else {
-                let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
-                assert_eq!(
-                    errors.len(),
-                    1,
-                    "{} must produce one eligibility diagnostic: {errors:#?}",
-                    case.label
-                );
-                let Error::Type(diagnostic) = &errors[0] else {
-                    panic!("{} must produce a type diagnostic: {errors:#?}", case.label)
-                };
-                assert_eq!(diagnostic.span, projected_span);
-                assert_eq!(
-                    diagnostic.message,
-                    "this value source needs a complete type before an `impl(fills)` macro can run"
-                );
-                assert_eq!(
-                    diagnostic.help(),
-                    Some(
-                        "add a type argument or annotation, or complete the value in an ordinary `let` first"
-                    )
-                );
-                assert_retained_call_unpublished(&elaborations, "main", &original);
-                scope.memo().user_macro_template_executions()
-            };
+            let (checked, scope) = check_retained_success(&package);
+            assert_retained_call_published(checked.elaborations(), "main", &original);
+            validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
+                panic!("{} must survive Prime validation: {error:#?}", case.label)
+            });
             assert_eq!(
-                action_executions,
-                if case.success { 1 } else { 0 },
-                "{} crossed the action boundary at the wrong time",
+                scope.memo().user_macro_template_executions(),
+                1,
+                "{} evaluates its observer once",
                 case.label
             );
             assert_eq!(
@@ -25755,17 +25444,12 @@ fn generic_last() -> . {
         );
         let error = errors
             .iter()
-            .find(|error| {
-                error
-                    .diagnostic()
-                    .message
-                    .contains("value source needs a complete type")
-            })
+            .find(|error| is_unresolved_fills_source(error))
             .unwrap_or_else(|| panic!("the later open source must fail eligibility: {errors:#?}"));
 
-        assert_eq!(
+        assert_span_covers(
             error.diagnostic().span,
-            source_span(main, "make(.() { () })")
+            source_span(main, "make(.() { () })"),
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
     }
@@ -25824,7 +25508,7 @@ fn generic_last() -> . {
         for shape in ["A", "Box[A]", "A & .", ". -> A"] {
             let macro_def = format!(
                 "module macros; import __comptime__; \
-                 pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
+                 pub type {{ Box[A]: A {{ mk; get; }}; }}; \
                  pub type Shape[A] = {shape}; \
                  pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                    target: __Type__, _value: __Checked_term__) \
@@ -25864,7 +25548,7 @@ fn generic_last() -> . {
         for shape in ["A", "Box[A]"] {
             let macro_def = format!(
                 "module macros; import __comptime__; \
-                 pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
+                 pub type {{ Box[A]: A {{ mk; get; }}; }}; \
                  pub type Shape[A] = {shape}; \
                  pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                    target: __Type__, _value: __Checked_term__) \
@@ -25887,6 +25571,24 @@ fn generic_last() -> . {
         }
     }
 
+    fn is_unresolved_fills_source(error: &Error) -> bool {
+        let Error::Type(diagnostic) = error else {
+            return false;
+        };
+        diagnostic
+            .message
+            .contains("value source needs a complete type")
+            || (diagnostic.message.contains("cannot infer type argument")
+                && diagnostic.message.contains("available type information"))
+    }
+
+    fn assert_span_covers(actual: Span, source: Span) {
+        assert!(
+            actual.start <= source.start && actual.end >= source.end,
+            "diagnostic {actual:?} must cover source {source:?}"
+        );
+    }
+
     fn assert_fills_source_rejected_before_action(
         package: &Package,
         main: &str,
@@ -25897,14 +25599,9 @@ fn generic_last() -> . {
         let (elaborations, scope, errors) = check_retained_module_error(package, "main");
         let error = errors
             .iter()
-            .find(|error| {
-                error
-                    .diagnostic()
-                    .message
-                    .contains("value source needs a complete type")
-            })
+            .find(|error| is_unresolved_fills_source(error))
             .unwrap_or_else(|| panic!("{source} must fail eligibility: {errors:#?}"));
-        assert_eq!(error.diagnostic().span, source_span(main, source));
+        assert_span_covers(error.diagnostic().span, source_span(main, source));
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
@@ -25961,7 +25658,7 @@ fn generic_last() -> . {
     fn fills_rejects_a_producer_with_a_known_nominal_shell_and_open_interior() {
         let macro_def = "module macros; \
             import __comptime__; \
-            pub newtype Box[A] : A { constructor mk_box; projector un_box; }; \
+            pub type { Box[A]: A { mk; get; }; }; \
             pure fn ignore_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               a: __Type__, _value: __Checked_term__ \
@@ -25982,19 +25679,14 @@ fn generic_last() -> . {
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         let error = errors
             .iter()
-            .find(|error| {
-                error
-                    .diagnostic()
-                    .message
-                    .contains("value source needs a complete type")
-            })
+            .find(|error| is_unresolved_fills_source(error))
             .unwrap_or_else(|| {
                 panic!("a nominal source with an open interior must fail: {errors:#?}")
             });
 
-        assert_eq!(
+        assert_span_covers(
             error.diagnostic().span,
-            source_span(main, "boxed(.() { () })")
+            source_span(main, "boxed(.() { () })"),
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(scope.memo().user_macro_template_executions(), 0);
@@ -26029,7 +25721,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_completes_a_bounded_computed_field_source_before_the_action() {
+    fn fills_completes_a_bounded_nominal_projector_source_before_the_action() {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
@@ -26040,19 +25732,18 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro inspect); \
             host type String role(str); \
-            labels { lookup[P]: String -> (P | .) }; \
+            type { Lookup[P]: String -> (P | .) { pub mk; pub get; }; }; \
             type Surface[P] = Lookup[P]; \
             fn run[P](surface: Surface[P], name: String) -> . { \
-              inspect(surface.?{lookup}(name)) \
+              inspect(Lookup.get(surface)(name)) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect(surface.?{lookup}(name))"),
+            source_span(main, "inspect(Lookup.get(surface)(name))"),
         );
-        let field =
-            retained_field_access_at(&package, "main", source_span(main, "surface.?{lookup}"));
+        let getter_span = source_span(main, "Lookup.get(surface)");
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26060,29 +25751,29 @@ fn generic_last() -> . {
                 .elaborations()
                 .elaboration_for("main", &original)
                 .is_some(),
-            "the fills action must publish after its computed field source closes"
+            "the fills action must publish after its computed nominal source closes"
         );
         assert!(
             checked
                 .elaborations()
-                .elaboration_for("main", &field)
+                .position_index()
+                .type_at("main", getter_span)
                 .is_some(),
-            "the field access must publish exactly with its enclosing retained call"
+            "the nominal projector must publish its type with the enclosing retained call"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
-            .expect("a completed computed-field source survives standalone Prime validation");
+            .expect("a completed computed nominal source survives standalone Prime validation");
     }
 
     #[test]
-    fn fills_projects_a_pending_computed_receiver_header_and_checks_its_body() {
+    fn fills_completes_a_computed_nominal_source_and_checks_its_body() {
         let declarations = "module main; import macros(macro observe); \
-            host type Bool role(bool); labels Record = { flag: Bool }; \
-            fn record(value: Bool) -> Record { {flag = value} } \
+            host type Bool role(bool); type { Flag: Bool { pub mk; pub get; }; }; type Record = Flag; \
+            fn record(value: Bool) -> Record { Flag.mk(value) } \
             fn produced[A](make: . -> A) -> A { make(()) } \
             fn identity[A](value: A) -> A { value }";
-        let call =
-            "observe(identity(produced(.() -> Record { observe(value); record(value) }).?{flag}))";
+        let call = "observe(Flag.get(identity(produced(.() -> Record { observe(value); record(value) }))))";
         let main = format!("{declarations} fn run(value: Bool) -> . {{ {call} }}");
         let package = lowered_package(&[
             ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
@@ -26101,10 +25792,10 @@ fn generic_last() -> . {
         );
         assert_retained_call_published(checked.elaborations(), "main", &original);
         validate_substituted_package(checked.substituted())
-            .expect("the projected field receiver remains valid Prime");
+            .expect("the computed nominal source remains valid Prime");
 
         let bad_lambda = ".() -> Record { observe(value); () }";
-        let bad_call = format!("observe(identity(produced({bad_lambda}).?{{flag}}))");
+        let bad_call = format!("observe(Flag.get(identity(produced({bad_lambda}))))");
         let bad_main = format!("{declarations} fn run(value: Bool) -> . {{ {bad_call} }}");
         let bad_package = lowered_package(&[
             ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
@@ -26135,7 +25826,8 @@ fn generic_last() -> . {
             }],
         );
 
-        let open_call = "observe(unknown().?{flag})";
+        // A generic open source remains unpublishable independently of projector typing.
+        let open_call = "observe(unknown())";
         let open_main =
             format!("{declarations} host fn unknown[A]() -> A; fn run() -> . {{ {open_call} }}");
         let open_package = lowered_package(&[
@@ -26156,7 +25848,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_rejects_a_pending_computed_field_source_without_publication() {
+    fn fills_rejects_a_pending_nominal_projector_source_without_publication() {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
@@ -26168,50 +25860,66 @@ fn generic_last() -> . {
             import macros(macro inspect); \
             host type String role(str); \
             host fn make[A]() -> A; \
-            labels { identity: [A] A -> A }; \
+            type { Identity: [A] A -> A { pub mk; pub get; }; }; \
             type Surface = Identity; \
             fn run(surface: Surface) -> . { \
-              inspect(surface.?{identity}(make())) \
+              inspect(Identity.get(surface)(make())) \
             }";
-        let source = "surface.?{identity}(make())";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect(surface.?{identity}(make()))"),
+            source_span(main, "inspect(Identity.get(surface)(make()))"),
         );
-        let field =
-            retained_field_access_at(&package, "main", source_span(main, "surface.?{identity}"));
+        let getter_span = source_span(main, "Identity.get(surface)");
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
-        assert_eq!(errors.len(), 1, "pending field source errors: {errors:#?}");
-        let Error::Type(diagnostic) = &errors[0] else {
-            panic!("a pending computed-field source must be a Type error: {errors:#?}")
-        };
-        assert_eq!(diagnostic.span, source_span(main, source));
-        assert!(
-            diagnostic
-                .message
-                .contains("value source needs a complete type")
-        );
         assert_eq!(
-            diagnostic
-                .extra
-                .as_ref()
-                .and_then(|extra| extra.help.as_deref()),
-            Some(
-                "add a type argument or annotation, or complete the value in an ordinary `let` first"
-            )
+            errors.len(),
+            1,
+            "pending nominal source errors: {errors:#?}"
+        );
+        let Error::Type(diagnostic) = &errors[0] else {
+            panic!("a pending computed nominal source must be a Type error: {errors:#?}")
+        };
+        // The public macro type argument remains open, so ordinary goal closure
+        // reports it at the macro call before a source-eligibility check.
+        assert_eq!(diagnostic.span, original.span());
+        assert_eq!(
+            diagnostic.message,
+            "cannot infer type argument `T` from the available type information"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert!(
-            elaborations.elaboration_for("main", &field).is_none(),
-            "a rejected computed-field source published its field replacement"
+            elaborations
+                .position_index()
+                .type_at("main", getter_span)
+                .is_none(),
+            "a rejected computed source published its nominal projector type"
         );
+
+        let good_main = main.replace(
+            "Identity.get(surface)(make())",
+            "Identity.get(surface)(\"ok\"[String])",
+        );
+        let good_package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &good_main)]);
+        let good_getter_span = source_span(&good_main, "Identity.get(surface)");
+        let (good_checked, good_scope) = check_retained_success(&good_package);
+        assert_eq!(good_scope.memo().user_macro_template_executions(), 1);
+        assert!(
+            good_checked
+                .elaborations()
+                .position_index()
+                .type_at("main", good_getter_span)
+                .is_some(),
+            "the completed control must publish the same projector type"
+        );
+        validate_substituted_package(good_checked.substituted())
+            .expect("the completed control survives standalone Prime validation");
     }
 
     #[test]
-    fn fills_rolls_back_a_completed_field_source_when_a_later_source_fails() {
+    fn fills_rolls_back_a_completed_nominal_projector_source_when_a_later_source_fails() {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
@@ -26222,10 +25930,10 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro inspect_two); \
             host type String role(str); \
-            labels { lookup[P]: String -> (P | .) }; \
+            type { Lookup[P]: String -> (P | .) { pub mk; pub get; }; }; \
             type Surface[P] = Lookup[P]; \
             fn run[P](surface: Surface[P], name: String) -> . { \
-              inspect_two(surface.?{lookup}(name))(\"wrong\"[String]) \
+              inspect_two(Lookup.get(surface)(name))(\"wrong\"[String]) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
@@ -26233,11 +25941,10 @@ fn generic_last() -> . {
             "main",
             source_span(
                 main,
-                "inspect_two(surface.?{lookup}(name))(\"wrong\"[String])",
+                "inspect_two(Lookup.get(surface)(name))(\"wrong\"[String])",
             ),
         );
-        let field =
-            retained_field_access_at(&package, "main", source_span(main, "surface.?{lookup}"));
+        let getter_span = source_span(main, "Lookup.get(surface)");
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(errors.len(), 1, "later-source errors: {errors:#?}");
         let Error::Type(diagnostic) = &errors[0] else {
@@ -26251,8 +25958,11 @@ fn generic_last() -> . {
         assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert!(
-            elaborations.elaboration_for("main", &field).is_none(),
-            "a completed earlier field source escaped a later-source failure"
+            elaborations
+                .position_index()
+                .type_at("main", getter_span)
+                .is_none(),
+            "a completed earlier projector type escaped a later-source failure"
         );
     }
 
@@ -26485,16 +26195,15 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn retained_mixed_terminal_slots_accept_known_required_and_infer_optional() {
+    fn retained_mixed_terminal_slots_accept_known_required_and_infer_natural() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 value: __Checked_term__, \
                 _a: __Type__, \
-                _b: Optional_type \
+                _b: . \
               ) -> __Checked_term__ { value } \
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
@@ -26515,7 +26224,7 @@ fn generic_last() -> . {
                 .elaborations()
                 .elaboration_for("main", &original)
                 .is_some(),
-            "known A and inferred Optional B must publish the action"
+            "known A and inferred natural B must publish the action"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
@@ -26526,13 +26235,12 @@ fn generic_last() -> . {
     fn retained_mixed_terminal_required_infer_rejects_before_evaluation() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 value: __Checked_term__, \
                 _a: __Type__, \
-                _b: Optional_type \
+                _b: . \
               ) -> __Checked_term__ { value } \
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
@@ -26567,13 +26275,12 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 value: __Checked_term__, \
                 _a: __Type__, \
-                _b: Optional_type \
+                _b: . \
               ) -> __Checked_term__ { value } \
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
@@ -26609,12 +26316,11 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn shadow_impl( \
                 ct: __Comptime__, \
                 _source: __Type__, \
                 _value: __Checked_term__, \
-                _target: Optional_type \
+                _target: . \
               ) -> __Checked_term__ { __term_unit__(ct) } \
             pub macro shadow : [A] A -> [A] A { impl shadow_impl; };";
         let main = "module main; \
@@ -26642,7 +26348,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn retained_terminal_optional_explicit_infer_executes_without_an_expected_type() {
+    fn retained_terminal_natural_explicit_infer_executes_without_an_expected_type() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
@@ -26664,12 +26370,12 @@ fn generic_last() -> . {
                     .type_at("main", original.span()),
                 Some(Type::Unit { .. })
             ),
-            "the checked action result must close the explicit optional target"
+            "the checked action result must close the explicit natural target"
         );
         assert_eq!(
             scope.memo().user_macro_template_executions(),
             1,
-            "the optional target must remain open until the Late action executes"
+            "the natural target must remain open until the Late action executes"
         );
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
         assert_final_macro_successor_work(0, 0, 0, 0);
@@ -26688,14 +26394,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn nested_target_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 _source_value: __Checked_term__, \
                 _middle: __Type__, \
                 middle: __Checked_term__, \
-                _target: Optional_type \
+                _target: . \
               ) -> __Checked_term__ { middle } \
             pub macro nested_target : [Source] Source -> [Middle] Middle -> [Target] Target { impl nested_target_impl; };";
         let main = "module main; \
@@ -26903,14 +26608,13 @@ fn generic_last() -> . {
     fn failed_nested_terminal_successor_rolls_back_without_evaluation() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn missing_terminal_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 _source_value: __Checked_term__, \
                 _middle: __Type__, \
                 middle: __Checked_term__, \
-                _a: Optional_type, \
+                _a: ., \
                 _b: __Type__ \
               ) -> __Checked_term__ { middle } \
             pub macro missing_terminal : [Source] Source -> [Middle] Middle -> [A] [B] A { impl missing_terminal_impl; };";
@@ -27064,10 +26768,8 @@ fn generic_last() -> . {
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let (error, scope) = check_retained_error_with_scope(&package);
-        assert!(
-            error.diagnostic().message.contains("needs a complete type"),
-            "{error:?}"
-        );
+        assert!(is_unresolved_fills_source(&error), "{error:?}");
+        assert_span_covers(error.diagnostic().span, source_span(main, "factory()"));
         assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
     }
@@ -27346,10 +27048,10 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_computed_tuple_callbacks_preserve_failure_boundaries() {
-        for (lambda, action_executions) in [
-            (".() { seed }", 0),
-            (".() -> _ { seed }", 0),
-            (".() -> State { () }", 1),
+        for (lambda, completed) in [
+            (".() { seed }", true),
+            (".() -> _ { seed }", true),
+            (".() -> State { () }", false),
         ] {
             for source in [
                 format!("(produce({lambda}), seed)"),
@@ -27367,38 +27069,36 @@ fn generic_last() -> . {
                 ]);
                 let original = retained_call_at(&package, "main", source_span(&main, &call));
                 crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+                if completed {
+                    let (checked, scope) = check_retained_success(&package);
+                    assert_eq!(scope.memo().user_macro_template_executions(), 1);
+                    assert_eq!(
+                        crate::pass::typecheck_core::apply::take_lambda_body_entries(),
+                        vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
+                            span: source_span(&main, lambda),
+                            macro_executions: 0,
+                        }]
+                    );
+                    assert_retained_call_published(checked.elaborations(), "main", &original);
+                    validate_substituted_package(checked.substituted())
+                        .expect("computed tuple remains ordinary Prime");
+                    continue;
+                }
                 let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
                 assert_eq!(errors.len(), 1, "{errors:#?}");
-                assert!(
-                    errors[0]
-                        .diagnostic()
-                        .message
-                        .contains(if action_executions == 0 {
-                            "needs a complete type"
-                        } else {
-                            "type mismatch"
-                        })
-                );
+                assert!(errors[0].diagnostic().message.contains("type mismatch"));
+                assert_eq!(scope.memo().user_macro_template_executions(), 1);
                 assert_eq!(
-                    scope.memo().user_macro_template_executions(),
-                    action_executions
-                );
-                let expected_entries = if action_executions == 0 {
-                    vec![]
-                } else {
+                    crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                     vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                         span: source_span(&main, lambda),
                         macro_executions: 1,
                     }]
-                };
-                assert_eq!(
-                    crate::pass::typecheck_core::apply::take_lambda_body_entries(),
-                    expected_entries,
                 );
                 assert_retained_call_unpublished(&elaborations, "main", &original);
                 assert_eq!(elaborations.type_resolution_count(), 0);
                 assert_eq!(elaborations.call_plan_count(), 0);
-                assert!(elaborations.fn_param_types.is_empty());
+                assert!(elaborations.fn_signature_types.is_empty());
                 assert!(elaborations.literal_resolutions.is_empty());
             }
         }
@@ -27463,7 +27163,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_written_callback_missing_annotations_do_not_enter_body_or_action() {
+    fn fills_completes_computed_callbacks_with_inferred_headers_before_action() {
         for lambda in [
             ".(state: State) { advance(state) }",
             ".(state: State) -> _ { advance(state) }",
@@ -27483,19 +27183,18 @@ fn generic_last() -> . {
             ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
-            let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
-            assert_eq!(errors.len(), 1, "{errors:#?}");
-            assert!(
-                errors[0]
-                    .diagnostic()
-                    .message
-                    .contains("needs a complete type")
+            let (checked, scope) = check_retained_success(&package);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
+            assert_eq!(
+                crate::pass::typecheck_core::apply::take_lambda_body_entries(),
+                vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
+                    span: source_span(&main, lambda),
+                    macro_executions: 0,
+                }]
             );
-            assert_eq!(scope.memo().user_macro_template_executions(), 0);
-            assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
-            assert_retained_call_unpublished(&elaborations, "main", &original);
-            assert_eq!(elaborations.type_resolution_count(), 0);
-            assert_eq!(elaborations.call_plan_count(), 0);
+            assert_retained_call_published(checked.elaborations(), "main", &original);
+            validate_substituted_package(checked.substituted())
+                .expect("inferred callback remains ordinary Prime");
         }
     }
 
@@ -27531,7 +27230,7 @@ fn generic_last() -> . {
             assert_retained_call_unpublished(&elaborations, "main", &original);
             assert_eq!(elaborations.type_resolution_count(), 0);
             assert_eq!(elaborations.call_plan_count(), 0);
-            assert!(elaborations.fn_param_types.is_empty());
+            assert!(elaborations.fn_signature_types.is_empty());
             assert!(elaborations.literal_resolutions.is_empty());
             if producer.starts_with("identity") {
                 assert!(
@@ -27602,7 +27301,7 @@ fn generic_last() -> . {
         assert_retained_call_unpublished(&elaborations, "main", &bad_call);
         assert_eq!(elaborations.type_resolution_count(), 0);
         assert_eq!(elaborations.call_plan_count(), 0);
-        assert!(elaborations.fn_param_types.is_empty());
+        assert!(elaborations.fn_signature_types.is_empty());
         assert!(elaborations.literal_resolutions.is_empty());
         crate::pass::typecheck_core::check_fn_def(
             functions[1].1,
@@ -27657,7 +27356,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_written_callback_header_pass_suspends_outer_nested_macro() {
+    fn fills_completes_nested_macro_input_after_its_public_header_pass() {
         let macro_def = format!(
             "{WRITTEN_CALLBACK_OBSERVER}; \
              pure fn relay_impl(_ct: __Comptime__, fills: __Fill_ctx__, \
@@ -27678,55 +27377,23 @@ fn generic_last() -> . {
         let original = retained_call_at(&package, "main", source_span(&main, &call));
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         crate::pass::typecheck_core::apply::reset_public_header_work();
-        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-        let scope =
-            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                &normalized,
-                std::sync::Arc::new(
-                    crate::pass::typecheck_core::TypeInterner::<Lowered>::default(),
-                ),
-            );
-        let package = normalized.package();
-        let module = &package.module("main").expect("main module").module;
-        let env = crate::pass::typecheck_core::ModuleEnv::build_with_typecheck_scope(
-            module,
-            None,
-            None,
-            Some(package),
-            scope.clone(),
-        )
-        .expect("the selected root uses its ordinary package environment");
-        let (index, function) = module
-            .items
-            .iter()
-            .enumerate()
-            .find_map(|(index, item)| match item {
-                Item::FnDef(function) if function.name == "run" => Some((index, function)),
-                _ => None,
-            })
-            .expect("the authored run root exists");
-        let mut elaborations = Elaborations::new();
-        let errors = vec![
-            crate::pass::typecheck_core::check_fn_def(function, index, &env, &mut elaborations)
-                .expect_err("the retained outer nested action stays suspended"),
-        ];
-        assert_eq!(errors.len(), 1, "{errors:#?}");
-        assert!(
-            errors[0]
-                .diagnostic()
-                .message
-                .contains("needs a complete type")
-        );
+        let (checked, scope) = check_retained_success(&package);
         assert!(crate::pass::typecheck_core::apply::public_header_work().blocked_macros > 0);
-        assert_eq!(scope.memo().user_macro_template_executions(), 0);
-        assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
-        assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(elaborations.type_resolution_count(), 0);
-        assert_eq!(elaborations.call_plan_count(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::take_lambda_body_entries(),
+            vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
+                span: source_span(&main, lambda),
+                macro_executions: 1,
+            }]
+        );
+        assert_retained_call_published(checked.elaborations(), "main", &original);
+        validate_substituted_package(checked.substituted())
+            .expect("nested completion remains ordinary Prime");
     }
 
     #[test]
-    fn fills_written_callback_header_pass_does_not_enter_immediate_or_nested_action() {
+    fn fills_completed_input_preserves_closed_header_body_order() {
         let macro_def = format!(
             "{WRITTEN_CALLBACK_OBSERVER}; \
              pure fn relay_impl(_ct: __Comptime__, fills: __Fill_ctx__, \
@@ -27734,12 +27401,18 @@ fn generic_last() -> . {
                  {{ (value, fills) }}; \
              pub macro relay : [Source] Source -> Source {{ impl(fills) relay_impl }}"
         );
-        for (lambda, producer, actions) in [
-            (".(state: State) -> Done { finish() }", "(LAMBDA)(seed)", 0),
+        for (lambda, producer, actions, body_actions) in [
+            (
+                ".(state: State) -> Done { finish() }",
+                "(LAMBDA)(seed)",
+                1,
+                0,
+            ),
             (
                 ".(state: State) -> State | Done { relay(advance(state)) }",
                 "dispatch(LAMBDA, seed)",
                 2,
+                1,
             ),
         ] {
             let call = format!("observe({})", producer.replace("LAMBDA", lambda));
@@ -27751,22 +27424,15 @@ fn generic_last() -> . {
             );
             let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
-            if actions == 0 {
-                let (error, scope) = check_retained_error_with_scope(&package);
-                assert!(error.diagnostic().message.contains("needs a complete type"));
-                assert_eq!(scope.memo().user_macro_template_executions(), 0);
-                assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
-                continue;
-            }
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(scope.memo().user_macro_template_executions(), actions);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, lambda),
-                    macro_executions: 1,
+                    macro_executions: body_actions,
                 }],
-                "the outer action precedes the body and its nested action",
+                "computed completion preserves the accepted closed-header body order",
             );
             validate_substituted_package(checked.substituted()).expect("ordinary Prime result");
         }
@@ -27956,7 +27622,7 @@ fn generic_last() -> . {
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(elaborations.type_resolution_count(), 0);
         assert_eq!(elaborations.call_plan_count(), 0);
-        assert!(elaborations.fn_param_types.is_empty());
+        assert!(elaborations.fn_signature_types.is_empty());
         assert!(elaborations.literal_resolutions.is_empty());
     }
 
@@ -28272,21 +27938,32 @@ fn generic_last() -> . {
             spans
         }
 
-        fn retained_value_arg_span(call: &Expr, value_index: usize) -> Span {
+        fn retained_match_packet_spans(call: &Expr) -> (Span, Span) {
             let Expr::UserMacro { stages, .. } = call else {
                 panic!("the causal match call lost its retained macro form")
             };
-            stages
+            let [stage] = stages.as_slice() else {
+                panic!("the causal match call must have one written packet stage")
+            };
+            let [crate::ast::CallArg::Value(packet)] = stage.args.as_slice() else {
+                panic!("the causal match call must retain one whole value packet")
+            };
+            let Expr::Call { callee, args, .. } = packet else {
+                panic!("the causal match packet must be an ordinary pair")
+            };
+            assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+                if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__")));
+            let values = args
                 .iter()
-                .flat_map(|stage| &stage.args)
                 .filter_map(|arg| match arg {
-                    crate::ast::CallArg::Value(value) => Some(value.span()),
+                    crate::ast::CallArg::Value(value) => Some(value),
                     crate::ast::CallArg::Type(_) => None,
                 })
-                .nth(value_index)
-                .unwrap_or_else(|| {
-                    panic!("the causal match call lost value argument {value_index}")
-                })
+                .collect::<Vec<_>>();
+            let [_source, clauses] = values.as_slice() else {
+                panic!("the causal match packet must keep source and whole clauses distinct")
+            };
+            (packet.span(), clauses.span())
         }
 
         fn assert_lambda_entries(
@@ -28309,14 +27986,6 @@ fn generic_last() -> . {
                     .collect::<Vec<_>>(),
                 expected_executions,
                 "{label} entered its lambda bodies on the wrong side of match evaluation"
-            );
-        }
-
-        fn assert_no_main_lambda_entries(label: &str) {
-            let entries = crate::pass::typecheck_core::apply::take_lambda_body_entries();
-            assert!(
-                entries.is_empty(),
-                "{label} unexpectedly entered inline lambda bodies: {entries:#?}"
             );
         }
 
@@ -28347,7 +28016,7 @@ fn generic_last() -> . {
         ) {
             let spanned_source = add_macro_imports(source);
             let original = retained_call_at(package, "main", source_span(&spanned_source, call));
-            let projected_span = retained_value_arg_span(&original, 1);
+            let (projected_span, _) = retained_match_packet_spans(&original);
             reset_observations(projected_span);
             let (checked, scope) = check_retained_success(package);
 
@@ -28374,50 +28043,6 @@ fn generic_last() -> . {
             });
         }
 
-        fn assert_incomplete_source_failure(
-            label: &str,
-            package: &Package,
-            source: &str,
-            call: &str,
-        ) {
-            let spanned_source = add_macro_imports(source);
-            let original = retained_call_at(package, "main", source_span(&spanned_source, call));
-            let projected_span = retained_value_arg_span(&original, 1);
-            reset_observations(projected_span);
-            let (elaborations, scope, errors) = check_retained_module_error(package, "main");
-            let source_error = errors
-                .iter()
-                .find(|error| {
-                    error
-                        .diagnostic()
-                        .message
-                        .contains("value source needs a complete type")
-                })
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{label} must expose the opaque incomplete source before evaluation: {errors:#?}"
-                    )
-                });
-            assert_eq!(source_error.diagnostic().span, projected_span);
-            assert_eq!(
-                scope.memo().user_macro_template_executions(),
-                0,
-                "{label} must fail before match evaluation"
-            );
-            assert_retained_call_unpublished(&elaborations, "main", &original);
-            assert!(
-                crate::pass::typecheck_core::apply::fills::take_projected_source_observations()
-                    .is_empty(),
-                "{label} must reject before reserving an opaque projected source"
-            );
-            assert_eq!(
-                crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
-                0,
-                "{label} must not finalize a pair wrapper"
-            );
-            assert_no_main_lambda_entries(label);
-        }
-
         let left = ".(_left: Left) { identity_i32 }";
         let right = ".(_right: Right) { identity_i32 }";
         let common = "host type Left; host type Right; host type I32 role(i32); \
@@ -28441,8 +28066,12 @@ fn generic_last() -> . {
             &canonical_call,
             &[left, right],
             &[1, 1],
-            vec![leaf(&[0], 1, Some(0)), leaf(&[1], 2, Some(1))],
-            1,
+            vec![
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, Some(0)),
+                leaf(&[1, 1], 2, Some(1)),
+            ],
+            2,
         );
 
         let bypass_spanned_source = add_macro_imports(&canonical_source);
@@ -28451,7 +28080,8 @@ fn generic_last() -> . {
             "main",
             source_span(&bypass_spanned_source, &canonical_call),
         );
-        let bypass_projected_span = retained_value_arg_span(&bypass_original, 1);
+        let (bypass_projected_span, bypass_clauses_span) =
+            retained_match_packet_spans(&bypass_original);
 
         reset_observations(bypass_projected_span);
         let (baseline_elaborations, baseline_scope, baseline_result) =
@@ -28462,11 +28092,15 @@ fn generic_last() -> . {
         assert_source_topology(
             "certified canonical pair from FinalPreflight",
             bypass_projected_span,
-            vec![leaf(&[0], 1, Some(0)), leaf(&[1], 2, Some(1))],
+            vec![
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, Some(0)),
+                leaf(&[1, 1], 2, Some(1)),
+            ],
         );
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
-            1
+            2
         );
         assert_lambda_entries(
             "certified canonical pair from FinalPreflight",
@@ -28478,36 +28112,33 @@ fn generic_last() -> . {
         reset_observations(bypass_projected_span);
         let bypass = crate::pass::typecheck_core::apply::fills::disable_pair_transparency_at(
             "main",
-            bypass_projected_span,
+            bypass_clauses_span,
         );
         let (bypass_elaborations, bypass_scope, bypass_result) =
             check_retained_function_from_final_preflight(&canonical_package, "main", "run");
-        let bypass_error =
-            bypass_result.expect_err("the certificate-free pending pair must be incomplete");
-        assert!(
-            bypass_error
-                .diagnostic()
-                .message
-                .contains("value source needs a complete type"),
-            "the bypass must expose the incomplete source: {bypass_error:#?}"
-        );
-        assert_eq!(bypass_error.diagnostic().span, bypass_projected_span);
-        assert_eq!(bypass_scope.memo().user_macro_template_executions(), 0);
-        assert_retained_call_unpublished(&bypass_elaborations, "main", &bypass_original);
+        bypass_result.expect("the independent opaque clause pair must complete before match");
+        assert_eq!(bypass_scope.memo().user_macro_template_executions(), 1);
+        assert_retained_call_published(&bypass_elaborations, "main", &bypass_original);
         assert_source_topology(
-            "certificate-bypassed canonical pair",
+            "certificate-bypassed independent pair",
             bypass_projected_span,
-            vec![leaf(&[], 1, Some(0))],
+            vec![leaf(&[0], 0, None), leaf(&[1], 1, Some(0))],
         );
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
-            0
+            1,
+            "only the enclosing public packet retains a pair certificate"
         );
-        assert_no_main_lambda_entries("certificate-bypassed canonical pair");
+        assert_lambda_entries(
+            "certificate-bypassed independent pair",
+            &bypass_spanned_source,
+            &[left, right],
+            &[0, 0],
+        );
         assert_eq!(
             bypass.hits(),
-            2,
-            "the two pair-staging probes must bypass the same exact canonical clause pair"
+            1,
+            "nested operand staging must bypass the exact canonical clause pair once"
         );
         drop(bypass);
 
@@ -28520,12 +28151,124 @@ fn generic_last() -> . {
         );
         let ordinary_package =
             lowered_macro_package(&ordinary_source).expect("lower ordinary-wrapper match package");
-        assert_incomplete_source_failure(
-            "ordinary exact-scheme wrapper",
+        assert_success(
+            "independently typed ordinary exact-scheme wrapper",
             &ordinary_package,
             &ordinary_source,
             &ordinary_call,
+            &[left, right],
+            &[0, 0],
+            vec![leaf(&[0], 0, None), leaf(&[1], 1, Some(0))],
+            1,
         );
+
+        let contextual_left = ".(_left: Left) { make() }";
+        let contextual_right = ".(_right: Right) { make() }";
+        let contextual_call =
+            format!("match(source) {{ ({contextual_left}, {contextual_right}) }}");
+        let contextual_source = format!(
+            "module main; {common} host fn make[A]() -> A; \
+             fn run(source: Left | Right) -> I32 {{ {contextual_call} }}"
+        );
+        let contextual_package =
+            lowered_macro_package(&contextual_source).expect("lower context-dependent clause pair");
+        assert_success(
+            "certified context-dependent pair",
+            &contextual_package,
+            &contextual_source,
+            &contextual_call,
+            &[contextual_left, contextual_right],
+            &[1, 1],
+            vec![
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, Some(0)),
+                leaf(&[1, 1], 2, Some(1)),
+            ],
+            2,
+        );
+
+        let contextual_spanned_source = add_macro_imports(&contextual_source);
+        let contextual_original = retained_call_at(
+            &contextual_package,
+            "main",
+            source_span(&contextual_spanned_source, &contextual_call),
+        );
+        let (contextual_packet_span, contextual_clauses_span) =
+            retained_match_packet_spans(&contextual_original);
+        reset_observations(contextual_packet_span);
+        let (contextual_baseline_elaborations, contextual_baseline_scope, contextual_baseline) =
+            check_retained_function_from_final_preflight(&contextual_package, "main", "run");
+        contextual_baseline
+            .expect("the certified contextual pair must complete from FinalPreflight");
+        assert_eq!(
+            contextual_baseline_scope
+                .memo()
+                .user_macro_template_executions(),
+            1
+        );
+        assert_retained_call_published(
+            &contextual_baseline_elaborations,
+            "main",
+            &contextual_original,
+        );
+        assert_source_topology(
+            "certified contextual pair from FinalPreflight",
+            contextual_packet_span,
+            vec![
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, Some(0)),
+                leaf(&[1, 1], 2, Some(1)),
+            ],
+        );
+        assert_eq!(
+            crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
+            2
+        );
+        assert_lambda_entries(
+            "certified contextual pair from FinalPreflight",
+            &contextual_spanned_source,
+            &[contextual_left, contextual_right],
+            &[1, 1],
+        );
+
+        reset_observations(contextual_packet_span);
+        let bypass = crate::pass::typecheck_core::apply::fills::disable_pair_transparency_at(
+            "main",
+            contextual_clauses_span,
+        );
+        let (contextual_elaborations, contextual_scope, contextual_result) =
+            check_retained_function_from_final_preflight(&contextual_package, "main", "run");
+        let error = contextual_result
+            .expect_err("an opaque pair cannot infer make's result before the outer fill");
+        assert!(
+            matches!(&error, Error::Type(diagnostic) if diagnostic.message.contains("cannot infer")),
+            "ordinary pre-input inference must reject the unresolved result: {error:#?}"
+        );
+        let error_span = error.diagnostic().span;
+        assert!(
+            error_span.start >= contextual_clauses_span.start
+                && error_span.end <= contextual_clauses_span.end,
+            "the missing result must be diagnosed inside the opaque clauses: {error:#?}"
+        );
+        assert_eq!(contextual_scope.memo().user_macro_template_executions(), 0);
+        assert_retained_call_unpublished(&contextual_elaborations, "main", &contextual_original);
+        assert_source_topology(
+            "certificate-bypassed context-dependent pair",
+            contextual_packet_span,
+            vec![leaf(&[0], 0, None), leaf(&[1], 1, Some(0))],
+        );
+        assert_eq!(
+            crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
+            0
+        );
+        assert_lambda_entries(
+            "certificate-bypassed context-dependent pair",
+            &contextual_spanned_source,
+            &[contextual_left],
+            &[0],
+        );
+        assert_eq!(bypass.hits(), 1);
+        drop(bypass);
 
         let opaque_source_expr = format!("complete_product({left}, {right})");
         let opaque_call = format!("match(source) {{ {opaque_source_expr} }}");
@@ -28547,8 +28290,8 @@ fn generic_last() -> . {
             &opaque_call,
             &[left, right],
             &[1, 1],
-            vec![leaf(&[], 1, Some(0))],
-            0,
+            vec![leaf(&[0], 0, None), leaf(&[1], 1, Some(0))],
+            1,
         );
 
         let middle = ".(_middle: Middle) { identity_i32 }";
@@ -28568,11 +28311,12 @@ fn generic_last() -> . {
             &[left, middle, right],
             &[1, 1, 1],
             vec![
-                leaf(&[0], 1, Some(0)),
-                leaf(&[1, 0], 2, Some(1)),
-                leaf(&[1, 1], 3, Some(2)),
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, Some(0)),
+                leaf(&[1, 1, 0], 2, Some(1)),
+                leaf(&[1, 1, 1], 3, Some(2)),
             ],
-            2,
+            3,
         );
 
         let closed_clauses = "(left_clause, right_clause)";
@@ -28597,8 +28341,12 @@ fn generic_last() -> . {
             &closed_call,
             &[left, right],
             &[0, 0],
-            vec![leaf(&[0], 1, None), leaf(&[1], 2, None)],
-            1,
+            vec![
+                leaf(&[0], 0, None),
+                leaf(&[1, 0], 1, None),
+                leaf(&[1, 1], 2, None),
+            ],
+            2,
         );
     }
 
@@ -28690,7 +28438,7 @@ fn generic_last() -> . {
             host type I32;
             host type String;
             host fn make_string() -> String;
-            newtype Box[A] : A {{ constructor mk_box; projector un_box; }};
+            type {{ Box[A]: A {{ mk; get; }}; }};
             fn consume(_value: String) -> . {{ () }}
             fn run(source: Box[I32] | Other | Box[String]) -> . {{
               let selected = {success_call};
@@ -28717,7 +28465,7 @@ fn generic_last() -> . {
               (
                 .(_boxed_i32: Box[I32]) -> String { make_string() },
                 .(_other: Other) -> String { make_string() },
-                .[A](boxed: Box[A]) -> A { Box.un_box[A](boxed) }
+                .[A](boxed: Box[A]) -> A { Box.get[A](boxed) }
               )
             }"#;
         let error_source = format!(
@@ -28726,7 +28474,7 @@ fn generic_last() -> . {
             host type I32;
             host type String;
             host fn make_string() -> String;
-            newtype Box[A] : A {{ constructor mk_box; projector un_box; }};
+            type {{ Box[A]: A {{ mk; get; }}; }};
             fn run(source: Box[I32] | Other | Box[String]) -> . {{
               let .(_selected: String) = {error_call};
               ()
@@ -28759,12 +28507,11 @@ fn generic_last() -> . {
         let macro_def = "module macros; \
             import __comptime__; \
             pub host type I32; \
-            type Optional_type = __Type__ | .; \
             pure fn wrong_shape_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 value: __Checked_term__, \
-                _a: Optional_type \
+                _a: . \
               ) -> __Checked_term__ { value } \
             pub macro wrong_shape : [Source] Source -> [A] I32 & A { impl wrong_shape_impl; };";
         let main = "module main; \
@@ -29004,13 +28751,12 @@ fn generic_last() -> . {
     fn failed_later_retained_action_preflights_before_type_producing_evaluation() {
         let macro_def = "module macros; \
             import __comptime__; \
-            type Optional_type = __Type__ | .; \
             pure fn infer_pair_impl( \
                 _ct: __Comptime__, \
                 _source: __Type__, \
                 value: __Checked_term__, \
-                _a: Optional_type, \
-                _b: Optional_type \
+                _a: ., \
+                _b: . \
               ) -> __Checked_term__ { value } \
             pub macro infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
             pure fn require_type_impl( \
@@ -29057,7 +28803,7 @@ fn generic_last() -> . {
     fn retained_capture_inputs_close_in_the_macro_definition_environment() {
         let same_module = "module main; \
             import __comptime__; \
-            newtype Local : . { constructor mk_local; projector un_local; }; \
+            type { Local: . { mk; get; }; }; \
             pure fn reveal_capture_impl( \
               ct: __Comptime__, \
               captured: __Type__, \
@@ -29091,9 +28837,9 @@ fn generic_last() -> . {
         assert_eq!(same_scope.memo().user_macro_template_executions(), 1);
 
         let owner_types = "module owner/types; \
-            pub newtype Owner : . { pub constructor mk_owner; pub projector un_owner; };";
+            pub type { Owner: . { pub mk; pub get; }; };";
         let other_types = "module other/types; \
-            pub newtype Owner : . { pub constructor mk_owner; pub projector un_owner; };";
+            pub type { Owner: . { pub mk; pub get; }; };";
         let owner_macro = "module owner/macros; \
             import __comptime__; \
             import owner/types(Owner); \
@@ -29402,10 +29148,10 @@ fn generic_last() -> . {
     fn deferred_nested_application_defers_outer_hkt_head() {
         ok("module x; \
             host type I32 role(i32); \
-            newtype Box[T] : T { pub constructor mk_box; pub projector un_box; }; \
+            type { Box[T]: T { pub mk; pub get; }; }; \
             fn identity_app[*F][A](value: F[A]) -> F[A] { value } \
             fn take[*G][V](_value: V, _wrapped: G[V]) -> . { () } \
-            fn run() -> . { take(1[I32], identity_app(Box.mk_box(2))) }");
+            fn run() -> . { take(1[I32], identity_app(Box.mk(2))) }");
     }
 
     #[test]
@@ -29521,15 +29267,6 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn label_type_name_takes_last_segment() {
-        let segs = vec![
-            crate::ast::PathSegment::new("modx".to_owned(), Span::new(0, 0)),
-            crate::ast::PathSegment::new("Label".to_owned(), Span::new(0, 0)),
-        ];
-        assert_eq!(label_type_name(&segs), "Label");
-    }
-
-    #[test]
     fn top_level_alias_with_bare_infer_rejected() {
         // A `_` in a top-level binding annotation is rejected by
         // `check_well_formed_type` — the sole `_`-rejection point outside
@@ -29554,7 +29291,7 @@ fn generic_last() -> . {
 
         let dep = lowered_module(
             "module dep; \
-             pub newtype T : . { constructor mk; pub projector un; }; \
+             pub type { T: . { mk; pub get; }; }; \
              pub fn foo() -> . { () } \
              pub type Al = .;",
         );
@@ -29562,7 +29299,7 @@ fn generic_last() -> . {
             "module main; \
              import dep as d; \
              import dep(T, foo, Al); \
-             pub newtype U : . { constructor mku; pub projector unu; }; \
+             pub type { U: . { mk; pub get; }; }; \
              pub type Unused = .;",
         );
         let package = Package::build(
@@ -29612,7 +29349,7 @@ fn generic_last() -> . {
             ]
         );
         // The public projector records both declarations as public.
-        let un = resolve_capture_member_owner(&cap(&["d", "T", "un"]), &env).expect("d.T.un");
+        let un = resolve_capture_member_owner(&cap(&["d", "T", "get"]), &env).expect("d.T.get");
         assert_eq!(un.owner_module_path.as_deref(), Some("dep"));
         assert_eq!(
             edges(&un),
@@ -29623,7 +29360,7 @@ fn generic_last() -> . {
                 ),
                 (
                     crate::ast::Visibility::Public,
-                    "captured member `d.T.un`".to_owned()
+                    "captured member `d.T.get`".to_owned()
                 ),
             ]
         );
@@ -29648,9 +29385,9 @@ fn generic_last() -> . {
             ]
         );
 
-        // 2-segment same-module newtype member (`U.mku`): owner is the
+        // 2-segment same-module newtype member (`U.mk`): owner is the
         // current module; the private constructor remains a separate entry.
-        let u_mku = resolve_capture_member_owner(&cap(&["U", "mku"]), &env).expect("U.mku");
+        let u_mku = resolve_capture_member_owner(&cap(&["U", "mk"]), &env).expect("U.mk");
         assert_eq!(u_mku.owner_module_path.as_deref(), Some("main"));
         assert_eq!(
             edges(&u_mku),
@@ -29661,7 +29398,7 @@ fn generic_last() -> . {
                 ),
                 (
                     crate::ast::Visibility::Private,
-                    "captured member `U.mku`".to_owned()
+                    "captured member `U.mk`".to_owned()
                 ),
             ]
         );
@@ -29720,7 +29457,7 @@ fn generic_last() -> . {
         for index in 0..NEWTYPES {
             let name = format!("Nominal{index}");
             provider.push_str(&format!(
-                " pub newtype {name} : . {{ pub constructor make{index}; pub projector unmake{index}; }};"
+                " pub type {{ {name}: . {{ pub mk; pub get; }}; }};"
             ));
             imported.push(name);
         }
@@ -29765,7 +29502,7 @@ fn generic_last() -> . {
         let ok_mod = lowered_module("module pkg/a; pub fn ok() -> . { () }");
         let bad_mod = lowered_module(
             "module pkg/b; \
-             newtype Foo : . { pub constructor mk; pub projector un; }; \
+             type { Foo: . { pub mk; pub get; }; }; \
              fn bad() -> Foo { () }",
         );
         let package = Package::build(
@@ -29812,7 +29549,7 @@ fn generic_last() -> . {
     fn embedded_forall_binder_shadows_nominal_during_kind_checks() {
         ok("module main; \
             type Identity[T] = T; \
-            newtype A[*F] : . { constructor mk; projector un; }; \
+            type { A[*F]: . { mk; get; }; }; \
             type Poly = Identity[[A] A];");
     }
 

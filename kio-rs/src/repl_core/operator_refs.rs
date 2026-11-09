@@ -2,9 +2,7 @@
 //! an application into its ordinary callable. Callable identity cannot tell
 //! two operators using the same implementation apart.
 
-use crate::ast::{
-    CallArg, ElaboratorCall, Expr, Item, Module, OpChainKind, OpPart, OperatorGrammar, Surface,
-};
+use crate::ast::{CallArg, Expr, Item, Module, OpChainKind, OpPart, OperatorGrammar, Surface};
 use crate::pass::lexer::{TokenKind, lex};
 use crate::span::Span;
 
@@ -23,7 +21,6 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
             | Item::Newtype(_)
             | Item::LiteralAlias(_, _)
             | Item::Labels(_, _)
-            | Item::LabelForward(_, _)
             | Item::HostType(_)
             | Item::HostFn(_)
             | Item::Macro(_, _)
@@ -93,22 +90,10 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
                 values(args, &mut pending);
             }
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),
-            Expr::Let { value, body, .. }
-            | Expr::RowLet { value, body, .. }
-            | Expr::Seq { value, body, .. } => {
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
                 pending.extend([value.as_ref(), body.as_ref()]);
             }
             Expr::Tuple { items, .. } => pending.extend(items),
-            Expr::LabelValue { labels, .. } => {
-                pending.extend(labels.iter().map(|label| &label.value))
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    pending.extend(base.receiver());
-                    pending.extend(updates.iter().map(|update| &update.value));
-                }
-            },
             Expr::BlockCall { prefix, blocks, .. } => {
                 for stage in prefix {
                     values(&stage.args, &mut pending);

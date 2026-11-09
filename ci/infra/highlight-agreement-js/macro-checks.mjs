@@ -74,7 +74,7 @@ fn after() { choose(()) }
   for (const [body, marked, ordinary] of [
     [".x. { x1(()); .y. { x1(()) }; x1(()) }; x1(())", [".y. { x1", "}; x1(()) }; x1"], [".x. { x1"]],
     ["let .x. = x1(()); x1(())", ["= x1"], ["; x1"]],
-    ["let .({ field as choose }) = choose(()); field(()); choose(())", ["= choose"], ["; choose"]],
+    ["let .(field, choose) = choose(()); field(()); choose(())", ["= choose"], ["; choose"]],
   ]) {
     const localSource = `module source; import library(macro x1, macro choose); fn run() { ${body} }`;
     const localTree = parser.parse(localSource);

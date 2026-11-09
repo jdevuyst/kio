@@ -84,9 +84,8 @@ pub fn main() {
   report("higher-kind product: "[t.String], "pub fn bad[*F] -> ((. -> .) & .) { () }\n"[t.String]);
   report(
   , "higher-kind nominal: "[t.String]
-  , "pub newtype Arrow[A] : A -> A { pub constructor mk; pub projector get; "
-    "};\npub fn bad[*F] -> Arrow[F[.]] { Arrow.mk[F[.]](.(value: F[.]) { value "
-    "}) }\n"[t.String]
+  , "pub type { Arrow[A]: A -> A { pub mk; pub get; }; };\npub fn bad[*F] -> "
+    "Arrow[F[.]] { Arrow.mk[F[.]](.(value: F[.]) { value }) }\n"[t.String]
   );
   report("type-only host import: "[t.String], "host fn imported[A] -> .;\n"[t.String])
 }

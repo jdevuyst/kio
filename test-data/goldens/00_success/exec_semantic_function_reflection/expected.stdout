@@ -1,0 +1,56 @@
+reflection inferred
+packet
+a
+b
+c
+reflection explicit
+packet
+a
+b
+c
+reflection projected
+packet
+a
+b
+c
+reflection nullary
+unit packet
+called
+reflection alias Unit
+unit packet
+called
+reflection direct alias
+unit packet
+called
+derive split
+A
+B
+C
+derived
+derive explicit
+A
+B
+C
+derived
+derive tuple
+A
+B
+C
+derived
+derive tail
+A
+B
+C
+derived
+derive Unit
+base
+base
+derive Unit component
+unit prerequisite
+A
+unit component
+derive left product
+A
+B
+C
+left group

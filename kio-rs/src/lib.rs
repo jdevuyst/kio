@@ -83,8 +83,7 @@
 //! - [`pass::op_fold`] — folds surface operator chains before desugaring.
 //! - [`pass::desugar`] — Surface → Desugared (strips `Expr::Tuple`,
 //!   `Expr::FnPlaceholder`).
-//! - [`pass::label_elab`] — Desugared → Lowered (strips `Expr::LabelValue`,
-//!   `Type::LabelSugar`, `Item::Labels`).
+//! - [`pass::label_elab`] — Desugared → Lowered (strips `Item::Labels`).
 //! - [`pass::typecheck_full`] — elaboration-aware Kio typer; records
 //!   surface-form rewrites and inferred completions while checking Lowered,
 //!   then `substitute_package` bakes them into the AST at the Lowered → Prime
@@ -392,9 +391,9 @@ Usage: kio-prime <subcommand> [args]
 
 The kio-prime binary is a Kio'-only compiler: every subcommand parses
 the input as Kio and rejects any surface-only form (tuple literals,
-label-value / braced label type forms, field access / update, macro
-declarations and imports, trailing-block calls, UFCS, `.stem. { ... }`,
-`literal`, `labels`, `op`, `equiv`) with a parse error. Pass-through Kio' programs
+compact nominal declarations, macro declarations and imports, trailing-block
+calls, UFCS, `.stem. { ... }`, `literal`, `op`, `equiv`) with a parse error.
+Pass-through Kio' programs
 typecheck and build identically to the `kio` binary.
 
 Subcommands:

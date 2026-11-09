@@ -5,8 +5,7 @@ use std::collections::HashSet;
 #[cfg(feature = "surface")]
 use crate::ast::PlaceholderState;
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, OpChainKind, ParamPattern, ParamPatternElem, PathSegment,
-    SignatureParam,
+    CallArg, Expr, OpChainKind, ParamPattern, ParamPatternElem, PathSegment, SignatureParam,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -274,12 +273,6 @@ impl<'a> Classifier<'_, 'a> {
                     }
                     self.binding(name, pattern.as_ref(), &mut introduced);
                 }
-                crate::ast::NeutralItem::RowBinding { entries, value, .. } => {
-                    self.expr(value)?;
-                    for entry in entries {
-                        self.bind(&entry.local, &mut introduced);
-                    }
-                }
             }
         }
         self.leave(introduced);
@@ -338,20 +331,6 @@ impl<'a> Classifier<'_, 'a> {
                 self.expr(body)?;
                 self.leave(introduced);
             }
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                ..
-            } => {
-                self.expr(value)?;
-                let mut introduced = Vec::new();
-                for entry in entries {
-                    self.bind(&entry.local, &mut introduced);
-                }
-                self.expr(body)?;
-                self.leave(introduced);
-            }
             Expr::Seq { value, body, .. } => {
                 self.expr(value)?;
                 self.expr(body)?;
@@ -362,22 +341,6 @@ impl<'a> Classifier<'_, 'a> {
                 }
             }
             Expr::FnPlaceholder { .. } => {}
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    self.expr(&mut label.value)?;
-                }
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => self.expr(receiver)?,
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    if let Some(receiver) = base.receiver_mut() {
-                        self.expr(receiver)?;
-                    }
-                    for update in updates {
-                        self.expr(&mut update.value)?;
-                    }
-                }
-            },
             Expr::Ufcs {
                 receiver,
                 callee,

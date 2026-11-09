@@ -14,7 +14,7 @@ import testapi/io(print);
 // `Arc<dyn Any + Send + Sync>`) and a rank-N Church-numeral value
 // (closure wrapped inline as `Arc::new(...)`), both reaching a host
 // function callback.
-labels { boxed[A] <U> : A & U };
+type { Boxed[A] <U>: A & U }
 
 fn box_value[A](v: A) -> Boxed[A] { Boxed.mk((v, v)) }
 

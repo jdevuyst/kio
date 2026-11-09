@@ -58,9 +58,7 @@ fn rec_call(
                 pending.extend(args.iter().filter_map(value_argument));
                 pending.push(callee);
             }
-            Expr::Let { value, body, .. }
-            | Expr::Seq { value, body, .. }
-            | Expr::RowLet { value, body, .. } => {
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
                 pending.push(body);
                 pending.push(value);
             }
@@ -81,16 +79,6 @@ fn rec_call(
                 pending.push(receiver);
             }
             Expr::Tuple { items, .. } => pending.extend(items),
-            Expr::LabelValue { labels, .. } => {
-                pending.extend(labels.iter().map(|label| &label.value))
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    pending.extend(updates.iter().map(|update| &update.value));
-                    pending.extend(base.receiver());
-                }
-            },
             Expr::OpChain { kind, .. } => match kind {
                 crate::ast::OpChainKind::Normal { slots, .. } => pending.extend(slots),
                 crate::ast::OpChainKind::Variadic { elements, .. } => pending.extend(elements),

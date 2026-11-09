@@ -4,47 +4,40 @@ import __comptime__;
 
 pure fn arrange_impl(
 , ct: __Comptime__
-, a: __Type__
-, b: __Type__
+, _a: __Type__
+, _b: __Type__
 , _c: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
+, inputs: __Checked_term__
 ) -> __Checked_term__ {
-  let prefix_type = __type_product__(ct, a, b);
-  __term_let__(
-  , ct
-  , prefix_type
-  , prefix
-  , .(bound: __Checked_term__) {
-      let left = __intrinsic_fst__(ct, prefix_type, bound);
-      let right = __intrinsic_snd__(ct, prefix_type, bound);
-      __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body))
-    }
-  )
+  let inputs_type = __term_type__(ct, inputs);
+  __term_let__(ct, inputs_type, inputs, .(bound: __Checked_term__) {
+    let prefix = __intrinsic_fst__(ct, inputs_type, bound);
+    let prefix_type = __term_type__(ct, prefix);
+    let body = __intrinsic_snd__(ct, inputs_type, bound);
+    __intrinsic_pair__(ct, __intrinsic_fst__(ct, prefix_type, prefix), __intrinsic_pair__(ct, __intrinsic_snd__(ct, prefix_type, prefix), body))
+  })
 }
 
-pub macro arrange : [A][B][C] (A & B) -> C -> (A & B & C) { trailing product; impl arrange_impl }
+pub macro arrange : [A][B][C] ((A & B) & C) -> (A & B & C) { trailing product; impl arrange_impl }
 
 pure fn packet_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _a: __Type__
 , _b: __Type__
 , _c: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { inputs }
 
-pub macro packet : [A][B][C] (A & B) -> C -> ((A & B) & C) { trailing product; impl packet_impl }
+pub macro packet : [A][B][C] ((A & B) & C) -> ((A & B) & C) { trailing product; impl packet_impl }
 
 pure fn pair_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _a: __Type__
 , _b: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { inputs }
 
-pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+pub macro block_pair : [A][B] (A & B) -> (A & B) { trailing product; impl pair_impl }
 
 pure fn pair_prefix_impl(_ct: __Comptime__, _a: __Type__, _b: __Type__, prefix: __Checked_term__) -> __Checked_term__ {
   prefix
@@ -60,50 +53,69 @@ pure fn discard_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { body }
 
-pub macro discard : [A][B] A -> B -> B { trailing product; impl discard_impl }
+pub macro discard : [A][B] A -> B -> B { impl discard_impl }
 
-pub macro last_blocks : [A][B] A -> B -> B { trailing product; trailing product after; impl discard_impl }
+pure fn discard_whole_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _inputs: __Checked_term__
+) -> __Checked_term__ { __term_unit__(ct) }
+
+pub macro discard_whole : [A][B] (A & B) -> . { trailing product; impl discard_whole_impl }
+
+pure fn last_blocks_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ {
+  let inputs_type = __term_type__(ct, inputs);
+  __term_let__(ct, inputs_type, inputs, .(bound: __Checked_term__) {
+    let last = __intrinsic_snd__(ct, inputs_type, bound);
+    __term_call__(ct, __term_type__(ct, last), last, __term_unit__(ct))
+  })
+}
+
+pub macro last_blocks : [A][B] ((. -> A) & (. -> B)) -> B { trailing thunk; trailing thunk after; impl last_blocks_impl }
 
 pure fn outer_impl(
 , ct: __Comptime__
-, a: __Type__
-, b: __Type__
+, _a: __Type__
+, _b: __Type__
 , _c: __Type__
 , _d: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-, tail: __Checked_term__
+, inputs: __Checked_term__
 ) -> __Checked_term__ {
-  let prefix_type = __type_product__(ct, a, b);
-  let result = __term_call__(ct, __term_type__(ct, tail), tail, __term_unit__(ct));
-  __term_let__(
-  , ct
-  , prefix_type
-  , prefix
-  , .(bound: __Checked_term__) {
-      let left = __intrinsic_fst__(ct, prefix_type, bound);
-      let right = __intrinsic_snd__(ct, prefix_type, bound);
-      __intrinsic_pair__(
-      , ct
-      , left
-      , __intrinsic_pair__(ct, right, __intrinsic_pair__(ct, body, result))
-      )
-    }
-  )
+  let inputs_type = __term_type__(ct, inputs);
+  __term_let__(ct, inputs_type, inputs, .(bound: __Checked_term__) {
+    let prefix = __intrinsic_fst__(ct, inputs_type, bound);
+    let prefix_type = __term_type__(ct, prefix);
+    let blocks = __intrinsic_snd__(ct, inputs_type, bound);
+    let blocks_type = __term_type__(ct, blocks);
+    let body = __intrinsic_fst__(ct, blocks_type, blocks);
+    let tail = __intrinsic_snd__(ct, blocks_type, blocks);
+    let result = __term_call__(ct, __term_type__(ct, tail), tail, __term_unit__(ct));
+    __intrinsic_pair__(ct, __intrinsic_fst__(ct, prefix_type, prefix), __intrinsic_pair__(ct, __intrinsic_snd__(ct, prefix_type, prefix), __intrinsic_pair__(ct, body, result)))
+  })
 }
 
-pub macro outer : [A][B][C][D] (A & B) -> C -> (. -> D) -> (A & B & C & D) { trailing product; trailing thunk after; impl outer_impl }
+pub macro outer : [A][B][C][D] ((A & B) & C & (. -> D)) -> (A & B & C & D) { trailing product; trailing thunk after; impl outer_impl }
 
 pure fn sequence_impl(
 , ct: __Comptime__
 , fills: __Fill_ctx__
 , _receiver_type: __Type__
 , result_type: __Type__
-, receiver: __Checked_term__
-, body: __Checked_term__
+, inputs: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
-  let result = __term_call__(ct, __term_type__(ct, body), body, receiver);
+  let inputs_type = __term_type__(ct, inputs);
+  let result = __term_let__(ct, inputs_type, inputs, .(bound: __Checked_term__) {
+    let receiver = __intrinsic_fst__(ct, inputs_type, bound);
+    let body = __intrinsic_snd__(ct, inputs_type, bound);
+    __term_call__(ct, __term_type__(ct, body), body, receiver)
+  });
   (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
 }
 
-pub macro run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { trailing sequence; impl(fills) sequence_impl }
+pub macro run_sequence : [Receiver][Result] (Receiver & (Receiver -> Result)) -> Result { trailing sequence; impl(fills) sequence_impl }

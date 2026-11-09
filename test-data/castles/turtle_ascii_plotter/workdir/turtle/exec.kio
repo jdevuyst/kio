@@ -14,6 +14,7 @@ module turtle/exec;
 import list/core as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
@@ -90,13 +91,24 @@ rec(loop) {
   fn run_command(c: cmd.Command, s: st.State) -> st.State {
     match(cmd.un_command(c)) {
       (
-      , .(p: cmd.Pen_cmd) { do_pen(st.tick(s), p.?{cmd.pen_cmd}) }
-      , .(m: cmd.Move_cmd) { do_move(st.tick(s), m.?{cmd.move_cmd}) }
-      , .(t: cmd.Turn_cmd) { do_turn(st.tick(s), t.?{cmd.turn_cmd}) }
-      , .(g: cmd.Goto_cmd) { let .(x: I32, y: I32) = g.?{cmd.goto_cmd}; do_goto(st.tick(s), x, y) }
-      , .(k: cmd.Mark_cmd) { do_mark(st.tick(s), k.?{cmd.mark_cmd}) }
+      , .(p: cmd.Pen_cmd) {
+          do_pen(st.tick(s), p.>select { cmd.Pen_cmd.get })
+        }
+      , .(m: cmd.Move_cmd) {
+          do_move(st.tick(s), m.>select { cmd.Move_cmd.get })
+        }
+      , .(t: cmd.Turn_cmd) {
+          do_turn(st.tick(s), t.>select { cmd.Turn_cmd.get })
+        }
+      , .(g: cmd.Goto_cmd) {
+          let .(x: I32, y: I32) = g.>select { cmd.Goto_cmd.get };
+          do_goto(st.tick(s), x, y)
+        }
+      , .(k: cmd.Mark_cmd) {
+          do_mark(st.tick(s), k.>select { cmd.Mark_cmd.get })
+        }
       , .(r: cmd.Repeat_cmd) {
-          let .(n: I32, body: list.List[cmd.Command]) = r.?{cmd.repeat_cmd};
+          let .(n: I32, body: list.List[cmd.Command]) = r.>select { cmd.Repeat_cmd.get };
           recur run_repeat(n, body, s)
         }
       , .(_u: cmd.Unknown_cmd) { st.tick(s) }

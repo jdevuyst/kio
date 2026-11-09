@@ -8,8 +8,8 @@ printf '%s\n' \
     ':refs second.truth' \
     ':refs first.proof' \
     ':refs build' \
-    ':refs {field}' \
-    ':refs second.{field}' \
+    ':refs Field' \
+    ':refs second.Field' \
     ':refs field' \
     ':refs proof' \
     ':refs first.field' \

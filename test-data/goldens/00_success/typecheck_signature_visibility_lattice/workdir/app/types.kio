@@ -1,3 +1,3 @@
 module app/types;
 
-pub(app) newtype Shared : . { pub(app) constructor mk; pub(app) projector un }
+pub(app) type { Shared: . { pub(app) mk; pub(app) get } }

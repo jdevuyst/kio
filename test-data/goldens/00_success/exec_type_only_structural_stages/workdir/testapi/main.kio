@@ -7,7 +7,7 @@ host fn observe(_unit: .);
 
 host fn consume(_unit: .);
 
-labels { payload: [A] ., marker: . };
+type { Payload: [A] . { mk; get }; Marker: . { mk; get } }
 
 fn named[A] { observe() }
 
@@ -20,7 +20,7 @@ fn adjacent[A][B] { consume() }
 
 fn explicit[A]() { consume() }
 
-fn bundle() -> Payload & Marker { ({payload = named}, {marker=}) }
+fn bundle() -> Payload & Marker { (Payload.mk(named), Marker.mk(())) }
 
 pub fn main() {
   consume();

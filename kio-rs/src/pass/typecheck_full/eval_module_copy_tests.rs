@@ -53,8 +53,7 @@ fn fixture(discarded_functions: usize, body_statements: usize) -> Module {
         }
         source.push_str("value }\n");
     }
-    source
-        .push_str("/// Trailing type\nnewtype Tail : . { constructor tail; projector untail; };\n");
+    source.push_str("/// Trailing type\ntype { Tail: . { mk; get; }; };\n");
     let module = crate::pass::parser::parse(&source).expect("fixture parses");
     let module = crate::pass::desugar::desugar_module(module).expect("fixture desugars");
     let (mut modules, _) = crate::pass::label_elab::elaborate_package(

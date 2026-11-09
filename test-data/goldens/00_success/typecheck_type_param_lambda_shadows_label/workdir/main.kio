@@ -1,6 +1,6 @@
 module main;
 
-labels { a: . };
+type { A: . { mk; get } }
 
 fn use_id(f: [U] U -> U) { f(()) }
 

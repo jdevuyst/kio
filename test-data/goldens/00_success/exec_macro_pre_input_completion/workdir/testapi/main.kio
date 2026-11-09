@@ -1,0 +1,29 @@
+module testapi/main;
+
+import macros(macro infer, macro marked, macro retain);
+import testapi(String);
+import testapi/io as io;
+
+fn emit(label: String) -> String { io.print(label); "value\n" }
+
+fn choose[A](selected: . -> A, _skipped: . -> A) -> A { selected(()) }
+
+pub fn main() {
+  let inline = retain(infer(emit("inline\n")));
+  io.print(inline);
+  let input = infer(emit("let\n"));
+  io.print(retain(input));
+  let marked_inline = retain(marked(emit("marked inline\n")));
+  io.print(marked_inline);
+  let marked_bound = marked(emit("marked let\n"));
+  io.print(retain(marked_bound));
+  let .(left, right) = retain((infer(emit("left\n")), infer(emit("right\n"))));
+  io.print(left);
+  io.print(right);
+  let selected =
+    choose(
+    , .() { let result = retain(infer(emit("selected\n"))); result }
+    , .() { let result = retain(infer(emit("skipped\n"))); result }
+    );
+  io.print(selected)
+}

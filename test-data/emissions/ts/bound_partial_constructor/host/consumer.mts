@@ -14,9 +14,9 @@ type Wrapped<G extends BoundPartialTypeLambda<readonly [unknown]>> = {
 };
 const pkg = createBoundPartial();
 type StringPair = BoundPartialBind<PairLambda, readonly [string]>;
-const input: Wrapped<StringPair> = pkg.api.KioType_Wrap.wrap<StringPair>({ _0: "head", _1: null });
+const input: Wrapped<StringPair> = pkg.api.KioType_Wrap.mk<StringPair>({ _0: "head", _1: null });
 const output: Wrapped<StringPair> = pkg.api.keep<PairLambda, string>(input);
-const payload: Pair<string, null> = pkg.api.KioType_Wrap.unwrap<StringPair>(output);
+const payload: Pair<string, null> = pkg.api.KioType_Wrap.get<StringPair>(output);
 if (payload._0 !== "head" || payload._1 !== null) {
   throw new Error("partial constructor lost its selected index or payload");
 }

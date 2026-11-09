@@ -1,0 +1,122 @@
+module main;
+
+import __comptime__;
+
+pure fn reflected[A](ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A] }
+
+pure fn direct_impl(ct: __Comptime__) -> __Checked_term__ {
+  __if_then_else__(
+  , __type_equal__(ct, reflected[.](ct), __reflect_type__(ct)[.])
+  , .() -> __Checked_term__ { __term_unit__(ct) }
+  , .() -> __Checked_term__ {
+      __macro_error__(ct, "generic reflection lost its actual type argument")
+    }
+  )
+}
+
+pure fn expect(ct: __Comptime__, actual: __Type__, wanted: __Type__) -> __Checked_term__ {
+  __if_then_else__(
+  , __type_equal__(ct, actual, wanted)
+  , .() -> __Checked_term__ { __term_unit__(ct) }
+  , .() -> __Checked_term__ { __macro_error__(ct, "evaluator type arguments changed") }
+  )
+}
+
+pure fn invoke(ct: __Comptime__, helper: [A] __Comptime__ -> __Type__) -> __Checked_term__ {
+  let first = helper[.](ct);
+  let second = helper[!](ct);
+  let again = helper[.](ct);
+  expect(
+  , ct
+  , __type_product__(ct, first, __type_product__(ct, second, again))
+  , __reflect_type__(ct)[. & ! & .]
+  )
+}
+
+pure fn passed_helper_impl(ct: __Comptime__) -> __Checked_term__ { invoke(ct, reflected) }
+
+pure fn captured_reflector[A]() -> __Comptime__ -> __Type__ {
+  .(ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A] }
+}
+
+pure fn captured_closure_impl(ct: __Comptime__) -> __Checked_term__ {
+  let unit = captured_reflector[.]();
+  let bottom = captured_reflector[!]();
+  let first = unit(ct);
+  let second = bottom(ct);
+  let again = unit(ct);
+  expect(
+  , ct
+  , __type_product__(ct, first, __type_product__(ct, second, again))
+  , __reflect_type__(ct)[. & ! & .]
+  )
+}
+
+pure fn polymorphic_reflector[A]() -> [B] __Comptime__ -> __Type__ {
+  .[B](ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A & B] }
+}
+
+pure fn polymorphic_closure_impl(ct: __Comptime__) -> __Checked_term__ {
+  let outer_unit = polymorphic_reflector[.]();
+  let outer_bottom = polymorphic_reflector[!]();
+  let first = outer_unit[!](ct);
+  let second = outer_bottom[.](ct);
+  let again = outer_unit[.](ct);
+  let actual = __type_product__(ct, first, __type_product__(ct, second, again));
+  expect(ct, actual, __reflect_type__(ct)[(. & !) & (! & .) & . & .])
+}
+
+pure fn reflected_pair[A](ct: __Comptime__) -> __Type__ {
+  let outer = __reflect_type__(ct)[A];
+  let inner = .[A](proof: __Comptime__) -> __Type__ { __reflect_type__(proof)[A] };
+  __type_product__(ct, outer, inner[!](ct))
+}
+
+pure fn shadowed_type_impl(ct: __Comptime__) -> __Checked_term__ {
+  let first = reflected_pair[.](ct);
+  let second = reflected_pair[!](ct);
+  let again = reflected_pair[.](ct);
+  let actual = __type_product__(ct, first, __type_product__(ct, second, again));
+  expect(ct, actual, __reflect_type__(ct)[(. & !) & (! & !) & . & !])
+}
+
+pure fn identity[A](value: A) -> A { value }
+
+pure fn nonobserving_impl(ct: __Comptime__) -> __Checked_term__ {
+  let value = identity[__Type__](__reflect_type__(ct)[.]);
+  expect(ct, value, __reflect_type__(ct)[.])
+}
+
+macro direct_probe : . -> . { impl direct_impl }
+
+pub fn direct() { direct_probe(()) }
+
+macro passed_helper_probe : . -> . { impl passed_helper_impl }
+
+pub fn passed_helper() { passed_helper_probe(()) }
+
+macro captured_closure_probe : . -> . { impl captured_closure_impl }
+
+pub fn captured_closure() { captured_closure_probe(()) }
+
+macro polymorphic_closure_probe : . -> . { impl polymorphic_closure_impl }
+
+pub fn polymorphic_closure() { polymorphic_closure_probe(()) }
+
+macro shadowed_type_probe : . -> . { impl shadowed_type_impl }
+
+pub fn shadowed_type() { shadowed_type_probe(()) }
+
+macro nonobserving_probe : . -> . { impl nonobserving_impl }
+
+pub fn nonobserving() { nonobserving_probe(()) }
+
+equiv generic_argument_transport() {
+  direct();
+  passed_helper();
+  captured_closure();
+  polymorphic_closure();
+  shadowed_type();
+  nonobserving();
+  ()
+}

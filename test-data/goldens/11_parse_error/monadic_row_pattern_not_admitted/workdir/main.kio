@@ -1,5 +1,0 @@
-module main;
-
-import macros/sequence(macro do);
-
-fn subject() { do (bind) { let .({slot}) <- value; result } }

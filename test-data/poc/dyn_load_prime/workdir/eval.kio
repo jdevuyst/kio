@@ -133,83 +133,86 @@ import value(vclosure, vhostfn, vhostfn_fresh, vleft, vproduct, vright, vunit);
 //   F_hostcont Host_fn & Value  incoming value is a host-requested application's
 //                               result; re-dispatch `cont` with (result & state)
 /// Defines the held-function application frame.
-pub labels { f_app1: Value };
+pub type { F_app1: Value }
 
 /// Defines the held-argument application frame.
-pub labels { f_app2: Value };
+pub type { F_app2: Value }
 
 /// Defines the evaluate-argument-then-apply frame.
-pub labels { f_arg: Term & Env };
+pub type { F_arg: Term & Env }
 
 /// Defines the let-body frame.
-pub labels { f_let: Term & Env };
+pub type { F_let: Term & Env }
 
 /// Defines the evaluate-second-then-pair frame.
-pub labels { f_psnd: Term & Env };
+pub type { F_psnd: Term & Env }
 
 /// Defines the held-first-component pairing frame.
-pub labels { f_pfst: Value };
+pub type { F_pfst: Value }
 
 /// Defines the first-projection frame.
-pub labels { f_fst: . };
+pub type { F_fst: . }
 
 /// Defines the second-projection frame.
-pub labels { f_snd: . };
+pub type { F_snd: . }
 
 /// Defines the left-injection frame.
-pub labels { f_left: . };
+pub type { F_left: . }
 
 /// Defines the right-injection frame.
-pub labels { f_right: . };
+pub type { F_right: . }
 
 /// Defines the evaluate-left-handler frame.
-pub labels { f_eith_f: Term & Term & Env };
+pub type { F_eith_f: Term & Term & Env }
 
 /// Defines the evaluate-right-handler frame.
-pub labels { f_eith_g: Value & Term & Env };
+pub type { F_eith_g: Value & Term & Env }
 
 /// Defines the sum-dispatch-and-apply frame.
-pub labels { f_eith_apply: Value & Value };
+pub type { F_eith_apply: Value & Value }
 
 /// Defines the evaluate-then-thunk frame.
-pub labels { f_ite_then: Host_type & Term & Term & Env };
+pub type { F_ite_then: Host_type & Term & Term & Env }
 
 /// Defines the evaluate-else-thunk frame.
-pub labels { f_ite_else: Host_type & Value & Term & Env };
+pub type { F_ite_else: Host_type & Value & Term & Env }
 
 /// Defines the conditional-select-and-apply frame.
-pub labels { f_ite_apply: Host_type & Value & Value };
+pub type { F_ite_apply: Host_type & Value & Value }
 
 /// Defines the bottom-elimination frame.
-pub labels { f_absurd: . };
+pub type { F_absurd: . }
 
 /// Defines the interpreted-loop frame.
-pub labels { f_loop: Value };
+pub type { F_loop: Value }
 
 /// Defines the host-continuation frame: after the requested application,
 /// re-dispatch the exact host descriptor with `(result & state)`.
-pub labels { f_hostcont: Host_fn & Value };
+pub type { F_hostcont: Host_fn & Value }
 
 /// One pending continuation step.
-pub labels { frame: | F_app1
-| F_app2
-| F_arg
-| F_let
-| F_psnd
-| F_pfst
-| F_fst
-| F_snd
-| F_left
-| F_right
-| F_eith_f
-| F_eith_g
-| F_eith_apply
-| F_ite_then
-| F_ite_else
-| F_ite_apply
-| F_absurd
-| F_loop
-| F_hostcont };
+pub type {
+  Frame:
+    | F_app1
+    | F_app2
+    | F_arg
+    | F_let
+    | F_psnd
+    | F_pfst
+    | F_fst
+    | F_snd
+    | F_left
+    | F_right
+    | F_eith_f
+    | F_eith_g
+    | F_eith_apply
+    | F_ite_then
+    | F_ite_else
+    | F_ite_apply
+    | F_absurd
+    | F_loop
+    | F_hostcont
+}
 
 /// The bare frame sum inside a `Frame` — the widen target for frame constructors.
 pub type Frame_shape =
@@ -242,69 +245,69 @@ pub fn un_frame(f: Frame) -> Frame_shape { Frame.get(f) }
 // Each injects a frame payload into the right arm of the `Frame` sum.
 // Defined here, before the transition functions that push them, so
 // ordinary order-sensitive visibility is satisfied.
-fn mk_app1(v: Value) -> Frame { {frame = widen_sum({f_app1 = v})[Frame_shape]} }
+fn mk_app1(v: Value) -> Frame { Frame.mk(widen_sum(F_app1.mk(v))[Frame_shape]) }
 
-fn mk_app2(v: Value) -> Frame { {frame = widen_sum({f_app2 = v})[Frame_shape]} }
+fn mk_app2(v: Value) -> Frame { Frame.mk(widen_sum(F_app2.mk(v))[Frame_shape]) }
 
-fn mk_arg(t: Term, e: Env) -> Frame { {frame = widen_sum({f_arg = (t, e)})[Frame_shape]} }
+fn mk_arg(t: Term, e: Env) -> Frame { Frame.mk(widen_sum(F_arg.mk((t, e)))[Frame_shape]) }
 
-fn mk_let(t: Term, e: Env) -> Frame { {frame = widen_sum({f_let = (t, e)})[Frame_shape]} }
+fn mk_let(t: Term, e: Env) -> Frame { Frame.mk(widen_sum(F_let.mk((t, e)))[Frame_shape]) }
 
-fn mk_psnd(t: Term, e: Env) -> Frame { {frame = widen_sum({f_psnd = (t, e)})[Frame_shape]} }
+fn mk_psnd(t: Term, e: Env) -> Frame { Frame.mk(widen_sum(F_psnd.mk((t, e)))[Frame_shape]) }
 
-fn mk_pfst(v: Value) -> Frame { {frame = widen_sum({f_pfst = v})[Frame_shape]} }
+fn mk_pfst(v: Value) -> Frame { Frame.mk(widen_sum(F_pfst.mk(v))[Frame_shape]) }
 
-fn mk_fst() -> Frame { {frame = widen_sum({f_fst=})[Frame_shape]} }
+fn mk_fst() -> Frame { Frame.mk(widen_sum(F_fst.mk(()))[Frame_shape]) }
 
-fn mk_snd() -> Frame { {frame = widen_sum({f_snd=})[Frame_shape]} }
+fn mk_snd() -> Frame { Frame.mk(widen_sum(F_snd.mk(()))[Frame_shape]) }
 
-fn mk_left() -> Frame { {frame = widen_sum({f_left=})[Frame_shape]} }
+fn mk_left() -> Frame { Frame.mk(widen_sum(F_left.mk(()))[Frame_shape]) }
 
-fn mk_right() -> Frame { {frame = widen_sum({f_right=})[Frame_shape]} }
+fn mk_right() -> Frame { Frame.mk(widen_sum(F_right.mk(()))[Frame_shape]) }
 
 fn mk_eith_f(f: Term, g: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_eith_f = (f, g, e)})[Frame_shape]}
+  Frame.mk(widen_sum(F_eith_f.mk((f, g, e)))[Frame_shape])
 }
 
 fn mk_eith_g(s: Value, g: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_eith_g = (s, (g, e))})[Frame_shape]}
+  Frame.mk(widen_sum(F_eith_g.mk((s, (g, e))))[Frame_shape])
 }
 
 fn mk_eith_apply(s: Value, f: Value) -> Frame {
-  {frame = widen_sum({f_eith_apply = (s, f)})[Frame_shape]}
+  Frame.mk(widen_sum(F_eith_apply.mk((s, f)))[Frame_shape])
 }
 
 fn mk_ite_then(bool_type: Host_type, t: Term, el: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_ite_then = (bool_type, (t, (el, e)))})[Frame_shape]}
+  Frame.mk(widen_sum(F_ite_then.mk((bool_type, (t, (el, e)))))[Frame_shape])
 }
 
 fn mk_ite_else(bool_type: Host_type, c: Value, el: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_ite_else = (bool_type, (c, (el, e)))})[Frame_shape]}
+  Frame.mk(widen_sum(F_ite_else.mk((bool_type, (c, (el, e)))))[Frame_shape])
 }
 
 fn mk_ite_apply(bool_type: Host_type, c: Value, t: Value) -> Frame {
-  {frame = widen_sum({f_ite_apply = (bool_type, (c, t))})[Frame_shape]}
+  Frame.mk(widen_sum(F_ite_apply.mk((bool_type, (c, t))))[Frame_shape])
 }
 
-fn mk_absurd() -> Frame { {frame = widen_sum({f_absurd=})[Frame_shape]} }
+fn mk_absurd() -> Frame { Frame.mk(widen_sum(F_absurd.mk(()))[Frame_shape]) }
 
-fn mk_loop(step: Value) -> Frame { {frame = widen_sum({f_loop = step})[Frame_shape]} }
+fn mk_loop(step: Value) -> Frame { Frame.mk(widen_sum(F_loop.mk(step))[Frame_shape]) }
 
 fn mk_hostcont(cont: Host_fn, state: Value) -> Frame {
-  {frame = widen_sum({f_hostcont = (cont, state)})[Frame_shape]}
+  Frame.mk(widen_sum(F_hostcont.mk((cont, state)))[Frame_shape])
 }
 
 // =====================================================================
 // Kont — the continuation, a stack of frames
 // =====================================================================
 /// The continuation stack, innermost frame first.
-pub rec labels { kont: . | (Frame & Kont) };
+pub rec type { Kont: . | (Frame & Kont) }
 
 /// The empty continuation.
-pub fn kont_nil() -> Kont { {kont = widen_sum(())[. | (Frame & Kont)]} }
+pub fn kont_nil() -> Kont { Kont.mk(widen_sum(())[. | (Frame & Kont)]) }
 
 /// Pushes one frame onto the continuation.
-pub fn kont_push(f: Frame, k: Kont) -> Kont { {kont = widen_sum((f, k))[. | (Frame & Kont)]} }
+pub fn kont_push(f: Frame, k: Kont) -> Kont { Kont.mk(widen_sum((f, k))[. | (Frame & Kont)]) }
 
 /// One-step destructor on the continuation.
 pub fn un_kont(k: Kont) -> . | (Frame & Kont) { Kont.get(k) }
@@ -316,22 +319,22 @@ pub fn un_kont(k: Kont) -> . | (Frame & Kont) { Kont.get(k) }
 //   Cs_eval   Term & Env   evaluate this term in this environment
 //   Cs_ret    Value        return this value to the continuation
 /// Defines the evaluate-term control state.
-pub labels { cs_eval: Term & Env };
+pub type { Cs_eval: Term & Env }
 
 /// Defines the return-value control state.
-pub labels { cs_ret: Value };
+pub type { Cs_ret: Value }
 
 /// The machine's current activity: evaluating a term, or returning a value.
-pub labels { ctrl: Cs_eval | Cs_ret };
+pub type { Ctrl: Cs_eval | Cs_ret }
 
 /// The bare control sum inside a `Ctrl` — the widen target for control constructors.
 pub type Ctrl_shape = Cs_eval | Cs_ret;
 
 /// Builds the evaluate-term control state.
-pub fn c_eval(t: Term, e: Env) -> Ctrl { {ctrl = widen_sum({cs_eval = (t, e)})[Ctrl_shape]} }
+pub fn c_eval(t: Term, e: Env) -> Ctrl { Ctrl.mk(widen_sum(Cs_eval.mk((t, e)))[Ctrl_shape]) }
 
 /// Builds the return-value control state.
-pub fn c_ret(v: Value) -> Ctrl { {ctrl = widen_sum({cs_ret = v})[Ctrl_shape]} }
+pub fn c_ret(v: Value) -> Ctrl { Ctrl.mk(widen_sum(Cs_ret.mk(v))[Ctrl_shape]) }
 
 /// One-step destructor on a `Ctrl`.
 pub fn un_ctrl(c: Ctrl) -> Ctrl_shape { Ctrl.get(c) }
@@ -340,10 +343,10 @@ pub fn un_ctrl(c: Ctrl) -> Ctrl_shape { Ctrl.get(c) }
 // State — the full machine configuration plus the step budget
 // =====================================================================
 /// Defines the running machine configuration: control, continuation, and remaining step budget.
-pub labels { state: Ctrl & Kont & I32 };
+pub type { State: Ctrl & Kont & I32 }
 
 /// Builds a machine state.
-pub fn mk_state(c: Ctrl, k: Kont, fuel: I32) -> State { {state = (c, k, fuel)} }
+pub fn mk_state(c: Ctrl, k: Kont, fuel: I32) -> State { State.mk((c, k, fuel)) }
 
 /// One-step destructor on a `State`.
 pub fn un_state(s: State) -> Ctrl & Kont & I32 { State.get(s) }
@@ -486,19 +489,19 @@ pub fn env_lookup(e: Env, i: Nat) -> . | Value {
 // product-domain shape and can return a structural `Ev_fold(step, init)`.
 // The evaluator handles only that structural fold outcome.
 /// A runtime-stage domain flattening in progress: remaining value, slots, accumulator.
-labels { flat_group: Value & I32 & Vals };
+type { Flat_group: Value & I32 & Vals }
 
 /// A successfully flattened group.
-labels { flat_ok: Vals };
+type { Flat_ok: Vals }
 
 /// A group whose runtime value did not match its resolved FFI slot shape.
-labels { flat_bad: . };
+type { Flat_bad: . }
 
 type Flat_result = Flat_ok | Flat_bad;
 
-fn flat_ok(values: Vals) -> Flat_result { widen_sum({flat_ok = values})[Flat_result] }
+fn flat_ok(values: Vals) -> Flat_result { widen_sum(Flat_ok.mk(values))[Flat_result] }
 
-fn flat_bad() -> Flat_result { widen_sum({flat_bad=})[Flat_result] }
+fn flat_bad() -> Flat_result { widen_sum(Flat_bad.mk(()))[Flat_result] }
 
 fn flat_finish(result: Flat_result) -> Flat_group | Flat_result {
   widen_sum(result)[Flat_group | Flat_result]
@@ -529,7 +532,7 @@ fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
         , .(product: V_product) {
             match(V_product.get(product)) {
               .(head: Value, tail: Value) {
-                widen_sum({flat_group = (tail, (sub_i32(slots, 1[I32]), vals_push(head, acc)))})[| Flat_group
+                widen_sum(Flat_group.mk((tail, (sub_i32(slots, 1[I32]), vals_push(head, acc)))))[| Flat_group
                 | Flat_result]
               }
             }
@@ -546,7 +549,7 @@ fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
 }
 
 fn flatten_group(value: Value, slots: I32, acc: Vals) -> Flat_result {
-  loop(flatten_group_step, {flat_group = (value, (slots, acc))})
+  loop(flatten_group_step, Flat_group.mk((value, (slots, acc))))
 }
 
 fn vals_to_domain(acc: Vals) -> Value {

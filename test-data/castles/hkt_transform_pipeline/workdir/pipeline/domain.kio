@@ -2,20 +2,15 @@ module pipeline/domain;
 
 import testapi(Bool, I32, String);
 
-pub labels Form_event = { form_name: String, field_name: String, delta: I32, urgent: Bool };
+pub type Form_event = { Form_name: String; Field_name: String; Delta: I32; Urgent: Bool };
 
-pub labels Telemetry_sample = {
-, sample_name: String
-, stage_score: I32
-, route: String
-, approved: Bool
-};
+pub type Telemetry_sample = { Sample_name: String; Stage_score: I32; Route: String; Approved: Bool };
 
-pub labels Pipeline_summary = {
-, report_name: String
-, first_sample: String
-, second_sample: String
-, third_sample: String
-, score_total: I32
-, approvals: I32
+pub type Pipeline_summary = {
+  Report_name: String;
+  First_sample: String;
+  Second_sample: String;
+  Third_sample: String;
+  Score_total: I32;
+  Approvals: I32
 };

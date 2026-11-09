@@ -2,7 +2,7 @@
 ///
 /// Source for fn: [`@source compute`].
 /// Source for type alias: [`@source Count`].
-/// Source for labels: [`@source Color`].
+/// Source for a compact type: [`@source Color`].
 /// Source for op: [`@source add`].
 module src/main;
 
@@ -15,8 +15,8 @@ pub fn compute(n: .) { n }
 /// Count type alias.
 pub type Count = .;
 
-/// Color labels.
-pub labels Color = { red: ., green: ., blue: . };
+/// Color nominal entries.
+pub type Color = { Red: .; Green: .; Blue: .; };
 
 pub fn add(x: ., y: .) { () }
 

@@ -1,5 +1,5 @@
 /// Diamond dependency collapsed by `retype`. The app depends
-/// on two packages that each declare a same-named `newtype Tag` over the
+/// on two packages that each declare a same-named nominal type `Tag` over the
 /// host `I32`: `core/store` (the `idlib` package) and `widget/store` (the
 /// `widget` package, which also relays through its own copy). Identity-
 /// exact nominal typing keeps the two `Tag`s distinct — `core.store.Tag`

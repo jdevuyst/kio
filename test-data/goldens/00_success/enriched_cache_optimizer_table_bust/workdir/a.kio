@@ -2,6 +2,6 @@ module a;
 
 host type I32 role(i32);
 
-pub newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap }
+pub type { Wrap: I32 { pub mk; pub get } }
 
-pub fn wrap(n: I32) -> Wrap { Wrap.mk_wrap(n) }
+pub fn wrap(n: I32) -> Wrap { Wrap.mk(n) }

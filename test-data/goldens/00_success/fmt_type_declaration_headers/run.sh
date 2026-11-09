@@ -11,15 +11,15 @@ role(// role start
 str // role end
 ) // host terminator
 ;
-newtype // newtype name
+type { // newtype name
 Box[A] // newtype colon
 : // payload start
 A // member opener
 { pub // constructor keyword
-constructor // constructor name
+// constructor name
 mk; pub // projector keyword
-projector // projector name
-get }
+// projector name
+get } }
 KIO
 )
 reformatted=$(printf '%s\n' "$formatted" | "$KIO_BIN" fmt -)

@@ -2,15 +2,16 @@ module message;
 
 import alphabet as letters;
 import alphabet(Card);
-import alphabet({crossed}, {high}, {vowel});
+import alphabet(Crossed, High, Vowel);
 import logic as bit;
+import macros/row_macros(macro select);
 import testapi(Bool);
 
 // The host offers no loop, so the message is a fixed product of cards and the
 // aggregate facts are folds written out over its nine slots.
 pub type Message = Card & Card & Card & Card & Card & Card & Card & Card & Card;
 
-pub labels Facts = { has_vowel: Bool, crossings_even: Bool, shapes_distinct: Bool };
+pub type Facts = { Has_vowel: Bool; Crossings_even: Bool; Shapes_distinct: Bool };
 
 pub fn spelled() -> Message {
   (
@@ -28,7 +29,10 @@ pub fn spelled() -> Message {
 
 // Two letters share a shape class when both Bool facts agree.
 fn same_shape(x: Card, y: Card) -> Bool {
-  bit.and(bit.same(x.?{crossed}, y.?{crossed}), bit.same(x.?{high}, y.?{high}))
+  bit.and(
+  , bit.same(x.>select { Crossed.get }, y.>select { Crossed.get })
+  , bit.same(x.>select { High.get }, y.>select { High.get })
+  )
 }
 
 fn distinct(x: Card, y: Card) -> Bool { bit.not(same_shape(x, y)) }
@@ -37,25 +41,25 @@ pub fn facts(msg: Message) -> Facts {
   let .(c1: Card, c2: Card, c3: Card, c4: Card, c5: Card, c6: Card, c7: Card, c8: Card, c9: Card) =
     msg;
   let vowel_seen =
-    c1.?{vowel}
-      .>bit.or(c2.?{vowel})
-      .>bit.or(c3.?{vowel})
-      .>bit.or(c4.?{vowel})
-      .>bit.or(c5.?{vowel})
-      .>bit.or(c6.?{vowel})
-      .>bit.or(c7.?{vowel})
-      .>bit.or(c8.?{vowel})
-      .>bit.or(c9.?{vowel});
+    c1.>select { Vowel.get }
+      .>bit.or(c2.>select { Vowel.get })
+      .>bit.or(c3.>select { Vowel.get })
+      .>bit.or(c4.>select { Vowel.get })
+      .>bit.or(c5.>select { Vowel.get })
+      .>bit.or(c6.>select { Vowel.get })
+      .>bit.or(c7.>select { Vowel.get })
+      .>bit.or(c8.>select { Vowel.get })
+      .>bit.or(c9.>select { Vowel.get });
   let parity =
-    c1.?{crossed}
-      .>bit.xor(c2.?{crossed})
-      .>bit.xor(c3.?{crossed})
-      .>bit.xor(c4.?{crossed})
-      .>bit.xor(c5.?{crossed})
-      .>bit.xor(c6.?{crossed})
-      .>bit.xor(c7.?{crossed})
-      .>bit.xor(c8.?{crossed})
-      .>bit.xor(c9.?{crossed});
+    c1.>select { Crossed.get }
+      .>bit.xor(c2.>select { Crossed.get })
+      .>bit.xor(c3.>select { Crossed.get })
+      .>bit.xor(c4.>select { Crossed.get })
+      .>bit.xor(c5.>select { Crossed.get })
+      .>bit.xor(c6.>select { Crossed.get })
+      .>bit.xor(c7.>select { Crossed.get })
+      .>bit.xor(c8.>select { Crossed.get })
+      .>bit.xor(c9.>select { Crossed.get });
   let neighbours =
     distinct(c1, c2)
       .>bit.and(distinct(c2, c3))
@@ -65,5 +69,5 @@ pub fn facts(msg: Message) -> Facts {
       .>bit.and(distinct(c6, c7))
       .>bit.and(distinct(c7, c8))
       .>bit.and(distinct(c8, c9));
-  {has_vowel = vowel_seen, crossings_even = bit.not(parity), shapes_distinct = neighbours}
+  (Has_vowel.mk(vowel_seen), Crossings_even.mk(bit.not(parity)), Shapes_distinct.mk(neighbours))
 }

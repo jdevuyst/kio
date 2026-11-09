@@ -6,15 +6,16 @@ import host_descriptor(Host_fn, Host_type, Host_types);
 import host_descriptor(host_fn_eq, host_types_cons, host_types_nil);
 import host_descriptor(i32_role, mk_host_fn, mk_host_id, mk_role_host_type);
 import hostrec(make_lit_default, test_bool_default);
+import loader(Apply, I32_out, Lookup, Unit_in);
 import loader(Diag, Host_adapter, Host_fn_binding);
 import loader(Host_fn_bindings, Image, Loaded, Lr_diag, Lr_image, Surface);
 import loader(diag_message, host_fn_bindings_cons, host_fn_bindings_nil);
 import loader(instantiate, mk_host_adapter, mk_host_fn_binding);
 import loader(un_load_outcome);
-import loader({apply}, {i32_out}, {lookup}, {unit_in});
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
 import testapi(Bool, I32, Scalar, String);
@@ -76,13 +77,13 @@ fn serve_target(call: Host_fn & Value) -> Call_result {
 }
 
 fn call_loaded[P](surface: Surface[P], name: String) -> String {
-  match(surface.?{lookup}(name)) {
+  match((surface.>select { Lookup.get[P] })(name)) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
               }
             }

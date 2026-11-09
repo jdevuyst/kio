@@ -9,31 +9,31 @@ import rational/core(Division_by_zero, Eval, Fraction, Rational);
 import testapi(I32);
 import testapi/iter(loop);
 
-pub labels { lit: Fraction };
+pub type { Lit: Fraction }
 
 rec {
-  pub labels { expr: Lit | Add | Sub | Mul | Div };
-  pub labels { add: Expr & Expr };
-  pub labels { sub: Expr & Expr };
-  pub labels { mul: Expr & Expr };
-  pub labels { div: Expr & Expr }
+  pub type { Expr: Lit | Add | Sub | Mul | Div };
+  pub type { Add: Expr & Expr };
+  pub type { Sub: Expr & Expr };
+  pub type { Mul: Expr & Expr };
+  pub type { Div: Expr & Expr }
 }
 
 type Node = Lit | Add | Sub | Mul | Div;
 
-fn wrap(node: Node) -> Expr { {expr = node} }
+fn wrap(node: Node) -> Expr { Expr.mk(node) }
 
 pub fn lit(numerator: I32, denominator: I32) -> Expr {
-  wrap(({lit = core.fraction(numerator, denominator)}.>widen_sum)[Node])
+  wrap((Lit.mk(core.fraction(numerator, denominator)).>widen_sum)[Node])
 }
 
-pub fn add(left: Expr, right: Expr) -> Expr { wrap(({add = (left, right)}.>widen_sum)[Node]) }
+pub fn add(left: Expr, right: Expr) -> Expr { wrap((Add.mk(left, right).>widen_sum)[Node]) }
 
-pub fn sub(left: Expr, right: Expr) -> Expr { wrap(({sub = (left, right)}.>widen_sum)[Node]) }
+pub fn sub(left: Expr, right: Expr) -> Expr { wrap((Sub.mk(left, right).>widen_sum)[Node]) }
 
-pub fn mul(left: Expr, right: Expr) -> Expr { wrap(({mul = (left, right)}.>widen_sum)[Node]) }
+pub fn mul(left: Expr, right: Expr) -> Expr { wrap((Mul.mk(left, right).>widen_sum)[Node]) }
 
-pub fn div(left: Expr, right: Expr) -> Expr { wrap(({div = (left, right)}.>widen_sum)[Node]) }
+pub fn div(left: Expr, right: Expr) -> Expr { wrap((Div.mk(left, right).>widen_sum)[Node]) }
 
 /// Thread two evaluated children into a binary operation, stopping at the first
 /// fault. This is the whole of the error propagation: a division by zero found

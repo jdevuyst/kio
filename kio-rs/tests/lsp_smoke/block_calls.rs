@@ -10,7 +10,7 @@ fn lsp_reverse_block_ufcs_brace_fix_applies_without_a_parsed_module() {
             let dir = TempDir::new("block-ufcs-brace-fix");
             dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
             let provider = format!(
-                "{}\npub macro prefixed : . -> . -> . -> . {{ trailing product; trailing product fallback; impl unit_checked }}",
+                "{}\npub macro prefixed : (. & . & .) -> . {{ trailing product; trailing product fallback; impl unit_checked }}",
                 include_str!("../fixtures/trailing-blocks/provider.kio")
             );
             let provider_file = dir.write("provider.kio", &provider);
@@ -103,7 +103,7 @@ fn lsp_block_ufcs_receivers_keep_navigation_tokens_and_signature_help() {
     let dir = TempDir::new("block-ufcs-receivers");
     dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
     let provider = format!(
-        "{}\npub macro prefixed : (. & .) -> . -> . -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
@@ -233,7 +233,7 @@ fn lsp_block_ufcs_label_completion_applies_in_every_direction() {
     let dir = TempDir::new("block-ufcs-label-completion");
     dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
     let provider = format!(
-        "{}\npub macro prefixed : (. & .) -> . -> . -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
@@ -290,7 +290,7 @@ fn lsp_block_ufcs_missing_blocks_insert_before_reverse_receiver() {
     let dir = TempDir::new("block-ufcs-scaffold");
     dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
     let provider = format!(
-        "{}\npub macro prefixed : (. & .) -> . -> . -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
@@ -379,8 +379,7 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
         .replace("macro two :", "macro renamed :");
     let provider_file = dir.write("provider.kio", &provider);
     let provider_uri = path_to_file_uri(&provider_file);
-    let valid =
-        "module app; import provider(macro renamed); fn run() { renamed { () } fallback { () } }";
+    let valid = "module app; import provider(macro renamed); fn run() { renamed((), ()); renamed { () } fallback { () } }";
     let file = dir.write("app.kio", valid);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -392,6 +391,10 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
     );
     open_and_wait_for_analysis(&mut lsp, &provider_uri, &provider);
     open_and_wait_for_analysis(&mut lsp, &uri, valid);
+    assert_unused_private_diagnostics(
+        &wait_for_publish_version(&mut lsp, &uri, 1)["diagnostics"],
+        &[("function", "run")],
+    );
 
     // Preserve a confirmed provider header before replacing the valid body
     // with an incomplete one; a quiet diagnostics stream is not a barrier.
@@ -572,7 +575,7 @@ fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
     let dir = TempDir::new("block-editor-fixes");
     dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
     let provider = format!(
-        "{}\npub macro finish : . -> Sequence[Box][.] -> . {{ trailing product; trailing sequence after; impl first_checked }}",
+        "{}\npub macro finish : (. & Sequence[Box][.]) -> . {{ trailing product; trailing sequence after; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
@@ -733,8 +736,8 @@ fn lsp_trailing_labels_follow_exact_declarations_and_rename_reanalyses() {
     let provider = format!(
         "{}\n{}\n{}\n",
         include_str!("../fixtures/trailing-blocks/provider.kio"),
-        "pub macro alternate : . -> . -> . { trailing product; trailing product fallback; impl unit_checked }",
-        "pub macro three : . -> . -> . -> . { trailing product; trailing product fallback; trailing product final; impl unit_checked }"
+        "pub macro alternate : (. & .) -> . { trailing product; trailing product fallback; impl unit_checked }",
+        "pub macro three : (. & . & .) -> . { trailing product; trailing product fallback; trailing product final; impl unit_checked }"
     );
     let provider_file = dir.write("provider.kio", &provider);
     let provider_uri = path_to_file_uri(&provider_file);

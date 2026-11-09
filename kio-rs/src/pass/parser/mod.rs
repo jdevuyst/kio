@@ -447,7 +447,7 @@ pub fn parse_lock_file(source: &str, stem: Option<&str>) -> Result<LockFile, Err
 #[cfg(test)]
 pub(crate) const IMPORT_GRAMMAR_CONSUMER: &str = "module app/main;
 import syntax(op _ + _, op _ => _, varop [% %]);
-labels { field: . };
+type { Field: . };
 fn run(a: ., b: .) -> . { [% a => (a + b), b => a %] }
 rec(loop) { fn nested(a: ., b: .) -> . { a + b } }";
 
@@ -669,10 +669,7 @@ mod tests {
     fn tooling_complete_header_and_member_names_are_binder_slots() {
         for (source, binder) in [
             ("module app; type Alias[A] = A;", "Alias"),
-            (
-                "module app; newtype Name : . { constructor make; projector unwrap; }",
-                "make",
-            ),
+            ("module app; type { Name: . { mk; get; }; }", "Name"),
             ("module app; host type Name;", "Name"),
             ("module app;", "app"),
         ] {
@@ -1103,34 +1100,7 @@ mod tests {
     }
 
     #[test]
-    fn tooling_closed_row_let_prefix_is_owned_only_by_a_block_statement() {
-        let source = "module app; labels { field: . }; fn run(value: Field) { let .({field as local}) = value; local }";
-        let cursor = source.find("field as").unwrap() as u32 + 6;
-        assert!(parse(source).is_ok());
-        let probe = probe_tooling(
-            source,
-            Some(crate::ast::KioFileKind::Module),
-            Some(cursor),
-            None,
-        );
-        assert!(probe.parse_error.is_none());
-        assert_eq!(probe.facts.cursor.unwrap().keywords, ["as"]);
-
-        let expression = "module app; fn run() { call(let .({field ";
-        let probe = probe_tooling(
-            expression,
-            Some(crate::ast::KioFileKind::Module),
-            Some(expression.len() as u32),
-            None,
-        );
-        assert!(probe.parse_error.is_some());
-        assert!(
-            probe
-                .facts
-                .cursor
-                .is_none_or(|context| !context.keywords.contains(&"as"))
-        );
-
+    fn tooling_closed_owners_keep_contextual_keyword_choices() {
         for (kind, source, expected) in [
             (
                 crate::ast::KioFileKind::Module,
@@ -1166,10 +1136,10 @@ mod tests {
         use crate::ast::KioFileKind::{Module, Signature};
 
         let mut cases = vec![
-            (Module, "module app; rec ".to_owned(), vec!["labels", "newtype"]),
-            (Module, "module app; pub rec ".to_owned(), vec!["labels", "newtype"]),
-            (Module, "module app; rec { ".to_owned(), vec!["labels", "newtype", "pub", "type"]),
-            (Module, "module app; rec { pub ".to_owned(), vec!["labels", "newtype", "type"]),
+            (Module, "module app; rec ".to_owned(), vec!["type"]),
+            (Module, "module app; pub rec ".to_owned(), vec!["type"]),
+            (Module, "module app; rec { ".to_owned(), vec!["pub", "type"]),
+            (Module, "module app; rec { pub ".to_owned(), vec!["type"]),
             (Module, "module app; rec(loop) { pub ".to_owned(), vec!["fn"]),
             (Module, "module app; host type A role(str) { owned ".to_owned(), vec![]),
             (
@@ -1177,7 +1147,6 @@ mod tests {
                 "module app; macro make: . { impl run; ".to_owned(),
                 vec!["captures", "trailing"],
             ),
-            (Module, "module app; labels { field: . }; fn run(value: Field) { let .({field ".to_owned(), vec!["as"]),
             (Signature, "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } } ".to_owned(), vec!["breaking", "with"]),
             (Signature, "signature app v(1); v(1) { breaking { remove { module api { run; } } ".to_owned(), vec!["add", "modify"]),
         ];
@@ -1556,14 +1525,15 @@ mod tests {
     }
 
     #[test]
-    fn tooling_complete_host_and_label_headers_retain_real_type_parameters() {
+    fn tooling_complete_host_and_nominal_headers_retain_real_type_parameters() {
         for (source, expected) in [
             ("module app; host fn run[A](value: ", vec!["A"]),
             ("module app; host fn run[A](value: A) -> ", vec!["A"]),
             (
-                "module app; labels Choice[A] = { item[B] <C>: ",
-                vec!["A", "B", "C"],
+                "module app; type Choice[A] = { Item[B] <C>: ",
+                vec!["B", "C"],
             ),
+            ("module app; type Choice[A] = { Item: . } | A", vec!["A"]),
         ] {
             let probe = probe_tooling(
                 source,
@@ -1639,9 +1609,9 @@ mod tests {
                 "name",
             ),
             (
-                "module app; labels Name = {label: .};",
+                "module app; type Name = {Label: .};",
                 KioFileKind::Module,
-                "label:",
+                "Label:",
             ),
         ] {
             let cursor = source.find(binder).unwrap() as u32 + 1;
@@ -1772,8 +1742,8 @@ mod tests {
             "module app; equiv same[A](value: A) { value; value }",
             "module app; equiv same[A](value: A) { value; f([B] ) }",
             "module app; host fn run[A](value: A) -> A;",
-            "module app; labels Choice[A] = { item[B] <C>: A & B & C };",
-            "module app; rec { type Alias = ; newtype Later : . { constructor make; projector unwrap; }; }",
+            "module app; type Choice[A] = { Item[B] <C>: A & B & C; };",
+            "module app; rec { type Alias = ; type { Later: . { mk; get; }; }; }",
         ] {
             let cursor = source
                 .find("= ;")
@@ -2070,22 +2040,22 @@ mod tests {
             (
                 "signature app v(1); v(1) { with { module api { ",
                 KioFileKind::Signature,
-                vec!["import", "pub", "pure", "host", "rec", "type", "newtype"],
+                vec!["import", "pub", "pure", "host", "rec", "type"],
             ),
             (
                 "signature app v(1); v(1) { breaking { add { module api { ",
                 KioFileKind::Signature,
-                vec!["import", "pub", "pure", "host", "type", "newtype"],
+                vec!["import", "pub", "pure", "host", "type"],
             ),
             (
                 "module app; rec { ",
                 KioFileKind::Module,
-                vec!["pub", "type", "newtype", "labels"],
+                vec!["pub", "type"],
             ),
             (
                 "signature app v(1); v(1) { with { module api { rec { ",
                 KioFileKind::Signature,
-                vec!["pub", "type", "newtype"],
+                vec!["pub", "type"],
             ),
         ] {
             let probe = probe_tooling(source, Some(kind), Some(source.len() as u32), None);
@@ -2261,7 +2231,7 @@ mod tests {
     }
 
     #[test]
-    fn tooling_scope_revision_retains_patterns_and_row_lets_as_ast_carriers() {
+    fn tooling_scope_revision_retains_patterns_as_ast_carriers() {
         use super::core::ScopeSyntax;
         use crate::ast::KioFileKind;
         let source =
@@ -2281,17 +2251,6 @@ mod tests {
         );
         assert!(
             matches!(&binding.syntax, ScopeSyntax::Binding { name: None, pattern: Some(pattern), .. } if pattern.elems.len() == 2)
-        );
-        let source = "module app; fn run(record: .) { let .({field as renamed}) = record; ";
-        let probe = probe_tooling(
-            source,
-            Some(KioFileKind::Module),
-            Some(source.len() as u32),
-            None,
-        );
-        assert!(probe.parse_error.is_some());
-        assert!(
-            matches!(&probe.facts.scope_prefix[1].syntax, ScopeSyntax::RowLet(entries) if entries.len() == 1)
         );
     }
 
@@ -2507,19 +2466,26 @@ mod tests {
     #[test]
     fn tooling_roles_are_exact_and_survive_a_malformed_sibling() {
         use crate::ast::KioFileKind;
-        let source = "module app; newtype Box : . { constructor constructor; projector projector; }; host type A role(i32); fn broken(";
+        let source = "module app; type { Box: . { mk; get; }; } fn ordinary(role: .) { role } host type A role(i32); fn broken(";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert_eq!(probe.kind, Some(KioFileKind::Module));
         assert!(probe.lexical_error.is_none());
         assert!(probe.parse_error.is_some());
         let keywords = tooling_keywords(&probe);
-        for word in ["constructor", "projector", "role"] {
-            let positions: Vec<_> = keywords
-                .iter()
-                .filter(|(text, _)| text == word)
-                .map(|(_, span)| span.start as usize)
-                .collect();
-            assert_eq!(positions, vec![source.find(word).unwrap()], "{word}");
+        let positions: Vec<_> = keywords
+            .iter()
+            .filter(|(text, _)| text == "role")
+            .map(|(_, span)| span.start as usize)
+            .collect();
+        assert_eq!(positions, vec![source.rfind("role").unwrap()], "role");
+        for role in ["mk", "get"] {
+            let start = source.find(role).unwrap() as u32;
+            assert!(
+                probe.facts.source_names.iter().any(|fact| fact.span
+                    == crate::span::Span::new(start, start + role.len() as u32)
+                    && fact.role == core::SourceNameRole::Function),
+                "{role}"
+            );
         }
     }
 
@@ -2585,27 +2551,15 @@ mod tests {
     }
 
     #[test]
-    fn tooling_newtype_choices_use_member_occupancy() {
+    fn tooling_nominal_choices_use_member_occupancy() {
         use crate::ast::KioFileKind;
         for (prefix, expected) in [
-            (
-                "module a; newtype A : . { ",
-                vec!["pub", "constructor", "projector"],
-            ),
-            (
-                "module a; newtype A : . { constructor mk; ",
-                vec!["pub", "projector"],
-            ),
-            (
-                "module a; newtype A : . { projector get; pub ",
-                vec!["constructor"],
-            ),
-            (
-                "module a; newtype A : . { constructor mk; projector get; ",
-                vec![],
-            ),
+            ("module a; type { A: . { ", vec!["pub", "mk", "get"]),
+            ("module a; type { A: . { mk; ", vec!["pub", "get"]),
+            ("module a; type { A: . { get; pub ", vec!["mk"]),
+            ("module a; type { A: . { mk; get; ", vec![]),
         ] {
-            let source = format!("{prefix}}};");
+            let source = format!("{prefix}}}; }}");
             let probe = probe_tooling(
                 &source,
                 Some(KioFileKind::Module),
@@ -2970,7 +2924,7 @@ mod tests {
                     import_grammar_roundtrip(&grammar);
                     let signature = grammar.render();
                     let siblings = p(&format!(
-                        "module c; import p({signature}, z, {{field}}, op _ + _, varop [~ ~]);"
+                        "module c; import p({signature}, z, Field, op _ + _, varop [~ ~]);"
                     ));
                     let ImportKind::Selective { items, .. } = &siblings.imports[0].kind else {
                         panic!("selective")
@@ -3116,10 +3070,10 @@ mod tests {
         assert!(matches!(&module.items[0], Item::FnDef(d) if d.name == "after"));
         for declaration in [
             "type A = .;",
-            "newtype A : . { constructor make; projector take; };",
-            "labels { field: . };",
+            "type { A : . { mk; get; }; };",
+            "type { Field: . };",
             "pub fn after() -> . { () }",
-            "rec newtype A : . | A { constructor make; projector take; };",
+            "rec type { A : . | A { mk; get; }; };",
         ] {
             let source = format!("module c; import m\n {declaration}");
             assert!(parse(&source).is_err());
@@ -4416,7 +4370,6 @@ pub fn main() -> . { () }
                 Item::LiteralAlias(_, _) => "literal",
                 Item::Newtype(_) => "newtype",
                 Item::Labels(_, _) => "labels",
-                Item::LabelForward(_, _) => "label_forward",
                 Item::Equiv(_, _) => "equiv",
                 Item::Macro(_, _) => "macro",
                 Item::HostType(_) => "host_type",
@@ -4625,26 +4578,26 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn import_selective_namespaces_are_structurally_distinct() {
-        let m = p("module x; import pkg/mod(item, Item, {item});");
+    fn import_selective_value_and_type_names_remain_distinct() {
+        let m = p("module x; import pkg/mod(item, Item);");
         let items = selective_items(&m.imports[0]);
         assert!(matches!(&items[0], ImportItem::Name { name, .. } if name == "item"));
         assert!(matches!(&items[1], ImportItem::Name { name, .. } if name == "Item"));
-        assert!(matches!(
-            &items[2],
-            ImportItem::Label { name, .. } if name == "item"
-        ));
-        assert_eq!(items[2].as_name(), None);
-        assert_eq!(items[2].as_label().map(|(name, _)| name), Some("item"));
     }
 
     #[test]
-    fn import_label_item_requires_a_label_name() {
-        let msg = p_err("module x; import pkg/mod({Item});");
-        assert!(
-            msg.contains("label name `Item` must have a lowercase first letter"),
-            "got: {msg}"
-        );
+    fn braced_import_selection_is_outside_ordinary_grammar() {
+        for provider in ["origin", "missing/provider"] {
+            for selection in ["{item}", "{Item}", "{// keep\n item // tail\n}"] {
+                let source = format!("module x; import {provider}({selection});");
+                let eager = parse(&source).expect_err("an import selection requires a name");
+                let lazy = parse_lazy(&source).expect_err("headers use the same grammar");
+                assert_eq!(eager.diag(), lazy.diag());
+                assert!(matches!(eager, Error::Parse(_)));
+                let ordinary = source.replacen('{', "", 1).replacen('}', "", 1);
+                parse(&ordinary).expect("ordinary selector is syntactically valid");
+            }
+        }
     }
 
     #[test]
@@ -4735,7 +4688,7 @@ fn ok() -> . { () }
     #[test]
     fn import_operator_projection_is_delimited_from_sibling_items() {
         let module = p_header(
-            "module x; import syntax(Mytype, my_function, op _ + __, varop [* *], {field});",
+            "module x; import syntax(Mytype, my_function, op _ + __, varop [* *], Field);",
         );
         let items = selective_items(&module.imports[0]);
         assert_eq!(items.len(), 5);
@@ -4743,7 +4696,7 @@ fn ok() -> . { () }
         assert_eq!(items[1].as_name(), Some("my_function"));
         assert_eq!(imported_grammar(&items[2]).render(), "op _ + __");
         assert_eq!(imported_grammar(&items[3]).render(), "varop [* *]");
-        assert_eq!(items[4].as_label().map(|(name, _)| name), Some("field"));
+        assert_eq!(items[4].as_name(), Some("Field"));
     }
 
     #[test]
@@ -5085,7 +5038,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_universal_binder_bracket_spelling() {
-        let m = p("module x; newtype Box[A] : A { constructor mk_box; pub projector un_box; };");
+        let m = p("module x; type { Box[A] : A { mk; pub get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.type_params.len(), 1);
@@ -5097,8 +5050,7 @@ fn ok() -> . { () }
 
     #[test]
     fn parenthesized_type_param_in_newtype_header_rejected() {
-        let err =
-            p_err("module x; newtype Box([A]) : A { constructor mk_box; projector un_box; };");
+        let err = p_err("module x; type { Box([A]) : A { mk; get; }; };");
         assert!(
             err.contains("expected `:`") || err.contains("expected type expression"),
             "parenthesized type parameter must not parse in a newtype header, got: {err}"
@@ -5107,7 +5059,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_binders_use_separate_brackets() {
-        let m = p("module x; newtype Box[A][B] : A { constructor mk_box; projector un_box; };");
+        let m = p("module x; type { Box[A][B] : A { mk; get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.type_params.len(), 2);
@@ -5116,10 +5068,7 @@ fn ok() -> . { () }
             }
             other => panic!("expected Newtype, got {other:?}"),
         }
-        assert!(
-            parse("module x; newtype Box[A, B] : A { constructor mk_box; projector un_box; };")
-                .is_err()
-        );
+        assert!(parse("module x; type { Box[A, B] : A { mk; get; }; };").is_err());
     }
 
     #[test]
@@ -5211,7 +5160,7 @@ fn ok() -> . { () }
     fn kind_annotated_binders_round_trip_through_fmt() {
         // The pretty-printer re-emits the star annotation, so a kinded
         // newtype header survives a parse → print → parse round-trip.
-        let src = "module x; newtype Either[*E][**A] : A { constructor mk; pub projector un; };";
+        let src = "module x; type { Either[*E][**A] : A { mk; pub get; }; };";
         let m = p(src);
         match &m.items[0] {
             Item::Newtype(d) => {
@@ -5304,8 +5253,8 @@ fn ok() -> . { () }
     #[test]
     fn recursive_data_singleton_spellings_parse() {
         for source in [
-            "module x; rec newtype List[A] : . | (A & List[A]) { constructor mk_list; projector un_list; };",
-            "module x; rec labels Tree = { leaf: I32 } | { branch: Tree & Tree };",
+            "module x; rec type { List[A] : . | (A & List[A]) { mk; get; }; };",
+            "module x; rec type Tree = { Leaf: I32 } | { Branch: Tree & Tree };",
         ] {
             parse(source).unwrap_or_else(|error| {
                 panic!("recursive data declaration failed to parse for {source:?}: {error:?}")
@@ -5315,7 +5264,8 @@ fn ok() -> . { () }
 
     #[test]
     fn mutual_recursive_type_group_parses() {
-        let source = "module x; rec { newtype A : . | B { constructor mk_a; projector un_a; }; newtype B : . | A { constructor mk_b; projector un_b; }; }";
+        let source =
+            "module x; rec { type { A : . | B { mk; get; }; }; type { B : . | A { mk; get; }; }; }";
         parse(source)
             .unwrap_or_else(|error| panic!("recursive type group failed to parse: {error:?}"));
     }
@@ -5356,7 +5306,7 @@ fn ok() -> . { () }
                 "// first\n//\n//\n// paragraph\n\n/// Interior note.\n// last\n",
             ] {
                 let source = format!(
-                    "module x;\n{outer_doc}rec {opener}{{\n/// Alias documentation.\ntype A = B; newtype B : A {{ constructor make; projector take }}; // closing boundary\n}}",
+                    "module x;\n{outer_doc}rec {opener}{{\n/// Alias documentation.\ntype A = B; type {{ B : A {{ mk; get }}; }}; // closing boundary\n}}",
                 );
                 let parsed = parse(&source).expect("recursive group");
                 assert_eq!(parse_lazy(&source).unwrap().force_all().unwrap(), parsed);
@@ -5421,7 +5371,7 @@ fn ok() -> . { () }
             "  /// Alias docs.\n",
             "  pub type A = B;\n",
             "  /// Nominal docs.\n",
-            "  pub(x) newtype B : A { constructor mk; projector un; };\n",
+            "  pub(x) type { B : A { mk; get; }; };\n",
             "  // group-trailing context\n",
             "}",
         );
@@ -5441,8 +5391,8 @@ fn ok() -> . { () }
                 .starts_with("/// Nominal docs.")
         );
         assert_eq!(
-            &source[layout.member_marker_offsets[1] as usize..][.."newtype".len()],
-            "newtype"
+            &source[layout.member_marker_offsets[1] as usize..][.."type".len()],
+            "type"
         );
         let trailing = layout
             .trailing_comment_span
@@ -5455,7 +5405,7 @@ fn ok() -> . { () }
 
     #[test]
     fn bare_type_group_leading_visibility_highlights_the_complete_modifier() {
-        let source = "module x/y; pub(x) rec { type A = B; newtype B : A { constructor mk; projector un; }; }";
+        let source = "module x/y; pub(x) rec { type A = B; type { B : A { mk; get; }; }; }";
         let error = parse(source).expect_err("a bare type group has member visibility only");
         let (span, message) = error.diag();
         assert_eq!(
@@ -5587,8 +5537,8 @@ fn ok() -> . { () }
             "module x; pure host type T;",
             "module x; pure host fn f() -> .;",
             "module x; pure type T = .;",
-            "module x; pure newtype T : . { constructor mk; projector un; };",
-            "module x; pure labels { field : . };",
+            "module x; pure type { T: . { mk; get; }; };",
+            "module x; pure type { Field: .; };",
             "module x; pure macro e : [S] S -> [T] T { impl f; };",
             "module x; pure op + _ { impl f; };",
             "module x; pure varop [* *] { foldr g f; };",
@@ -5861,16 +5811,14 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_nullary() {
-        let m = p(
-            "module x; newtype Celsius : . { pub constructor mk_celsius; pub projector to_unit; };",
-        );
+        let m = p("module x; type { Celsius : . { pub mk; pub get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.name, "Celsius");
                 assert!(matches!(d.payload, Type::Unit { .. }));
-                assert_eq!(d.constructor.name, "mk_celsius");
+                assert_eq!(d.constructor.name, "mk");
                 assert!(d.constructor.vis.is_pub());
-                assert_eq!(d.projector.name, "to_unit");
+                assert_eq!(d.projector.name, "get");
                 assert!(d.projector.vis.is_pub());
             }
             other => panic!("expected Newtype, got {other:?}"),
@@ -5879,8 +5827,8 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_parametric_with_rec() {
-        let m = p("module x; rec newtype List[A] : (. | (A & List[A])) { \
-             pub constructor cons; pub projector un_list; };");
+        let m = p("module x; rec type { List[A] : (. | (A & List[A])) { \
+             pub mk; pub get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "List");
             assert!(d.rec_span.is_some());
@@ -5909,26 +5857,26 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_member_order_swappable() {
-        let m = p("module x; newtype Foo : . { pub projector un_foo; pub constructor mk_foo; };");
+        let m = p("module x; type { Foo : . { pub get; pub mk; }; };");
         if let Item::Newtype(d) = &m.items[0] {
-            assert_eq!(d.constructor.name, "mk_foo");
-            assert_eq!(d.projector.name, "un_foo");
+            assert_eq!(d.constructor.name, "mk");
+            assert_eq!(d.projector.name, "get");
         }
     }
 
     #[test]
     fn newtype_member_visibility_must_lead_keyword() {
-        let msg = p_err("module x; newtype Foo : . { constructor pub mk_foo; projector un_foo; };");
-        assert!(
-            msg.contains("write `pub constructor mk`") && msg.contains("not `constructor pub mk`"),
-            "unexpected: {msg}"
-        );
+        let source = "module x; type { Foo: . { mk pub; get; }; };";
+        let error = parse(source).expect_err("visibility must precede the member role");
+        assert!(matches!(error, crate::error::Error::Parse(_)));
+        let span = error.diagnostic().span;
+        assert_eq!(&source[span.start as usize..span.end as usize], "pub");
+        p("module x; type { Foo: . { pub mk; get; }; };");
     }
 
     #[test]
     fn newtype_member_comma_terminator_rejected() {
-        let msg =
-            p_err("module x; newtype Foo : . { pub constructor mk_foo, pub projector un_foo; };");
+        let msg = p_err("module x; type { Foo : . { pub mk, pub get; }; };");
         assert!(
             msg.contains("`;` between block entries"),
             "unexpected: {msg}"
@@ -5937,16 +5885,15 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_missing_member_errors() {
-        let msg = p_err("module x; newtype Foo : . { pub constructor mk_foo; };");
-        assert!(msg.contains("projector"));
+        let msg = p_err("module x; type { Foo : . { pub mk; }; };");
+        assert!(msg.contains("`get`"));
     }
 
     #[test]
     fn newtype_with_existentials_one_binder() {
-        // Existential binders trail the universal-parameter list on
-        // the newtype header: `newtype Pack[A] <U> : A & U`.
-        let m = p("module x; newtype Pack[A] <U> : A & U { \
-             constructor mk_pack; projector un_pack; };");
+        // Existential binders trail the universal parameters on the nominal header.
+        let m = p("module x; type { Pack[A] <U> : A & U { \
+             mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "Pack");
             assert_eq!(d.type_params.len(), 1);
@@ -5962,8 +5909,8 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_with_existentials_multiple_binders() {
-        let m = p("module x; newtype Pack[A] <L> <R> : A & L & R { \
-             constructor mk_pack; projector un_pack; };");
+        let m = p("module x; type { Pack[A] <L> <R> : A & L & R { \
+             mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.existential_params.len(), 2);
             assert_eq!(d.existential_params[0].name, "L");
@@ -5976,7 +5923,7 @@ fn ok() -> . { () }
     #[test]
     fn newtype_with_existentials_no_universals() {
         // Existentials-only header: `Pack <U> : U`.
-        let m = p("module x; newtype Pack <U> : U { constructor mk_pack; projector un_pack; };");
+        let m = p("module x; type { Pack <U> : U { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert!(d.type_params.is_empty());
             assert_eq!(d.existential_params.len(), 1);
@@ -5988,22 +5935,17 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_existential_in_payload_is_parse_error() {
-        // Standalone existential type expressions no longer parse at
-        // all, and the diagnostic points at the newtype-header
-        // alternative.
-        let msg = p_err(
-            "module x; newtype Pack[A] : (<U>, A & U) { constructor mk_pack; projector un_pack; };",
-        );
+        // Existential binders belong on the nominal header.
+        let msg = p_err("module x; type { Pack[A] : (<U>, A & U) { mk; get; }; };");
         assert!(
-            msg.contains("existential type expressions are no longer admissible")
-                || msg.contains("declared on a `newtype` header"),
+            msg.contains("existential type expressions are no longer admissible"),
             "want existential-rejection diagnostic, got: {msg}"
         );
     }
 
     #[test]
     fn newtype_no_existentials_keeps_field_empty() {
-        let m = p("module x; newtype Foo[A] : A { constructor mk_foo; projector un_foo; };");
+        let m = p("module x; type { Foo[A] : A { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert!(d.existential_params.is_empty());
         } else {
@@ -6879,10 +6821,10 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn braced_label_type_form_rejected() {
-        let msg = p_err("module x; labels { box[A] : A }; pub type T = {box: A & B};");
+    fn compact_nominal_rhs_rejects_lowercase_entries() {
+        let msg = p_err("module x; type { Box[A] : A }; pub type T = {box: A & B};");
         assert!(
-            msg.contains("label") && msg.contains("type position"),
+            msg.contains("type name `box`") && msg.contains("uppercase first letter"),
             "got: {msg}"
         );
     }
@@ -9000,18 +8942,26 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn block_label_value_prefix_can_be_parenthesized() {
-        let m = p("module x; fn f() -> . { do({bind = f}) { () } }");
+    fn block_unit_prefix_can_be_parenthesized() {
+        let m = p("module x; fn f() -> . { do({}) { () } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
-        let Expr::BlockCall { prefix, .. } = &d.body else {
+        let Expr::BlockCall { prefix, blocks, .. } = &d.body else {
             panic!("expected block call, got {:?}", d.body);
         };
         assert_eq!(prefix.len(), 1);
         assert!(matches!(
             prefix[0].args.as_slice(),
-            [CallArg::Value(Expr::LabelValue { .. })]
+            [CallArg::Value(Expr::Unit { .. })]
+        ));
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(
+            blocks[0].items.as_slice(),
+            [crate::ast::NeutralItem::Expression {
+                value: Expr::Unit { .. },
+                ..
+            }]
         ));
     }
 
@@ -9495,35 +9445,36 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn label_forward_preserves_written_binding_and_target_spans() {
-        let source = "module x; pub(x) type {local} = {provider.original};";
+    fn type_alias_preserves_written_binding_and_target_spans() {
+        let source = "module x; pub(x) type Local = provider.Original;";
         let module = p(source);
-        let Item::LabelForward(forward, ()) = &module.items[0] else {
-            panic!("expected label forwarding declaration");
+        let Item::TypeAlias(forward) = &module.items[0] else {
+            panic!("expected type alias declaration");
         };
-        assert_eq!(forward.name, "local");
-        assert_eq!(forward.target, "provider.original");
+        assert_eq!(forward.name, "Local");
         assert!(
             matches!(&forward.vis, crate::ast::Visibility::PublicIn(path) if path.segments == ["x"])
         );
         assert_eq!(
             &source[forward.name_span.start as usize..forward.name_span.end as usize],
-            "local"
+            "Local"
         );
         assert_eq!(
-            &source[forward.target_span.start as usize..forward.target_span.end as usize],
-            "provider.original"
+            &source[forward.body.span().start as usize..forward.body.span().end as usize],
+            "provider.Original"
         );
         let editable = forward.editable_span.expect("complete written declaration");
         assert_eq!(
             &source[editable.start as usize..editable.end as usize],
-            "pub(x) type {local} = {provider.original};"
+            "pub(x) type Local = provider.Original;"
         );
     }
 
     #[test]
-    fn label_forward_is_not_a_type_alias_application_or_recursive_member() {
+    fn braced_forwarding_forms_are_outside_ordinary_grammar() {
         for source in [
+            "module x; type {local} = {original};",
+            "module x; type {Local} = {provider.Original};",
             "module x; type {local}[A] = {original};",
             "module x; type {local} = {original(A)};",
             "module x; type {local} = {original: .};",
@@ -9537,20 +9488,20 @@ fn ok() -> . { () }
         ] {
             assert!(parse(source).is_err(), "unexpectedly parsed {source}");
         }
-        let module = p("module x; type {local} = {original}; type Alias[A] = Original[A];");
-        assert!(matches!(&module.items[0], Item::LabelForward(_, ())));
+        let module = p("module x; type Local = provider.Original; type Alias[A] = Original[A];");
+        assert!(matches!(&module.items[0], Item::TypeAlias(alias) if alias.name == "Local"));
         assert!(matches!(&module.items[1], Item::TypeAlias(alias) if alias.type_params.len() == 1));
     }
 
     #[test]
-    fn labels_anonymous_single_entry() {
-        let m = p("module x; labels { foo : . };");
+    fn compact_nominal_anonymous_single_entry() {
+        let m = p("module x; type { Foo : . };");
         match &m.items[0] {
             Item::Labels(d, _) => {
                 assert!(d.type_alias_name.is_none());
                 assert!(d.type_alias_params.is_empty());
                 assert_eq!(d.entries.len(), 1);
-                assert_eq!(d.entries[0].name, "foo");
+                assert_eq!(d.entries[0].name, "Foo");
                 assert!(d.entries[0].type_params.is_empty());
                 assert!(matches!(d.entries[0].payload, Type::Unit { .. }));
             }
@@ -9559,20 +9510,20 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_anonymous_multi_entry() {
-        let m = p("module x; labels { foo : ., bar : ., baz : . };");
+    fn compact_nominal_anonymous_multi_entry() {
+        let m = p("module x; type { Foo : .; Bar : .; Baz : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries.len(), 3);
             let names: Vec<&str> = d.entries.iter().map(|e| e.name.as_str()).collect();
-            assert_eq!(names, vec!["foo", "bar", "baz"]);
+            assert_eq!(names, vec!["Foo", "Bar", "Baz"]);
         } else {
             panic!("expected Labels");
         }
     }
 
     #[test]
-    fn labels_pub_form() {
-        let m = p("module x; pub labels { foo : . };");
+    fn compact_nominal_pub_form() {
+        let m = p("module x; pub type { Foo : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert!(d.vis.is_pub());
         } else {
@@ -9581,8 +9532,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_named_form_introduces_type_alias_name() {
-        let m = p("module x; labels T = { foo : . };");
+    fn compact_nominal_named_form_introduces_type_alias_name() {
+        let m = p("module x; type T = { Foo : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.type_alias_name.as_deref(), Some("T"));
             assert!(d.type_alias_params.is_empty());
@@ -9593,8 +9544,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_parametric_named_form() {
-        let m = p("module x; labels T[A] = { foo[A] : A };");
+    fn compact_nominal_parametric_named_form() {
+        let m = p("module x; type T[A] = { Foo[A] : A };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.type_alias_name.as_deref(), Some("T"));
             assert_eq!(d.type_alias_params.len(), 1);
@@ -9607,58 +9558,100 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_reuse_marker_parses_as_exact_infer_payload() {
-        let m = p(
-            "module x; labels { value[*F][A] : F[A] }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
-        );
-        let Item::Labels(labels, _) = &m.items[1] else {
-            panic!("expected named labels declaration");
-        };
-        assert!(labels.entries[0].is_reuse_marker());
-        assert!(!labels.entries[1].is_reuse_marker());
+    fn nominal_reuse_marker_is_rejected() {
+        for declaration in [
+            "type { Value: _; };",
+            "type Choice = { Value: _; };",
+            "type { Value: .; }; type Choice = { Value: _; };",
+            "type Choice[A] = { Value[A]: _; };",
+            "type Choice = { Value <A>: _; };",
+            "type { Value: _ { mk; get; }; };",
+            "type Choice = { Value: (_); };",
+            "rec type Choice = { Value: _; };",
+        ] {
+            let source = format!("module x; {declaration}");
+            for error in [
+                parse(&source).expect_err("an entry must declare a payload"),
+                parse_lazy(&source)
+                    .and_then(|module| module.force_all())
+                    .expect_err("lazy parsing rejects the same marker"),
+            ] {
+                assert!(
+                    error.diag().1.contains("requires an explicit payload type"),
+                    "{source}: {error:?}"
+                );
+                assert!(
+                    error
+                        .diagnostic()
+                        .help()
+                        .unwrap()
+                        .contains("ordinary type reference")
+                );
+            }
+        }
     }
 
     #[test]
-    fn nested_infer_payload_is_not_a_reuse_marker() {
-        let m = p("module x; labels { value[*F] : F[_] };");
+    fn nominal_nested_infer_remains_an_ordinary_payload() {
+        let m = p("module x; type { Value[*F]: F[_]; };");
         let Item::Labels(labels, _) = &m.items[0] else {
-            panic!("expected labels declaration");
+            panic!("expected compact nominal declaration");
         };
-        assert!(!labels.entries[0].is_reuse_marker());
+        assert!(matches!(
+            &labels.entries[0].payload,
+            Type::Path { args, .. } if matches!(args.as_slice(), [Type::Infer { .. }])
+        ));
     }
 
     #[test]
-    fn grouped_infer_payload_is_not_a_reuse_marker() {
-        let message = p_err("module x; labels Row = { field : (_) };");
-        assert!(message.contains("exact bare `_`"), "got: {message}");
-    }
-
-    #[test]
-    fn labels_same_arm_explicit_and_reuse_is_a_parse_error() {
-        let message = p_err("module x; labels Choice = { value : ., value : _ };");
+    fn nominal_existing_types_are_ordinary_rhs_operands() {
+        let m = p("module x; type { Value[*F][A]: F[A]; }; \
+             type Choice[*G][B] = Value[G][B] & { Other: .; };");
+        let Item::Labels(labels, _) = &m.items[1] else {
+            panic!("expected compact nominal declaration");
+        };
+        assert_eq!(labels.entries.len(), 1);
+        assert_eq!(labels.entries[0].name, "Other");
+        let Some(NominalRhs::Product(left, _, _)) = &labels.type_alias_rhs else {
+            panic!("expected ordinary type operand followed by a compact group");
+        };
         assert!(
-            message.contains("duplicate label `value`"),
+            matches!(left.as_ref(), NominalRhs::Type(Type::Path { segments, args, .. })
+            if segments.len() == 1 && segments[0] == "Value" && args.len() == 2)
+        );
+    }
+
+    #[test]
+    fn nominal_qualified_types_are_ordinary_rhs_operands() {
+        let m = p("module x; type Choice = dep.Value & { Other: .; };");
+        let Item::Labels(labels, _) = &m.items[0] else {
+            panic!("expected compact nominal declaration");
+        };
+        let Some(NominalRhs::Product(left, _, _)) = &labels.type_alias_rhs else {
+            panic!("expected qualified type operand followed by a compact group");
+        };
+        assert!(
+            matches!(left.as_ref(), NominalRhs::Type(Type::Path { segments, .. })
+            if segments.len() == 2 && segments[0] == "dep" && segments[1] == "Value")
+        );
+    }
+
+    #[test]
+    fn nominal_duplicate_entries_are_rejected() {
+        let message = p_err("module x; type Choice = { Value: .; Value: .; };");
+        assert!(
+            message.contains("duplicate nominal `Value`"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn qualified_label_reuse_is_a_directed_parse_error() {
-        let message = p_err("module x; labels Choice = { dep.value : _ };");
-        assert!(
-            message.contains("unqualified module-local"),
-            "got: {message}"
-        );
-    }
-
-    #[test]
-    fn labels_entry_with_existentials() {
-        // Same header shape as `newtype`: existentials trail the
-        // universal-parameter list on the entry.
-        let m = p("module x; labels { dproduct[A] <L> <R> : A & L & R };");
+    fn compact_nominal_entry_with_existentials() {
+        // Compact entries share their binder header with explicit singleton declarations.
+        let m = p("module x; type { Dproduct[A] <L> <R> : A & L & R };");
         if let Item::Labels(d, _) = &m.items[0] {
             let e = &d.entries[0];
-            assert_eq!(e.name, "dproduct");
+            assert_eq!(e.name, "Dproduct");
             assert_eq!(e.type_params.len(), 1);
             assert_eq!(e.type_params[0].name, "A");
             assert_eq!(e.existential_params.len(), 2);
@@ -9670,8 +9663,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_entry_existentials_without_universals() {
-        let m = p("module x; labels { pack <U> : U };");
+    fn compact_nominal_entry_existentials_without_universals() {
+        let m = p("module x; type { Pack <U> : U };");
         if let Item::Labels(d, _) = &m.items[0] {
             let e = &d.entries[0];
             assert!(e.type_params.is_empty());
@@ -9683,8 +9676,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_entry_no_existentials_keeps_field_empty() {
-        let m = p("module x; labels { foo[A] : A };");
+    fn compact_nominal_entry_no_existentials_keeps_field_empty() {
+        let m = p("module x; type { Foo[A] : A };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert!(d.entries[0].existential_params.is_empty());
         } else {
@@ -9693,21 +9686,18 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_entry_existential_in_payload_is_parse_error() {
-        // Standalone existential type expressions no longer parse in
-        // labels entries, and the diagnostic points at the header
-        // alternative.
-        let msg = p_err("module x; labels { foo[A] : (<U>, A & U) };");
+    fn compact_nominal_entry_existential_in_payload_is_parse_error() {
+        // Existential binders belong on the nominal header.
+        let msg = p_err("module x; type { Foo[A] : (<U>, A & U) };");
         assert!(
-            msg.contains("existential type expressions are no longer admissible")
-                || msg.contains("declared on a `newtype` header"),
+            msg.contains("existential type expressions are no longer admissible"),
             "want existential-rejection diagnostic, got: {msg}"
         );
     }
 
     #[test]
-    fn labels_trailing_comma_allowed() {
-        let m = p("module x; labels { foo : ., bar : ., };");
+    fn compact_nominal_trailing_semicolon_allowed() {
+        let m = p("module x; type { Foo : .; Bar : .; };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries.len(), 2);
         } else {
@@ -9716,202 +9706,44 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn labels_empty_block_rejected() {
-        let msg = p_err("module x; labels { };");
-        assert!(msg.contains("at least one label"), "got: {msg}");
+    fn compact_nominal_empty_block_rejected() {
+        let msg = p_err("module x; type { };");
+        assert!(msg.contains("at least one entry"), "got: {msg}");
     }
 
     #[test]
-    fn labels_named_must_use_a_type_name() {
-        let msg = p_err("module x; labels t = { foo : . };");
+    fn compact_nominal_named_must_use_a_type_name() {
+        let msg = p_err("module x; type t = { Foo : . };");
         assert!(msg.contains("type name"), "got: {msg}");
     }
 
     #[test]
-    fn labels_entry_name_must_be_lowercase() {
-        let msg = p_err("module x; labels { Foo : . };");
+    fn compact_nominal_entry_requires_type_name() {
+        let msg = p_err("module x; type { foo : . };");
         assert!(
-            msg.contains("label name `Foo` must have a lowercase first letter"),
+            msg.contains("type name `foo` must have an uppercase first letter"),
             "got: {msg}"
         );
     }
 
     #[test]
-    fn labels_self_reference_payload_legal() {
-        // A `labels` entry's payload may reference its own label —
-        // `labels` bodies inherit the lifted-scope rule from
-        // `newtype` bodies, so the entry's name resolves inside its
-        // own payload.
-        let m = p("module x; labels { list[A] : (. | (A & List[A])) };");
+    fn compact_nominal_self_reference_payload_parses() {
+        // A payload can mention its nominal declaration; recursion is validated later.
+        let m = p("module x; type { List[A] : (. | (A & List[A])) };");
         if let Item::Labels(d, _) = &m.items[0] {
-            assert_eq!(d.entries[0].name, "list");
+            assert_eq!(d.entries[0].name, "List");
         } else {
             panic!("expected Labels");
         }
     }
 
     #[test]
-    fn field_access_postfix_parses() {
-        let m = p("module x; fn read(r: Foo) -> . { r.?{foo} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Access,
-                call: ElaboratorCall::FieldAccess { labels, .. },
-                ..
-            } => {
-                assert_eq!(labels.len(), 1);
-                assert_eq!(labels[0].label, "foo");
-            }
-            other => panic!("expected field access elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn qualified_field_access_postfix_parses() {
-        let m = p("module x; fn read(r: Foo) -> . { r.?{m.foo, m.bar} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Access,
-                call: ElaboratorCall::FieldAccess { labels, .. },
-                ..
-            } => {
-                let got: Vec<&str> = labels.iter().map(|label| label.label.as_str()).collect();
-                assert_eq!(got, vec!["m.foo", "m.bar"]);
-            }
-            other => panic!("expected field access elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn field_update_postfix_parses() {
-        let m = p("module x; fn write(r: Foo) -> . { r.!{foo = ()} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Filtered,
-                call: ElaboratorCall::FieldUpdate { updates, .. },
-                ..
-            } => {
-                assert_eq!(updates.len(), 1);
-                assert_eq!(updates[0].label, "foo");
-            }
-            other => panic!("expected field update elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn field_access_empty_postfix_parses() {
-        let m = p("module x; fn read(r: Foo) -> . { r.?{} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Access,
-                call: ElaboratorCall::FieldAccess { labels, .. },
-                ..
-            } => {
-                assert!(labels.is_empty());
-            }
-            other => panic!("expected field access elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn field_update_shorthand_postfix_parses() {
-        let m = p("module x; fn write(r: Foo) -> . { r.!{foo, bar=} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Filtered,
-                call: ElaboratorCall::FieldUpdate { updates, .. },
-                ..
-            } => {
-                assert_eq!(updates.len(), 2);
-                assert_eq!(updates[0].label, "foo");
-                assert!(matches!(updates[0].value, Expr::Path { .. }));
-                assert_eq!(updates[1].label, "bar");
-                assert!(matches!(updates[1].value, Expr::Unit { .. }));
-            }
-            other => panic!("expected field update elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn field_update_empty_postfix_parses() {
-        let m = p("module x; fn write(r: Foo) -> . { r.!{} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::Elaborator {
-                kind: ElaboratorKind::Filtered,
-                call: ElaboratorCall::FieldUpdate { updates, .. },
-                ..
-            } => {
-                assert!(updates.is_empty());
-            }
-            other => panic!("expected field update elaborator, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn label_value_shorthands_parse() {
-        let m = p("module x; fn make(foo: .) -> . { {foo, m.bar=} }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::LabelValue { labels, .. } => {
-                assert_eq!(labels.len(), 2);
-                assert_eq!(labels[0].label, "foo");
-                assert!(matches!(labels[0].value, Expr::Path { .. }));
-                assert_eq!(labels[1].label, "m.bar");
-                assert!(matches!(labels[1].value, Expr::Unit { .. }));
-            }
-            other => panic!("expected label value, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn empty_label_value_is_unit() {
+    fn empty_braces_are_unit() {
         let m = p("module x; fn make() -> . { {} }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
         assert!(matches!(d.body, Expr::Unit { .. }));
-    }
-
-    #[test]
-    fn row_let_aliases_parse() {
-        let m =
-            p("module x; fn read(row: Foo) -> . { let .({abc, m.def as payload}) = row; payload }");
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
-        };
-        match &d.body {
-            Expr::RowLet { entries, body, .. } => {
-                assert_eq!(entries.len(), 2);
-                assert_eq!(entries[0].label, "abc");
-                assert_eq!(entries[0].local, "abc");
-                assert!(!entries[0].alias_explicit);
-                assert_eq!(entries[1].label, "m.def");
-                assert_eq!(entries[1].local, "payload");
-                assert!(entries[1].alias_explicit);
-                assert!(matches!(body.as_ref(), Expr::Path { .. }));
-            }
-            other => panic!("expected row-let, got {other:?}"),
-        }
     }
 
     fn assert_user_macro_name(src: &str, expected: &str) {
@@ -10150,7 +9982,6 @@ fn ok() -> . { () }
             ("let x2 = x2; x2", 2),
             (".(x2) { x1 }", 1),
             ("let .(x2, x3) = x1; pair(x2, x3)", 1),
-            ("let .({field as x2}) = x1; x2", 1),
             ("let .y. = (); pair(x1, y2)", 1),
             ("let .x. = x2; x3", 2),
             ("print(x2); let .x. = (); print(x3); ()", 2),
@@ -10160,7 +9991,7 @@ fn ok() -> . { () }
             ("value.>x1", 1),
             ("pair(x1, x9(x2))", 9),
             ("let x01 = x1; x01", 1),
-            ("{x1}", 1),
+            ("Field.mk(x1)", 1),
             ("let .(<U> x2) = x1; x2", 1),
         ] {
             for stem in ["x", "_arg"] {
@@ -10348,15 +10179,13 @@ fn ok() -> . { () }
             (".(x2) { x1 }", 1),
             ("let .(x2, x3) = x1; pair(x2, x3)", 1),
             ("let .(whole: (x2: Int, x3: Int)) = x1; pair(x2, x3)", 1),
-            ("let .({foo as x2}) = x1; x2", 1),
             ("do (m) { let x2 <- x1; let x3 = x2; x3 }", 1),
             ("pair(x1, .y. { pair(x2, y1) })", 1),
             ("pair(x1, m.x9)", 1),
             ("value.>x1", 1),
             ("pair(x1, x9(x2))", 9),
             ("let x01 = x1; x01", 1),
-            ("{field = x1}", 1),
-            ("{x1}", 1),
+            ("Field.mk(x1)", 1),
             ("let .(<U> x2) = x1; x2", 1),
         ] {
             let source = format!("module m; fn run() {{ .x. {{ {body} }} }}");
@@ -10987,11 +10816,11 @@ fn ok() -> . { () }
              type Alias[A] = A; \
              type _Alias[_A] = _A; \
              type _Poly = [_T] _T -> _T; \
-             newtype Box[B] : Alias[B] { constructor mk_plain; projector un_plain; }; \
-             newtype _Box[_B] : _Alias[_B] { constructor mk_box; projector un_box; }; \
-             newtype _Pack[_C] <_Hidden> : _C & _Hidden { constructor mk_pack; projector un_pack; }; \
-             labels Row = { plain: . }; \
-             labels _Row = { field: . };");
+             type { Box[B] : Alias[B] { mk; get; }; }; \
+             type { _Box[_B] : _Alias[_B] { mk; get; }; }; \
+             type { _Pack[_C] <_Hidden> : _C & _Hidden { mk; get; }; }; \
+             type Row = { Plain: . }; \
+             type _Row = { Field: . };");
         assert_eq!(module.items.len(), 10);
     }
 
@@ -11188,16 +11017,6 @@ fn ok() -> . { () }
                 "module m; fn f() -> . { let _foo = (); () }",
             ),
             (
-                "constructor",
-                "module m; newtype Box : . { constructor _Foo; projector un_box; };",
-                "module m; newtype Box : . { constructor _foo; projector un_box; };",
-            ),
-            (
-                "projector",
-                "module m; newtype Box : . { constructor mk_box; projector _Foo; };",
-                "module m; newtype Box : . { constructor mk_box; projector _foo; };",
-            ),
-            (
                 "type-path module qualifier",
                 "module m; type T = _Foo.Bar;",
                 "module m; type T = _foo.Bar;",
@@ -11323,9 +11142,7 @@ fn ok() -> . { () }
     #[test]
     fn reserved_shape_newtype_name_rejected() {
         // A user declaration cannot occupy the reserved hygiene namespace.
-        let msg = p_err(
-            "module x; newtype __Tag_foo__ : . { pub constructor mk_foo; pub projector foo; };",
-        );
+        let msg = p_err("module x; type { __Tag_foo__ : . { pub mk; pub get; }; };");
         assert!(msg.contains("may not begin with `__`"), "got: {msg}");
     }
 
@@ -11444,7 +11261,7 @@ fn ok() -> . { () }
 
     #[test]
     fn package_file_requires_leading_header() {
-        let err = parse_package_file("env { type String role(str); }", None)
+        let err = parse_package_file("bridge { main }", None)
             .expect_err("expected parse error");
         let Error::Parse(Diagnostic { message, .. }) = err else {
             panic!("expected Parse error");
@@ -11515,8 +11332,8 @@ fn ok() -> . { () }
 
     /// A representative multi-version changelog: `v(1)` introduces a
     /// module (under `nonbreaking`, an `add` block) bearing every
-    /// signature-only declaration kind — `host type`, `host fn`, `type`,
-    /// `newtype`, and a body-less `pub fn` export — and `v(2)` carries
+    /// signature declaration kind — `host type`, `host fn`, aliases,
+    /// explicit singleton nominal `type`, and a body-less `pub fn` export — and `v(2)` carries
     /// both a `breaking` section (with `modify` and `remove`) and a
     /// `nonbreaking` section (an `add`).
     #[test]
@@ -11531,7 +11348,7 @@ v(1) {
         host type Handle role(i32);
         host fn open(path: Text) -> Handle;
         type Alias = Handle;
-        newtype Id : I32 { constructor mk_id; projector un_id; };
+        type { Id : I32 { mk; get; }; };
         pub fn serve(h: Handle) -> .;
       }
     }
@@ -11626,7 +11443,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -11671,7 +11488,7 @@ v(1) {
     fn sig_recursive_group_is_rejected_inline_in_an_operation() {
         let message = sig_err(
             "signature app v(1);\n\
-             v(1) { nonbreaking { add { module api { rec { type A = B; newtype B : A { constructor mk; projector un; }; } } } } }\n",
+             v(1) { nonbreaking { add { module api { rec { type A = B; type { B : A { mk; get; }; }; } } } } }\n",
         );
         assert!(message.contains("version-leading `with`"), "got: {message}");
     }
@@ -11696,7 +11513,7 @@ v(1) {
     module module/with {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -11768,7 +11585,7 @@ v(1) {
     fn sig_rejects_pure_type_declarations() {
         for declaration in [
             "pub pure type T = .;",
-            "pub pure newtype N : . { pub constructor mk; pub projector un; };",
+            "pub pure type { N : . { pub mk; pub get; }; };",
         ] {
             let source = format!(
                 "signature app v(1);\n\
@@ -11796,10 +11613,10 @@ v(1) {
     #[test]
     fn sig_surface_only_form_rejected() {
         let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { labels { a: I32 }; } } } }\n";
+            v(1) { nonbreaking { add { module app { type { A: I32; }; } } } }\n";
         let msg = sig_err(src);
         assert!(
-            msg.contains("signature-file declaration must be"),
+            msg.contains("one entry with an explicit `mk` / `get` body"),
             "got: {msg}"
         );
     }
@@ -11969,7 +11786,7 @@ v(1) {
     #[test]
     fn sig_later_recursive_compact_boundary_is_self_validating() {
         let file = sig("signature app v(3);\n\
-             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub newtype B : A { pub constructor mk_b; pub projector un_b; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n\
+             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B : A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n\
              v(3) {\n  breaking {\n    remove { api.A; }\n  }\n}\n");
         assert_eq!(
             file.versions
@@ -11984,7 +11801,7 @@ v(1) {
     fn sig_later_recursive_boundary_rejects_unintroduced_public_peer() {
         let message = sig_err(
             "signature app v(2);\n\
-             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub newtype B : A { pub constructor mk_b; pub projector un_b; };\n      }\n    }\n  };\n  nonbreaking { add { api.A; } }\n}\n",
+             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B : A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking { add { api.A; } }\n}\n",
         );
         assert!(
             message.contains("add-only compact boundary"),
@@ -12007,7 +11824,7 @@ v(1) {
     #[test]
     fn sig_later_compact_boundary_accepts_recursive_singleton_target() {
         let file = sig("signature app v(2);\n\
-             v(2) {\n  with {\n    module api {\n      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };\n    }\n  };\n  nonbreaking { add { api.Loop; } }\n}\n");
+             v(2) {\n  with {\n    module api {\n      pub rec type { Loop : . | Loop { pub mk; pub get; }; };\n    }\n  };\n  nonbreaking { add { api.Loop; } }\n}\n");
         assert_eq!(file.versions[0].version, 2);
     }
 
@@ -12665,6 +12482,142 @@ mod operator_grammar_proptests {
         #[test]
         fn distinct_grammars_have_distinct_renderings(a in grammar(), b in grammar()) {
             if a != b { prop_assert_ne!(a.render(), b.render()); }
+        }
+    }
+}
+
+#[cfg(test)]
+mod nominal_declaration_tests {
+    use super::parse;
+    use crate::ast::{Item, NominalRhs, Visibility};
+
+    #[test]
+    fn nominal_compact_forms_keep_exact_names_and_rhs_order() {
+        let module = parse(
+            "module x; type { _Name: .; Age: .; } type Result = { Success: .; } | (_Name & Age);",
+        )
+        .unwrap();
+        let Item::Labels(entries, _) = &module.items[0] else {
+            panic!("compact entries");
+        };
+        assert_eq!(
+            entries
+                .entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["_Name", "Age"]
+        );
+        let Item::Labels(owner, _) = &module.items[1] else {
+            panic!("named compact owner");
+        };
+        assert_eq!(owner.type_alias_name.as_deref(), Some("Result"));
+        assert!(matches!(owner.type_alias_rhs, Some(NominalRhs::Sum(..))));
+        assert_eq!(
+            owner.type_alias_arms.as_ref().unwrap()[0].entries[0].name,
+            "Success"
+        );
+        parse("module x; type Result = (Name & Age) | { Failure: .; };").unwrap();
+        parse("module x; type Result = { Tag: .; } & (Existing | { Empty: .; });").unwrap();
+    }
+
+    #[test]
+    fn nominal_explicit_singleton_is_an_ordinary_declaration() {
+        let source = "module x; pub type { Token[A]<X>: A & X { mk; pub get; }; }";
+        let module = parse(source).unwrap();
+        let Item::Newtype(nominal) = &module.items[0] else {
+            panic!("ordinary nominal");
+        };
+        assert_eq!(nominal.name, "Token");
+        assert_eq!(nominal.type_params[0].name, "A");
+        assert_eq!(nominal.existential_params[0].name, "X");
+        assert_eq!(nominal.vis, Visibility::Public);
+        assert_eq!(nominal.constructor.name, "mk");
+        assert_eq!(nominal.constructor.vis, Visibility::Private);
+        assert_eq!(nominal.projector.name, "get");
+        assert_eq!(nominal.projector.vis, Visibility::Public);
+        assert_eq!(
+            &source[nominal.constructor.span.start as usize..nominal.constructor.span.end as usize],
+            "mk"
+        );
+        assert_eq!(
+            &source[nominal.projector.span.start as usize..nominal.projector.span.end as usize],
+            "pub get"
+        );
+    }
+
+    #[test]
+    fn nominal_body_requires_both_fixed_roles() {
+        parse("module x; type { N: . { mk;;; get; }; }").unwrap();
+        parse("module x; type { N: . { ;;; get;;; mk;;; }; }").unwrap();
+        for source in [
+            "type { Token: . {}; }",
+            "type { Token: . { mk; }; }",
+            "type { Token: . { get; }; }",
+            "type { Token: . { mk; mk; get; }; }",
+            "type { Token: . { constructor mk; projector get; }; }",
+            "type { Token: . { mk custom; get; }; }",
+        ] {
+            assert!(
+                parse(&format!("module x; {source}")).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn nominal_declarations_stay_on_algebraic_declaration_rhs() {
+        for source in [
+            "type Result = List[{ Item: .; }];",
+            "type Result = { Input: .; } -> .;",
+            "type Result = [A] { Box[A]: A; };",
+            "type Result = { Outer: { Inner: .; }; };",
+            "type Result = { A: .; } & B | C;",
+            "type Result = { A: .; } | B -> C;",
+            "type Result = { A: .; } | (B) -> C;",
+            "type Result = { A: .; } | [B] B -> B;",
+            "type { A: .; } | { B: .; }",
+            "type _ = { A: .; };",
+            "type { A: ., B: . }",
+            "type A: .;",
+            "fn f(x: { Field: .; }) {}",
+        ] {
+            assert!(
+                parse(&format!("module x; {source}")).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn nominal_recursive_compact_forms_are_shape_checked() {
+        for source in [
+            "rec type { Node: Node; }",
+            "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };",
+            "rec type { Node: Node { mk; get; }; }",
+        ] {
+            parse(&format!("module x; {source}")).unwrap();
+        }
+        assert!(parse("module x; rec type Loop = Loop;").is_err());
+    }
+
+    #[cfg(feature = "prime")]
+    #[test]
+    fn nominal_prime_accepts_only_explicit_singletons_and_aliases() {
+        use crate::prime::lower::lower_module;
+        lower_module(
+            parse("module x; type { Token: . { mk; get; }; } type Alias = Token;").unwrap(),
+        )
+        .unwrap();
+        for source in [
+            "type { Token: .; }",
+            "type Alias = { Token: . { mk; get; }; };",
+            "type { First: . { mk; get; }; Second: . { mk; get; }; }",
+        ] {
+            assert!(
+                lower_module(parse(&format!("module x; {source}")).unwrap()).is_err(),
+                "accepted {source}"
+            );
         }
     }
 }

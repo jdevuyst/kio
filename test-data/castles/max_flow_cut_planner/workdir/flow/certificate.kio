@@ -4,28 +4,29 @@ import flow/math as math;
 import flow/network as net;
 import flow/search as search;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith as a;
 import testapi/array as ar;
 import testapi/iter(loop);
 
-pub labels Certificate = {
-, capacity_ok: Bool
-, pairing_ok: Bool
-, conservation_ok: Bool
-, boundary_ok: Bool
-, cut_capacity: I32
-, source_side: Array[Bool]
+pub type Certificate = {
+  Capacity_ok: Bool;
+  Pairing_ok: Bool;
+  Conservation_ok: Bool;
+  Boundary_ok: Bool;
+  Cut_capacity: I32;
+  Source_side: Array[Bool]
 };
 
 rec(loop) fn capacity_bounds(network: net.Network, residual: Array[I32], index: I32) -> Bool {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
     let remaining = ar.array_get(residual, index);
-    let bounds = if(edge.?{net.backward}) {
+    let bounds = if(edge.>select { net.Backward.get }) {
       a.leq_i32(0, remaining)
     } else {
-      math.both(a.leq_i32(0, remaining), a.leq_i32(remaining, edge.?{net.capacity}))
+      math.both(a.leq_i32(0, remaining), a.leq_i32(remaining, edge.>select { net.Capacity.get }))
     };
     if(bounds) { recur capacity_bounds(network, residual, a.add_i32(index, 1)) } else { .f }
   } else {
@@ -34,17 +35,20 @@ rec(loop) fn capacity_bounds(network: net.Network, residual: Array[I32], index: 
 }
 
 rec(loop) fn pairing(network: net.Network, residual: Array[I32], index: I32) -> Bool {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
-    let back = ar.array_get(network.?{net.edges}, edge.?{net.reverse});
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
+    let back = ar.array_get(network.>select { net.Edges.get }, edge.>select { net.Reverse.get });
     let endpoints = math.both(
-    , math.equal(edge.?{net.from}, back.?{net.to})
-    , math.equal(edge.?{net.to}, back.?{net.from})
+    , math.equal(edge.>select { net.From.get }, back.>select { net.To.get })
+    , math.equal(edge.>select { net.To.get }, back.>select { net.From.get })
     );
-    let identity = math.equal(back.?{net.reverse}, index);
+    let identity = math.equal(back.>select { net.Reverse.get }, index);
     let total = math.equal(
-    , a.add_i32(ar.array_get(residual, index), ar.array_get(residual, edge.?{net.reverse}))
-    , a.add_i32(edge.?{net.capacity}, back.?{net.capacity})
+    , a.add_i32(
+      , ar.array_get(residual, index)
+      , ar.array_get(residual, edge.>select { net.Reverse.get })
+      )
+    , a.add_i32(edge.>select { net.Capacity.get }, back.>select { net.Capacity.get })
     );
     if(math.both(endpoints, math.both(identity, total))) {
       recur pairing(network, residual, a.add_i32(index, 1))
@@ -62,14 +66,14 @@ rec(loop) fn accumulate(
 , balances: Array[I32]
 , index: I32
 ) {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
-    if(edge.?{net.backward}) {
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
+    if(edge.>select { net.Backward.get }) {
       ()
     } else {
-      let sent = a.sub_i32(edge.?{net.capacity}, ar.array_get(residual, index));
-      let from = edge.?{net.from};
-      let to = edge.?{net.to};
+      let sent = a.sub_i32(edge.>select { net.Capacity.get }, ar.array_get(residual, index));
+      let from = edge.>select { net.From.get };
+      let to = edge.>select { net.To.get };
       ar.array_set(balances, from, a.sub_i32(ar.array_get(balances, from), sent));
       ar.array_set(balances, to, a.add_i32(ar.array_get(balances, to), sent))
     };
@@ -99,13 +103,17 @@ rec(loop) fn balance_check(balances: Array[I32], source: I32, sink: I32, value: 
 }
 
 rec(loop) fn cut_sum(network: net.Network, side: Array[Bool], index: I32, total: I32) -> I32 {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
     let crosses = math.both(
-    , ar.array_get(side, edge.?{net.from})
-    , math.invert(ar.array_get(side, edge.?{net.to}))
+    , ar.array_get(side, edge.>select { net.From.get })
+    , math.invert(ar.array_get(side, edge.>select { net.To.get }))
     );
-    let contribution = if(crosses) { edge.?{net.capacity} } else { 0 };
+    let contribution = if(crosses) {
+      edge.>select { net.Capacity.get }
+    } else {
+      0
+    };
     recur cut_sum(network, side, a.add_i32(index, 1), a.add_i32(total, contribution))
   } else {
     total
@@ -113,11 +121,11 @@ rec(loop) fn cut_sum(network: net.Network, side: Array[Bool], index: I32, total:
 }
 
 rec(loop) fn closed_cut(network: net.Network, residual: Array[I32], side: Array[Bool], index: I32) -> Bool {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
     let crosses = math.both(
-    , ar.array_get(side, edge.?{net.from})
-    , math.invert(ar.array_get(side, edge.?{net.to}))
+    , ar.array_get(side, edge.>select { net.From.get })
+    , math.invert(ar.array_get(side, edge.>select { net.To.get }))
     );
     if(math.both(crosses, math.less(0, ar.array_get(residual, index)))) {
       .f
@@ -130,7 +138,7 @@ rec(loop) fn closed_cut(network: net.Network, residual: Array[I32], side: Array[
 }
 
 pub fn inspect(network: net.Network, residual: Array[I32], source: I32, sink: I32, value: I32) -> Certificate {
-  let .(balances: Array[I32]) = ar.array_make_filled(network.?{net.vertices}, 0);
+  let .(balances: Array[I32]) = ar.array_make_filled(network.>select { net.Vertices.get }, 0);
   accumulate(network, residual, balances, 0);
   let source_side = search.reachable(network, residual, source);
   let cut_capacity = cut_sum(network, source_side, 0, 0);
@@ -139,22 +147,25 @@ pub fn inspect(network: net.Network, residual: Array[I32], source: I32, sink: I3
     , math.invert(ar.array_get(source_side, sink))
     , math.both(math.equal(cut_capacity, value), closed_cut(network, residual, source_side, 0))
     );
-  {
-  , capacity_ok = capacity_bounds(network, residual, 0)
-  , pairing_ok = pairing(network, residual, 0)
-  , conservation_ok = balance_check(balances, source, sink, value, 0)
-  , boundary_ok
-  , cut_capacity
-  , source_side
-  }
+  (
+  , Capacity_ok.mk(capacity_bounds(network, residual, 0))
+  , Pairing_ok.mk(pairing(network, residual, 0))
+  , Conservation_ok.mk(balance_check(balances, source, sink, value, 0))
+  , Boundary_ok.mk(boundary_ok)
+  , Cut_capacity.mk(cut_capacity)
+  , Source_side.mk(source_side)
+  )
 }
 
 pub fn valid(certificate: Certificate) -> Bool {
   math.both(
-  , certificate.?{capacity_ok}
+  , certificate.>select { Capacity_ok.get }
   , math.both(
-    , certificate.?{pairing_ok}
-    , math.both(certificate.?{conservation_ok}, certificate.?{boundary_ok})
+    , certificate.>select { Pairing_ok.get }
+    , math.both(
+      , certificate.>select { Conservation_ok.get }
+      , certificate.>select { Boundary_ok.get }
+      )
     )
   )
 }

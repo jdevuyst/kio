@@ -2,8 +2,8 @@ module slot0;
 
 host type Value;
 
-pub newtype P : Value & Value { pub constructor mk_p; pub projector un_p }
+pub type { P: Value & Value { pub mk; pub get } }
 
-pub newtype Y : Value { pub constructor mk_y; projector un_y }
+pub type { Y: Value { pub mk; get } }
 
-pub fn read_y(value: Y) -> Value { value.>Y.un_y }
+pub fn read_y(value: Y) -> Value { value.>Y.get }

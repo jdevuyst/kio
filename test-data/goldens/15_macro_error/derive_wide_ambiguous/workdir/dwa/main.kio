@@ -2,37 +2,37 @@ module dwa/main;
 
 import macros/derive(macro derive);
 
-pub newtype Atom0 : . { pub constructor mk_atom0; pub projector un_atom0 }
+pub type { Atom0: . { pub mk; pub get } }
 
-pub newtype Atom1 : . { pub constructor mk_atom1; pub projector un_atom1 }
+pub type { Atom1: . { pub mk; pub get } }
 
-pub newtype Atom2 : . { pub constructor mk_atom2; pub projector un_atom2 }
+pub type { Atom2: . { pub mk; pub get } }
 
-pub newtype Atom3 : . { pub constructor mk_atom3; pub projector un_atom3 }
+pub type { Atom3: . { pub mk; pub get } }
 
-pub newtype Atom4 : . { pub constructor mk_atom4; pub projector un_atom4 }
+pub type { Atom4: . { pub mk; pub get } }
 
-pub newtype Atom5 : . { pub constructor mk_atom5; pub projector un_atom5 }
+pub type { Atom5: . { pub mk; pub get } }
 
-pub newtype Wanted : . { pub constructor mk_wanted; pub projector un_wanted }
+pub type { Wanted: . { pub mk; pub get } }
 
-pub newtype Render[A] : . { pub constructor mk_render; pub projector un_render }
+pub type { Render[A]: . { pub mk; pub get } }
 
-fn render_atom0() -> Render[Atom0] { Render.mk_render[Atom0](()) }
+fn render_atom0() -> Render[Atom0] { Render.mk[Atom0](()) }
 
-fn render_atom1() -> Render[Atom1] { Render.mk_render[Atom1](()) }
+fn render_atom1() -> Render[Atom1] { Render.mk[Atom1](()) }
 
-fn render_atom2() -> Render[Atom2] { Render.mk_render[Atom2](()) }
+fn render_atom2() -> Render[Atom2] { Render.mk[Atom2](()) }
 
-fn render_atom3() -> Render[Atom3] { Render.mk_render[Atom3](()) }
+fn render_atom3() -> Render[Atom3] { Render.mk[Atom3](()) }
 
-fn render_atom4() -> Render[Atom4] { Render.mk_render[Atom4](()) }
+fn render_atom4() -> Render[Atom4] { Render.mk[Atom4](()) }
 
-fn render_atom5() -> Render[Atom5] { Render.mk_render[Atom5](()) }
+fn render_atom5() -> Render[Atom5] { Render.mk[Atom5](()) }
 
-fn render_wanted_a() -> Render[Wanted] { Render.mk_render[Wanted](()) }
+fn render_wanted_a() -> Render[Wanted] { Render.mk[Wanted](()) }
 
-fn render_wanted_b() -> Render[Wanted] { Render.mk_render[Wanted](()) }
+fn render_wanted_b() -> Render[Wanted] { Render.mk[Wanted](()) }
 
 fn bad() -> Render[Wanted] {
   derive((

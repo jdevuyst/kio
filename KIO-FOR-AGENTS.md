@@ -35,7 +35,7 @@ or export the tree for browsing and searching with local tools. Run
   Check changes with `kio check`, format with `kio fmt`, and verify laws with
   `kio test` as appropriate to the project.
 - Prefer surface syntax in ordinary programs. Use the tutorials and guides
-  for tuples, labels, rows, branching, recursion, and imported macros;
+  for tuples, nominal types, rows, branching, recursion, and imported macros;
   raw intrinsics belong in investigations of the explicit core.
 - Default to qualified imports (`import path/to/module as p;`) and calls
   through the alias. Macros require explicit `macro name` selective imports;
@@ -52,8 +52,9 @@ or export the tree for browsing and searching with local tools. Run
 - Choose direct or receiver-style macro calls for readability. With
   [trailing blocks](docs/guides/ufcs.md#calls-with-trailing-blocks), a receiver
   enters the first prefix group forward or the last prefix group in reverse,
-  before the projected blocks. Each block is its own function stage. A reverse
-  splice is written after the complete block chain. Keep label braces around a spliced nested child and
+  before the projected blocks. The final prefix value and projected blocks
+  form one product argument; earlier prefix groups remain separate stages. A
+  reverse splice is written after the complete block chain. Keep label braces around a spliced nested child and
   around a reverse-spliced call's own final labelled child.
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.

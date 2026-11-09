@@ -1,0 +1,11 @@
+module main;
+
+import provider(macro relay);
+
+fn exact[A][B](left: A, right: B) -> A & B { (left, right) }
+
+fn result() -> . & (. -> .) & (. -> .) {
+  relay(()) {
+    exact(.(left: .) { left }, .(right: .) { right })
+  }
+}

@@ -3068,10 +3068,10 @@ mod tests {
             let mut source = "module main;".to_owned();
             for index in 0..width {
                 source.push_str(&format!(
-                    " pub newtype Wrapper{index:03}[A] : A -> A {{ \
-                       pub constructor wrap{index:03}; \
-                       pub projector unwrap{index:03}; \
-                     }};"
+                    " pub type {{ Wrapper{index:03}[A]: A -> A {{ \
+                       pub mk; \
+                       pub get; \
+                     }}; }};"
                 ));
             }
             let pkg = build_package(&[source.as_str()], "bridge { main; }");
@@ -3314,7 +3314,7 @@ mod tests {
         let pkg = build_package(
             &["module api; host type Token; host type Box[A]; \
                pub fn keep[A](value: Box[A]) -> Box[A] { value } \
-               pub newtype Wrapper[A] : Token & A { pub constructor wrap; pub projector unwrap }"],
+               pub type { Wrapper[A]: Token & A { pub mk; pub get; }; }"],
             "bridge { api; }",
         );
         let artifact = render_stub_artifact(&pkg, "one", None).expect("declaration views");
@@ -3356,7 +3356,7 @@ mod tests {
 
     #[test]
     fn readable_slot_views_preserve_sources_and_local_stage_order() {
-        let source = "module api; host fn apply_poly(f: [T] T -> T) -> .; pub newtype Shadow[T] : T & ([U] U -> U) { pub constructor make_shadow; pub projector read_shadow }";
+        let source = "module api; host fn apply_poly(f: [T] T -> T) -> .; pub type { Shadow[T]: T & ([U] U -> U) { pub mk; pub get; }; }";
         let pkg = build_package(&[source], "bridge { api; }");
         let expanded = build_package(
             &[&format!(
@@ -3371,9 +3371,11 @@ mod tests {
         for (name, target) in &original.public_aliases {
             assert_eq!(expanded.public_aliases.get(name), Some(target));
         }
-        assert!(original.source.contains(
-            "KioViewCtor_api__Shadow__makeShadow_Arg0: __kio_typing__.TypeAlias = KioShape_"
-        ));
+        assert!(
+            original
+                .source
+                .contains("KioViewCtor_api__Shadow__mk_Arg0: __kio_typing__.TypeAlias = KioShape_")
+        );
         let (runtime, _) = super::super::emit::lower_package(&pkg, "one").expect("paired views");
         assert!(runtime.contains(&format!("{alias} = {}\n", original.public_aliases[alias])));
         assert!(!runtime.contains("import kio_static"));
@@ -3384,7 +3386,7 @@ mod tests {
         let pkg = build_package(
             &[
                 "module a/b; host fn use(f: [T] T -> T) -> .;",
-                "module a_b; host fn use(f: [T] T -> T) -> .; pub fn echo(f: . -> .) -> . -> . { f } pub newtype N : . { pub constructor echo; pub projector read }",
+                "module a_b; host fn use(f: [T] T -> T) -> .; pub fn mk(f: . -> .) -> . -> . { f } pub type { N: . { pub mk; pub get; }; }",
             ],
             "bridge { a/b; a_b; }",
         );
@@ -3392,9 +3394,9 @@ mod tests {
         for name in [
             "KioViewHost_a_sb__use_Arg0Source",
             "KioViewHost_aB__use_Arg0Source",
-            "KioViewExport_aB__echo_Arg0",
-            "KioViewCtor_aB__N__echo_Result",
-            "KioViewProj_aB__N__read_Result",
+            "KioViewExport_aB__mk_Arg0",
+            "KioViewCtor_aB__N__mk_Result",
+            "KioViewProj_aB__N__get_Result",
         ] {
             assert!(
                 stub.contains(&format!("{name}: __kio_typing__.TypeAlias =")),
@@ -3408,7 +3410,7 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type N role(i32); \
-               pub newtype Named : N { pub constructor named; pub projector un_named; }; \
+               pub type { Named: N { pub mk; pub get; }; }; \
                host fn split(a: N, b: N) -> N; \
                host fn packed(pair: N & Named) -> N | Named;"],
             "bridge { main; }",
@@ -3442,10 +3444,10 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type Str role(str); \
-               pub newtype T : Str { pub constructor make_t; pub projector un_t; }; \
-               pub newtype Box[A] : A { pub constructor make_box; pub projector un_box; }; \
-               pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector un_shadow; }; \
-               pub newtype Pack <T> : T { pub constructor make_pack; pub projector un_pack; }; \
+               pub type { T: Str { pub mk; pub get; }; }; \
+               pub type { Box[A]: A { pub mk; pub get; }; }; \
+               pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get; }; }; \
+               pub type { Pack<T>: T { pub mk; pub get; }; }; \
                host fn apply_poly(f: [T] T -> T) -> Str; \
                host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; \
                host fn round_pack(value: Pack) -> Pack; \
@@ -3506,9 +3508,9 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type Str role(str); \
-               pub newtype Shadow[T] : T & ([T] T -> T) { \
-                 pub constructor make_shadow; pub projector un_shadow; \
-               };"],
+               pub type { Shadow[T]: T & ([T] T -> T) { \
+                 pub mk; pub get; \
+               }; };"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -3535,9 +3537,9 @@ mod tests {
     fn nested_forall_protocols_thread_captured_outer_binders() {
         let pkg = build_package(
             &["module main; \
-               pub newtype Pack <T> : T { \
-                 pub constructor make_pack; pub projector open_pack; \
-               };"],
+               pub type { Pack<T>: T { \
+                 pub mk; pub get; \
+               }; };"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -3722,17 +3724,17 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type I32 role(i32); \
-               pub newtype Counter : I32 { pub constructor fresh; pub projector current; };"],
+               pub type { Counter: I32 { pub mk; pub get; }; };"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
         let constructor = stub
             .lines()
-            .find(|line| line.contains("def fresh"))
+            .find(|line| line.contains("def mk"))
             .expect("public constructor");
         let projector = stub
             .lines()
-            .find(|line| line.contains("def current"))
+            .find(|line| line.contains("def get"))
             .expect("public projector");
         let root = "KioHost_M1_C4_mainN3_I32";
         assert!(
@@ -3763,9 +3765,9 @@ mod tests {
     fn public_newtype_markers_case_words_and_preserve_affixes() {
         let pkg = build_package(
             &["module main; \
-               pub newtype _Word_box__[Item_type] : Item_type { \
-                 pub constructor wrap_word; pub projector unwrap_word; \
-               };"],
+               pub type { _Word_box__[Item_type]: Item_type { \
+                 pub mk; pub get; \
+               }; };"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
@@ -3774,8 +3776,8 @@ mod tests {
             "{stub}"
         );
         assert!(stub.contains("KioNewtype_M1_C4_mainN10__WordBox__: __kio_typing__.TypeAlias = KioApply1[KioNewtypeMk_M1_C4_mainN10__WordBox__, "), "{stub}");
-        assert!(stub.contains("def wrapWord("), "{stub}");
-        assert!(stub.contains("def unwrapWord("), "{stub}");
+        assert!(stub.contains("def mk("), "{stub}");
+        assert!(stub.contains("def get("), "{stub}");
         assert!(!stub.contains("\n    _Word_box__:"), "{stub}");
     }
 
@@ -3783,8 +3785,8 @@ mod tests {
     fn generic_newtype_docs_belong_to_the_exact_public_constructor_index() {
         let pkg = build_package(
             &[
-                "module left;\n/// Left wrapper.\npub newtype Box[A] : A { pub constructor make; pub projector read };",
-                "module right;\n/// Right wrapper.\npub newtype Box[A] : A { pub constructor make; pub projector read };",
+                "module left;\n/// Left wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
+                "module right;\n/// Right wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
             ],
             "bridge { left; right; }",
         );
@@ -3814,12 +3816,12 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type I32 role(i32); \
-               pub newtype Opaque_a : I32 { constructor make_hidden_a; projector read_hidden_a; }; \
-               pub newtype Opaque_b : I32 { constructor make_hidden_b; projector read_hidden_b; }; \
-               pub fn make_a(value: I32) -> Opaque_a { Opaque_a.make_hidden_a(value) } \
+               pub type { Opaque_a: I32 { mk; get; }; }; \
+               pub type { Opaque_b: I32 { mk; get; }; }; \
+               pub fn make_a(value: I32) -> Opaque_a { Opaque_a.mk(value) } \
                pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
-               pub fn read_a(value: Opaque_a) -> I32 { Opaque_a.read_hidden_a(value) } \
-               pub fn make_b(value: I32) -> Opaque_b { Opaque_b.make_hidden_b(value) }"],
+               pub fn read_a(value: Opaque_a) -> I32 { Opaque_a.get(value) } \
+               pub fn make_b(value: I32) -> Opaque_b { Opaque_b.mk(value) }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -3870,12 +3872,20 @@ mod tests {
         );
         assert!(!stub.contains("OpaqueA: int"), "{stub}");
         assert!(!stub.contains("OpaqueB: int"), "{stub}");
-        for hidden in ["makeHiddenA", "readHiddenA", "makeHiddenB", "readHiddenB"] {
+        for hidden in ["mk", "get"] {
             assert!(
-                !stub.contains(&format!("def {hidden}")),
+                !stub.contains(&format!("def {hidden}(")),
                 "{hidden}\n\n{stub}"
             );
         }
+        let public_control = build_package(
+            &["module main; host type I32 role(i32); \
+               pub type { Opaque_a: I32 { pub mk; pub get; }; };"],
+            "bridge { main; }",
+        );
+        let public_stub =
+            lower_package_to_stub(&public_control, "greeter").expect("public control");
+        assert!(public_stub.contains("def mk(") && public_stub.contains("def get("));
     }
 
     #[test]
@@ -3884,19 +3894,19 @@ mod tests {
             &[
                 "module left; \
                  host type I32 role(i32); \
-                 pub newtype Token : I32 { constructor make_token; projector read_token; }; \
-                 pub newtype Build : I32 { pub constructor build_left; projector read_build; }; \
+                 pub type { Token: I32 { mk; get; }; }; \
+                 pub type { Build: I32 { pub mk; get; }; }; \
                  host fn round_left_token(value: Token) -> Token; \
                  host fn round_left_build(value: Build) -> Build; \
-                 pub fn make_left_token(value: I32) -> Token { Token.make_token(value) } \
+                 pub fn make_left_token(value: I32) -> Token { Token.mk(value) } \
                  pub fn keep_left_build(value: Build) -> Build { value }",
                 "module right; \
                  host type I32 role(i32); \
-                 pub newtype Token : I32 { constructor make_token; projector read_token; }; \
-                 pub newtype Build : I32 { pub constructor build_right; projector read_build; }; \
+                 pub type { Token: I32 { mk; get; }; }; \
+                 pub type { Build: I32 { pub mk; get; }; }; \
                  host fn round_right_token(value: Token) -> Token; \
                  host fn round_right_build(value: Build) -> Build; \
-                 pub fn make_right_token(value: I32) -> Token { Token.make_token(value) } \
+                 pub fn make_right_token(value: I32) -> Token { Token.mk(value) } \
                  pub fn keep_right_build(value: Build) -> Build { value }",
             ],
             "bridge { left; right; }",
@@ -3924,8 +3934,23 @@ mod tests {
         let left_build = return_type("keepLeftBuild");
         let right_build = return_type("keepRightBuild");
         assert_ne!(left_build, right_build, "{stub}");
-        assert_eq!(return_type("buildLeft"), left_build, "{stub}");
-        assert_eq!(return_type("buildRight"), right_build, "{stub}");
+        let declarations = split_python_stub_declarations(&stub).expect("namespace declarations");
+        for (module, carrier) in [("left", &left_build), ("right", &right_build)] {
+            let name = format!("_Greeter_{module}_KioTypeBuild");
+            let namespace = declarations
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap_or_else(|| panic!("missing {name}:\n{stub}"));
+            let constructor = namespace
+                .source
+                .lines()
+                .find(|line| line.contains("def mk("))
+                .unwrap_or_else(|| panic!("missing {name}.mk: {stub}"));
+            assert!(
+                constructor.contains(&format!("-> {carrier}: ...")),
+                "{constructor}"
+            );
+        }
         for (name, carrier) in [
             ("roundLeftToken", &left_token),
             ("roundRightToken", &right_token),
@@ -3966,26 +3991,33 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                host type I32 role(i32); \
-               pub newtype Make_only : I32 { pub constructor make_only; projector hide_make; }; \
-               pub newtype Read_only : I32 { constructor hide_read; pub projector read_only; }; \
-               pub newtype Both_public : I32 { pub constructor make_both; pub projector read_both; }; \
-               pub newtype Box[A] : A { pub constructor make_box; pub projector read_box; }; \
-               pub newtype Pack <U> : I32 & U { pub constructor make_pack; pub projector open_pack; }; \
+               pub type { Make_only: I32 { pub mk; get; }; }; \
+               pub type { Read_only: I32 { mk; pub get; }; }; \
+               pub type { Both_public: I32 { pub mk; pub get; }; }; \
+               pub type { Box[A]: A { pub mk; pub get; }; }; \
+               pub type { Pack <U>: I32 & U { pub mk; pub get; }; }; \
                pub fn keep_pair(value: Make_only & Read_only) -> Make_only & Read_only { value }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
 
-        for private in ["hide_make", "hide_read"] {
-            assert!(
-                !stub.contains(&format!("def {private}")),
-                "{private}\n\n{stub}"
-            );
-        }
+        let declarations = split_python_stub_declarations(&stub).expect("namespace declarations");
+        let namespace = |name: &str| {
+            let class = format!("_Greeter_main_KioType{name}");
+            &declarations
+                .iter()
+                .find(|entry| entry.name == class)
+                .unwrap_or_else(|| panic!("missing {class}:\n{stub}"))
+                .source
+        };
+        assert!(!namespace("MakeOnly").contains("def get("));
+        assert!(!namespace("ReadOnly").contains("def mk("));
+        assert!(namespace("BothPublic").contains("def mk("));
+        assert!(namespace("BothPublic").contains("def get("));
 
-        let make_only = stub
+        let make_only = namespace("MakeOnly")
             .lines()
-            .find(|line| line.contains("def makeOnly"))
+            .find(|line| line.contains("def mk("))
             .expect("constructor-only member");
         let make_only_type = make_only
             .split_once(" -> ")
@@ -3997,9 +4029,9 @@ mod tests {
             make_only.contains(&format!("p0: {root}")),
             "{make_only}\n\n{stub}"
         );
-        let read_only = stub
+        let read_only = namespace("ReadOnly")
             .lines()
-            .find(|line| line.contains("def readOnly"))
+            .find(|line| line.contains("def get("))
             .expect("projector-only member");
         let read_only_type = read_only
             .split_once("p0: ")
@@ -4031,18 +4063,18 @@ mod tests {
             "{stub}"
         );
 
-        let make_both = stub
+        let make_both = namespace("BothPublic")
             .lines()
-            .find(|line| line.contains("def makeBoth"))
+            .find(|line| line.contains("def mk("))
             .expect("both-public constructor");
         let both_type = make_both
             .split_once(" -> ")
             .expect("both-public constructor return")
             .1
             .trim_end_matches(": ...");
-        let read_both = stub
+        let read_both = namespace("BothPublic")
             .lines()
-            .find(|line| line.contains("def readBoth"))
+            .find(|line| line.contains("def get("))
             .expect("both-public projector");
         let both_head = both_type.split_once('[').expect("applied carrier").0;
         assert!(
@@ -4056,13 +4088,13 @@ mod tests {
             "{read_both}\n\n{stub}"
         );
 
-        let make_box = stub
+        let make_box = namespace("Box")
             .lines()
-            .find(|line| line.contains("def makeBox"))
+            .find(|line| line.contains("def mk("))
             .expect("polymorphic constructor");
-        let read_box = stub
+        let read_box = namespace("Box")
             .lines()
-            .find(|line| line.contains("def readBox"))
+            .find(|line| line.contains("def get("))
             .expect("polymorphic projector");
         assert!(
             make_box.contains("p0: KioType_")
@@ -4077,13 +4109,13 @@ mod tests {
             "{read_box}\n\n{stub}"
         );
 
-        let make_pack = stub
+        let make_pack = namespace("Pack")
             .lines()
-            .find(|line| line.contains("def makePack"))
+            .find(|line| line.contains("def mk("))
             .expect("existential constructor");
-        let open_pack = stub
+        let open_pack = namespace("Pack")
             .lines()
-            .find(|line| line.contains("def openPack"))
+            .find(|line| line.contains("def get("))
             .expect("existential projector");
         assert!(
             make_pack.contains("p0: KioShape_")
@@ -4105,23 +4137,23 @@ mod tests {
             &[
                 "module visible; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   pub constructor make_bool; pub projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
                 "module hidden; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   constructor make_bool; projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   mk; get; \
+                 }; }; \
                  pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
                 "module generic; \
                  pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
                 "module hostish; \
                  host type Comptime_bool role(i32); \
-                 pub newtype Wrapped : Comptime_bool { \
-                   pub constructor make_wrapped; pub projector read_wrapped; \
-                 }; \
+                 pub type { Wrapped: Comptime_bool { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } \
                  pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
                 "module aliasing; \
@@ -4307,12 +4339,12 @@ mod tests {
         let pkg = build_package(
             &["module api; \
                host type String role(str); \
-               pub newtype Box[A] : A { \
-                 pub constructor make_box; pub projector read_box; \
-               }; \
-               pub newtype Functor[*F] : F[String] { \
-                 pub constructor make_functor; pub projector read_functor; \
-               }; \
+               pub type { Box[A]: A { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Functor[*F]: F[String] { \
+                 pub mk; pub get; \
+               }; }; \
                host fn round(value: Functor[Box]) -> Functor[Box];"],
             "bridge { api; }",
         );
@@ -4350,10 +4382,10 @@ mod tests {
             &["module main; \
                import __intrinsics__; \
                host type I32 role(i32); \
-               pub rec newtype Recursive : . | Recursive { \
-                 pub constructor make_recursive; \
-                 pub projector read_recursive; \
-               }; \
+               pub rec type { Recursive: . | Recursive { \
+                 pub mk; \
+                 pub get; \
+               }; }; \
                pub fn base() -> . | Recursive { __left__[.][ Recursive]( ()) }"],
             "bridge { main; }",
         );
@@ -4373,7 +4405,7 @@ mod tests {
             1
         );
         assert!(!stub.contains("KioPayload_"), "{stub}");
-        for method in ["makeRecursive", "readRecursive"] {
+        for method in ["mk", "get"] {
             let signature = stub
                 .lines()
                 .find(|line| line.contains(&format!("def {method}(")))
@@ -4398,10 +4430,10 @@ mod tests {
             &["module api; \
                host type Live role(str); \
                host type Live_box[A]; \
-               pub newtype Live_token[A] : A { \
-                 pub constructor make_live_token; \
-                 projector read_live_token; \
-               }; \
+               pub type { Live_token[A]: A { \
+                 pub mk; \
+                 get; \
+               }; }; \
                host fn current(value: Live & Live_box[Live_token[.]]) -> Live; \
                pub fn echo(value: Live) -> Live { value }"],
             "bridge { api; }",
@@ -4414,10 +4446,10 @@ v(1) {
       module api {
         host type Retired role(i32);
         host type Retired_box[A];
-        newtype Retired_token[A] : A {
-          pub constructor make_retired_token;
-          projector read_retired_token;
-        };
+        type { Retired_token[A]: A {
+          pub mk;
+          get;
+        }; };
         host fn old(value: Retired & Retired_box[Retired_token[.]]) -> Retired;
       }
     }

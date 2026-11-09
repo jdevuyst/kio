@@ -4,11 +4,11 @@ import macros/sequence(macro do);
 import testapi(String);
 import testapi/io(print);
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get(m)) }
 
 // `inner` produces a `Box(String)` via its own do-block. The
 // outer block binds `inner()`'s result and threads it forward.
@@ -23,4 +23,4 @@ fn outer() -> Box[String] {
   do(box_bind) { let s <- inner(); box_pure(s) }
 }
 
-pub fn main() { print(Box.un_box(outer())) }
+pub fn main() { print(Box.get(outer())) }

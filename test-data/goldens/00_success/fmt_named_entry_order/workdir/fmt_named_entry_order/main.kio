@@ -10,9 +10,9 @@ macro make: . { ; impl run; captures (first, second) // capture tail
 } // elab outer
 ;
 
-newtype Box : . { ;; projector read; constructor create // constructor tail
+type { Box: . { ;; get; mk // constructor tail
 ;; // newtype close
-} // newtype outer
+} } // newtype outer
 ;
 
 op _ + _ { ; impl step // implementation tail

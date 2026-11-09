@@ -4,6 +4,7 @@ import list/core as cells;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import store/audit as audit;
 import store/commands as commands;
 import store/history as history;
@@ -15,25 +16,28 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-labels Session = {
-, database: tx.State
-, frozen: cells.List[audit.Frozen]
-, operations: I32
-, rejected: I32
-, failures: I32
+type Session = {
+  Database: tx.State;
+  Frozen: cells.List[audit.Frozen];
+  Operations: I32;
+  Rejected: I32;
+  Failures: I32
 };
 
 fn print_reply(number: I32, reply: tx.Reply, ok: Bool) {
-  let state = reply.?{tx.updated};
-  let .(prefix: String) = if(reply.?{tx.successful}) { " OK " } else { " ERROR " };
+  let state = reply.>select { tx.Updated.get };
+  let .(prefix: String) = if(reply.>select { tx.Successful.get }) { " OK " } else { " ERROR " };
   io.print(text.string_concat(
   , fmt.int_to_string(number)
   , text.string_concat(
-    , text.string_concat(prefix, reply.?{tx.message})
+    , text.string_concat(prefix, reply.>select { tx.Message.get })
     , text.string_concat(
-      , text.string_concat(" | revision=", fmt.int_to_string(state.?{tx.working}.?{history.head}))
       , text.string_concat(
-        , text.string_concat(" values=", history.view(state.?{tx.working}))
+        , " | revision="
+        , fmt.int_to_string(state.>select { tx.Working.get }.>select { history.Head.get })
+        )
+      , text.string_concat(
+        , text.string_concat(" values=", history.view(state.>select { tx.Working.get }))
         , text.string_concat(
           , text.string_concat(" savepoints=", tx.point_names(state))
           , text.string_concat(" audit=", text.string_concat(audit.status(ok), "\n"))
@@ -45,27 +49,41 @@ fn print_reply(number: I32, reply: tx.Reply, ok: Bool) {
 }
 
 fn execute(session: Session, command: commands.Command) -> Session {
-  let before = session.?{database};
+  let before = session.>select { Database.get };
   let reply = commands.apply(before, command);
-  let after = reply.?{tx.updated};
-  let number = arith.add_i32(session.?{operations}, 1);
+  let after = reply.>select { tx.Updated.get };
+  let number = arith.add_i32(session.>select { Operations.get }, 1);
   let frozen =
-    if(text.string_eq(command.?{commands.opcode}, "SNAPSHOT")) {
-      cells.cons(audit.freeze(command.?{commands.key}, after.?{tx.working}), session.?{frozen})
+    if(text.string_eq(command.>select { commands.Opcode.get }, "SNAPSHOT")) {
+      cells.cons(
+      , audit.freeze(command.>select { commands.Key.get }, after.>select { tx.Working.get })
+      , session.>select { Frozen.get }
+      )
     } else {
-      session.?{frozen}
+      session.>select { Frozen.get }
     };
   let ok =
     if(audit.transition_ok(before, command, reply)) { audit.all_frozen_ok(frozen) } else { .f };
   let rejected =
-    if(reply.?{tx.successful}) {
-      session.?{rejected}
+    if(reply.>select { tx.Successful.get }) {
+      session.>select { Rejected.get }
     } else {
-      arith.add_i32(session.?{rejected}, 1)
+      arith.add_i32(session.>select { Rejected.get }, 1)
     };
-  let failures = if(ok) { session.?{failures} } else { arith.add_i32(session.?{failures}, 1) };
+  let failures =
+    if(ok) {
+      session.>select { Failures.get }
+    } else {
+      arith.add_i32(session.>select { Failures.get }, 1)
+    };
   print_reply(number, reply, ok);
-  {database = after, frozen, operations = number, rejected, failures}
+  (
+  , Database.mk(after)
+  , Frozen.mk(frozen)
+  , Operations.mk(number)
+  , Rejected.mk(rejected)
+  , Failures.mk(failures)
+  )
 }
 
 rec(loop) fn print_snapshots(frozen: cells.List[audit.Frozen]) {
@@ -79,34 +97,39 @@ rec(loop) fn print_snapshots(frozen: cells.List[audit.Frozen]) {
 }
 
 fn finish(session: Session) {
-  let state = session.?{database};
-  print_snapshots(lists.reverse(session.?{frozen}));
+  let state = session.>select { Database.get };
+  print_snapshots(lists.reverse(session.>select { Frozen.get }));
   io.print(text.string_concat(
-  , text.string_concat("summary operations=", fmt.int_to_string(session.?{operations}))
+  , text.string_concat("summary operations=", fmt.int_to_string(session.>select { Operations.get }))
   , text.string_concat(
-    , text.string_concat(" rejected=", fmt.int_to_string(session.?{rejected}))
+    , text.string_concat(" rejected=", fmt.int_to_string(session.>select { Rejected.get }))
     , text.string_concat(
-      , text.string_concat(" commits=", fmt.int_to_string(state.?{tx.commits}))
+      , text.string_concat(" commits=", fmt.int_to_string(state.>select { tx.Commits.get }))
       , text.string_concat(
-        , text.string_concat(" allocated-revisions=", fmt.int_to_string(state.?{tx.clock}))
+        , text.string_concat(
+          , " allocated-revisions="
+          , fmt.int_to_string(state.>select { tx.Clock.get })
+          )
         , text.string_concat(
           , " audit-failures="
-          , text.string_concat(fmt.int_to_string(session.?{failures}), "\n")
+          , text.string_concat(fmt.int_to_string(session.>select { Failures.get }), "\n")
           )
         )
       )
     )
   ));
-  io.print(history.view(state.?{tx.committed})
+  io.print(history.view(state.>select { tx.Committed.get })
     .>text.string_concat("\n")
     .>>text.string_concat("committed values="))
 }
 
 rec(loop) fn consume(session: Session) {
   match(commands.read()) {
-    .(read: commands.Parsed) { recur consume(execute(session, read.?{commands.parsed})) };
+    .(read: commands.Parsed) {
+      recur consume(execute(session, read.>select { commands.Parsed.get }))
+    };
     .(bad: commands.Malformed) {
-      io.print(bad.?{commands.malformed}
+      io.print(bad.>select { commands.Malformed.get }
         .>text.string_concat("\n")
         .>>text.string_concat("input error: "));
       finish(session)
@@ -117,11 +140,11 @@ rec(loop) fn consume(session: Session) {
 
 pub fn run() {
   io.print("persistent transaction store\n");
-  consume({
-  , database = tx.initial()
-  , frozen = cells.nil[_]
-  , operations = 0
-  , rejected = 0
-  , failures = 0
-  })
+  consume((
+  , Database.mk(tx.initial())
+  , Frozen.mk(cells.nil[_])
+  , Operations.mk(0)
+  , Rejected.mk(0)
+  , Failures.mk(0)
+  ))
 }

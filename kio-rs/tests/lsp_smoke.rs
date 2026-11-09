@@ -533,14 +533,14 @@ fn lsp_reports_type_error_for_open_document() {
 }
 
 #[test]
-fn lsp_label_payload_context_clears_a_conflicting_factory_argument() {
-    let dir = TempDir::new("label-payload-context");
+fn lsp_nominal_payload_context_clears_a_conflicting_factory_argument() {
+    let dir = TempDir::new("nominal-payload-context");
     let source = concat!(
         "module pkg/main;\n",
-        "newtype Box[A] : . { pub constructor make; pub projector unpack }\n",
-        "fn empty[A]() -> Box[A] { Box.make(()) }\n",
-        "labels { first: Box[. -> .] };\n",
-        "fn run() -> First { {first = empty[.](())} }\n",
+        "type { Box[A]: . { pub mk; pub get } }\n",
+        "fn empty[A]() -> Box[A] { Box.mk(()) }\n",
+        "type { First: Box[. -> .] }\n",
+        "fn run() -> First { First.mk(empty[.](())) }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -966,7 +966,7 @@ fn lsp_auto_import_finds_public_recursive_type_group_members() {
             "module pkg/types;\n",
             "rec {\n",
             "  pub type Chain = . | Node;\n",
-            "  pub newtype Node : Chain { pub constructor make_node; pub projector read_node; };\n",
+            "  pub type { Node: Chain { pub mk; pub get; }; };\n",
             "}\n",
         ),
     );
@@ -1214,14 +1214,13 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "  first: __Checked_term__,\n",
         "  _second_type: __Type__,\n",
         "  second: __Checked_term__,\n",
-        "  target: __Type__\n",
+        "  _target: .\n",
         ") -> (__Checked_term__ & __Fill_ctx__) {\n",
         "  (\n",
         "    first,\n",
-        "    __fill__(\n",
+        "    __fill_result__(\n",
         "      ct,\n",
-        "      __fill__(ct, fills, target, __term_type__(ct, first)),\n",
-        "      target,\n",
+        "      __fill_result__(ct, fills, __term_type__(ct, first)),\n",
         "      __term_type__(ct, second)\n",
         "    )\n",
         "  )\n",
@@ -1701,7 +1700,7 @@ fn lsp_source_fix_all_applies_every_coexisting_warning_in_a_recursive_module() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec newtype Tree : . | Tree { constructor mk_tree; projector un_tree; };\n",
+        "rec type { Tree: . | Tree { mk; get; }; };\n",
         "\n",
         "pub fn run(first: ., second: .) -> . { () }\n",
     );
@@ -1762,7 +1761,7 @@ fn lsp_source_fix_all_applies_every_coexisting_warning_in_a_recursive_module() {
         repaired.contains("run(_first: ., _second: .)"),
         "{repaired}"
     );
-    assert!(repaired.contains("rec newtype Tree"), "{repaired}");
+    assert!(repaired.contains("rec type { Tree:"), "{repaired}");
 
     send_full_text_change(&mut lsp, &uri, 4, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 4);
@@ -2540,7 +2539,7 @@ fn lsp_hover_returns_type_on_expression() {
 fn lsp_recursive_documentation_group_hover_and_completion_preserve_doc_ownership() {
     let dir = TempDir::new("recursive-group-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  newtype Node : . | Chain { constructor make; projector read; };\n}\nfn use_site(value: Node) -> . { () }\n";
+    let source = "module pkg/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\nfn use_site(value: Node) -> . { () }\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -2548,14 +2547,14 @@ fn lsp_recursive_documentation_group_hover_and_completion_preserve_doc_ownership
     open_and_wait_for_analysis(&mut lsp, &uri, source);
     for (needle, selected, excluded) in [
         ("Chain =", "Alias prose.", "Nominal prose."),
-        ("Node :", "Nominal prose.", "Alias prose."),
+        ("Node:", "Nominal prose.", "Alias prose."),
     ] {
         let (line, character) = source_position(source, source.find(needle).unwrap());
         let hover = wait_for_hover(&mut lsp, &uri, line, character);
         let text = hover_type(&hover);
         assert!(text.contains("rec {"), "{needle}: {hover}");
         assert!(text.contains("type Chain = Node;"), "{hover}");
-        assert!(text.contains("newtype Node : . | Chain"), "{hover}");
+        assert!(text.contains("type { Node: . | Chain"), "{hover}");
         assert_eq!(text.matches(selected).count(), 1, "{hover}");
         assert!(!text.contains(excluded), "{hover}");
     }
@@ -2586,7 +2585,7 @@ fn lsp_recursive_documentation_group_hover_and_completion_preserve_doc_ownership
 fn lsp_recursive_documentation_outer_group_hover_is_not_a_member() {
     let dir = TempDir::new("recursive-group-outer-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  newtype Node : . | Chain { constructor make; projector read; };\n}\n";
+    let source = "module pkg/main;\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -2599,7 +2598,7 @@ fn lsp_recursive_documentation_outer_group_hover_is_not_a_member() {
     let text = hover_type(&hover);
     assert!(text.contains("rec {"), "{hover}");
     assert!(text.contains("type Chain = Node;"), "{hover}");
-    assert!(text.contains("newtype Node : . | Chain"), "{hover}");
+    assert!(text.contains("type { Node: . | Chain"), "{hover}");
     assert_eq!(text.matches("Group prose.").count(), 1, "{hover}");
     assert!(!text.contains("Alias prose."), "{hover}");
     assert!(!text.contains("Nominal prose."), "{hover}");
@@ -2614,15 +2613,15 @@ fn lsp_recursive_documentation_outer_group_hover_is_not_a_member() {
 fn lsp_recursive_documentation_labels_preserve_their_written_owner() {
     let dir = TempDir::new("recursive-label-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  labels { twig: . | Tree };\n}\n/// List prose.\nrec labels { list: . | List };\nfn use_site(value: Twig) -> . { () }\n";
+    let source = "module pkg/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\nfn use_site(value: Twig) -> . { () }\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     let uri = path_to_file_uri(&path);
     open_and_wait_for_analysis(&mut lsp, &uri, source);
     for (needle, context, prose, excluded) in [
-        ("twig:", "rec {", "Twig prose.", "List prose."),
-        ("list:", "rec labels", "List prose.", "Twig prose."),
+        ("Twig:", "rec {", "Twig prose.", "List prose."),
+        ("List:", "rec type", "List prose.", "Twig prose."),
     ] {
         let (line, character) = source_position(source, source.find(needle).unwrap());
         let hover = wait_for_hover(&mut lsp, &uri, line, character);
@@ -2883,10 +2882,10 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         "module pkg/origin;\n",
         "\n",
         "pub type Alias = .;\n",
-        "pub newtype Terminal : . {\n",
-        "  pub constructor make;\n",
-        "  pub projector open;\n",
-        "};\n",
+        "pub type { Terminal: . {\n",
+        "  pub mk;\n",
+        "  pub get;\n",
+        "}; };\n",
     );
     let relay = concat!(
         "module pkg/relay;\n",
@@ -2894,15 +2893,15 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         "import pkg/origin as source;\n",
         "\n",
         "pub type Alias = source.Terminal;\n",
-        "pub fn make() -> . { () }\n",
+        "pub fn mk() -> . { () }\n",
     );
     let source = concat!(
         "module pkg/main;\n",
         "\n",
         "import pkg/relay as forwarded;\n",
         "\n",
-        "op _ + _ { impl forwarded.Alias.make; };\n",
-        "fn direct() -> forwarded.Alias { forwarded.Alias.make(()) }\n",
+        "op _ + _ { impl forwarded.Alias.mk; };\n",
+        "fn direct() -> forwarded.Alias { forwarded.Alias.mk(()) }\n",
     );
     let origin_path = dir.write("pkg/origin.kio", origin);
     let relay_path = dir.write("pkg/relay.kio", relay);
@@ -2917,7 +2916,7 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
     let callable_start = source
-        .find("forwarded.Alias.make")
+        .find("forwarded.Alias.mk")
         .expect("operator callable");
     let alias_start = callable_start + "forwarded.".len();
     let member_start = alias_start + "Alias.".len();
@@ -2941,7 +2940,7 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         definition_start(&member_definition),
         source_position(
             origin,
-            origin.find("constructor make").expect("terminal member") + "constructor ".len()
+            origin.find("pub mk").expect("terminal member") + "pub ".len()
         ),
         "the callable leaf must retain the terminal member identity"
     );
@@ -2981,12 +2980,11 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
 
     let direct_return =
         source.find("-> forwarded.Alias").expect("alias return") + "-> forwarded.".len();
-    let direct_call = source.rfind("forwarded.Alias.make").expect("direct call");
+    let direct_call = source.rfind("forwarded.Alias.mk").expect("direct call");
     let direct_alias = direct_call + "forwarded.".len();
     let direct_member = direct_alias + "Alias.".len();
     let relay_alias = relay.find("type Alias").expect("relay alias") + "type ".len();
-    let origin_member =
-        origin.find("constructor make").expect("origin member") + "constructor ".len();
+    let origin_member = origin.find("pub mk").expect("origin member") + "pub ".len();
 
     let mut expected_alias_references = vec![
         (
@@ -3016,16 +3014,10 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
     let mut expected_member_references = vec![
         (
             origin_uri.clone(),
-            source_range(origin, origin_member, "make".len()),
+            source_range(origin, origin_member, "mk".len()),
         ),
-        (
-            uri.clone(),
-            source_range(source, member_start, "make".len()),
-        ),
-        (
-            uri.clone(),
-            source_range(source, direct_member, "make".len()),
-        ),
+        (uri.clone(), source_range(source, member_start, "mk".len())),
+        (uri.clone(), source_range(source, direct_member, "mk".len())),
     ];
     expected_member_references.sort_unstable();
     assert_eq!(
@@ -3034,10 +3026,9 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         "the relay's same-spelling function must remain a different identity"
     );
 
-    for (position, new_name, expected_sites) in [
-        (alias_position, "Renamed", expected_alias_references),
-        (member_position, "create", expected_member_references),
-    ] {
+    {
+        let (position, new_name, expected_sites) =
+            (alias_position, "Renamed", expected_alias_references);
         let rename = send_rename(&mut lsp, &uri, position.0, position.1, new_name);
         assert!(rename.get("error").is_none(), "{rename:?}");
         let mut sites = rename
@@ -3070,6 +3061,20 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         assert_eq!(sites, expected_sites);
     }
 
+    let prepared = send_prepare_rename(&mut lsp, &uri, member_position.0, member_position.1);
+    assert!(
+        prepared.get("result").is_none_or(Value::is_null),
+        "{prepared:?}"
+    );
+    let refused = send_rename(
+        &mut lsp,
+        &uri,
+        member_position.0,
+        member_position.1,
+        "create",
+    );
+    assert_eq!(refused["error"]["code"], -32803, "{refused:?}");
+
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -3080,10 +3085,10 @@ fn lsp_recursive_newtype_callable_path_uses_packed_declaration_identity() {
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "  newtype A : (. | B) { constructor mk_a; projector un_a; };\n",
-        "  newtype B : (. | A) { constructor mk_b; projector un_b; };\n",
+        "  type { A: (. | B) { mk; get; }; };\n",
+        "  type { B: (. | A) { mk; get; }; };\n",
         "}\n",
-        "op _ + _ { impl A.mk_a; };\n",
+        "op _ + _ { impl A.mk; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -3093,13 +3098,13 @@ fn lsp_recursive_newtype_callable_path_uses_packed_declaration_identity() {
     let uri = path_to_file_uri(&main_path);
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
-    let callable = source.find("A.mk_a").expect("recursive callable");
+    let callable = source.find("A.mk").expect("recursive callable");
     let head_position = source_position(source, callable);
     let head_definition = send_definition(&mut lsp, &uri, head_position.0, head_position.1);
     assert_eq!(definition_uri(&head_definition), uri);
     assert_eq!(
         definition_start(&head_definition),
-        source_position(source, source.find("newtype A").expect("A declaration") + 8)
+        source_position(source, source.find("A: (. | B)").expect("A declaration"))
     );
 
     let member_position = source_position(source, callable + "A.".len());
@@ -3107,10 +3112,7 @@ fn lsp_recursive_newtype_callable_path_uses_packed_declaration_identity() {
     assert_eq!(definition_uri(&member_definition), uri);
     assert_eq!(
         definition_start(&member_definition),
-        source_position(
-            source,
-            source.find("constructor mk_a").expect("member declaration") + "constructor ".len()
-        )
+        source_position(source, source.find("mk; get;").expect("member declaration"))
     );
 
     assert_eq!(lsp.shutdown(), 0);
@@ -3519,9 +3521,9 @@ fn lsp_document_symbol_returns_symbols_for_multi_item_file() {
         "\n",
         "pub fn run() -> . { () }\n",
         "\n",
-        "type Same[a] = a;\n",
+        "type Same[A] = A;\n",
         "\n",
-        "newtype Wrap[a] : a { pub constructor mk_wrap; pub projector un_wrap; };\n",
+        "type { Wrap[A]: A { pub mk; pub get; }; }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -3542,9 +3544,8 @@ fn lsp_document_symbol_returns_symbols_for_multi_item_file() {
     );
 
     let result = resp.get("result").cloned().unwrap_or(Value::Null);
-    // Result is either null (document not yet analyzed) or an array
-    // of DocumentSymbol objects.
-    if !result.is_null() {
+    // Analysis has completed, so the result must contain the symbols.
+    {
         let arr = result
             .as_array()
             .expect("documentSymbol result must be an array");
@@ -4439,12 +4440,12 @@ fn lsp_type_completion_obeys_explicit_recursive_scopes_and_source_order() {
         "module pkg/main;\n",
         "\n",
         "type Earlier = .;\n",
-        "newtype Unmarked : Later { constructor mk_unmarked; projector un_unmarked; };\n",
-        "rec newtype Singleton : . | Singleton { constructor mk_singleton; projector un_singleton; };\n",
-        "rec labels Label_tree = { leaf: . } | { branch: Label_tree };\n",
+        "type { Unmarked: Later { mk; get; }; };\n",
+        "rec type { Singleton: . | Singleton { mk; get; }; };\n",
+        "rec type Label_tree = { Leaf: .; } | { Branch: Label_tree; };\n",
         "rec {\n",
         "  type Group_alias = Group_node;\n",
-        "  newtype Group_node[A] : Group_alias & A { constructor mk_group; projector un_group; };\n",
+        "  type { Group_node[A]: Group_alias & A { mk; get; }; };\n",
         "}\n",
         "type Later = .;\n",
     );
@@ -4476,7 +4477,7 @@ fn lsp_type_completion_obeys_explicit_recursive_scopes_and_source_order() {
             .collect::<Vec<_>>()
     };
 
-    let unmarked = labels_after(&mut lsp, "Unmarked : ");
+    let unmarked = labels_after(&mut lsp, "Unmarked: ");
     assert!(unmarked.iter().any(|name| name == "Earlier"));
     for excluded in [
         "Unmarked",
@@ -4491,11 +4492,11 @@ fn lsp_type_completion_obeys_explicit_recursive_scopes_and_source_order() {
         );
     }
 
-    let singleton = labels_after(&mut lsp, "Singleton : ");
+    let singleton = labels_after(&mut lsp, "Singleton: ");
     assert!(singleton.iter().any(|name| name == "Singleton"));
     assert!(!singleton.iter().any(|name| name == "Later"));
 
-    let labels_scope = labels_after(&mut lsp, "branch: ");
+    let labels_scope = labels_after(&mut lsp, "Branch: ");
     for expected in ["Label_tree", "Leaf", "Branch"] {
         assert!(
             labels_scope.iter().any(|name| name == expected),
@@ -4503,7 +4504,7 @@ fn lsp_type_completion_obeys_explicit_recursive_scopes_and_source_order() {
         );
     }
 
-    let group = labels_after(&mut lsp, "Group_node[A] : ");
+    let group = labels_after(&mut lsp, "Group_node[A]: ");
     for expected in ["Group_alias", "Group_node", "A"] {
         assert!(
             group.iter().any(|name| name == expected),
@@ -4537,11 +4538,11 @@ fn lsp_type_completion_recovery_uses_declarations_not_capitalized_text() {
                 "type Earlier = .;\n",
                 "rec {\n",
                 "  type A = B;\n",
-                "  newtype B : \n",
+                "  type { B: \n",
                 "  // CommentLeak\n",
                 "  \"StringLeak\"\n",
             ),
-            "B : ",
+            "B: ",
             vec!["Earlier", "A", "B"],
         ),
     ] {
@@ -4589,15 +4590,15 @@ fn lsp_incomplete_generic_recursive_labels_complete_their_generated_heads() {
     for (case, source, expected, excluded) in [
         (
             "anonymous",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels { list[A] <U> : Pair[A][bogus[B]: ",
+            "module pkg/main;\nimport pkg/dep(Imported);\nrec type { List[A] <U>: Pair[A][Bogus[B]: ",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
             "named",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: ",
-            vec!["A", "B", "U", "Tree", "List", "Imported"],
-            vec!["C", "Bogus"],
+            "module pkg/main;\nimport pkg/dep(Imported);\nrec type Tree[A] = { List[B] <U>: Pair[B][Bogus[C]: ",
+            vec!["B", "U", "Tree", "List", "Imported"],
+            vec!["A", "C", "Bogus"],
         ),
     ] {
         let dir = TempDir::new(&format!("completion-incomplete-generic-rec-labels-{case}"));
@@ -4643,56 +4644,25 @@ fn lsp_incomplete_generic_recursive_labels_complete_their_generated_heads() {
 }
 
 #[test]
-fn lsp_incomplete_recursive_label_reuse_does_not_create_a_generated_head() {
-    let dir = TempDir::new("completion-incomplete-rec-label-reuse");
-    let source = "module pkg/main;\ntype Earlier = .;\nrec labels { first: _";
-    let main_path = dir.write("pkg/main.kio", source);
-    dir.write_pkg_root_package();
-    let mut lsp = LspProcess::spawn();
-    lsp.initialize(&path_to_file_uri(dir.path()));
-    let uri = path_to_file_uri(&main_path);
-    lsp.send_notification(
-        "textDocument/didOpen",
-        json!({
-            "textDocument": {
-                "uri": uri,
-                "languageId": "kio",
-                "version": 1,
-                "text": source,
-            }
-        }),
-    );
-    let _ = wait_for_publish(&mut lsp, &uri);
-
-    let offset = source.find("first: ").expect("reuse marker") + "first: ".len();
-    let position = source_position(source, offset);
-    let response = send_completion(&mut lsp, &uri, position.0, position.1);
-    let labels = completion_labels(&response);
-    assert!(
-        labels.contains(&"Earlier"),
-        "recovery omitted an earlier valid type: {labels:?}"
-    );
-    assert!(
-        !labels.contains(&"First"),
-        "an active reuse marker became a fresh generated head: {labels:?}"
-    );
-    assert_eq!(lsp.shutdown(), 0);
-}
-
-#[test]
 fn lsp_incomplete_unmarked_type_declarations_keep_only_active_binders() {
     for (case, source, expected, excluded) in [
         (
             "newtype",
-            "module pkg/main;\nimport pkg/dep(Imported);\ntype Earlier = .;\nnewtype Box[A] <E> : ",
+            "module pkg/main;\nimport pkg/dep(Imported);\ntype Earlier = .;\ntype { Box[A] <E>: ",
             vec!["A", "E", "Earlier", "Imported"],
             vec!["Box"],
         ),
         (
             "labels",
-            "module pkg/main;\nimport pkg/dep(Imported);\nlabels Tree[A] = { first[X]: ., list[B] <E> : ",
-            vec!["A", "B", "E", "First", "Imported"],
-            vec!["Tree", "List", "X"],
+            "module pkg/main;\nimport pkg/dep(Imported);\ntype Tree[A] = { First[X]: .; List[B] <E>: ",
+            vec!["B", "E", "First", "Imported"],
+            vec!["A", "Tree", "List", "X"],
+        ),
+        (
+            "alias-rhs",
+            "module pkg/main;\nimport pkg/dep(Imported);\ntype Tree[A] = { First: .; } | A",
+            vec!["A", "Imported"],
+            vec!["Tree"],
         ),
     ] {
         let dir = TempDir::new(&format!("completion-incomplete-unmarked-{case}"));
@@ -4718,7 +4688,12 @@ fn lsp_incomplete_unmarked_type_declarations_keep_only_active_binders() {
         );
         let _ = wait_for_publish(&mut lsp, &uri);
 
-        let position = source_position(source, source.len());
+        let cursor = if case == "alias-rhs" {
+            source.len() - 1
+        } else {
+            source.len()
+        };
+        let position = source_position(source, cursor);
         let response = send_completion(&mut lsp, &uri, position.0, position.1);
         let labels = completion_labels(&response);
         for expected in expected {
@@ -4745,8 +4720,8 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
             concat!(
                 "module pkg/main;\n",
                 "rec {\n",
-                "  newtype A : B { constructor mk_a; projector un_a; };\n",
-                "  newtype B : A { constructor mk_b; projector un_b; };\n",
+                "  type { A: B { mk; get; }; };\n",
+                "  type { B: A { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -4754,7 +4729,7 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
             "multiple-label-knots",
             concat!(
                 "module pkg/main;\n",
-                "rec labels Pair = { first: . | First, second: . | Second };\n",
+                "rec type Pair = { First: . | First; Second: . | Second; };\n",
             ),
         ),
         (
@@ -4762,8 +4737,8 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
             concat!(
                 "module pkg/main;\n",
                 "rec {\n",
-                "  labels A = { to_b: B };\n",
-                "  labels B = { to_a: A };\n",
+                "  type A = { To_b: B; };\n",
+                "  type B = { To_a: A; };\n",
                 "}\n",
             ),
         ),
@@ -4817,7 +4792,7 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
         "\n",
         "rec {\n",
         "  type Forest = Tree;\n",
-        "  newtype Tree : Forest { constructor mk; projector un; };\n",
+        "  type { Tree: Forest { mk; get; }; }\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -4837,11 +4812,11 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
     assert_eq!(
         tree.pointer("/range/start/character")
             .and_then(Value::as_u64),
-        Some(10),
+        Some(9),
         "the grouped newtype definition range must begin at `Tree`: {tree:?}"
     );
 
-    let forest = send_definition(&mut lsp, &uri, 4, 18);
+    let forest = send_definition(&mut lsp, &uri, 4, 15);
     assert_eq!(
         forest.pointer("/range/start/line").and_then(Value::as_u64),
         Some(3),
@@ -4855,7 +4830,7 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
         "the grouped alias definition range must begin at `Forest`: {forest:?}"
     );
 
-    let alias_hover = wait_for_hover(&mut lsp, &uri, 4, 18);
+    let alias_hover = wait_for_hover(&mut lsp, &uri, 4, 15);
     assert!(
         hover_type(&alias_hover).contains("type Forest"),
         "a grouped alias reference must have a finite identity-preserving hover: {alias_hover:?}"
@@ -4899,7 +4874,7 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
         "textDocument/references",
         json!({
             "textDocument": { "uri": uri },
-            "position": { "line": 4, "character": 18 },
+            "position": { "line": 4, "character": 15 },
             "context": { "includeDeclaration": true },
         }),
     );
@@ -4913,9 +4888,9 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
         .map(|location| json_range(location.get("range").expect("reference range")))
         .collect::<Vec<_>>();
     ranges.sort_unstable();
-    assert_eq!(ranges, vec![(3, 7, 3, 13), (4, 17, 4, 23)]);
+    assert_eq!(ranges, vec![(3, 7, 3, 13), (4, 15, 4, 21)]);
 
-    let renamed = send_rename(&mut lsp, &uri, 4, 18, "Woods");
+    let renamed = send_rename(&mut lsp, &uri, 4, 15, "Woods");
     assert!(renamed.get("error").is_none(), "{renamed:?}");
     let edits = renamed
         .get("result")
@@ -4928,9 +4903,9 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
     assert_eq!(edits.len(), 2, "{renamed:?}");
     let renamed_source = apply_lsp_text_edits(source, edits);
     assert!(renamed_source.contains("type Woods = Tree"));
-    assert!(renamed_source.contains("newtype Tree : Woods"));
+    assert!(renamed_source.contains("type { Tree: Woods"));
     send_full_text_change(&mut lsp, &uri, 2, &renamed_source);
-    let renamed_definition = send_definition(&mut lsp, &uri, 4, 18);
+    let renamed_definition = send_definition(&mut lsp, &uri, 4, 15);
     assert_eq!(
         renamed_definition
             .pointer("/range/start/line")
@@ -4947,24 +4922,24 @@ fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
     let dir = TempDir::new("identity-alias-newtype-member-navigation");
     let origin_source = concat!(
         "module pkg/origin;\n",
-        "pub newtype Tag : . { pub constructor make; pub projector open; };\n",
-        "fn local() -> Tag { Tag.make(()) }\n",
-        "fn inspect(value: Tag) -> . { Tag.open(value) }\n",
+        "pub type { Tag: . { pub mk; pub get; }; };\n",
+        "fn local() -> Tag { Tag.mk(()) }\n",
+        "fn inspect(value: Tag) -> . { Tag.get(value) }\n",
     );
     let relay_source = concat!(
         "module pkg/relay;\n",
         "import pkg/origin as source;\n",
         "pub type Tag = source.Tag;\n",
-        "fn make() -> . { () }\n",
-        "fn open(value: .) -> . { value }\n",
+        "fn mk() -> . { () }\n",
+        "fn get(value: .) -> . { value }\n",
     );
     let consumer_source = concat!(
         "module pkg/consumer;\n",
         "import pkg/relay as forwarded;\n",
-        "fn first() -> forwarded.Tag { forwarded.Tag.make(()) }\n",
-        "fn second(value: forwarded.Tag) -> . { forwarded.Tag.open(value) }\n",
-        "fn third() -> forwarded.Tag { forwarded.Tag.make(()) }\n",
-        "fn fourth(value: forwarded.Tag) -> . { forwarded.Tag.open(value) }\n",
+        "fn first() -> forwarded.Tag { forwarded.Tag.mk(()) }\n",
+        "fn second(value: forwarded.Tag) -> . { forwarded.Tag.get(value) }\n",
+        "fn third() -> forwarded.Tag { forwarded.Tag.mk(()) }\n",
+        "fn fourth(value: forwarded.Tag) -> . { forwarded.Tag.get(value) }\n",
     );
     let origin_path = dir.write("pkg/origin.kio", origin_source);
     let relay_path = dir.write("pkg/relay.kio", relay_source);
@@ -5097,67 +5072,35 @@ fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
         with_declaration.sort_unstable();
         let actual_with_declaration = references_at(lsp, position, true);
 
-        let renamed = send_rename(lsp, &consumer_uri, position.0, position.1, rename_to);
-        assert!(renamed.get("error").is_none(), "{renamed:?}");
-        let edit = renamed
-            .get("result")
-            .unwrap_or_else(|| panic!("member rename result: {renamed:?}"));
-        let mut edits = edit
-            .get("documentChanges")
-            .and_then(Value::as_array)
-            .expect("rename documentChanges")
-            .iter()
-            .flat_map(|change| {
-                let uri = change
-                    .get("textDocument")
-                    .and_then(|document| document.get("uri"))
-                    .and_then(Value::as_str)
-                    .expect("rename URI")
-                    .to_owned();
-                change
-                    .get("edits")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .map(move |edit| {
-                        assert_eq!(edit.get("newText").and_then(Value::as_str), Some(rename_to));
-                        (
-                            uri.clone(),
-                            json_range(edit.get("range").expect("rename range")),
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-        edits.sort_unstable();
+        assert_eq!(without_declaration, uses);
+        assert_eq!(actual_with_declaration, with_declaration);
+        let prepared = send_prepare_rename(lsp, &consumer_uri, position.0, position.1);
         assert!(
-            workspace_edit_edits_for_uri(edit, &relay_uri).is_none(),
-            "same-spelling ordinary declarations must retain distinct identities: {renamed:?}"
+            prepared.get("result").is_none_or(Value::is_null),
+            "{prepared:?}"
         );
-        assert_eq!(
-            (without_declaration, actual_with_declaration, edits),
-            (uses, with_declaration.clone(), with_declaration,),
-            "references and rename must apply the explicit member declaration policy together"
-        );
+        let refused = send_rename(lsp, &consumer_uri, position.0, position.1, rename_to);
+        assert_eq!(refused["error"]["code"], -32803, "{refused:?}");
     };
 
     member_case(
-        "projector open",
-        "Tag.open",
-        "forwarded.Tag.open",
-        "open",
+        "pub get",
+        "Tag.get",
+        "forwarded.Tag.get",
+        "get",
         "unpack",
         &mut lsp,
     );
     member_case(
-        "constructor make",
-        "Tag.make",
-        "forwarded.Tag.make",
-        "make",
+        "pub mk",
+        "Tag.mk",
+        "forwarded.Tag.mk",
+        "mk",
         "build",
         &mut lsp,
     );
 
-    let member_offset = consumer_source.find("make(())").expect("member use");
+    let member_offset = consumer_source.find("mk(())").expect("member use");
     let member_position = source_position(consumer_source, member_offset);
     let member_definition = send_definition(
         &mut lsp,
@@ -5170,7 +5113,8 @@ fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
         origin_uri,
         "the member must navigate to the terminal nominal declaration: {member_definition:?}"
     );
-    let origin_member_offset = origin_source.find("make").expect("member declaration");
+    let origin_member_offset =
+        origin_source.find("pub mk").expect("member declaration") + "pub ".len();
     let origin_member_position = source_position(origin_source, origin_member_offset);
     assert_eq!(
         json_range(
@@ -5182,7 +5126,7 @@ fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
             origin_member_position.0,
             origin_member_position.1,
             origin_member_position.0,
-            origin_member_position.1 + 4,
+            origin_member_position.1 + 2,
         )
     );
 
@@ -5209,12 +5153,12 @@ fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
         "\n",
         "rec {\n",
         "  type Universal = Ubox[.];\n",
-        "  newtype Ubox[Universal] : Universal & Utail { constructor mk_u; projector un_u; };\n",
+        "  type { Ubox[Universal]: Universal & Utail { mk; get; }; };\n",
         "  type Utail = Universal;\n",
         "}\n",
         "rec {\n",
         "  type Existential = Ebox;\n",
-        "  newtype Ebox <Existential> : Existential & Etail { constructor mk_e; projector un_e; };\n",
+        "  type { Ebox <Existential>: Existential & Etail { mk; get; }; };\n",
         "  type Etail = Existential;\n",
         "}\n",
     );
@@ -5227,8 +5171,8 @@ fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
     for (binder_marker, use_marker, name) in [
-        ("Ubox[Universal]", "] : Universal", "Universal"),
-        ("Ebox <Existential>", "> : Existential", "Existential"),
+        ("Ubox[Universal]", "]: Universal", "Universal"),
+        ("Ebox <Existential>", ">: Existential", "Existential"),
     ] {
         let binder = source.find(binder_marker).unwrap() + binder_marker.find(name).unwrap();
         let use_offset = source.find(use_marker).unwrap() + use_marker.len() - name.len();
@@ -5246,7 +5190,7 @@ fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
             "a local type binder must shadow the same-named group head: {definition:?}"
         );
 
-        let completion_offset = source.find(use_marker).unwrap() + 4;
+        let completion_offset = source.find(use_marker).unwrap() + 3;
         let completion_position = source_position(source, completion_offset);
         let completion_response =
             send_completion(&mut lsp, &uri, completion_position.0, completion_position.1);
@@ -5271,8 +5215,8 @@ fn lsp_recursive_singleton_binders_shadow_outer_type_heads() {
         "module pkg/main;\n",
         "type Universal = .;\n",
         "type Existential = .;\n",
-        "rec newtype Ubox[Universal] : . | Ubox[Universal] { constructor mk_u; projector un_u; };\n",
-        "rec newtype Ebox <Existential> : . | (Ebox & Existential) { constructor mk_e; projector un_e; };\n",
+        "rec type { Ubox[Universal]: . | Ubox[Universal] { mk; get; }; };\n",
+        "rec type { Ebox <Existential>: . | (Ebox & Existential) { mk; get; }; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -5326,7 +5270,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
         "\n",
         "rec {\n",
         "  type Node = Edge;\n",
-        "  newtype Edge : Node { constructor mk; projector un; };\n",
+        "  type { Edge: Node { mk; get; }; }\n",
         "}\n",
     );
     let other_source = concat!(
@@ -5334,7 +5278,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
         "\n",
         "rec {\n",
         "  type Node = Edge;\n",
-        "  newtype Edge : Node { constructor mk; projector un; };\n",
+        "  type { Edge: Node { mk; get; }; }\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", main_source);
@@ -5346,7 +5290,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
     let main_uri = path_to_file_uri(&main_path);
     open_and_wait_for_analysis(&mut lsp, &main_uri, main_source);
 
-    let definition = send_definition(&mut lsp, &main_uri, 4, 18);
+    let definition = send_definition(&mut lsp, &main_uri, 4, 15);
     assert_eq!(
         definition_uri(&definition),
         main_uri,
@@ -5357,7 +5301,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
         (3, 7, 3, 11),
     );
 
-    let renamed = send_rename(&mut lsp, &main_uri, 4, 18, "Main_node");
+    let renamed = send_rename(&mut lsp, &main_uri, 4, 15, "Main_node");
     assert!(renamed.get("error").is_none(), "{renamed:?}");
     let changes = renamed
         .get("result")
@@ -5383,7 +5327,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
     assert_eq!(edits.len(), 2, "{renamed:?}");
     let renamed_source = apply_lsp_text_edits(main_source, edits);
     assert!(renamed_source.contains("type Main_node = Edge"));
-    assert!(renamed_source.contains("newtype Edge : Main_node"));
+    assert!(renamed_source.contains("type { Edge: Main_node"));
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -5521,7 +5465,7 @@ fn lsp_forbidden_recursive_type_spellings_offer_no_unsound_rewrite() {
         (
             "rec-type",
             "module pkg/main;\n\nrec type Loop = Loop;\n",
-            "`rec type` is not a declaration form",
+            "a recursive type declaration must introduce a nominal boundary",
         ),
         (
             "function-in-type-group",
@@ -5580,7 +5524,7 @@ fn lsp_type_group_visibility_diagnostic_highlights_only_the_modifier() {
     ] {
         let dir = TempDir::new(&format!("recursive-type-group-leading-visibility-{case}"));
         let source = format!(
-            "module pkg/main;\n\n{modifier} rec {{\n  // alias stays attached\n  type A = B;\n  /// nominal docs stay attached\n  newtype B : A {{ constructor mk; projector un; }};\n  // trailing group comment survives\n}}\n"
+            "module pkg/main;\n\n{modifier} rec {{\n  // alias stays attached\n  type A = B;\n  /// nominal docs stay attached\n  type {{ B: A {{ mk; get; }}; }}\n  // trailing group comment survives\n}}\n"
         );
         let main_path = dir.write("pkg/main.kio", &source);
         dir.write_pkg_root_package();
@@ -5634,7 +5578,7 @@ fn lsp_type_group_visibility_diagnostic_highlights_only_the_modifier() {
         let repaired = apply_lsp_text_edits(&source, edits);
         assert!(!repaired.contains(&format!("{modifier} rec")));
         assert!(repaired.contains(&format!("{member_modifier}type A = B")));
-        assert!(repaired.contains(&format!("{member_modifier}newtype B : A")));
+        assert!(repaired.contains(&format!("{member_modifier}type {{ B: A")));
         for preserved in [
             "// alias stays attached",
             "/// nominal docs stay attached",
@@ -5676,7 +5620,7 @@ fn lsp_type_group_visibility_fix_is_withheld_when_a_member_already_has_visibilit
         "\n",
         "pub rec {\n",
         "  pub type A = B;\n",
-        "  newtype B : A { constructor mk; projector un; };\n",
+        "  type { B: A { mk; get; }; }\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -5725,7 +5669,7 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec labels Tree = { leaf: . | Leaf } | { branch: Tree & Branch };\n",
+        "rec type Tree = { Leaf: . | Leaf; } | { Branch: Tree & Branch; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -5735,17 +5679,17 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
     let uri = path_to_file_uri(&main_path);
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
-    let alias_use = source.find("branch: Tree").unwrap() + "branch: ".len();
+    let alias_use = source.find("Branch: Tree").unwrap() + "Branch: ".len();
     let alias_use_position = source_position(source, alias_use);
     let alias = send_definition(&mut lsp, &uri, alias_use_position.0, alias_use_position.1);
     assert_eq!(
         json_range(alias.get("range").expect("alias definition range")),
-        (2, 11, 2, 15),
+        source_range(source, source.find("Tree =").unwrap(), "Tree".len()),
         "the recursive alias reference must navigate to the named labels alias: {alias:?}"
     );
     for (use_marker, head_marker, name) in [
-        (". | Leaf", "leaf:", "Leaf"),
-        ("& Branch", "branch:", "Branch"),
+        (". | Leaf", "Leaf:", "Leaf"),
+        ("& Branch", "Branch:", "Branch"),
     ] {
         let use_offset = source.find(use_marker).unwrap() + use_marker.len() - name.len();
         let use_position = source_position(source, use_offset);
@@ -5794,7 +5738,7 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
         .map(|location| json_range(location.get("range").expect("reference range")))
         .collect::<Vec<_>>();
     ranges.sort_unstable();
-    let alias_head = source.find("labels Tree").unwrap() + "labels ".len();
+    let alias_head = source.find("type Tree").unwrap() + "type ".len();
     let mut expected = vec![
         source_range(source, alias_head, "Tree".len()),
         source_range(source, alias_use, "Tree".len()),
@@ -5804,27 +5748,23 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
 
     let branch_use = source.find("& Branch").unwrap() + "& ".len();
     let branch_use_position = source_position(source, branch_use);
-    let generated_prepare =
+    let prepared =
         send_prepare_rename(&mut lsp, &uri, branch_use_position.0, branch_use_position.1);
-    assert!(
-        generated_prepare.get("error").is_none(),
-        "{generated_prepare:?}"
-    );
-    assert!(
-        generated_prepare.get("result").is_none_or(Value::is_null),
-        "the generated `Branch` nominal cannot be renamed independently of its lower-case label surface: {generated_prepare:?}"
-    );
-    let generated_rename = send_rename(
+    assert_eq!(prepared["result"]["placeholder"], "Branch", "{prepared:?}");
+    let nominal_rename = send_rename(
         &mut lsp,
         &uri,
         branch_use_position.0,
         branch_use_position.1,
         "Fork",
     );
-    assert!(
-        generated_rename.get("error").is_some(),
-        "a generated nominal rename must be refused instead of emitting an incomplete edit: {generated_rename:?}"
-    );
+    assert!(nominal_rename.get("error").is_none(), "{nominal_rename:?}");
+    let (nominal_edits, version) = workspace_edit_edits_for_uri(&nominal_rename["result"], &uri)
+        .unwrap_or_else(|| panic!("nominal rename must publish edits: {nominal_rename:?}"));
+    assert_eq!(version, Some(1));
+    assert_eq!(nominal_edits.len(), 2, "{nominal_rename:?}");
+    let nominal_renamed_source = apply_lsp_text_edits(source, nominal_edits);
+    assert_eq!(nominal_renamed_source, source.replace("Branch", "Fork"));
 
     let alias_generated_collision = send_rename(
         &mut lsp,
@@ -5852,7 +5792,7 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
         .iter()
         .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
         .collect::<Vec<_>>();
-    assert_eq!(symbol_names, vec!["Tree"]);
+    assert_eq!(symbol_names, vec!["Tree", "Leaf", "Branch"]);
 
     let renamed = send_rename(
         &mut lsp,
@@ -5872,9 +5812,9 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
         .unwrap_or_else(|| panic!("recursive labels alias rename must publish edits: {renamed:?}"));
     assert_eq!(edits.len(), 2, "{renamed:?}");
     let renamed_source = apply_lsp_text_edits(source, edits);
-    assert!(renamed_source.contains("rec labels Wood ="));
-    assert!(renamed_source.contains("branch: Wood & Branch"));
-    assert!(renamed_source.contains("branch"));
+    assert!(renamed_source.contains("rec type Wood ="));
+    assert!(renamed_source.contains("Branch: Wood & Branch"));
+    assert!(renamed_source.contains("Branch:"));
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -5886,7 +5826,7 @@ fn lsp_rename_checks_generated_nominals_in_the_complete_module_namespace() {
         "module pkg/main;\n",
         "\n",
         "type Bar = .;\n",
-        "labels { foo: . };\n",
+        "type { Foo: .; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -5916,7 +5856,7 @@ fn lsp_rename_checks_generated_nominals_in_the_complete_module_namespace() {
     let renamed_source = apply_lsp_text_edits(source, edits);
     assert!(renamed_source.contains("type Baz = .;"), "{renamed_source}");
     assert!(
-        renamed_source.contains("labels { foo: . };"),
+        renamed_source.contains("type { Foo: .; };"),
         "{renamed_source}"
     );
 
@@ -5929,10 +5869,10 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec labels Pair = { first: . | First, second: . | Second };\n",
+        "rec type Pair = { First: . | First; Second: . | Second; };\n",
         "rec {\n",
-        "  labels A = { to_b <X>: X & B };\n",
-        "  labels B = { to_a: A };\n",
+        "  type A = { To_b <X>: X & B; };\n",
+        "  type B = { To_a: A; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -5945,7 +5885,7 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
 
     let b_use = source.find("X & B").unwrap() + "X & ".len();
     let b_use_position = source_position(source, b_use);
-    let b_head = source.find("labels B").unwrap() + "labels ".len();
+    let b_head = source.find("type B").unwrap() + "type ".len();
     let b_head_position = source_position(source, b_head);
     let b_definition = send_definition(&mut lsp, &uri, b_use_position.0, b_use_position.1);
     assert_eq!(
@@ -5995,9 +5935,9 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
     expected.sort_unstable();
     assert_eq!(ranges, expected);
 
-    let a_use = source.find("to_a: A").unwrap() + "to_a: ".len();
+    let a_use = source.find("To_a: A").unwrap() + "To_a: ".len();
     let a_use_position = source_position(source, a_use);
-    let a_head = source.find("labels A").unwrap() + "labels ".len();
+    let a_head = source.find("type A").unwrap() + "type ".len();
     let a_head_position = source_position(source, a_head);
     let a_definition = send_definition(&mut lsp, &uri, a_use_position.0, a_use_position.1);
     assert_eq!(
@@ -6028,7 +5968,7 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
     assert_eq!(edits.len(), 2, "{renamed:?}");
     let renamed_source = apply_lsp_text_edits(source, edits);
     assert!(renamed_source.contains("X & Bee"));
-    assert!(renamed_source.contains("labels Bee ="));
+    assert!(renamed_source.contains("type Bee ="));
 
     let symbols_id = lsp.send_request(
         "textDocument/documentSymbol",
@@ -6036,14 +5976,29 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
     );
     let symbols =
         lsp.recv_matching(|message| message.get("id").and_then(Value::as_i64) == Some(symbols_id));
-    let symbol_names = symbols
+    let symbols = symbols
         .get("result")
         .and_then(Value::as_array)
-        .unwrap_or_else(|| panic!("recursive labels must remain document symbols: {symbols:?}"))
-        .iter()
-        .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
-        .collect::<Vec<_>>();
-    assert_eq!(symbol_names, vec!["Pair", "A", "B"]);
+        .unwrap_or_else(|| panic!("recursive types must remain document symbols: {symbols:?}"));
+    let expected_symbols = [
+        ("Pair", 11, "Pair ="),
+        ("First", 23, "First:"),
+        ("Second", 23, "Second:"),
+        ("A", 11, "A ="),
+        ("To_b", 23, "To_b <"),
+        ("B", 11, "B ="),
+        ("To_a", 23, "To_a:"),
+    ];
+    assert_eq!(symbols.len(), expected_symbols.len(), "{symbols:?}");
+    for (symbol, (name, kind, marker)) in symbols.iter().zip(expected_symbols) {
+        assert_eq!(symbol["name"], name);
+        assert_eq!(symbol["kind"], kind);
+        assert_eq!(
+            json_range(&symbol["selectionRange"]),
+            source_range(source, source.find(marker).unwrap(), name.len()),
+            "{name}: {symbol:?}",
+        );
+    }
 
     let folding_id = lsp.send_request(
         "textDocument/foldingRange",
@@ -6071,7 +6026,7 @@ fn lsp_unmarked_labels_keep_only_earlier_generated_heads_in_scope() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "labels { early: ., uses_early: Early, uses_later: Later, later: . };\n",
+        "type { Early: .; Uses_early: Early; Uses_later: Later; Later: .; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -6102,7 +6057,7 @@ fn lsp_unmarked_labels_keep_only_earlier_generated_heads_in_scope() {
         Some("`Later` is declared later and is not visible here")
     );
 
-    let completion_offset = source.find("uses_early: ").unwrap() + "uses_early: ".len();
+    let completion_offset = source.find("Uses_early: ").unwrap() + "Uses_early: ".len();
     let completion_position = source_position(source, completion_offset);
     let completion_response =
         send_completion(&mut lsp, &uri, completion_position.0, completion_position.1);
@@ -6120,8 +6075,7 @@ fn lsp_unmarked_labels_keep_only_earlier_generated_heads_in_scope() {
             .and_then(Value::as_array)
             .is_some_and(|actions| actions.iter().all(|action| {
                 let title = action.get("title").and_then(Value::as_str).unwrap_or("");
-                title != "Add `rec` to this recursive labels declaration"
-                    && !title.starts_with("Move `Later`")
+                !title.starts_with("Add `rec`") && !title.starts_with("Move `Later`")
             })),
         "an acyclic generated-label edge must not receive an invalid marker or source-splitting edit: {actions:?}"
     );
@@ -6572,11 +6526,11 @@ fn lsp_semantic_tokens_keep_rec_contextual_across_value_and_declaration_sites() 
         "fn use(rec: .) -> . { rec }\n",
         "rec(loop) fn walk(value: .) -> . { value }\n",
         "rec {\n",
-        "  newtype A : B { constructor mk_a; projector un_a; };\n",
-        "  newtype B : A { constructor mk_b; projector un_b; };\n",
+        "  type { A: B { mk; get; }; };\n",
+        "  type { B: A { mk; get; }; };\n",
         "}\n",
-        "rec newtype Cell : . | Cell { constructor mk_cell; projector un_cell; };\n",
-        "rec labels Rows = { row: . | Row };\n",
+        "rec type { Cell: . | Cell { mk; get; }; };\n",
+        "rec type Rows = { Row: . | Row; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -6653,8 +6607,8 @@ fn lsp_semantic_tokens_keep_rec_contextual_across_value_and_declaration_sites() 
     for (marker, prefix) in [
         ("rec(loop)", ""),
         ("rec {", ""),
-        ("rec newtype", ""),
-        ("rec labels", ""),
+        ("rec type { Cell", ""),
+        ("rec type Rows", ""),
     ] {
         assert_eq!(
             type_at(marker, prefix),
@@ -6999,14 +6953,14 @@ fn lsp_rename_returns_versioned_document_changes_for_open_file() {
 }
 
 #[test]
-fn lsp_row_let_rename_preserves_lexical_identity_and_selected_labels() {
-    let dir = TempDir::new("row-let-rename-identity");
+fn lsp_pattern_let_rename_preserves_lexical_and_nominal_identity() {
+    let dir = TempDir::new("pattern-let-rename-identity");
     let source = concat!(
         "module pkg/main;\n",
-        "labels { field: ., value: . };\n",
-        "fn first() -> . { let .({field as value}) = {field = ()}; value }\n",
-        "fn second() -> . { let .({field as value}) = {field = ()}; value }\n",
-        "fn shorthand() -> . { let .({value}) = {value = ()}; value }\n",
+        "type { Field: .; Value: . }\n",
+        "fn first() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
+        "fn second() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
+        "fn direct() -> . { let value = Value.get(Value.mk(())); value }\n",
         "fn ordinary(value: .) -> . { value }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -7014,8 +6968,8 @@ fn lsp_row_let_rename_preserves_lexical_identity_and_selected_labels() {
         "pkg/other.kio",
         concat!(
             "module pkg/other;\n",
-            "labels { field: . };\n",
-            "fn other() -> . { let .({field as value}) = {field = ()}; value }\n",
+            "type { Field: . }\n",
+            "fn other() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
         ),
     );
     dir.write_pkg_root_package();
@@ -7028,32 +6982,25 @@ fn lsp_row_let_rename_preserves_lexical_identity_and_selected_labels() {
     let first_position = source_position(source, first_use + 1);
     assert!(
         !wait_for_hover(&mut lsp, &uri, first_position.0, first_position.1).is_null(),
-        "row-let fixture must reach typed analysis"
+        "pattern-let fixture must reach typed analysis"
     );
 
-    for (function, declaration_prefix, shorthand) in [
-        ("first", "let .({field as ", false),
-        ("second", "let .({field as ", false),
-        ("shorthand", "let .({", true),
+    let mut combined_edits = Vec::new();
+    for (function, declaration_prefix) in [
+        ("first", "let .("),
+        ("second", "let .("),
+        ("direct", "let "),
     ] {
         let function_start = source.find(&format!("fn {function}()")).unwrap();
         let body = &source[function_start..];
         let declaration_start =
             function_start + body.find(declaration_prefix).unwrap() + declaration_prefix.len();
         let use_start = function_start + body.find("; value }").unwrap() + 2;
-        let declaration_edit = if shorthand {
-            (
-                source_range(source, declaration_start + "value".len(), 0),
-                " as payload".to_owned(),
-            )
-        } else {
+        let mut expected = vec![
             (
                 source_range(source, declaration_start, "value".len()),
                 "payload".to_owned(),
-            )
-        };
-        let mut expected = vec![
-            declaration_edit,
+            ),
             (
                 source_range(source, use_start, "value".len()),
                 "payload".to_owned(),
@@ -7101,9 +7048,23 @@ fn lsp_row_let_rename_preserves_lexical_identity_and_selected_labels() {
                 .collect::<Vec<_>>();
             actual.sort_unstable();
             assert_eq!(actual, expected, "{function} cursor {cursor}: {renamed:?}");
+            if cursor == declaration_start {
+                combined_edits.extend(edits.iter().cloned());
+            }
         }
     }
 
+    let repaired = apply_lsp_text_edits(source, &combined_edits);
+    send_full_text_change(&mut lsp, &uri, 2, &repaired);
+    let checked = wait_for_publish_version(&mut lsp, &uri, 2);
+    assert!(
+        checked["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|diagnostic| diagnostic["severity"].as_i64() != Some(1)),
+        "{checked:?}"
+    );
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -7112,18 +7073,19 @@ fn lsp_newtype_member_rename_rejects_sibling_collisions() {
     let dir = TempDir::new("rename-newtype-sibling");
     let source = concat!(
         "module pkg/main;\n",
-        "newtype Wrap : . { constructor mk; projector get; };\n",
+        "type { Wrap: . { mk; get; }; };\n",
         "rec {\n",
         "  type Link = Node;\n",
-        "  newtype Node : . | Link { constructor pack; projector unpack; };\n",
+        "  type { Node: . | Link { mk; get; }; };\n",
         "}\n",
         "fn wrapped(value: .) -> . { Wrap.get(Wrap.mk(value)) }\n",
-        "fn packed(value: . | Link) -> Node { Node.pack(value) }\n",
-        "fn unpacked(value: Node) -> . | Link { Node.unpack(value) }\n",
+        "fn packed(value: . | Link) -> Node { Node.mk(value) }\n",
+        "fn unpacked(value: Node) -> . | Link { Node.get(value) }\n",
         "fn helper(value: .) -> . { value }\n",
         "fn invoke() -> . { helper(()) }\n",
-        "labels { field: . };\n",
+        "type { Field: .; };\n",
         "fn labeled(value: .) -> Field { Field.mk(value) }\n",
+        "fn unlabeled(value: Field) -> . { Field.get(value) }\n",
     );
     let path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -7135,39 +7097,31 @@ fn lsp_newtype_member_rename_rejects_sibling_collisions() {
     let position = source_position(source, first_use);
     assert!(!wait_for_hover(&mut lsp, &uri, position.0, position.1).is_null());
 
-    for (owner, kind, old_name, new_name) in [
-        ("Wrap", "constructor", "mk", "get"),
-        ("Wrap", "projector", "get", "mk"),
-        ("Node", "constructor", "pack", "unpack"),
-        ("Node", "projector", "unpack", "pack"),
+    for (declaration_marker, owner, member) in [
+        ("Wrap: . { mk; get;", "Wrap", "mk"),
+        ("Wrap: . { mk; get;", "Wrap", "get"),
+        ("Node: . | Link { mk; get;", "Node", "mk"),
+        ("Node: . | Link { mk; get;", "Node", "get"),
     ] {
-        let declaration = source.find(&format!("{kind} {old_name};")).unwrap() + kind.len() + 1;
-        let use_offset = source.find(&format!("{owner}.{old_name}(")).unwrap() + owner.len() + 1;
+        let declaration_start = source.find(declaration_marker).unwrap();
+        let declaration = declaration_start + declaration_marker.find(member).unwrap();
+        let use_offset = source.find(&format!("{owner}.{member}(")).unwrap() + owner.len() + 1;
         for cursor in [declaration, use_offset] {
             let position = source_position(source, cursor);
             let prepared = send_prepare_rename(&mut lsp, &uri, position.0, position.1);
-            assert_eq!(prepared["result"]["placeholder"], old_name, "{prepared:?}");
-            let response = send_rename(&mut lsp, &uri, position.0, position.1, new_name);
-            assert_eq!(response["error"]["code"], -32803, "{response:?}");
             assert!(
-                response["error"]["message"]
-                    .as_str()
-                    .is_some_and(|message| message.contains("same newtype")),
-                "{response:?}"
+                prepared.get("result").is_none_or(Value::is_null),
+                "{prepared:?}"
             );
-            assert!(
-                response.get("result").is_none_or(Value::is_null),
-                "{response:?}"
-            );
+            for new_name in ["renamed", if member == "mk" { "get" } else { "mk" }] {
+                let response = send_rename(&mut lsp, &uri, position.0, position.1, new_name);
+                assert_eq!(response["error"]["code"], -32803, "{response:?}");
+                assert!(
+                    response.get("result").is_none_or(Value::is_null),
+                    "{response:?}"
+                );
+            }
         }
-        let position = source_position(source, use_offset);
-        let unchanged = send_rename(&mut lsp, &uri, position.0, position.1, old_name);
-        assert!(unchanged.get("error").is_none(), "{unchanged:?}");
-        let (edits, version) = workspace_edit_edits_for_uri(&unchanged["result"], &uri)
-            .unwrap_or_else(|| panic!("same-name rename should remain valid: {unchanged:?}"));
-        assert_eq!(version, Some(1));
-        assert_eq!(edits.len(), 2, "{unchanged:?}");
-        assert_eq!(apply_lsp_text_edits(source, edits), source);
     }
 
     for (cursor, new_name) in [
@@ -7181,168 +7135,17 @@ fn lsp_newtype_member_rename_rejects_sibling_collisions() {
             .unwrap_or_else(|| panic!("unrelated members must not reserve names: {response:?}"));
         assert_eq!(edits.len(), 2, "{response:?}");
     }
-    let generated_member = source.find("Field.mk").unwrap() + "Field.".len();
-    let position = source_position(source, generated_member);
-    let prepared = send_prepare_rename(&mut lsp, &uri, position.0, position.1);
-    assert!(
-        prepared.get("result").is_none_or(Value::is_null),
-        "{prepared:?}"
-    );
-    let refused = send_rename(&mut lsp, &uri, position.0, position.1, "renamed");
-    assert_eq!(refused["error"]["code"], -32803, "{refused:?}");
-    assert_eq!(lsp.shutdown(), 0);
-}
-
-#[test]
-fn lsp_newtype_member_rename_applies_only_to_the_resolved_owner() {
-    let dir = TempDir::new("rename-newtype-owner");
-    let provider = concat!(
-        "module pkg/provider;\n",
-        "pub newtype Wrap : . { pub constructor mk; pub projector get; };\n",
-        "newtype Spare : . { constructor wrapped; projector opened; };\n",
-    );
-    let consumer = concat!(
-        "module pkg/main;\n",
-        "import pkg/provider(Wrap);\n",
-        "fn wrapped(value: .) -> . { value }\n",
-        "pub fn run(wrapped: .) -> . { Wrap.get(Wrap.mk(wrapped)) }\n",
-    );
-    let other = concat!(
-        "module pkg/other;\n",
-        "pub newtype Wrap : . { pub constructor wrapped; pub projector get; };\n",
-        "pub fn run(value: .) -> Wrap { Wrap.wrapped(value) }\n",
-    );
-    let provider_path = dir.write("pkg/provider.kio", provider);
-    let consumer_path = dir.write("pkg/main.kio", consumer);
-    let other_path = dir.write("pkg/other.kio", other);
-    dir.write_pkg_root_package();
-    let mut lsp = LspProcess::spawn();
-    lsp.initialize(&path_to_file_uri(dir.path()));
-    let provider_uri = path_to_file_uri(&provider_path);
-    let consumer_uri = path_to_file_uri(&consumer_path);
-    open_and_wait_for_analysis(&mut lsp, &provider_uri, provider);
-    open_and_wait_for_analysis(&mut lsp, &consumer_uri, consumer);
-    let declaration = provider.find("constructor mk").unwrap() + "constructor ".len();
-    let use_offset = consumer.find("Wrap.mk").unwrap() + "Wrap.".len();
-    let position = source_position(consumer, use_offset);
-    assert!(!wait_for_hover(&mut lsp, &consumer_uri, position.0, position.1).is_null());
-
-    let mut applied_provider = String::new();
-    let mut applied_consumer = String::new();
-    for (uri, source, cursor) in [
-        (&provider_uri, provider, declaration),
-        (&consumer_uri, consumer, use_offset),
-    ] {
-        let position = source_position(source, cursor);
-        let response = send_rename(&mut lsp, uri, position.0, position.1, "wrapped");
-        assert!(response.get("error").is_none(), "{response:?}");
-        let result = &response["result"];
-        assert_eq!(
-            result["documentChanges"].as_array().unwrap().len(),
-            2,
-            "{response:?}"
+    for member in ["mk", "get"] {
+        let offset = source.find(&format!("Field.{member}")).unwrap() + "Field.".len();
+        let position = source_position(source, offset);
+        let prepared = send_prepare_rename(&mut lsp, &uri, position.0, position.1);
+        assert!(
+            prepared.get("result").is_none_or(Value::is_null),
+            "{prepared:?}"
         );
-        for (changed_uri, original, offset) in [
-            (&provider_uri, provider, declaration),
-            (&consumer_uri, consumer, use_offset),
-        ] {
-            let (edits, version) = workspace_edit_edits_for_uri(result, changed_uri)
-                .unwrap_or_else(|| panic!("missing exact member edit: {response:?}"));
-            assert_eq!(version, Some(1));
-            assert_eq!(edits.len(), 1, "{response:?}");
-            assert_eq!(
-                json_range(&edits[0]["range"]),
-                source_range(original, offset, 2)
-            );
-            assert_eq!(edits[0]["newText"], "wrapped");
-        }
-        applied_provider = apply_lsp_text_edits(
-            provider,
-            workspace_edit_edits_for_uri(result, &provider_uri)
-                .unwrap()
-                .0,
-        );
-        applied_consumer = apply_lsp_text_edits(
-            consumer,
-            workspace_edit_edits_for_uri(result, &consumer_uri)
-                .unwrap()
-                .0,
-        );
+        let refused = send_rename(&mut lsp, &uri, position.0, position.1, "renamed");
+        assert_eq!(refused["error"]["code"], -32803, "{refused:?}");
     }
-    assert_eq!(
-        applied_provider,
-        provider.replacen("constructor mk;", "constructor wrapped;", 1)
-    );
-    assert_eq!(
-        applied_consumer,
-        consumer.replace("Wrap.mk(", "Wrap.wrapped(")
-    );
-    assert_eq!(fs::read_to_string(&other_path).unwrap(), other);
-    fs::write(&provider_path, &applied_provider).unwrap();
-    fs::write(&consumer_path, &applied_consumer).unwrap();
-    send_full_text_change(&mut lsp, &provider_uri, 2, &applied_provider);
-    send_full_text_change(&mut lsp, &consumer_uri, 2, &applied_consumer);
-    let new_use = applied_consumer.find("Wrap.wrapped").unwrap() + "Wrap.".len();
-    let position = source_position(&applied_consumer, new_use);
-    let mut fresh = false;
-    for _ in 0..20 {
-        let prepared = send_prepare_rename(&mut lsp, &consumer_uri, position.0, position.1);
-        if prepared["result"]["placeholder"] == "wrapped" {
-            fresh = true;
-            break;
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    assert!(fresh, "renamed documents must reach a fresh typed snapshot");
-    let definition = send_definition(&mut lsp, &consumer_uri, position.0, position.1);
-    assert_eq!(definition_uri(&definition), provider_uri);
-    assert_eq!(
-        json_range(&definition["range"]),
-        source_range(&applied_provider, declaration, "wrapped".len())
-    );
-    let references_id = lsp.send_request(
-        "textDocument/references",
-        json!({
-            "textDocument": { "uri": consumer_uri },
-            "position": { "line": position.0, "character": position.1 },
-            "context": { "includeDeclaration": true },
-        }),
-    );
-    let references = lsp.recv_matching(|value| value["id"].as_i64() == Some(references_id));
-    let mut actual = references["result"]
-        .as_array()
-        .unwrap_or_else(|| panic!("fresh references must resolve: {references:?}"))
-        .iter()
-        .map(|location| {
-            (
-                location["uri"].as_str().unwrap().to_owned(),
-                json_range(&location["range"]),
-            )
-        })
-        .collect::<Vec<_>>();
-    actual.sort_unstable();
-    let mut expected = vec![
-        (
-            provider_uri,
-            source_range(&applied_provider, declaration, "wrapped".len()),
-        ),
-        (
-            consumer_uri,
-            source_range(&applied_consumer, new_use, "wrapped".len()),
-        ),
-    ];
-    expected.sort_unstable();
-    assert_eq!(actual, expected);
-    let checked = Command::new(test_binary!("kio"))
-        .arg("check")
-        .current_dir(dir.path())
-        .output()
-        .expect("check the exact applied workspace");
-    assert!(
-        checked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&checked.stderr)
-    );
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -7351,9 +7154,9 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
     let dir = TempDir::new("rename-nominal-type-positions");
     let provider = concat!(
         "module pkg/provider;\n",
-        "pub newtype Token : . { pub constructor mk; pub projector get; };\n",
+        "pub type { Token: . { pub mk; pub get; }; };\n",
         "type Alias = Token;\n",
-        "newtype Carrier : Token { constructor pack; projector unpack; };\n",
+        "type { Carrier: Token { mk; get; }; };\n",
         "type Pair = Token & Token;\n",
         "type Choice = Token | .;\n",
         "type Applied[A] = A;\n",
@@ -7372,7 +7175,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "module pkg/main;\n",
         "import pkg/provider(Token);\n",
         "type Alias = Token;\n",
-        "newtype Carrier : Token { constructor pack; projector unpack; };\n",
+        "type { Carrier: Token { mk; get; }; };\n",
         "type Pair = Token & Token;\n",
         "type Choice = Token | .;\n",
         "type Applied[A] = A;\n",
@@ -7395,7 +7198,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
     );
     let decoy = concat!(
         "module pkg/other;\n",
-        "pub newtype Token : . { pub constructor mk; pub projector get; };\n",
+        "pub type { Token: . { pub mk; pub get; }; };\n",
         "pub fn identity(value: Token) -> Token { value }\n",
     );
     let paths = [
@@ -8151,12 +7954,12 @@ fn lsp_recursive_newtype_marker_fix_applies_and_retracts_the_diagnostic() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "newtype Tree : . | Tree { constructor mk; projector un; };\n",
+        "type { Tree: . | Tree { mk; get; }; }\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec newtype Tree : . | Tree { constructor mk; projector un; };\n",
+        "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -8245,18 +8048,24 @@ fn lsp_recursive_newtype_marker_fix_applies_and_retracts_the_diagnostic() {
             .is_some_and(Vec::is_empty),
         "the applied marker must retract the diagnostic: {cleared:?}"
     );
-    let definition = send_definition(&mut lsp, &uri, 2, 24);
+    let repaired_use = applied.find("| Tree").expect("recursive use") + "| ".len();
+    let repaired_position = source_position(&applied, repaired_use);
+    let definition = send_definition(&mut lsp, &uri, repaired_position.0, repaired_position.1);
     assert_eq!(
         json_range(
             definition
                 .get("range")
                 .expect("recursive head definition range")
         ),
-        (2, 12, 2, 16),
+        source_range(
+            &applied,
+            applied.find("Tree:").expect("recursive head"),
+            "Tree".len()
+        ),
         "the repaired singleton self reference must bind its exact declaration head: {definition:?}"
     );
     let completion_offset =
-        applied.find("Tree : ").expect("recursive declaration head") + "Tree : ".len();
+        applied.find("Tree: ").expect("recursive declaration head") + "Tree: ".len();
     let completion_position = source_position(&applied, completion_offset);
     let completion_response =
         send_completion(&mut lsp, &uri, completion_position.0, completion_position.1);
@@ -8283,11 +8092,12 @@ fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec newtype Tree :\n",
-        "  . | Tree {\n",
-        "  constructor mk;\n",
-        "  projector un;\n",
-        "};\n",
+        "rec type {\n",
+        "  Tree: . | Tree {\n",
+        "    mk;\n",
+        "    get;\n",
+        "  };\n",
+        "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -8297,7 +8107,7 @@ fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
     let uri = path_to_file_uri(&main_path);
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
-    let head = source.find("newtype Tree").unwrap() + "newtype ".len();
+    let head = source.find("Tree:").unwrap();
     let use_offset = source.find("| Tree").unwrap() + "| ".len();
     let use_position = source_position(source, use_offset);
     let definition = send_definition(&mut lsp, &uri, use_position.0, use_position.1);
@@ -8352,7 +8162,7 @@ fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
         .unwrap_or_else(|| panic!("marked singleton rename must publish edits: {renamed:?}"));
     assert_eq!(edits.len(), 2, "{renamed:?}");
     let renamed_source = apply_lsp_text_edits(source, edits);
-    assert!(renamed_source.contains("rec newtype Forest"));
+    assert!(renamed_source.contains("Forest: . | Forest"));
     assert!(renamed_source.contains(". | Forest"));
 
     let symbols_id = lsp.send_request(
@@ -8385,7 +8195,7 @@ fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
                     .get("startLine")
                     .and_then(Value::as_u64)
                     .is_some_and(|start| start <= 3)
-                    && range.get("endLine").and_then(Value::as_u64) == Some(6)
+                    && range.get("endLine").and_then(Value::as_u64) == Some(7)
             })),
         "the marked singleton body must remain foldable: {folding:?}"
     );
@@ -8399,7 +8209,7 @@ fn lsp_invalid_edit_cannot_reuse_stale_recursive_type_bindings() {
     let valid = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec newtype Tree : . | Tree { constructor mk; projector un; };\n",
+        "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
     let invalid = valid.replacen("rec ", "    ", 1);
     let main_path = dir.write("pkg/main.kio", valid);
@@ -8480,11 +8290,11 @@ fn lsp_invalid_edit_cannot_reuse_stale_recursive_type_bindings() {
 #[test]
 fn lsp_incomplete_recursive_declaration_retracts_recovery_diagnostics_at_new_version() {
     let dir = TempDir::new("incomplete-recursive-declaration-reanalysis");
-    let incomplete = concat!("module pkg/main;\n", "\n", "rec newtype Tree : . |\n",);
+    let incomplete = concat!("module pkg/main;\n", "\n", "rec type { Tree: . |\n",);
     let complete = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec newtype Tree : . | Tree { constructor mk; projector un; };\n",
+        "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
     let main_path = dir.write("pkg/main.kio", incomplete);
     dir.write_pkg_root_package();
@@ -8531,12 +8341,12 @@ fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "labels Tree = { leaf: . } | { branch: Tree & Tree };\n",
+        "type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec labels Tree = { leaf: . } | { branch: Tree & Tree };\n",
+        "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -8564,9 +8374,9 @@ fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
         .unwrap_or_else(|| panic!("expected missing-marker diagnostic: {publish:?}"));
     assert_eq!(diagnostic.get("code").and_then(Value::as_i64), Some(13));
     let invalid_use = source
-        .find("branch: Tree")
+        .find("Branch: Tree")
         .expect("unmarked recursive alias use")
-        + "branch: ".len();
+        + "Branch: ".len();
     let invalid_use_position = source_position(source, invalid_use);
     let invalid_definition = send_definition(
         &mut lsp,
@@ -8586,7 +8396,7 @@ fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
         .and_then(|actions| {
             actions.iter().find(|action| {
                 action.get("title").and_then(Value::as_str)
-                    == Some("Add `rec` to this recursive labels declaration")
+                    == Some("Make this type declaration recursive")
             })
         })
         .unwrap_or_else(|| panic!("missing recursive-labels quick fix: {response:?}"));
@@ -8616,11 +8426,11 @@ fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
 #[test]
 fn lsp_anonymous_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("anonymous-recursive-labels-marker-fix");
-    let source = concat!("module pkg/main;\n", "\n", "labels { node: . | Node };\n",);
+    let source = concat!("module pkg/main;\n", "\n", "type { Node: . | Node; };\n",);
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
-        "rec labels { node: . | Node };\n",
+        "rec type { Node: . | Node; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -8665,7 +8475,7 @@ fn lsp_anonymous_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic
         .and_then(|actions| {
             actions.iter().find(|action| {
                 action.get("title").and_then(Value::as_str)
-                    == Some("Add `rec` to this recursive labels declaration")
+                    == Some("Make this type declaration recursive")
             })
         })
         .unwrap_or_else(|| panic!("missing anonymous-label quick fix: {response:?}"));
@@ -8684,14 +8494,16 @@ fn lsp_anonymous_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic
             .is_some_and(Vec::is_empty),
         "the anonymous recursive labels repair must reanalyse cleanly: {cleared:?}"
     );
-    let definition = send_definition(&mut lsp, &uri, 2, 24);
+    let use_offset = applied.find("| Node").unwrap() + "| ".len();
+    let use_position = source_position(&applied, use_offset);
+    let definition = send_definition(&mut lsp, &uri, use_position.0, use_position.1);
     assert_eq!(
         json_range(
             definition
                 .get("range")
                 .expect("generated anonymous-label definition range")
         ),
-        (2, 13, 2, 17),
+        source_range(&applied, applied.find("Node:").unwrap(), "Node".len()),
         "the generated recursive head must navigate to its exact label entry: {definition:?}"
     );
 
@@ -8704,15 +8516,15 @@ fn lsp_mutual_type_group_fix_applies_and_retracts_the_diagnostic() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "newtype A : . | B { constructor mk_a; projector un_a; };\n",
-        "newtype B : . | A { constructor mk_b; projector un_b; };\n",
+        "type { A: . | B { mk; get; }; };\n",
+        "type { B: . | A { mk; get; }; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "newtype A : . | B { constructor mk_a; projector un_a; };\n",
-        "newtype B : . | A { constructor mk_b; projector un_b; };\n",
+        "type { A: . | B { mk; get; }; };\n",
+        "type { B: . | A { mk; get; }; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -8798,14 +8610,14 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
                 "module pkg/main ;\n",
                 "\n",
                 "pub(pkg) type A = B;\n",
-                "pub(pkg) newtype B : A { constructor mk_b; projector un_b; };\n",
+                "pub(pkg) type { B: A { mk; get; }; };\n",
             ),
             concat!(
                 "module pkg/main ;\n",
                 "\n",
                 "rec {\n",
                 "pub(pkg) type A = B;\n",
-                "pub(pkg) newtype B : A { constructor mk_b; projector un_b; };\n",
+                "pub(pkg) type { B: A { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -8817,7 +8629,7 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
                 "/// A docs\n",
                 "type A = B;\n",
                 "/// B docs\n",
-                "newtype B : A { constructor mk_b; projector un_b; };\n",
+                "type { B: A { mk; get; }; };\n",
             ),
             concat!(
                 "module pkg/main;\n",
@@ -8826,7 +8638,7 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
                 "/// A docs\n",
                 "type A = B;\n",
                 "/// B docs\n",
-                "newtype B : A { constructor mk_b; projector un_b; };\n",
+                "type { B: A { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -8835,15 +8647,15 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
             concat!(
                 "module pkg/main;\n",
                 "\n",
-                "pub(pkg) labels { foo: Bar };\n",
-                "pub(pkg) newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+                "pub(pkg) type { Foo: Bar; };\n",
+                "pub(pkg) type { Bar: Foo { mk; get; }; };\n",
             ),
             concat!(
                 "module pkg/main;\n",
                 "\n",
                 "rec {\n",
-                "pub(pkg) labels { foo: Bar };\n",
-                "pub(pkg) newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+                "pub(pkg) type { Foo: Bar; };\n",
+                "pub(pkg) type { Bar: Foo { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -8908,16 +8720,16 @@ fn lsp_mutual_label_group_fix_wraps_the_complete_labels_owner() {
         "module pkg/main;\n",
         "\n",
         "/// label docs\n",
-        "labels { foo: Bar };\n",
-        "newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+        "type { Foo: Bar; };\n",
+        "type { Bar: Foo { mk; get; }; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
         "/// label docs\n",
-        "labels { foo: Bar };\n",
-        "newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+        "type { Foo: Bar; };\n",
+        "type { Bar: Foo { mk; get; }; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -8982,15 +8794,15 @@ fn lsp_mutual_label_group_fix_includes_acyclic_generated_siblings() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "labels { other: ., foo: Bar };\n",
-        "newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+        "type { Other: .; Foo: Bar; };\n",
+        "type { Bar: Foo { mk; get; }; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "labels { other: ., foo: Bar };\n",
-        "newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+        "type { Other: .; Foo: Bar; };\n",
+        "type { Bar: Foo { mk; get; }; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -9051,14 +8863,14 @@ fn lsp_higher_kinded_type_group_fix_applies_and_retracts_the_diagnostic() {
         "module pkg/main;\n",
         "\n",
         "type A[*F] = B[F];\n",
-        "newtype B[*G] : A[G] { constructor mk_b; projector un_b; };\n",
+        "type { B[*G]: A[G] { mk; get; }; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
         "type A[*F] = B[F];\n",
-        "newtype B[*G] : A[G] { constructor mk_b; projector un_b; };\n",
+        "type { B[*G]: A[G] { mk; get; }; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -9123,7 +8935,7 @@ fn lsp_higher_kinded_type_group_fix_is_withheld_when_invalid() {
         "module pkg/main;\n",
         "\n",
         "type A[X] = B[X];\n",
-        "newtype B[*G] : A[.] { constructor mk_b; projector un_b; };\n",
+        "type { B[*G]: A[.] { mk; get; }; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -9173,10 +8985,10 @@ fn lsp_recursive_group_and_marker_repairs_are_applied_sequentially() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "newtype A : . | B { constructor mk_a; projector un_a; };\n",
-        "newtype B : . | A { constructor mk_b; projector un_b; };\n",
+        "type { A: . | B { mk; get; }; };\n",
+        "type { B: . | A { mk; get; }; };\n",
         "\n",
-        "labels Tree = { leaf: . } | { branch: Tree & Tree };\n",
+        "type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -9246,7 +9058,7 @@ fn lsp_recursive_group_and_marker_repairs_are_applied_sequentially() {
         .and_then(|actions| {
             actions.iter().find(|action| {
                 action.get("title").and_then(Value::as_str)
-                    == Some("Add `rec` to this recursive labels declaration")
+                    == Some("Make this type declaration recursive")
             })
         })
         .unwrap_or_else(|| panic!("missing second marker repair: {second_actions:?}"));
@@ -9500,10 +9312,10 @@ fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
         "module pkg/main;\n",
         "\n",
         "fn before() {\n",
-        "  Later.un(Later.mk(()))\n",
+        "  Later.get(Later.mk(()))\n",
         "}\n",
         "\n",
-        "newtype Later : . { constructor mk; projector un; };\n",
+        "type { Later: . { mk; get; }; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -9550,7 +9362,7 @@ fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
                 .and_then(|location| location.get("range"))
                 .expect("later-declaration range"),
         ),
-        (6, 8, 6, 13),
+        source_range(source, source.find("Later: .").unwrap(), "Later".len()),
     );
 
     let definition = send_definition(&mut lsp, &uri, 3, 4);
@@ -9574,10 +9386,103 @@ fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
     assert_eq!(edits.len(), 2);
     let repaired = apply_lsp_text_edits(source, edits);
     assert!(
-        repaired.find("newtype Later").unwrap() < repaired.find("fn before").unwrap(),
+        repaired.find("type { Later:").unwrap() < repaired.find("fn before").unwrap(),
         "dependency must move before the unchanged user: {repaired}"
     );
-    assert!(repaired.contains("Later.un(Later.mk(()))"));
+    assert!(repaired.contains("Later.get(Later.mk(()))"));
+
+    send_full_text_change(&mut lsp, &uri, 4, &repaired);
+    let cleared = wait_for_publish_version(&mut lsp, &uri, 4);
+    assert_unused_private_diagnostics(&cleared["diagnostics"], &[("function", "before")]);
+
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_later_compact_nominal_member_move_is_versioned_applied_and_retracted() {
+    let dir = TempDir::new("later-compact-nominal-member-move");
+    let source = concat!(
+        "module pkg/main;\n",
+        "\n",
+        "fn before() {\n",
+        "  Later.get(Later.mk(()))\n",
+        "}\n",
+        "\n",
+        "type { Later: .; };\n",
+    );
+    let main_path = dir.write("pkg/main.kio", source);
+    dir.write_pkg_root_package();
+
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let uri = path_to_file_uri(&main_path);
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": uri,
+                "languageId": "kio",
+                "version": 3,
+                "text": source,
+            }
+        }),
+    );
+
+    let publish = wait_for_publish(&mut lsp, &uri);
+    let diagnostic = publish
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .and_then(|diagnostics| diagnostics.first())
+        .unwrap_or_else(|| panic!("expected directed source-order diagnostic: {publish:?}"));
+    assert_eq!(diagnostic.get("code").and_then(Value::as_i64), Some(13));
+    assert_eq!(
+        diagnostic.get("message").and_then(Value::as_str),
+        Some("`Later` is declared later and is not visible here"),
+    );
+    assert_eq!(
+        json_range(diagnostic.get("range").expect("primary range")),
+        (3, 2, 3, 7),
+    );
+    let related = diagnostic
+        .get("relatedInformation")
+        .and_then(Value::as_array)
+        .and_then(|related| related.first())
+        .unwrap_or_else(|| panic!("later declaration must be labelled: {diagnostic:?}"));
+    assert_eq!(
+        json_range(
+            related
+                .get("location")
+                .and_then(|location| location.get("range"))
+                .expect("later-declaration range"),
+        ),
+        source_range(source, source.find("Later: .").unwrap(), "Later".len()),
+    );
+
+    let definition = send_definition(&mut lsp, &uri, 3, 4);
+    assert!(
+        definition.is_null(),
+        "diagnostic-only later-name lookup must not bind definition identity: {definition:?}"
+    );
+
+    let response = send_code_action(&mut lsp, &uri, diagnostic);
+    let action = response
+        .get("result")
+        .and_then(Value::as_array)
+        .and_then(|actions| {
+            actions.iter().find(|action| {
+                action.get("title").and_then(Value::as_str) == Some("Move `Later` before its use")
+            })
+        })
+        .unwrap_or_else(|| panic!("missing stable dependency move: {response:?}"));
+    let (edits, version) = action_edits_for_uri(action, &uri);
+    assert_eq!(version, Some(3));
+    assert_eq!(edits.len(), 2);
+    let repaired = apply_lsp_text_edits(source, edits);
+    assert!(
+        repaired.find("type { Later:").unwrap() < repaired.find("fn before").unwrap(),
+        "dependency must move before the unchanged user: {repaired}"
+    );
+    assert!(repaired.contains("Later.get(Later.mk(()))"));
 
     send_full_text_change(&mut lsp, &uri, 4, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 4);
@@ -9594,7 +9499,7 @@ fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
         "import pkg/origin as imported;\n",
         "\n",
         "fn before() {\n",
-        "  Later.open(Later.make(()))\n",
+        "  Later.get(Later.mk(()))\n",
         "}\n",
         "\n",
         "type Later = imported.Tag;\n",
@@ -9604,7 +9509,7 @@ fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
         "pkg/origin.kio",
         concat!(
             "module pkg/origin;\n",
-            "pub newtype Tag : . { pub constructor make; pub projector open; };\n",
+            "pub type { Tag: . { pub mk; pub get; }; };\n",
         ),
     );
     dir.write_pkg_root_package();
@@ -9678,7 +9583,7 @@ fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
         repaired.find("type Later").unwrap() < repaired.find("fn before").unwrap(),
         "alias must move before the unchanged member use: {repaired}"
     );
-    assert!(repaired.contains("Later.open(Later.make(()))"));
+    assert!(repaired.contains("Later.get(Later.mk(()))"));
 
     send_full_text_change(&mut lsp, &uri, 6, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 6);
@@ -9717,7 +9622,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
             concat!(
                 "module pkg/main;\n",
                 "\n",
-                "fn before() { Later.make(()) }\n",
+                "fn before() { Later.mk(()) }\n",
                 "type Later = pkg/origin.Tag;\n",
             ),
         ),
@@ -9726,9 +9631,9 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
             concat!(
                 "module pkg/main;\n",
                 "\n",
-                "fn before() { Later.make(()) }\n",
+                "fn before() { Later.mk(()) }\n",
                 "type Later = Target;\n",
-                "pub newtype Target : . { pub constructor make; pub projector open; };\n",
+                "pub type { Target: . { pub mk; pub get; }; };\n",
             ),
         ),
     ];
@@ -9740,7 +9645,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
             "pkg/origin.kio",
             concat!(
                 "module pkg/origin;\n",
-                "pub newtype Tag : . { pub constructor make; pub projector open; };\n",
+                "pub type { Tag: . { pub mk; pub get; }; };\n",
             ),
         );
         dir.write_pkg_root_package();
@@ -9802,7 +9707,7 @@ fn lsp_later_generated_label_member_has_no_partial_move_action() {
         "  ()\n",
         "}\n",
         "\n",
-        "labels { foo: ., bar: . };\n",
+        "type { Foo: .; Bar: .; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -9865,18 +9770,66 @@ fn lsp_later_generated_label_member_has_no_partial_move_action() {
 }
 
 #[test]
+fn lsp_later_compact_nominal_move_is_withheld_for_ambiguous_owners() {
+    for (case, declaration) in [
+        (
+            "attached-docs",
+            "/// Later documentation.\ntype { Later: .; };\n",
+        ),
+        (
+            "leading-comment",
+            "// This comment may describe Later.\ntype { Later: .; };\n",
+        ),
+        ("named-owner", "type Alias = { Later: .; };\n"),
+    ] {
+        let dir = TempDir::new(&format!("later-compact-no-move-{case}"));
+        let source = format!(
+            "module pkg/main;\n\nfn before() {{ let _ = Later.mk(()); () }}\n\n{declaration}"
+        );
+        let main_path = dir.write("pkg/main.kio", &source);
+        dir.write_pkg_root_package();
+        let mut lsp = LspProcess::spawn();
+        lsp.initialize(&path_to_file_uri(dir.path()));
+        let uri = path_to_file_uri(&main_path);
+        lsp.send_notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+        );
+        let publish = wait_for_publish_version(&mut lsp, &uri, 1);
+        let diagnostic = publish["diagnostics"]
+            .as_array()
+            .unwrap()
+            .first()
+            .unwrap_or_else(|| panic!("{case}: missing source-order diagnostic: {publish:?}"));
+        assert_eq!(diagnostic["code"], 13, "{case}: {publish:?}");
+        assert_eq!(
+            diagnostic["message"],
+            "`Later` is declared later and is not visible here"
+        );
+        let response = send_code_action(&mut lsp, &uri, diagnostic);
+        assert!(
+            response["result"].as_array().is_some_and(|actions| actions
+                .iter()
+                .all(|action| { action["title"].as_str() != Some("Move `Later` before its use") })),
+            "{case}: unsafe owner move: {response:?}"
+        );
+        assert_eq!(lsp.shutdown(), 0);
+    }
+}
+
+#[test]
 fn lsp_overbroad_type_group_is_split_into_exact_components() {
     let dir = TempDir::new("overbroad-type-group-split");
     let source = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "  newtype A : B { constructor mk_a; projector un_a; };\n",
-        "  newtype B : A { constructor mk_b; projector un_b; };\n",
-        "  newtype C : D { constructor mk_c; projector un_c; };\n",
-        "  newtype D : C { constructor mk_d; projector un_d; };\n",
-        "  newtype Self : Self { constructor mk_self; projector un_self; };\n",
-        "  labels Loop = { stop: . } | { next: Loop };\n",
+        "  type { A: B { mk; get; }; };\n",
+        "  type { B: A { mk; get; }; };\n",
+        "  type { C: D { mk; get; }; };\n",
+        "  type { D: C { mk; get; }; };\n",
+        "  type { Self: Self { mk; get; }; };\n",
+        "  type Loop = { Stop: .; } | { Next: Loop; };\n",
         "  type Helper = .;\n",
         "}\n",
     );
@@ -9924,8 +9877,8 @@ fn lsp_overbroad_type_group_is_split_into_exact_components() {
     assert_eq!(edits.len(), 1);
     let repaired = apply_lsp_text_edits(source, edits);
     assert_eq!(repaired.matches("rec {").count(), 2, "{repaired}");
-    assert!(repaired.contains("rec newtype Self"), "{repaired}");
-    assert!(repaired.contains("rec labels Loop"), "{repaired}");
+    assert!(repaired.contains("rec type { Self:"), "{repaired}");
+    assert!(repaired.contains("rec type Loop"), "{repaired}");
     assert!(repaired.contains("type Helper = .;"), "{repaired}");
 
     send_full_text_change(&mut lsp, &uri, 2, &repaired);
@@ -9966,8 +9919,8 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
                 "module pkg/main;\n",
                 "\n",
                 "// This comment may describe A.\n",
-                "newtype A : B { constructor mk_a; projector un_a; };\n",
-                "newtype B : A { constructor mk_b; projector un_b; };\n",
+                "type { A: B { mk; get; }; }\n",
+                "type { B: A { mk; get; }; }\n",
             ),
         ),
         (
@@ -9975,9 +9928,9 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
             concat!(
                 "module pkg/main;\n",
                 "\n",
-                "// This comment may describe foo.\n",
-                "labels { foo: Bar };\n",
-                "newtype Bar : Foo { constructor mk_bar; projector un_bar; };\n",
+                "// This comment may describe Foo.\n",
+                "type { Foo: Bar; }\n",
+                "type { Bar: Foo { mk; get; }; }\n",
             ),
         ),
     ] {
@@ -10005,6 +9958,13 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
             .and_then(Value::as_array)
             .and_then(|diagnostics| diagnostics.first())
             .unwrap_or_else(|| panic!("expected structural diagnostic for {case}: {publish:?}"));
+        if case.starts_with("missing-mutual") {
+            assert_eq!(
+                diagnostic.get("message").and_then(Value::as_str),
+                Some("mutually recursive data declarations require `rec { ... }`"),
+                "{case}: {publish:?}",
+            );
+        }
         let response = send_code_action(&mut lsp, &uri, diagnostic);
         assert!(
             !response
@@ -10231,7 +10191,7 @@ fn lsp_imported_parameter_diagnostics_retain_signature_owner_across_overlays() {
         dir.write_pkg_root_package();
         dir.write(
             "pkg/origin.kio",
-            "module pkg/origin;\npub newtype W : . { pub constructor mk; pub projector get; };\n",
+            "module pkg/origin;\npub type { W: . { pub mk; pub get; }; };\n",
         );
         dir.write("pkg/decoy.kio", "module pkg/decoy;\npub type W = .;\n");
         let provider = "module pkg/provider;\nimport pkg/origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";
@@ -10519,7 +10479,7 @@ fn lsp_redundant_recursive_data_markers_are_removed_and_reanalysed() {
                 "module pkg/main;\n",
                 "\n",
                 "// declaration ownership\n",
-                "pub(pkg) rec newtype Box[A] : A { constructor mk; projector un; };\n",
+                "pub(pkg) rec type { Box[A]: A { mk; get; }; };\n",
             ),
         ),
         (
@@ -10527,7 +10487,7 @@ fn lsp_redundant_recursive_data_markers_are_removed_and_reanalysed() {
             concat!(
                 "module pkg/main;\n",
                 "\n",
-                "rec labels Pair = { first: ., second: . };\n",
+                "rec type Pair = { First: .; Second: .; };\n",
             ),
         ),
     ] {
@@ -10591,7 +10551,7 @@ fn lsp_redundant_recursive_data_markers_are_removed_and_reanalysed() {
         if case == "newtype" {
             assert!(applied.contains("// declaration ownership"));
             assert!(applied.contains("pub(pkg)"));
-            assert!(applied.contains("newtype Box"));
+            assert!(applied.contains("type { Box[A]:"));
         }
         send_full_text_change(&mut lsp, &uri, 2, &applied);
         let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
@@ -10622,10 +10582,10 @@ fn lsp_one_member_type_groups_unwrap_to_the_canonical_singleton_form() {
                 "\n",
                 "rec {\n",
                 "  /// recursive tree docs\n",
-                "  pub(pkg) newtype Tree : . | Tree { constructor mk; projector un; };\n",
+                "  pub(pkg) type { Tree: . | Tree { mk; get; }; };\n",
                 "}\n",
             ),
-            "pub(pkg) rec newtype Tree",
+            "pub(pkg) rec type { Tree:",
         ),
         (
             "recursive-labels",
@@ -10634,10 +10594,10 @@ fn lsp_one_member_type_groups_unwrap_to_the_canonical_singleton_form() {
                 "\n",
                 "rec {\n",
                 "  /// recursive labels docs\n",
-                "  pub labels Tree = { leaf: . } | { branch: Tree & Tree };\n",
+                "  pub type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
                 "}\n",
             ),
-            "pub rec labels Tree",
+            "pub rec type Tree",
         ),
         (
             "acyclic-alias",
@@ -10731,8 +10691,8 @@ fn lsp_nested_recursive_markers_are_removed_from_mutual_type_groups() {
                 "module pkg/main;\n",
                 "\n",
                 "rec {\n",
-                "  rec newtype A : B { constructor mk_a; projector un_a; };\n",
-                "  newtype B : A { constructor mk_b; projector un_b; };\n",
+                "  rec type { A: B { mk; get; }; };\n",
+                "  type { B: A { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -10742,8 +10702,8 @@ fn lsp_nested_recursive_markers_are_removed_from_mutual_type_groups() {
                 "module pkg/main;\n",
                 "\n",
                 "rec {\n",
-                "  rec labels A = { to_b: B };\n",
-                "  newtype B : A { constructor mk_b; projector un_b; };\n",
+                "  rec type A = { To_b: B; };\n",
+                "  type { B: A { mk; get; }; };\n",
                 "}\n",
             ),
         ),
@@ -10794,8 +10754,7 @@ fn lsp_nested_recursive_markers_are_removed_from_mutual_type_groups() {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].get("newText").and_then(Value::as_str), Some(""));
         let applied = apply_lsp_text_edits(source, edits);
-        assert!(!applied.contains("  rec newtype"));
-        assert!(!applied.contains("  rec labels"));
+        assert!(!applied.contains("  rec type"));
 
         send_full_text_change(&mut lsp, &uri, 2, &applied);
         let cleared = wait_for_publish_version(&mut lsp, &uri, 2);

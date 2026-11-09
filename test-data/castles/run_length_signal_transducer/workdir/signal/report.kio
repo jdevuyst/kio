@@ -5,6 +5,7 @@ import list/list as traversal;
 import list_host as numbers;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import signal/codec as codec;
 import testapi(Bool, I32, String);
@@ -18,13 +19,13 @@ fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 rec(loop) fn packets(rest: lists.List[codec.Run], previous: I32 | ., index: I32) {
   match(lists.uncons(rest)) {
     .(run: codec.Run, tail: lists.List[codec.Run]) {
-      let value = run.?{codec.sample};
+      let value = run.>select { codec.Sample.get };
       io.print("run ");
       integer(index);
       io.print(": value=");
       integer(value);
       io.print(" length=");
-      integer(run.?{codec.count});
+      integer(run.>select { codec.Count.get });
       io.print(" boundary=");
       match(previous) {
         .(old: I32) {
@@ -42,11 +43,11 @@ pub fn encoding(state: codec.Encoder, runs: lists.List[codec.Run]) {
   io.print("Run-length signal codec: cap=");
   integer(codec.cap());
   io.print("\nsamples=");
-  integer(state.?{codec.samples});
+  integer(state.>select { codec.Samples.get });
   io.print(" transitions=");
-  integer(state.?{codec.transitions});
+  integer(state.>select { codec.Transitions.get });
   io.print(" splits=");
-  integer(state.?{codec.splits});
+  integer(state.>select { codec.Splits.get });
   io.print(" packets=");
   integer(traversal.length(runs));
   io.print("\n");

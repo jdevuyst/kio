@@ -163,7 +163,12 @@ pub(super) struct MarkedProjection<'m> {
     seal: InvocationSeal,
     specialization: Option<crate::pass::typecheck_core::IsolatedSpecializationContextBuilder>,
     header_cursor: ProjectedHeaderCursor,
+    pre_inputs: PreInputCompletion,
+    expected_progress: Option<Box<super::EquationSnapshot>>,
     terminal_result: Option<crate::pass::typecheck_core::ScopedType>,
+    terminal_reflection: crate::normalization::ProjectedReflection,
+    reflection_alignment: Option<Box<ProjectedTypeAlignment>>,
+    natural_result: bool,
     transcript: Option<super::UserMacroCallTranscript>,
     sources: Vec<RetainedProjectedSource<'m>>,
     next_template: u32,
@@ -172,6 +177,30 @@ pub(super) struct MarkedProjection<'m> {
     producer_locations: Vec<ProducerLocation>,
     producer_completed: Vec<bool>,
     template_slots: Vec<ProjectedTemplateSlot>,
+}
+
+// Each open computed input retains one producer through the existing ordinary modes.
+#[derive(Default)]
+enum PreInputCompletion {
+    #[default]
+    Unselected,
+    Producers {
+        ordinals: Vec<u32>,
+        index: usize,
+        mode: super::frontier::FrontierMode,
+        progressed: bool,
+    },
+    Headers {
+        next: usize,
+    },
+    Complete,
+}
+
+pub(super) enum PreInputAdvance {
+    Complete,
+    Pending,
+    Producer(FillProducerRequest),
+    Header { parent: crate::ast::TypeGoalOwner },
 }
 
 #[derive(Default)]
@@ -234,6 +263,22 @@ fn record_fill_relation_work(update: impl FnOnce(&mut FillRelationWork)) {
         update(&mut current);
         work.set(current);
     });
+}
+
+#[cfg(test)]
+thread_local! {
+    static PRE_INPUT_COMPLETIONS: std::cell::RefCell<Vec<crate::span::Span>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_pre_input_completions() {
+    PRE_INPUT_COMPLETIONS.with(|sources| sources.borrow_mut().clear());
+}
+
+#[cfg(test)]
+pub(crate) fn take_pre_input_completions() -> Vec<crate::span::Span> {
+    PRE_INPUT_COMPLETIONS.with(|sources| std::mem::take(&mut *sources.borrow_mut()))
 }
 
 impl<'m> MarkedProjection<'m> {
@@ -550,47 +595,240 @@ impl<'m> MarkedProjection<'m> {
         Ok(())
     }
 
-    pub(super) fn declared_inputs(
+    pub(super) fn retry_expected_application(
         &mut self,
+        expected: Option<&super::OwnerBoundType>,
+        output: &crate::pass::typecheck_core::ScopedType,
+        application: super::UserMacroExpectedApplication,
+        span: crate::span::Span,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<super::UserMacroExpectedApplication, crate::error::Error> {
+        if application != super::UserMacroExpectedApplication::Deferred {
+            self.expected_progress = None;
+            return Ok(application);
+        }
+        let snapshot = {
+            let (store, owner, delta, _) = frontier.parts_mut();
+            let expected = expected
+                .expect("a deferred macro expectation lost its cursor type")
+                .clone()
+                .into_scoped(owner, store, span)?;
+            super::EquationSnapshot::zonked(store, delta, output.clone(), expected, tcx)?
+        };
+        if self
+            .expected_progress
+            .as_ref()
+            .is_some_and(|previous| !previous.differs_from(&snapshot))
+        {
+            return Ok(application);
+        }
+        let application = super::OrdinaryValueCursor::retry_deferred_user_macro_expected(
+            expected,
+            output,
+            application,
+            span,
+            frontier,
+            tcx,
+        )?;
+        self.expected_progress = (application == super::UserMacroExpectedApplication::Deferred)
+            .then(|| Box::new(snapshot));
+        Ok(application)
+    }
+
+    pub(super) fn advance_pre_inputs(
+        &mut self,
+        span: crate::span::Span,
+        inherited_mode: super::frontier::FrontierMode,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<PreInputAdvance, crate::error::Error> {
+        if matches!(self.pre_inputs, PreInputCompletion::Unselected) {
+            let mut ordinals = Vec::new();
+            for producer in 0..self.next_producer {
+                if is_computed_pre_input(self.producer_state(producer))
+                    && self
+                        .producer_expected_snapshot(producer, span, frontier, tcx)?
+                        .is_none()
+                {
+                    ordinals.push(producer);
+                }
+            }
+            self.pre_inputs = if ordinals.is_empty() {
+                PreInputCompletion::Complete
+            } else {
+                PreInputCompletion::Producers {
+                    ordinals,
+                    index: 0,
+                    mode: super::frontier::FrontierMode::ExpectedOnly,
+                    progressed: false,
+                }
+            };
+        }
+        loop {
+            match &self.pre_inputs {
+                PreInputCompletion::Unselected => unreachable!("pre-input selection was skipped"),
+                PreInputCompletion::Complete => return Ok(PreInputAdvance::Complete),
+                PreInputCompletion::Producers {
+                    ordinals,
+                    index,
+                    mode,
+                    progressed,
+                } => {
+                    if mode.rank() > inherited_mode.rank() {
+                        return Ok(PreInputAdvance::Pending);
+                    }
+                    let Some(&producer) = ordinals.get(*index) else {
+                        self.pre_inputs = if let Some(next_mode) = mode.successor(false) {
+                            let PreInputCompletion::Producers {
+                                ordinals,
+                                progressed,
+                                ..
+                            } = std::mem::take(&mut self.pre_inputs)
+                            else {
+                                unreachable!("pre-input continuation changed its active phase")
+                            };
+                            PreInputCompletion::Producers {
+                                ordinals,
+                                index: 0,
+                                mode: next_mode,
+                                progressed,
+                            }
+                        } else if *progressed {
+                            PreInputCompletion::Headers { next: 0 }
+                        } else {
+                            PreInputCompletion::Complete
+                        };
+                        continue;
+                    };
+                    if matches!(
+                        self.producer_state(producer),
+                        StagedOperand::OpenCompleted { accepted: true, .. }
+                    ) || self
+                        .producer_expected_snapshot(producer, span, frontier, tcx)?
+                        .is_some()
+                    {
+                        let PreInputCompletion::Producers { index, .. } = &mut self.pre_inputs
+                        else {
+                            unreachable!("pre-input continuation changed its active phase")
+                        };
+                        *index += 1;
+                        continue;
+                    }
+                    return Ok(PreInputAdvance::Producer(FillProducerRequest {
+                        producer,
+                        parent: self.producer_parent(producer),
+                        producer_mode: *mode,
+                        inherited_mode,
+                        relation_probe: false,
+                        expected: None,
+                    }));
+                }
+                PreInputCompletion::Headers { next } => {
+                    let Some(source) = self.sources.get(*next) else {
+                        self.pre_inputs = PreInputCompletion::Complete;
+                        continue;
+                    };
+                    let state = source
+                        .state
+                        .as_ref()
+                        .expect("a pre-input source lost its retained state");
+                    if contains_unselected_direct_header(state) {
+                        return Ok(PreInputAdvance::Header {
+                            parent: staged_header_parent(state).unwrap_or_else(|| frontier.owner()),
+                        });
+                    }
+                    let PreInputCompletion::Headers { next } = &mut self.pre_inputs else {
+                        unreachable!("pre-input continuation changed its active phase")
+                    };
+                    *next += 1;
+                }
+            }
+        }
+    }
+
+    pub(super) fn resume_pre_input_producer(
+        &mut self,
+        request: FillProducerRequest,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<ResumedFillProducer, crate::error::Error> {
+        self.resume_producer_with_policy(
+            request,
+            super::OrdinaryActionPolicy::PreInput,
+            frontier,
+            tcx,
+        )
+    }
+
+    pub(super) fn accept_pre_input_producer(
+        &mut self,
+        resumed: &ResumedFillProducer,
+        span: crate::span::Span,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), crate::error::Error> {
+        let PreInputCompletion::Producers {
+            ordinals, index, ..
+        } = &self.pre_inputs
+        else {
+            unreachable!("pre-input acceptance left its producer phase")
+        };
+        assert_eq!(ordinals[*index], resumed.producer);
+        self.accept_resumed_producer(resumed, span, frontier, tcx)?;
+        #[cfg(test)]
+        if resumed.newly_complete {
+            PRE_INPUT_COMPLETIONS.with(|sources| {
+                sources
+                    .borrow_mut()
+                    .push(staged_operand_span(self.producer_state(resumed.producer)));
+            });
+        }
+        let PreInputCompletion::Producers {
+            index, progressed, ..
+        } = &mut self.pre_inputs
+        else {
+            unreachable!("pre-input acceptance changed its producer phase")
+        };
+        *index += 1;
+        *progressed |= resumed.newly_complete;
+        if resumed.newly_complete {
+            self.expected_progress = None;
+        }
+        Ok(())
+    }
+
+    pub(super) fn resume_pre_input_header(
+        &mut self,
+        parent: crate::ast::TypeGoalOwner,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), crate::error::Error> {
+        assert_eq!(
+            parent,
+            frontier.owner(),
+            "a pre-input header resumed through another parent"
+        );
+        let PreInputCompletion::Headers { next } = &mut self.pre_inputs else {
+            unreachable!("pre-input header selection left its header phase")
+        };
+        let retained = &mut self.sources[*next];
+        let state = retained
+            .state
+            .take()
+            .expect("a pre-input header lost its source");
+        retained.state = Some(select_unselected_direct_headers(state, frontier, tcx)?);
+        *next += 1;
+        Ok(())
+    }
+
+    fn declared_input_plan(
+        &self,
         action: &crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         transcript: &super::UserMacroCallTranscript,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
-        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<
-        (
-            Vec<Value>,
-            crate::pass::typecheck_full::FrozenProjectedResidualAbi,
-        ),
-        crate::error::Error,
-    > {
-        let mut specialization = self.specialization.take().unwrap_or_else(|| {
-            crate::pass::typecheck_core::IsolatedSpecializationContextBuilder::new(tcx)
-        });
-        let mut inputs = Vec::new();
-        let mut next_result_root = 0u32;
-        assert!(
-            self.sources
-                .iter()
-                .all(|source| matches!(source.header, RetainedProjectedHeader::Sealed(_))),
-            "declared fills inputs observed an unsealed projected header"
-        );
-        for source in &mut self.sources {
-            snapshot_projected_recipe(
-                source.header.recipe_mut(),
-                &mut specialization,
-                frontier,
-                tcx,
-            )?;
-        }
-        for source in &self.sources {
-            validate_projected_source_before_action(
-                source
-                    .state
-                    .as_ref()
-                    .expect("a retained projected source lost its staged state"),
-                source.header.recipe(),
-            )?;
-        }
+        tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<crate::pass::typecheck_full::ProjectedUserMacroAbiPlan, crate::error::Error> {
         let mut observed_types = Vec::new();
         let mut call_layers = Vec::with_capacity(transcript.layers.len());
         for layer in &transcript.layers {
@@ -639,22 +877,141 @@ impl<'m> MarkedProjection<'m> {
                 },
             );
         }
-        let plan = action.projected_abi_plan(
+        Ok(action.projected_abi_plan(
             &crate::pass::typecheck_full::ProjectedUserMacroCallShape {
                 layers: call_layers,
                 observed_types,
             },
             tcx,
+        ))
+    }
+
+    pub(super) fn preflight_required_results(
+        &self,
+        action: &crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
+        transcript: &super::UserMacroCallTranscript,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), crate::error::Error> {
+        for slot in self
+            .declared_input_plan(action, transcript, frontier, tcx)?
+            .slots
+        {
+            let crate::pass::typecheck_full::ProjectedUserMacroSlot::Type {
+                layer,
+                slot,
+                required_result: true,
+                residual,
+                ..
+            } = slot
+            else {
+                continue;
+            };
+            let ty = if let Some(residual) = residual {
+                let (store, owner, _, _) = frontier.parts_mut();
+                store.scoped_type_with_lexical_foralls(
+                    owner,
+                    residual.ty.clone(),
+                    &residual.lexical_type_params(),
+                    action.span(),
+                )?
+            } else {
+                transcript.layers[layer].type_slots[slot]
+                    .as_ref()
+                    .expect("a required macro type slot was absent")
+                    .clone()
+            };
+            let (store, _, delta, _) = frontier.parts_mut();
+            if store.try_zonk_goal_free(delta, ty, tcx)?.is_none() {
+                return Err(crate::error::Error::type_(
+                    action.span(),
+                    format!(
+                        "cannot infer required result type argument `[{}]` of this macro call",
+                        action.type_slot_param(layer, slot).name,
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn preflight_declared_inputs(
+        &self,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), crate::error::Error> {
+        for source in &self.sources {
+            validate_projected_source_before_action(
+                source
+                    .state
+                    .as_ref()
+                    .expect("a preflight source lost its state"),
+                source.header.recipe(),
+                frontier,
+                tcx,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn declared_inputs(
+        &mut self,
+        action: &crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
+        transcript: &super::UserMacroCallTranscript,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<
+        (
+            Vec<Value>,
+            crate::pass::typecheck_full::FrozenProjectedResidualAbi,
+        ),
+        crate::error::Error,
+    > {
+        let mut specialization = self.specialization.take().unwrap_or_else(|| {
+            crate::pass::typecheck_core::IsolatedSpecializationContextBuilder::new(tcx)
+        });
+        self.natural_result = action.has_natural_result();
+        let mut inputs = Vec::new();
+        let mut next_result_root = 0u32;
+        assert!(
+            self.sources
+                .iter()
+                .all(|source| matches!(source.header, RetainedProjectedHeader::Sealed(_))),
+            "declared fills inputs observed an unsealed projected header"
         );
+        for source in &mut self.sources {
+            snapshot_projected_recipe(
+                source.header.recipe_mut(),
+                &mut specialization,
+                frontier,
+                tcx,
+            )?;
+        }
+        for source in &self.sources {
+            validate_projected_source_before_action(
+                source
+                    .state
+                    .as_ref()
+                    .expect("a retained projected source lost its staged state"),
+                source.header.recipe(),
+                frontier,
+                tcx,
+            )?;
+        }
+        let plan = self.declared_input_plan(action, transcript, frontier, tcx)?;
         let terminal_result = {
             let (store, owner, _delta, _publication) = frontier.parts_mut();
             store.scoped_type_with_lexical_foralls(
                 owner,
                 plan.terminal_result.ty.clone(),
-                &plan.terminal_result.lexical_binders,
+                &plan.terminal_result.lexical_type_params(),
                 action.span(),
             )?
         };
+        self.terminal_reflection = crate::normalization::ProjectedReflection::default()
+            .with_scope(terminal_result.projected_reflection_bindings())
+            .with_lexical_bindings(plan.terminal_result.reflection_bindings())
+            .freeze_entry();
         assert!(
             self.terminal_result.replace(terminal_result).is_none(),
             "one fills invocation projected two terminal result types"
@@ -676,14 +1033,24 @@ impl<'m> MarkedProjection<'m> {
                     layer,
                     slot,
                     result_focus,
+                    natural_result,
+                    required_result,
                     residual,
                 } => {
+                    if natural_result {
+                        inputs.push(Value::Unit);
+                        continue;
+                    }
+                    let residual_bindings = residual
+                        .as_ref()
+                        .map(|residual| residual.reflection_bindings().collect::<Vec<_>>())
+                        .unwrap_or_default();
                     let ty = if let Some(residual) = residual {
                         let (store, owner, _delta, _publication) = frontier.parts_mut();
                         store.scoped_type_with_lexical_foralls(
                             owner,
-                            residual.ty,
-                            &residual.lexical_binders,
+                            residual.ty.clone(),
+                            &residual.lexical_type_params(),
                             action.span(),
                         )?
                     } else {
@@ -692,20 +1059,30 @@ impl<'m> MarkedProjection<'m> {
                             .expect("a ready projected type slot remained absent")
                             .clone()
                     };
-                    {
-                        let (store, _owner, _delta, _publication) = frontier.parts_mut();
-                        specialization.record_carrier_goals(&ty, store)?;
-                    }
                     let (ty, closed) = {
                         let (store, _owner, delta, _publication) = frontier.parts_mut();
                         let ty = store.zonk_for_progress(delta, ty, tcx)?;
                         let closed = store.try_zonk_goal_free(delta, ty.clone(), tcx)?;
                         (ty, closed)
                     };
+                    if required_result && closed.is_none() {
+                        return Err(crate::error::Error::type_(
+                            action.span(),
+                            format!(
+                                "cannot infer required result type argument `[{}]` of this macro call",
+                                action.type_slot_param(layer, slot).name
+                            ),
+                        ));
+                    }
                     let closed = closed
                         .as_ref()
                         .map(|closed| {
-                            crate::pass::typecheck_full::reflect_projected_type(closed.ty(), tcx)
+                            crate::pass::typecheck_full::reflect_projected_type(
+                                closed.ty(),
+                                tcx,
+                                closed,
+                                residual_bindings.clone(),
+                            )
                         })
                         .transpose()?;
                     let focus = result_focus.then(|| {
@@ -719,15 +1096,18 @@ impl<'m> MarkedProjection<'m> {
                         }
                     });
                     inputs.push(crate::normalization::projected_value(ProjectedValue(
-                        ProjectedValueKind::Type(projected_type(
-                            &self.seal,
-                            ty,
-                            closed,
-                            focus,
-                            ProducerSet::default(),
-                            &mut specialization,
-                            tcx,
-                        )?),
+                        ProjectedValueKind::Type(
+                            projected_type(
+                                &self.seal,
+                                ty,
+                                closed,
+                                focus,
+                                ProducerSet::default(),
+                                &mut specialization,
+                                tcx,
+                            )?
+                            .with_entry_bindings(residual_bindings),
+                        ),
                     )));
                 }
                 crate::pass::typecheck_full::ProjectedUserMacroSlot::Value {
@@ -758,16 +1138,15 @@ impl<'m> MarkedProjection<'m> {
                         continue;
                     }
                     let recipe = if let Some(residual) = residual {
+                        let residual_bindings = residual.reflection_bindings().collect::<Vec<_>>();
                         let ty = {
                             let (store, owner, _delta, _publication) = frontier.parts_mut();
-                            let ty = store.scoped_type_with_lexical_foralls(
+                            store.scoped_type_with_lexical_foralls(
                                 owner,
-                                residual.ty,
-                                &residual.lexical_binders,
+                                residual.ty.clone(),
+                                &residual.lexical_type_params(),
                                 action.span(),
-                            )?;
-                            specialization.record_carrier_goals(&ty, store)?;
-                            ty
+                            )?
                         };
                         ProjectedCheckedRecipe {
                             ty: projected_type(
@@ -778,7 +1157,8 @@ impl<'m> MarkedProjection<'m> {
                                 ProducerSet::default(),
                                 &mut specialization,
                                 tcx,
-                            )?,
+                            )?
+                            .with_entry_bindings(residual_bindings),
                             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::Local {
                                 name: residual.name,
                             }),
@@ -922,8 +1302,9 @@ impl<'m> MarkedProjection<'m> {
     }
 
     pub(super) fn prepare_adoption(
-        &self,
+        &mut self,
         context: &FillContext,
+        checked: &mut ProjectedCheckedResult,
         span: crate::span::Span,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -948,24 +1329,32 @@ impl<'m> MarkedProjection<'m> {
 
         // Authenticate the complete immutable transcript before the relation
         // group mutates the live delta.
-        let mut relations = Vec::with_capacity(source_order.len());
+        let mut operands = Vec::with_capacity(source_order.len());
         let mut visited_producers = std::collections::HashSet::new();
         fn validate_producers(
             node: &crate::normalization::EvalRef<ProducerDag>,
             bound: u32,
             visited: &mut std::collections::HashSet<*const ProducerDag>,
         ) -> bool {
-            if !visited.insert(crate::normalization::EvalRef::as_ptr(node)) {
-                return true;
-            }
-            match node.as_ref() {
-                ProducerDag::Leaf(ordinal) => *ordinal < bound,
-                ProducerDag::Union(left, right) => {
-                    validate_producers(left, bound, visited)
-                        && validate_producers(right, bound, visited)
+            let mut work = vec![node];
+            while let Some(node) = work.pop() {
+                if !visited.insert(crate::normalization::EvalRef::as_ptr(node)) {
+                    continue;
+                }
+                match node.as_ref() {
+                    ProducerDag::Leaf(ordinal) if *ordinal >= bound => return false,
+                    ProducerDag::Leaf(_) => {}
+                    ProducerDag::Union(left, right) => {
+                        work.push(right);
+                        work.push(left);
+                    }
                 }
             }
+            true
         }
+        let proof = MarkedComptimeProof {
+            seal: self.seal.clone(),
+        };
         for relation in source_order {
             if relation.producers.0.as_ref().is_some_and(|root| {
                 !validate_producers(root, self.next_producer, &mut visited_producers)
@@ -976,13 +1365,32 @@ impl<'m> MarkedProjection<'m> {
                 ));
             }
             let destination = match &relation.destination {
-                Value::Projected(value) => match &value.0 {
+                FillDestination::TerminalResult => {
+                    let ty = self
+                        .terminal_result
+                        .as_ref()
+                        .expect("a result relation lost its retained terminal type")
+                        .clone();
+                    ProjectedType {
+                        seal: self.seal.clone(),
+                        specialization: ty.clone(),
+                        closed: self
+                            .terminal_reflection
+                            .clone()
+                            .with_scope(ty.projected_reflection_bindings()),
+                        ty,
+                        focus: None,
+                        contains_focus: false,
+                        producers: ProducerSet::default(),
+                    }
+                }
+                FillDestination::Projected(Value::Projected(value)) => match &value.0 {
                     ProjectedValueKind::Type(ty)
                         if ty.seal.matches(&self.seal) && ty.focus.is_some() =>
                     {
-                        ty.ty.clone()
+                        ty.clone()
                     }
-                    ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
+                    _ => {
                         return Err(crate::error::Error::macro_error(
                             span,
                             "fills macro returned an unauthenticated destination",
@@ -996,46 +1404,58 @@ impl<'m> MarkedProjection<'m> {
                     ));
                 }
             };
-            let candidate = match &relation.candidate {
-                Value::Projected(value) => match &value.0 {
-                    ProjectedValueKind::Type(ty) if ty.seal.matches(&self.seal) => ty.ty.clone(),
-                    ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
-                        return Err(crate::error::Error::macro_error(
-                            span,
-                            "fills macro returned an unauthenticated type candidate",
-                        ));
-                    }
-                },
-                Value::ReflType(ty) => {
-                    let ty = crate::ast::convert_type::<
-                        crate::ast::UncheckedPrime,
-                        crate::ast::Lowered,
-                    >(ty.as_type());
-                    let (store, owner, _delta, _publication) = frontier.parts_mut();
-                    store.scoped_type(
-                        owner,
-                        crate::pass::typecheck_core::InternedType::fresh_canonical(ty),
-                        span,
-                    )?
-                }
-                _ => {
-                    return Err(crate::error::Error::macro_error(
-                        span,
-                        "fills macro returned a candidate other than `__Type__`",
-                    ));
-                }
-            };
+            let candidate = authenticated_projected_type_operand(
+                &proof,
+                &relation.candidate,
+                &destination,
+                "fills",
+            )?;
             #[cfg(test)]
             if let Some(observations) = returned_relation_observations.as_mut() {
-                observations.push(observe_authenticated_fill_relation(relation, &candidate));
+                observations.push(observe_authenticated_fill_relation(
+                    relation,
+                    &destination.ty,
+                    &candidate.ty,
+                ));
             }
-            relations.push(AdoptedFillRelation {
-                destination,
-                candidate,
-                producers: relation.producers.clone(),
-            });
+            operands.push((destination, candidate, relation.producers.clone()));
         }
-
+        let mut alignment = ProjectedTypeAlignment {
+            correspondence: true,
+            ..Default::default()
+        };
+        alignment
+            .protected
+            .extend(self.terminal_reflection.original_bindings());
+        for (destination, candidate, _) in &operands {
+            alignment.collect(destination);
+            alignment.collect(candidate);
+        }
+        match checked {
+            ProjectedCheckedResult::Recipe(recipe) => alignment.collect_recipe(recipe),
+            ProjectedCheckedResult::Closed(term) => alignment.collect_closed(term),
+        }
+        alignment.finish(span)?;
+        let relations = operands
+            .into_iter()
+            .map(|(destination, candidate, producers)| {
+                Ok(AdoptedFillRelation {
+                    destination: alignment.apply(&destination)?.ty,
+                    candidate: alignment.apply(&candidate)?.ty,
+                    producers,
+                })
+            })
+            .collect::<Result<Vec<_>, crate::error::Error>>()?;
+        let aligned_checked = match checked {
+            ProjectedCheckedResult::Recipe(recipe) => {
+                ProjectedCheckedResult::Recipe(alignment.apply_recipe(recipe)?)
+            }
+            ProjectedCheckedResult::Closed(term) => ProjectedCheckedResult::Closed(
+                term.rebind_reflection(&alignment.bindings)
+                    .map(crate::normalization::EvalRef::new)
+                    .unwrap_or_else(|| term.clone()),
+            ),
+        };
         #[cfg(test)]
         if let Some(observations) = returned_relation_observations {
             record_returned_fill_relations(&tcx.env.module_path, span, observations);
@@ -1050,8 +1470,18 @@ impl<'m> MarkedProjection<'m> {
                 )
             });
             let (store, _owner, delta, _publication) = frontier.parts_mut();
-            store.constrain_equations_atomically(delta, equations, tcx)?;
+            let mismatch =
+                |left: &crate::pass::typecheck_core::ScopedType,
+                 right: &crate::pass::typecheck_core::ScopedType,
+                 span| { alignment.rigid_mismatch(left, right, span) };
+            let context = crate::pass::typecheck_core::RigidMismatchContext {
+                context: tcx,
+                mismatch: Some(&mismatch),
+            };
+            store.constrain_equations_atomically(delta, equations, &context)?;
         }
+        *checked = aligned_checked;
+        self.reflection_alignment = Some(Box::new(alignment));
 
         let (relation_producers, independent_producers) = freeze_relation_producers(
             relations.iter().map(|relation| &relation.producers),
@@ -1073,11 +1503,15 @@ impl<'m> MarkedProjection<'m> {
         mut self,
         checked: ProjectedCheckedResult,
         output: crate::pass::typecheck_core::ScopedType,
-        residual_binders: Vec<crate::ast::TypeParam>,
+        residual_binders: Vec<crate::pass::typecheck_full::FrozenResidualTypeBinder>,
         span: crate::span::Span,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<ProjectedMaterialization, crate::error::Error> {
+        let residual_bindings = residual_binders
+            .iter()
+            .map(|binder| (binder.param.name.clone(), binder.binding.clone()))
+            .collect::<Vec<_>>();
         let transcript = self
             .transcript
             .take()
@@ -1155,28 +1589,49 @@ impl<'m> MarkedProjection<'m> {
         // The evaluator closes only the body beneath the residual public eta
         // plan, whose terminal type was retained independently when the
         // projected ABI was declared.
-        let public_terminal_result = {
+        let public_terminal_scope = {
             let terminal_result = self
                 .terminal_result
                 .take()
                 .expect("a completed fills projection lost its projected eta-body result");
             let (store, _owner, delta, _publication) = frontier.parts_mut();
-            store
-                .require_goal_free_after_delta(delta, terminal_result, tcx)?
-                .into_interned_type()
+            store.require_goal_free_after_delta(delta, terminal_result, tcx)?
         };
-        let public = match checked {
+        let public_terminal_result = public_terminal_scope.ty().clone();
+        let public_recipe = match checked {
             ProjectedCheckedResult::Closed(checked) => {
                 assert!(
                     runtime_returns.iter().all(Option::is_none),
                     "a closed checked term retained a lifted projected callback"
                 );
-                checked
+                ProjectedCheckedRecipe {
+                    ty: ProjectedType {
+                        seal: self.seal.clone(),
+                        ty: public_terminal_scope.clone(),
+                        specialization: public_terminal_scope,
+                        closed: crate::normalization::ProjectedReflection::closed(Some(
+                            checked.reflected_type().clone(),
+                        ))
+                        .with_original_from(&self.terminal_reflection),
+                        focus: None,
+                        contains_focus: false,
+                        producers: ProducerSet::default(),
+                    },
+                    node: crate::normalization::EvalRef::new(ProjectedRecipeNode::Closed(checked)),
+                }
             }
-            ProjectedCheckedResult::Recipe(recipe) => {
-                close_projected_recipe(&recipe, residual_binders, span, frontier, tcx)?
-            }
+            ProjectedCheckedResult::Recipe(recipe) => recipe,
         };
+        let public = close_projected_recipe(
+            &public_recipe,
+            residual_binders,
+            self.reflection_alignment.as_deref(),
+            span,
+            frontier,
+            tcx,
+        )?;
+        let public =
+            crate::normalization::EvalRef::new(public.align_for_export(&residual_bindings));
         crate::pass::typecheck_core::require_type_equiv_state(
             &crate::ast::convert_type::<crate::ast::UncheckedPrime, crate::ast::Lowered>(
                 public.ty(),
@@ -1206,37 +1661,34 @@ impl<'m> MarkedProjection<'m> {
                 &mut sources,
                 &runtime_returns,
                 &public_terminal_result,
+                &residual_bindings,
                 frontier,
                 tcx,
             )?;
-            let continuation_type =
-                crate::pass::typecheck_full::reflect_projected_type(&continuation.ty, tcx)?;
+            let continuation_type = crate::pass::typecheck_full::reflect_projected_type(
+                &continuation.ty,
+                tcx,
+                &continuation.reflection_scope,
+                residual_bindings.iter().cloned(),
+            )?;
             let continuation_term = crate::normalization::EvalRef::new(
-                crate::normalization::CheckedTerm::template_value(
+                crate::normalization::CheckedTerm::template_value_reflected(
                     sources.len(),
-                    continuation_type.as_type().clone(),
+                    continuation_type,
                 ),
             );
+            let runtime_output = crate::pass::typecheck_full::reflect_projected_type(
+                &runtime_result,
+                tcx,
+                &continuation.reflection_scope,
+                residual_bindings.iter().cloned(),
+            )?;
             sources.push(continuation);
-            let runtime_output =
-                crate::pass::typecheck_full::reflect_projected_type(&runtime_result, tcx)?
-                    .as_type()
-                    .clone();
             let runtime = public.adapt_lifted_terminal_callbacks(
                 &runtime_sources,
                 runtime_output,
                 continuation_term,
             );
-            crate::pass::typecheck_core::require_type_equiv_state(
-                &crate::ast::convert_type::<crate::ast::UncheckedPrime, crate::ast::Lowered>(
-                    runtime.ty(),
-                ),
-                runtime_result.as_type(),
-                span,
-                &tcx.env.alias_ctx(),
-                true,
-                runtime_result.identity_is_canonical(),
-            )?;
             (crate::normalization::EvalRef::new(runtime), runtime_result)
         };
         Ok(ProjectedMaterialization {
@@ -1252,16 +1704,14 @@ impl<'m> MarkedProjection<'m> {
 
     pub(super) fn advance_producer(
         &mut self,
-        producer: u32,
-        producer_mode: super::frontier::FrontierMode,
-        inherited_mode: super::frontier::FrontierMode,
-        relation_probe: bool,
+        request: &FillProducerRequest,
+        action_policy: super::OrdinaryActionPolicy,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<bool, crate::error::Error> {
         let location = self
             .producer_locations
-            .get(producer as usize)
+            .get(request.producer as usize)
             .expect("a frozen fill phase referenced an unknown producer")
             .clone();
         let retained = self
@@ -1269,19 +1719,20 @@ impl<'m> MarkedProjection<'m> {
             .get_mut(location.source)
             .expect("a fill producer lost its retained source");
         assert!(
-            retained.inherited_mode.rank() <= inherited_mode.rank(),
+            retained.inherited_mode.rank() <= request.inherited_mode.rank(),
             "a retained source resumed before its original inherited mode"
         );
-        retained.inherited_mode = inherited_mode;
+        retained.inherited_mode = request.inherited_mode;
         assert!(
-            producer_mode.rank() <= retained.inherited_mode.rank(),
+            request.producer_mode.rank() <= retained.inherited_mode.rank(),
             "a fill producer advanced beyond its enclosing inherited mode"
         );
         advance_projected_source_at_path(
             &mut retained.state,
             &location.path,
-            producer_mode,
-            relation_probe,
+            request.producer_mode,
+            request.relation_probe,
+            action_policy,
             frontier,
             tcx,
         )
@@ -1342,6 +1793,21 @@ impl<'m> MarkedProjection<'m> {
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<ResumedFillProducer, crate::error::Error> {
+        self.resume_producer_with_policy(
+            request,
+            super::OrdinaryActionPolicy::Ordinary,
+            frontier,
+            tcx,
+        )
+    }
+
+    fn resume_producer_with_policy(
+        &mut self,
+        mut request: FillProducerRequest,
+        action_policy: super::OrdinaryActionPolicy,
+        frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<ResumedFillProducer, crate::error::Error> {
         assert_eq!(
             frontier.owner(),
             request.parent,
@@ -1359,7 +1825,7 @@ impl<'m> MarkedProjection<'m> {
         }
         #[cfg(test)]
         record_fill_relation_work(|work| work.producer_advance_visits += 1);
-        if let Some(expected) = request.expected {
+        if let Some(expected) = request.expected.take() {
             self.install_producer_expected(
                 request.producer,
                 request.parent,
@@ -1368,14 +1834,7 @@ impl<'m> MarkedProjection<'m> {
                 tcx,
             )?;
         }
-        let complete = self.advance_producer(
-            request.producer,
-            request.producer_mode,
-            request.inherited_mode,
-            request.relation_probe,
-            frontier,
-            tcx,
-        )?;
+        let complete = self.advance_producer(&request, action_policy, frontier, tcx)?;
         Ok(ResumedFillProducer {
             producer: request.producer,
             complete,
@@ -2059,6 +2518,7 @@ fn install_staged_lambda_expected<'m>(
 }
 
 pub(crate) struct ProjectedTemplateSource {
+    pub(crate) reflection_scope: crate::pass::typecheck_core::ScopedType,
     pub(crate) source: crate::ast::Expr<crate::ast::Lowered>,
     pub(crate) ty: crate::pass::typecheck_core::InternedType<crate::ast::Lowered>,
     pub(crate) layer: Option<usize>,
@@ -2133,6 +2593,7 @@ fn capture_completed_pair_sources<'m>(
                     slot.source
                         .replace(ProjectedTemplateSource {
                             source: (**source).clone(),
+                            reflection_scope: closed.clone(),
                             ty: closed.into_interned_type(),
                             layer: Some(layer),
                         })
@@ -2180,6 +2641,7 @@ fn collect_projected_operand_source<'m>(
                 slot.source
                     .replace(ProjectedTemplateSource {
                         source: (*source).clone(),
+                        reflection_scope: closed.clone(),
                         ty: closed.into_interned_type(),
                         layer: Some(layer),
                     })
@@ -2204,6 +2666,7 @@ fn collect_projected_operand_source<'m>(
                 slot.source
                     .replace(ProjectedTemplateSource {
                         source: (*source).clone(),
+                        reflection_scope: preview.clone(),
                         ty: preview.ty().clone(),
                         layer: Some(layer),
                     })
@@ -2273,6 +2736,7 @@ fn finalize_staged_pair<'m>(
             Some((result, pending)) => (Some(result), pending),
         };
         let mut advancing = super::begin_general_goal_call(
+            source,
             &mut pair_frontier,
             selecting.call,
             selecting.selected,
@@ -2374,6 +2838,7 @@ fn finalize_staged_operand<'m>(
 struct ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
     span: crate::span::Span,
     binders: Vec<crate::ast::TypeParam>,
+    bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
     scratch: crate::pass::typecheck_core::ProjectedTypeCloseScratch,
     frontier: &'a mut super::frontier::ConnectedCallFrontier<'f, 'm>,
     tcx: &'a super::TypeCtx<'m, 'e, crate::ast::Lowered>,
@@ -2431,14 +2896,22 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
     fn reflect(
         &self,
         ty: &crate::pass::typecheck_core::ClosedProjectedType,
-    ) -> Result<crate::ast::Type<crate::ast::UncheckedPrime>, crate::error::Error> {
+        source: &ProjectedType,
+    ) -> Result<crate::normalization::ReflectedType, crate::error::Error> {
         #[cfg(test)]
         PROJECTED_RECIPE_CLOSE_WORK.with(|work| {
             let (closes, reflections) = work.get();
             work.set((closes, reflections + 1));
         });
-        crate::pass::typecheck_full::reflect_projected_type(ty.ty(), self.tcx)
-            .map(|reflected| reflected.as_type().clone())
+        crate::pass::typecheck_full::reflect_projected_type(
+            ty.ty(),
+            self.tcx,
+            ty.reflection_scope(),
+            self.bindings
+                .iter()
+                .cloned()
+                .chain(source.closed.lexical_bindings()),
+        )
     }
 
     fn child(
@@ -2466,11 +2939,11 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
     fn construct(
         &self,
         node: crate::normalization::ProjectedTermConstruction,
-        ty: crate::ast::Type<crate::ast::UncheckedPrime>,
-    ) -> crate::normalization::EvalRef<crate::normalization::CheckedTerm> {
-        crate::normalization::EvalRef::new(crate::normalization::CheckedTerm::from_projected(
-            node, ty,
-        ))
+        ty: crate::normalization::ReflectedType,
+    ) -> Result<crate::normalization::EvalRef<crate::normalization::CheckedTerm>, crate::error::Error>
+    {
+        crate::normalization::CheckedTerm::from_projected_reflected(node, ty)
+            .map(crate::normalization::EvalRef::new)
     }
 }
 
@@ -2482,78 +2955,72 @@ thread_local! {
 }
 
 fn split_closed_function_params(
-    ty: crate::ast::Type<crate::ast::UncheckedPrime>,
+    ty: crate::normalization::ReflectedType,
     span: crate::span::Span,
     helper: &'static str,
-) -> Result<Vec<crate::ast::Type<crate::ast::UncheckedPrime>>, crate::error::Error> {
-    let crate::ast::Type::Function {
-        param, abi_arity, ..
-    } = ty
-    else {
+) -> Result<Vec<crate::normalization::ReflectedType>, crate::error::Error> {
+    use crate::normalization::TypeChild;
+    let crate::ast::Type::Function { abi_arity, .. } = ty.as_type() else {
         return Err(crate::error::Error::macro_error(
             span,
             format!("{helper} closed with a non-function type"),
         ));
     };
-    let mut params = Vec::with_capacity(abi_arity);
-    let mut cursor = *param;
-    for index in 0..abi_arity {
-        if index + 1 == abi_arity {
+    let mut params = Vec::with_capacity(*abi_arity);
+    let mut cursor = ty.child(TypeChild::Left);
+    for index in 0..*abi_arity {
+        if index + 1 == *abi_arity {
             params.push(cursor);
             break;
         }
-        let crate::ast::Type::Product { left, right, .. } = cursor else {
+        if !matches!(cursor.as_type(), crate::ast::Type::Product { .. }) {
             return Err(crate::error::Error::macro_error(
                 span,
                 format!("{helper} ABI arity exceeded its parameter product spine"),
             ));
-        };
-        params.push(*left);
-        cursor = *right;
+        }
+        params.push(cursor.child(TypeChild::Left));
+        cursor = cursor.child(TypeChild::Right);
     }
     Ok(params)
 }
 
-fn closed_projected_value_signature(
+fn closed_projected_value_params(
     names: &[String],
-    params: Vec<crate::ast::Type<crate::ast::UncheckedPrime>>,
+    params: Vec<crate::normalization::ReflectedType>,
     span: crate::span::Span,
-) -> Result<crate::ast::Signature<crate::ast::UncheckedPrime>, crate::error::Error> {
+) -> Result<Vec<(String, crate::normalization::ReflectedType)>, crate::error::Error> {
     if names.len() != params.len() {
         return Err(crate::error::Error::macro_error(
             span,
             "__term_fn__ closed with the wrong number of value binders",
         ));
     }
-    let len = params.len();
-    Ok(crate::ast::Signature::from_parts(
-        names
-            .iter()
-            .cloned()
-            .zip(params)
-            .map(|(name, ty)| {
-                crate::ast::SignatureParam::Value(crate::ast::Param {
-                    name,
-                    ty: Some(ty),
-                    pattern: Default::default(),
-                    meta: crate::ast::Meta::new(span),
-                })
-            })
-            .collect(),
-        vec![crate::ast::SignatureGroupKind::Value { len }],
-    ))
+    Ok(names.iter().cloned().zip(params).collect())
 }
 
 fn close_projected_recipe<'m>(
     recipe: &ProjectedCheckedRecipe,
-    binders: Vec<crate::ast::TypeParam>,
+    binders: Vec<crate::pass::typecheck_full::FrozenResidualTypeBinder>,
+    alignment: Option<&ProjectedTypeAlignment>,
     span: crate::span::Span,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<crate::normalization::EvalRef<crate::normalization::CheckedTerm>, crate::error::Error> {
+    let bindings = binders
+        .iter()
+        .map(|binder| (binder.param.name.clone(), binder.binding.clone()))
+        .chain(alignment.into_iter().flat_map(|alignment| {
+            alignment
+                .bindings
+                .iter()
+                .map(|(_, name, reference)| (name.clone(), reference.clone()))
+        }))
+        .collect();
     ProjectedRecipeCloser {
         span,
-        binders,
+        binders: binders.into_iter().map(|binder| binder.param).collect(),
+        bindings,
         scratch: crate::pass::typecheck_core::ProjectedTypeCloseScratch::default(),
         frontier,
         tcx,
@@ -2563,7 +3030,7 @@ fn close_projected_recipe<'m>(
 }
 
 type LiftedCallbackRuntimeTypes = (
-    Vec<Option<crate::ast::Type<crate::ast::UncheckedPrime>>>,
+    Vec<Option<crate::normalization::ReflectedType>>,
     crate::pass::typecheck_core::InternedType<crate::ast::Lowered>,
     ProjectedTemplateSource,
 );
@@ -2572,6 +3039,7 @@ fn prepare_lifted_callback_types<'m>(
     sources: &mut [ProjectedTemplateSource],
     returns: &[Option<crate::ast::Type<crate::ast::Lowered>>],
     public_terminal_result: &crate::pass::typecheck_core::InternedType<crate::ast::Lowered>,
+    residual_bindings: &[(String, crate::normalization::ReflectedVariable)],
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<LiftedCallbackRuntimeTypes, crate::error::Error> {
@@ -2650,10 +3118,10 @@ fn prepare_lifted_callback_types<'m>(
         let continuation = {
             let (store, owner, delta, _publication) = frontier.parts_mut();
             let continuation = store.scoped_type(owner, continuation, source.source.span())?;
-            store
-                .require_goal_free_after_delta(delta, continuation, tcx)?
-                .into_interned_type()
+            store.require_goal_free_after_delta(delta, continuation, tcx)?
         };
+        let continuation_scope = continuation.clone();
+        let continuation = continuation.into_interned_type();
         if let Some((previous, _)) = &shared_continuation {
             assert_eq!(
                 *previous, binding_index,
@@ -2669,6 +3137,7 @@ fn prepare_lifted_callback_types<'m>(
                         .expect("validated continuation reference")
                         .clone(),
                     ty: continuation.clone(),
+                    reflection_scope: continuation_scope,
                     layer: None,
                 },
             ));
@@ -2786,11 +3255,12 @@ fn prepare_lifted_callback_types<'m>(
             runtime_ty,
             runtime_ty_canonical,
         );
-        reflected[index] = Some(
-            crate::pass::typecheck_full::reflect_projected_type(&source.ty, tcx)?
-                .as_type()
-                .clone(),
-        );
+        reflected[index] = Some(crate::pass::typecheck_full::reflect_projected_type(
+            &source.ty,
+            tcx,
+            &source.reflection_scope,
+            residual_bindings.iter().cloned(),
+        )?);
     }
     let (result, canonical) = result.expect("at least one lifted runtime return");
     let result = crate::pass::typecheck_core::InternedType::fresh_with_identity(result, canonical);
@@ -2815,14 +3285,44 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
         crate::error::Error,
     > {
         let closed = self.close_type(recipe.ty.ty.clone())?;
-        let reflected = self.reflect(&closed)?;
+        let reflected = self.reflect(&closed, &recipe.ty)?;
         let span = self.span;
         match recipe.node.as_ref() {
-            ProjectedRecipeNode::Closed(checked) => return Ok((checked.clone(), closed)),
+            ProjectedRecipeNode::Closed(checked) => {
+                let original = recipe.ty.ty.projected_reflection_bindings();
+                for (head, reference) in checked.reflection_free_bindings() {
+                    let permitted = if let Some(identity) = reference.caller_identity() {
+                        original.iter().any(|(name, kind, binding)| {
+                            name == &head
+                                && *binding == Some(identity)
+                                && kind.arity() == reference.arity()
+                        })
+                    } else if reference.is_live() {
+                        self.binders.iter().any(|param| {
+                            param.name == head
+                                && param.effective_kind().arity() == reference.arity()
+                        }) && self
+                            .bindings
+                            .iter()
+                            .rev()
+                            .find(|(name, _)| name == &head)
+                            .is_some_and(|(_, active)| active.same_reference(&reference))
+                    } else {
+                        false
+                    };
+                    if !permitted {
+                        return Err(crate::error::Error::macro_error(
+                            span,
+                            "a checked term retains a type parameter outside its lexical type-binder path",
+                        ));
+                    }
+                }
+                return Ok((checked.clone(), closed));
+            }
             ProjectedRecipeNode::TemplateValue(index) => {
                 return Ok((
                     crate::normalization::EvalRef::new(
-                        crate::normalization::CheckedTerm::template_value(
+                        crate::normalization::CheckedTerm::template_value_reflected(
                             *index as usize,
                             reflected,
                         ),
@@ -2832,10 +3332,9 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
             }
             ProjectedRecipeNode::Local { name } => {
                 return Ok((
-                    crate::normalization::EvalRef::new(crate::normalization::CheckedTerm::local(
-                        name.clone(),
-                        reflected,
-                    )),
+                    crate::normalization::EvalRef::new(
+                        crate::normalization::CheckedTerm::local_reflected(name.clone(), reflected),
+                    ),
                     closed,
                 ));
             }
@@ -2895,21 +3394,16 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &selected,
                     "projected product projection closed at another result type",
                 )?;
-                let product_type = self.reflect(&product_type_closed)?;
-                let crate::ast::Type::Product {
-                    left: left_ty,
-                    right: right_ty,
-                    ..
-                } = product_type
-                else {
+                let product_type = self.reflect(&product_type_closed, product_type)?;
+                if !matches!(product_type.as_type(), crate::ast::Type::Product { .. }) {
                     return Err(crate::error::Error::macro_error(
                         span,
                         "projected product projection closed with a non-product type",
                     ));
                 };
                 crate::normalization::ProjectedTermConstruction::ProductProjection {
-                    left_ty: *left_ty,
-                    right_ty: *right_ty,
+                    left_ty: product_type.child(crate::normalization::TypeChild::Left),
+                    right_ty: product_type.child(crate::normalization::TypeChild::Right),
                     value: product,
                     left: *left,
                 }
@@ -2945,14 +3439,13 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &return_type,
                     "__term_call__ result did not have the function return type",
                 )?;
-                let params = split_closed_function_params(
-                    self.reflect(&function_type_closed)?,
+                split_closed_function_params(
+                    self.reflect(&function_type_closed, function_type)?,
                     span,
                     "__term_call__",
                 )?;
                 crate::normalization::ProjectedTermConstruction::Call {
                     fn_value: function,
-                    params,
                     arg_packet: argument,
                 }
             }
@@ -2995,21 +3488,16 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &closed,
                     "__intrinsic_either__ branch did not have the supplied result type",
                 )?;
-                let sum_type = self.reflect(&sum_type_closed)?;
-                let crate::ast::Type::Sum {
-                    left: left_ty,
-                    right: right_ty,
-                    ..
-                } = sum_type
-                else {
+                let sum_type = self.reflect(&sum_type_closed, sum_type)?;
+                if !matches!(sum_type.as_type(), crate::ast::Type::Sum { .. }) {
                     return Err(crate::error::Error::macro_error(
                         span,
                         "__intrinsic_either__ closed with a non-sum type",
                     ));
                 };
                 crate::normalization::ProjectedTermConstruction::Either {
-                    left_ty: *left_ty,
-                    right_ty: *right_ty,
+                    left_ty: sum_type.child(crate::normalization::TypeChild::Left),
+                    right_ty: sum_type.child(crate::normalization::TypeChild::Right),
                     value,
                     left_name: left_name.clone(),
                     left_body,
@@ -3062,14 +3550,18 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     "__term_fn__ body had the wrong return type",
                 )?;
                 let params = split_closed_function_params(
-                    self.reflect(&function_type_closed)?,
+                    self.reflect(&function_type_closed, function_type)?,
                     span,
                     "__term_fn__",
                 )?;
-                let sig = closed_projected_value_signature(names, params, span)?;
-                crate::normalization::ProjectedTermConstruction::Fn { sig, body }
+                let params = closed_projected_value_params(names, params, span)?;
+                crate::normalization::ProjectedTermConstruction::Fn { params, span, body }
             }
-            ProjectedRecipeNode::TermTypeFn { param, body } => {
+            ProjectedRecipeNode::TermTypeFn {
+                param,
+                variable,
+                body,
+            } => {
                 let crate::ast::Type::Forall {
                     param: closed_param,
                     ..
@@ -3092,21 +3584,24 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     "a projected type function lost its body type",
                 )?;
                 self.binders.push(param.clone());
+                self.bindings.push((param.name.clone(), variable.clone()));
                 let body_result = self.close_expected(
                     body,
                     &expected_body,
                     "__term_type_fn__ body closed at another result type",
                 );
                 self.binders.pop();
+                self.bindings.pop();
                 let body = body_result?;
                 crate::normalization::ProjectedTermConstruction::TypeFn {
-                    param: param.clone(),
+                    variable: variable.clone(),
+                    span,
                     body,
                 }
             }
             ProjectedRecipeNode::TermTypeApp { term, argument } => {
                 let (term, term_closed) = self.close(term)?;
-                let argument_closed = self.close_type(argument.clone())?;
+                let argument_closed = self.close_type(argument.ty.clone())?;
                 let expected_result = self
                     .instantiate_forall(&term_closed, &argument_closed)?
                     .ok_or_else(|| {
@@ -3120,7 +3615,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &expected_result,
                     "__term_type_app__ closed at another result type",
                 )?;
-                let arg = self.reflect(&argument_closed)?;
+                let arg = self.reflect(&argument_closed, argument)?;
                 crate::normalization::ProjectedTermConstruction::TypeApp { term, arg }
             }
             ProjectedRecipeNode::IntrinsicInjection {
@@ -3148,21 +3643,16 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &payload,
                     "projected injection payload had the wrong type",
                 )?;
-                let sum_type = self.reflect(&sum_type_closed)?;
-                let crate::ast::Type::Sum {
-                    left: left_ty,
-                    right: right_ty,
-                    ..
-                } = sum_type
-                else {
+                let sum_type = self.reflect(&sum_type_closed, sum_type)?;
+                if !matches!(sum_type.as_type(), crate::ast::Type::Sum { .. }) {
                     return Err(crate::error::Error::macro_error(
                         span,
                         "projected injection closed with a non-sum type",
                     ));
                 };
                 crate::normalization::ProjectedTermConstruction::Injection {
-                    left_ty: *left_ty,
-                    right_ty: *right_ty,
+                    left_ty: sum_type.child(crate::normalization::TypeChild::Left),
+                    right_ty: sum_type.child(crate::normalization::TypeChild::Right),
                     value,
                     left: *left,
                 }
@@ -3195,7 +3685,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                 }
             }
         };
-        Ok((self.construct(construction, reflected), closed))
+        Ok((self.construct(construction, reflected)?, closed))
     }
 }
 
@@ -3311,6 +3801,7 @@ fn capture_open_completed_source(
         slot.source
             .replace(ProjectedTemplateSource {
                 source: (**source).clone(),
+                reflection_scope: preview.clone(),
                 ty: preview.ty().clone(),
                 layer: Some(layer),
             })
@@ -3406,6 +3897,7 @@ fn advance_projected_source_at_path<'m>(
     path: &[u8],
     mode: super::frontier::FrontierMode,
     relation_probe: bool,
+    action_policy: super::OrdinaryActionPolicy,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<bool, crate::error::Error> {
@@ -3414,7 +3906,7 @@ fn advance_projected_source_at_path<'m>(
             .take()
             .expect("a producer location lost its staged source");
         let (staged, complete) =
-            advance_staged_producer(staged, mode, relation_probe, frontier, tcx)?;
+            advance_staged_producer(staged, mode, relation_probe, action_policy, frontier, tcx)?;
         *state = Some(staged);
         return Ok(complete);
     }
@@ -3431,6 +3923,7 @@ fn advance_projected_source_at_path<'m>(
         rest,
         mode,
         relation_probe,
+        action_policy,
         &mut pair_frontier,
         tcx,
     )?;
@@ -3461,6 +3954,7 @@ fn advance_staged_producer<'m>(
     state: StagedOperand<'m>,
     mode: super::frontier::FrontierMode,
     relation_probe: bool,
+    action_policy: super::OrdinaryActionPolicy,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(StagedOperand<'m>, bool), crate::error::Error> {
@@ -3511,6 +4005,7 @@ fn advance_staged_producer<'m>(
         mode,
         super::OrdinaryCompletionDemand::GoalFreeValue,
         relation_probe,
+        action_policy,
         frontier,
         tcx,
     )? {
@@ -3638,12 +4133,6 @@ pub(super) enum MarkedCallPhase<'m> {
         inferred_type_arg_suffix: usize,
         expected_application: super::UserMacroExpectedApplication,
     },
-    Ready {
-        ready: crate::pass::typecheck_full::ReadyUserMacroAction,
-        output: crate::pass::typecheck_core::ScopedType,
-        inferred_type_arg_suffix: usize,
-        expected_application: super::UserMacroExpectedApplication,
-    },
 }
 
 impl<'m> MarkedCallState<'m> {
@@ -3677,10 +4166,6 @@ impl<'m> MarkedCallState<'m> {
             | MarkedCallPhase::AdoptingFills {
                 expected_application,
                 ..
-            }
-            | MarkedCallPhase::Ready {
-                expected_application,
-                ..
             } => *expected_application == super::UserMacroExpectedApplication::Absent,
         }
     }
@@ -3703,10 +4188,6 @@ impl<'m> MarkedCallState<'m> {
             | MarkedCallPhase::AdoptingFills {
                 expected_application,
                 ..
-            }
-            | MarkedCallPhase::Ready {
-                expected_application,
-                ..
             } => *expected_application = super::UserMacroExpectedApplication::Deferred,
         }
     }
@@ -3724,11 +4205,13 @@ impl<'m> MarkedCallState<'m> {
             }
             MarkedCallPhase::Completed { projection, .. }
             | MarkedCallPhase::AdoptingFills { projection, .. } => projection,
-            MarkedCallPhase::Ready { .. } => return,
         };
         for producer in 0..projection.next_producer {
             if let StagedOperand::Ordinary(child, _) = projection.producer_state(producer) {
-                nodes.push(super::CompletionNode::Value(&child.cursor));
+                nodes.push(super::CompletionNode::Value(
+                    &child.cursor,
+                    child.child.completion_delta(),
+                ));
             }
         }
     }
@@ -3744,7 +4227,12 @@ impl<'m> MarkedCallState<'m> {
                 seal: InvocationSeal::fresh(),
                 specialization: None,
                 header_cursor: ProjectedHeaderCursor::default(),
+                pre_inputs: PreInputCompletion::default(),
+                expected_progress: None,
                 terminal_result: None,
+                terminal_reflection: Default::default(),
+                reflection_alignment: None,
+                natural_result: false,
                 transcript: None,
                 sources: Vec::new(),
                 next_template: 0,
@@ -3767,22 +4255,6 @@ impl<'m> MarkedCallState<'m> {
                 action,
                 call,
                 projection,
-            },
-        }
-    }
-
-    pub(super) fn ready(
-        ready: crate::pass::typecheck_full::ReadyUserMacroAction,
-        output: crate::pass::typecheck_core::ScopedType,
-        inferred_type_arg_suffix: usize,
-        expected_application: super::UserMacroExpectedApplication,
-    ) -> Self {
-        Self {
-            phase: MarkedCallPhase::Ready {
-                ready,
-                output,
-                inferred_type_arg_suffix,
-                expected_application,
             },
         }
     }
@@ -4033,6 +4505,65 @@ enum StagedOperand<'m> {
         leaf: Option<ProjectedLeaf>,
     },
     Ordinary(super::OrdinaryChildContinuation<'m>, Option<ProjectedLeaf>),
+}
+
+fn is_computed_pre_input(operand: &StagedOperand<'_>) -> bool {
+    matches!(operand, StagedOperand::Ordinary(continuation, _)
+        if !matches!(continuation.cursor.source, crate::ast::Expr::FnExpr { .. }))
+}
+
+fn contains_unselected_direct_header(operand: &StagedOperand<'_>) -> bool {
+    match operand {
+        StagedOperand::Pair(pair) => pair.operands.iter().any(|operand| {
+            contains_unselected_direct_header(
+                operand
+                    .state
+                    .as_ref()
+                    .expect("a staged pair lost its operand"),
+            )
+        }),
+        StagedOperand::Ordinary(continuation, _) => matches!(
+            continuation.cursor.planned,
+            super::PlannedOrdinaryValue::Lambda(super::PlannedOrdinaryLambda {
+                state: super::OrdinaryLambdaState::Unselected,
+                ..
+            })
+        ),
+        _ => false,
+    }
+}
+
+fn select_unselected_direct_headers<'m>(
+    state: StagedOperand<'m>,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+    tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<StagedOperand<'m>, crate::error::Error> {
+    if !contains_unselected_direct_header(&state) {
+        return Ok(state);
+    }
+    refresh_linked_source_context(&state, frontier, tcx)?;
+    match state {
+        StagedOperand::Pair(mut pair) => {
+            let mut pair_frontier = frontier.ordinary_child_frontier(&mut pair.premise);
+            for operand in &mut pair.operands {
+                let state = operand.state.take().expect("a staged pair lost its header");
+                operand.state = Some(select_unselected_direct_headers(
+                    state,
+                    &mut pair_frontier,
+                    tcx,
+                )?);
+            }
+            Ok(StagedOperand::Pair(pair))
+        }
+        StagedOperand::Ordinary(continuation, leaf) => prepare_staged_lambda_header(
+            continuation,
+            leaf,
+            super::frontier::FrontierMode::ExpectedOnly,
+            frontier,
+            tcx,
+        ),
+        _ => unreachable!("an unselected direct header changed source family"),
+    }
 }
 
 fn staged_operand_inferred_type_arg_suffix(operand: &StagedOperand<'_>) -> usize {
@@ -4955,88 +5486,6 @@ fn certified_fresh_scalar_literal_call<'m>(
         .is_some_and(|source| certified_one_layer_scalar_literal_source(source, tcx))
 }
 
-fn path_receiver_field_access(source: &crate::ast::Expr<crate::ast::Lowered>) -> bool {
-    matches!(
-        source,
-        crate::ast::Expr::Elaborator {
-            kind: crate::ast::ElaboratorKind::Access,
-            call: crate::ast::ElaboratorCall::FieldAccess { receiver, .. },
-            ..
-        } if matches!(receiver.as_ref(), crate::ast::Expr::Path { .. })
-    )
-}
-
-fn certified_computed_field_arg(
-    arg: &crate::ast::CallArg<crate::ast::Lowered>,
-    allow_local_infer: bool,
-) -> bool {
-    match arg {
-        crate::ast::CallArg::Type(ty) => {
-            !crate::pass::typecheck_core::type_contains_goal(ty)
-                && (!crate::pass::typecheck_core::type_contains_infer(ty)
-                    || (allow_local_infer && matches!(ty, crate::ast::Type::Infer { .. })))
-        }
-        crate::ast::CallArg::Value(value) => certified_computed_field_value(value),
-    }
-}
-
-fn certified_computed_field_value(source: &crate::ast::Expr<crate::ast::Lowered>) -> bool {
-    match source {
-        crate::ast::Expr::Path { .. } | crate::ast::Expr::Unit { .. } => true,
-        source
-            if super::super::literal_check_parts(source).is_some_and(|(_, annotation, _)| {
-                annotation.is_none_or(|ty| {
-                    !crate::pass::typecheck_core::type_contains_goal(ty)
-                        && !crate::pass::typecheck_core::type_contains_infer(ty)
-                })
-            }) =>
-        {
-            true
-        }
-        source if path_receiver_field_access(source) => true,
-        crate::ast::Expr::Call { callee, args, .. }
-            if matches!(callee.as_ref(), crate::ast::Expr::Path { .. }) =>
-        {
-            args.iter()
-                .all(|arg| certified_computed_field_arg(arg, true))
-        }
-        crate::ast::Expr::Call { callee, args, .. } if path_receiver_field_access(callee) => args
-            .iter()
-            .all(|arg| certified_computed_field_arg(arg, false)),
-        _ => false,
-    }
-}
-
-fn certified_computed_field_root(source: &crate::ast::Expr<crate::ast::Lowered>) -> bool {
-    matches!(
-        source,
-        crate::ast::Expr::Call { callee, args, .. }
-            if path_receiver_field_access(callee)
-                && args
-                    .iter()
-                    .all(|arg| certified_computed_field_arg(arg, false))
-    )
-}
-
-fn certified_fresh_field_source(
-    child: &super::OrdinaryChildContinuation<'_>,
-    tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
-) -> bool {
-    child.next_mode == super::frontier::FrontierMode::ExpectedOnly
-        && !tcx.has_pending_rec_order()
-        && match &child.cursor.planned {
-            super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::Field) => {
-                path_receiver_field_access(child.cursor.source)
-            }
-            super::PlannedOrdinaryValue::Recursive(
-                super::OrdinaryRecursiveFamily::ComputedCall
-                | super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
-                | super::OrdinaryRecursiveFamily::ComputedBeforeImmediate(_),
-            ) => certified_computed_field_root(child.cursor.source),
-            _ => false,
-        }
-}
-
 fn stage_projected_source_operand<'m>(
     continuation: super::OrdinaryChildContinuation<'m>,
     frontier: &mut impl super::OrdinaryFrontierReentry<'m>,
@@ -5044,7 +5493,6 @@ fn stage_projected_source_operand<'m>(
 ) -> Result<StagedOperand<'m>, crate::error::Error> {
     if certified_fresh_path_unit_call(&continuation, tcx)
         || certified_fresh_scalar_literal_call(&continuation, tcx)
-        || certified_fresh_field_source(&continuation, tcx)
     {
         stage_header_complete_operand(continuation, frontier, tcx)
     } else {
@@ -5159,6 +5607,7 @@ pub(super) fn observed_application_header<'m>(
 fn reserve_observed_call_header<'m>(
     call: &mut super::OrdinaryCallContinuation<'m>,
     source_span: crate::span::Span,
+    expected: Option<&super::OwnerBoundType>,
     projection: ObservedHeaderProjection<'_, 'm>,
     exports: &mut Vec<crate::pass::typecheck_core::ReservedParentHeaderExport>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
@@ -5184,25 +5633,31 @@ fn reserve_observed_call_header<'m>(
         exports.push(export);
         return Ok(Some(header));
     }
-    let header = projected_call_header_result(call, source_span, frontier, tcx)?;
+    let header = projected_call_header_result(call, source_span, expected, frontier, tcx)?;
     project_observed_header(header, projection, frontier, tcx)
 }
 
 fn reserve_observed_marked_header<'m>(
     state: &mut MarkedCallState<'m>,
     source_span: crate::span::Span,
+    expected: Option<&super::OwnerBoundType>,
     projection: ObservedHeaderProjection<'_, 'm>,
     exports: &mut Vec<crate::pass::typecheck_core::ReservedParentHeaderExport>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
     match &mut state.phase {
-        MarkedCallPhase::Project { call, .. } => {
-            reserve_observed_call_header(call, source_span, projection, exports, frontier, tcx)
-        }
+        MarkedCallPhase::Project { call, .. } => reserve_observed_call_header(
+            call,
+            source_span,
+            expected,
+            projection,
+            exports,
+            frontier,
+            tcx,
+        ),
         MarkedCallPhase::Completed { output, .. }
-        | MarkedCallPhase::AdoptingFills { output, .. }
-        | MarkedCallPhase::Ready { output, .. } => {
+        | MarkedCallPhase::AdoptingFills { output, .. } => {
             project_observed_header(Some(output.clone()), projection, frontier, tcx)
         }
     }
@@ -5238,9 +5693,15 @@ fn reserve_observed_cursor_header<'m>(
                 span,
             )?))
         }
-        super::PlannedOrdinaryValue::Call(call) => {
-            reserve_observed_call_header(call, span, projection, exports, frontier, tcx)
-        }
+        super::PlannedOrdinaryValue::Call(call) => reserve_observed_call_header(
+            call,
+            span,
+            cursor.expected.as_ref(),
+            projection,
+            exports,
+            frontier,
+            tcx,
+        ),
         super::PlannedOrdinaryValue::ComputedCall(
             super::ComputedCallContinuation::Application {
                 callee_child,
@@ -5297,75 +5758,29 @@ fn reserve_observed_cursor_header<'m>(
             exports.push(export);
             Ok(Some(header))
         }
-        super::PlannedOrdinaryValue::Field(super::FieldContinuation::Receiver(receiver))
-            if matches!(
-                cursor.source,
-                crate::ast::Expr::Elaborator {
-                    call: crate::ast::ElaboratorCall::FieldAccess { .. },
-                    ..
-                }
-            ) =>
-        {
-            if matches!(projection, ObservedHeaderProjection::Application { .. }) {
-                return Ok(None);
-            }
-            let observed = {
-                let mut receiver_frontier = frontier.ordinary_child_frontier(&mut receiver.child);
-                let observed = reserve_observed_cursor_header(
-                    &mut receiver.cursor,
-                    projection,
-                    exports,
-                    &mut receiver_frontier,
-                    tcx,
-                )?;
-                match observed {
-                    Some(observed)
-                        if !crate::pass::typecheck_core::type_contains_infer(
-                            observed.ty().as_type(),
-                        ) =>
-                    {
-                        let (store, _owner, delta, _publication) = receiver_frontier.parts_mut();
-                        store.try_zonk_goal_free(delta, observed, tcx)?
-                    }
-                    _ => None,
-                }
-            };
-            let Some(observed) = observed else {
-                return Ok(None);
-            };
-            let export = frontier.reserve_parent_header_export(&receiver.child, observed, span)?;
-            let receiver_header = export.parent_header().clone();
-            exports.push(export);
-            let crate::ast::Expr::Elaborator {
-                call: crate::ast::ElaboratorCall::FieldAccess { labels, .. },
-                ..
-            } = cursor.source
-            else {
-                unreachable!("a projected field header changed expression family")
-            };
-            let result = crate::pass::typecheck_full::field_access_header_type(
-                labels,
-                receiver_header.ty(),
-                span,
-                tcx,
-            )?;
-            Ok(Some(frontier.store().scoped_type(
-                frontier.owner(),
-                result,
-                span,
-            )?))
-        }
         super::PlannedOrdinaryValue::UserMacro(call) => match &mut call.state {
-            super::PlannedUserMacroCallState::Advancing(call) => {
-                reserve_observed_call_header(call, span, projection, exports, frontier, tcx)
-            }
+            super::PlannedUserMacroCallState::Advancing(call) => reserve_observed_call_header(
+                call,
+                span,
+                cursor.expected.as_ref(),
+                projection,
+                exports,
+                frontier,
+                tcx,
+            ),
             super::PlannedUserMacroCallState::Completed { output, .. }
             | super::PlannedUserMacroCallState::Ready { output, .. } => {
                 project_observed_header(Some(output.clone()), projection, frontier, tcx)
             }
-            super::PlannedUserMacroCallState::Fills(state) => {
-                reserve_observed_marked_header(state, span, projection, exports, frontier, tcx)
-            }
+            super::PlannedUserMacroCallState::Fills(state) => reserve_observed_marked_header(
+                state,
+                span,
+                cursor.expected.as_ref(),
+                projection,
+                exports,
+                frontier,
+                tcx,
+            ),
         },
         _ => Ok(None),
     }
@@ -5404,9 +5819,7 @@ fn install_observed_marked_header<'m>(
         MarkedCallPhase::Project { call, .. } => {
             install_observed_call_header(call, source_span, exports, frontier, tcx)
         }
-        MarkedCallPhase::Completed { .. }
-        | MarkedCallPhase::AdoptingFills { .. }
-        | MarkedCallPhase::Ready { .. } => Ok(()),
+        MarkedCallPhase::Completed { .. } | MarkedCallPhase::AdoptingFills { .. } => Ok(()),
     }
 }
 
@@ -5452,26 +5865,6 @@ fn install_observed_cursor_header<'m>(
         super::PlannedOrdinaryValue::ComputedCall(super::ComputedCallContinuation::Paired(
             pair,
         )) => install_observed_header_edge(&mut pair.callee_child, exports, span, frontier, tcx),
-        super::PlannedOrdinaryValue::Field(super::FieldContinuation::Receiver(receiver))
-            if matches!(
-                cursor.source,
-                crate::ast::Expr::Elaborator {
-                    call: crate::ast::ElaboratorCall::FieldAccess { .. },
-                    ..
-                }
-            ) =>
-        {
-            {
-                let mut receiver_frontier = frontier.ordinary_child_frontier(&mut receiver.child);
-                install_observed_cursor_header(
-                    &mut receiver.cursor,
-                    exports,
-                    &mut receiver_frontier,
-                    tcx,
-                )?;
-            }
-            install_observed_header_edge(&mut receiver.child, exports, span, frontier, tcx)
-        }
         super::PlannedOrdinaryValue::UserMacro(call) => match &mut call.state {
             super::PlannedUserMacroCallState::Advancing(call) => {
                 install_observed_call_header(call, span, exports, frontier, tcx)
@@ -6028,6 +6421,7 @@ fn seal_projected_operand_for_test<'m>(
 pub(super) fn projected_call_header_result(
     call: &super::OrdinaryCallContinuation<'_>,
     source_span: crate::span::Span,
+    expected: Option<&super::OwnerBoundType>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, '_>,
     tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
@@ -6058,6 +6452,39 @@ pub(super) fn projected_call_header_result(
                 return Ok(None);
             };
             result = next;
+        }
+    }
+    if let Some(expected) = expected.filter(|_| {
+        open.user_macro_transcript
+            .as_ref()
+            .is_some_and(|transcript| {
+                transcript.terminal_type_layer.is_some()
+                    && !transcript.terminal_public_layer_fulfilled()
+            })
+    }) {
+        let (store, owner, delta, _publication) = frontier.parts_mut();
+        let expected = expected.clone().into_scoped(owner, store, source_span)?;
+        let expected = store.zonk_for_progress(delta, expected, tcx)?;
+        let ambient_binders = tcx.in_scope_type_param_binders();
+        let aliases = tcx.binder_alias_ctx(&ambient_binders);
+        let (expected_head, _) = super::super::aliases::unfold_and_qualify_state(
+            expected.ty().as_type(),
+            &aliases,
+            expected.ty().identity_is_canonical(),
+        );
+        let result = store.zonk_for_progress(delta, result.clone(), tcx)?;
+        let (result_head, _) = super::super::aliases::unfold_and_qualify_state(
+            result.ty().as_type(),
+            &aliases,
+            result.ty().identity_is_canonical(),
+        );
+        if matches!(result_head, crate::ast::Type::Forall { .. })
+            && !matches!(expected_head, crate::ast::Type::Forall { .. })
+        {
+            // The ordinary successor decides whether the terminal public
+            // binders are inferred or retained. Observing their residual
+            // forall here would equate an unfinished layer with its result.
+            return Ok(None);
         }
     }
     Ok(Some(result))
@@ -6283,6 +6710,9 @@ fn projected_type(
     tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
 ) -> Result<ProjectedType, crate::error::Error> {
     let specialization = specialization.canonicalize_carrier(&ty, tcx)?;
+    let closed = crate::normalization::ProjectedReflection::closed(closed)
+        .with_scope(ty.projected_reflection_bindings())
+        .freeze_entry();
     Ok(ProjectedType {
         seal: seal.clone(),
         ty,
@@ -6359,7 +6789,8 @@ fn snapshot_projected_recipe<'m>(
         ProjectedRecipeNode::TermTypeFn { body, .. } => {
             snapshot_projected_recipe(Arc::make_mut(body), specialization, frontier, tcx)?;
         }
-        ProjectedRecipeNode::TermTypeApp { term, .. } => {
+        ProjectedRecipeNode::TermTypeApp { term, argument } => {
+            snapshot_projected_type(argument, specialization, frontier, tcx)?;
             snapshot_projected_recipe(Arc::make_mut(term), specialization, frontier, tcx)?;
         }
         ProjectedRecipeNode::IntrinsicInjection {
@@ -6415,18 +6846,29 @@ fn snapshot_projected_type<'m>(
     let (progressed, closed) = {
         let (store, _owner, delta, _publication) = frontier.parts_mut();
         let progressed = store.zonk_for_progress(delta, projected.ty.clone(), tcx)?;
-        specialization.record_carrier_goals(&progressed, store)?;
         let closed = store.try_zonk_goal_free(delta, progressed.clone(), tcx)?;
         (progressed, closed)
     };
     let specialization_ty = specialization.canonicalize_carrier(&progressed, tcx)?;
     let reflected = closed
         .as_ref()
-        .map(|closed| crate::pass::typecheck_full::reflect_projected_type(closed.ty(), tcx))
+        .map(|closed| {
+            crate::pass::typecheck_full::reflect_projected_type(
+                closed.ty(),
+                tcx,
+                closed,
+                projected.closed.lexical_bindings(),
+            )
+        })
         .transpose()?;
     projected.ty = progressed;
     projected.specialization = specialization_ty;
-    projected.closed = reflected;
+    projected.closed = crate::normalization::ProjectedReflection::with_environment(
+        reflected,
+        projected.closed.environment(),
+    )
+    .with_scope(projected.ty.projected_reflection_bindings())
+    .with_original_from(&projected.closed);
     Ok(())
 }
 
@@ -6561,13 +7003,22 @@ fn assert_live_projected_leaf(leaf: &ProjectedLeaf, recipe: &ProjectedCheckedRec
     );
 }
 
-fn validate_projected_source_before_action(
+fn validate_projected_source_before_action<'m>(
     operand: &StagedOperand<'_>,
     recipe: &ProjectedCheckedRecipe,
+    frontier: &mut impl super::OrdinaryFrontierReentry<'m>,
+    tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
-    if recipe.ty.closed.is_some() {
-        return Ok(());
-    }
+    let progressed = {
+        let (store, _, delta, _) = frontier.parts_mut();
+        if store
+            .try_zonk_goal_free(delta, recipe.ty.ty.clone(), tcx)?
+            .is_some()
+        {
+            return Ok(());
+        }
+        store.zonk_for_progress(delta, recipe.ty.ty.clone(), tcx)?
+    };
 
     match operand {
         StagedOperand::Pair(pair) => {
@@ -6581,6 +7032,8 @@ fn validate_projected_source_before_action(
                     .as_ref()
                     .expect("a staged pair left operand lost its state"),
                 left,
+                frontier,
+                tcx,
             )?;
             validate_projected_source_before_action(
                 right_operand
@@ -6588,6 +7041,8 @@ fn validate_projected_source_before_action(
                     .as_ref()
                     .expect("a staged pair right operand lost its state"),
                 right,
+                frontier,
+                tcx,
             )
         }
         StagedOperand::Completed { source, leaf, .. }
@@ -6610,10 +7065,15 @@ fn validate_projected_source_before_action(
             ))
         }
         StagedOperand::Lambda(lambda, leaf) => {
-            validate_projected_lambda_before_action(lambda, leaf, recipe)
+            validate_projected_lambda_before_action(lambda, leaf, recipe, progressed.ty().as_type())
         }
         StagedOperand::DeferredRecLambda(deferred, leaf) => {
-            validate_projected_lambda_before_action(&deferred.lambda, leaf, recipe)
+            validate_projected_lambda_before_action(
+                &deferred.lambda,
+                leaf,
+                recipe,
+                progressed.ty().as_type(),
+            )
         }
     }
 }
@@ -6622,6 +7082,7 @@ fn validate_projected_lambda_before_action(
     lambda: &StagedLambda<'_>,
     leaf: &Option<ProjectedLeaf>,
     recipe: &ProjectedCheckedRecipe,
+    ty: &crate::ast::Type<crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
     let leaf = leaf
         .as_ref()
@@ -6637,9 +7098,7 @@ fn validate_projected_lambda_before_action(
     let crate::ast::Expr::FnExpr { sig, .. } = lambda.source else {
         unreachable!("a staged lambda changed expression family")
     };
-    if permitted_selection
-        && lambda_header_leaves_only_open_result(sig, recipe.ty.specialization.ty().as_type())
-    {
+    if permitted_selection && lambda_header_leaves_only_open_result(sig, ty) {
         Ok(())
     } else {
         Err(projected_source_pre_action_error(lambda.source.span()))
@@ -6709,6 +7168,10 @@ fn fold_projected_recipe_packet(
                 "a projected ABI packet crossed invocation ownership",
             ));
         }
+        let mut operands = [left, packet];
+        align_projected_recipe_operands(&mut operands, &mut [])?;
+        let [left, right] = operands;
+        packet = right;
         let span = left.ty.ty.ty().span();
         let ty = left
             .ty
@@ -6734,18 +7197,7 @@ fn fold_projected_recipe_packet(
             )
             .expect("an exact projected ABI packet lost its canonical peer scope");
         let producers = left.ty.producers.union(&packet.ty.producers);
-        let closed = match (&left.ty.closed, &packet.ty.closed) {
-            (Some(left), Some(right)) => crate::normalization::ReflectedType::new(
-                crate::ast::Type::Product {
-                    left: Box::new(left.as_type().clone()),
-                    right: Box::new(right.as_type().clone()),
-                    meta: crate::ast::Meta::new(span),
-                },
-                "a closed projected ABI packet must remain infer-free",
-            )
-            .ok(),
-            _ => None,
-        };
+        let closed = merged_projected_reflection(&left.ty, &packet.ty, &specialization)?;
         packet = ProjectedCheckedRecipe {
             ty: ProjectedType {
                 seal: left.ty.seal.clone(),
@@ -7174,6 +7626,7 @@ fn advance_projected_public_header<'m>(
         mode,
         super::OrdinaryCompletionDemand::PublicHeader,
         false,
+        super::OrdinaryActionPolicy::Ordinary,
         frontier,
         tcx,
     )? {
@@ -7220,8 +7673,6 @@ fn prepare_projected_source_header<'m>(
                             | super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
                             | super::OrdinaryRecursiveFamily::ComputedBeforeImmediate(_)
                     )
-                    | super::PlannedOrdinaryValue::Field(_)
-                    | super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::Field)
             ) =>
         {
             advance_projected_public_header(
@@ -7534,6 +7985,7 @@ fn stage_header_complete_operand<'m>(
         next_mode,
         super::OrdinaryCompletionDemand::GoalFreeValue,
         false,
+        super::OrdinaryActionPolicy::Ordinary,
         frontier,
         tcx,
     )? {
@@ -7700,7 +8152,7 @@ pub(crate) struct ProjectedType {
     ty: crate::pass::typecheck_core::ScopedType,
     /// Authenticated alias-unfolded carrier used by structural operations.
     specialization: crate::pass::typecheck_core::ScopedType,
-    closed: Option<crate::normalization::ReflectedType>,
+    closed: crate::normalization::ProjectedReflection,
     focus: Option<ProjectedFocus>,
     /// Whether any exact component descends from an authenticated result
     /// focus. A structural constructor can combine several focuses without
@@ -7710,12 +8162,20 @@ pub(crate) struct ProjectedType {
 }
 
 impl ProjectedType {
+    fn with_entry_bindings(
+        mut self,
+        bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
+    ) -> Self {
+        self.closed = self.closed.with_lexical_bindings(bindings).freeze_entry();
+        self
+    }
+
     pub(crate) fn matches_proof(&self, proof: &MarkedComptimeProof) -> bool {
         self.seal.matches(&proof.seal)
     }
 
     pub(crate) fn closed_reflected(&self) -> Option<&crate::normalization::ReflectedType> {
-        self.closed.as_ref()
+        self.closed.as_deref()
     }
 
     fn specialization_root_is_unresolved(&self) -> bool {
@@ -7732,13 +8192,7 @@ impl ProjectedType {
             && self.focus == other.focus
             && self.contains_focus == other.contains_focus
             && self.producers.same_root(&other.producers)
-    }
-
-    fn scope_compatible(&self, other: &Self) -> bool {
-        self.ty.projected_scope_compatible(&other.ty)
-            && self
-                .specialization
-                .projected_scope_compatible(&other.specialization)
+            && self.closed.same_snapshot(&other.closed)
     }
 
     fn structural_child(&self, edge: ProjectedTypeEdge) -> Option<Self> {
@@ -7775,20 +8229,34 @@ impl ProjectedType {
                 path: path.into(),
             }
         });
-        // Reflected structural operations observe the alias-unfolded carrier.
-        // Reusing a source-spelled child could pair the wrong argument with an
-        // alias that reorders or drops parameters. The child remains projected
-        // and retains the parent's proof; only a parent already authenticated
-        // as closed can carry that state to the semantic child.
-        let closed = self.closed.as_ref().map(|_| {
-            crate::normalization::ReflectedType::new(
-                crate::ast::convert_type::<crate::ast::Lowered, crate::ast::UncheckedPrime>(
+        let reflection = self
+            .closed
+            .clone()
+            .with_scope(self.specialization.projected_reflection_bindings());
+        let mut environment = reflection.environment();
+        if let ProjectedTypeEdge::ForallBody = edge {
+            let crate::ast::Type::Forall { param, .. } = self.specialization.ty().as_type() else {
+                unreachable!("a forall body retains its containing scheme")
+            };
+            let variable = reflection.opened_variable(&self.specialization, param);
+            environment = environment.with(param.name.clone(), variable);
+        }
+        let closed =
+            (!crate::pass::typecheck_core::type_contains_goal(specialization.ty().as_type())
+                && !crate::pass::typecheck_core::type_contains_infer(
                     specialization.ty().as_type(),
-                ),
-                "a child of a closed projected type must remain infer-free",
-            )
-            .expect("a child of a closed projected type must remain infer-free")
-        });
+                ))
+            .then(|| {
+                reflection
+                    .carrier(crate::ast::convert_type::<
+                        crate::ast::Lowered,
+                        crate::ast::UncheckedPrime,
+                    >(specialization.ty().as_type()))
+                    .expect("a known projected child is inference-free")
+            });
+        let closed =
+            crate::normalization::ProjectedReflection::with_environment(closed, environment)
+                .with_original_from(&self.closed);
         Some(Self {
             seal: self.seal.clone(),
             ty: specialization.clone(),
@@ -7797,6 +8265,119 @@ impl ProjectedType {
             focus,
             contains_focus: self.contains_focus,
             producers: self.producers.clone(),
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ProjectedObservation {
+    Root,
+    Complete,
+    View,
+    ForallPrefix,
+    ProductSpine,
+    SumSpine,
+    FunctionParameters,
+}
+
+impl ProjectedValue {
+    fn observation_type(&self, proof: &MarkedComptimeProof) -> Option<&ProjectedType> {
+        let ty = match &self.0 {
+            ProjectedValueKind::Type(ty) => ty,
+            ProjectedValueKind::CheckedRecipe(recipe) => &recipe.ty,
+        };
+        ty.matches_proof(proof).then_some(ty)
+    }
+
+    pub(crate) fn observation_is_known(
+        &self,
+        proof: &MarkedComptimeProof,
+        observation: ProjectedObservation,
+    ) -> Option<bool> {
+        use crate::ast::Type;
+        let ty = self.observation_type(proof)?;
+        let mut cursor = ty.specialization.ty().as_type();
+        let known_root =
+            |ty: &Type<crate::ast::Lowered>| !matches!(ty, Type::Goal { .. } | Type::Infer { .. });
+        Some(match observation {
+            ProjectedObservation::Root => known_root(cursor),
+            ProjectedObservation::Complete => {
+                !crate::pass::typecheck_core::type_contains_goal(cursor)
+                    && !crate::pass::typecheck_core::type_contains_infer(cursor)
+            }
+            ProjectedObservation::View => {
+                known_root(cursor)
+                    && match cursor {
+                        Type::Path { args, .. }
+                            if ty.specialization.projected_rigid_path_arity().is_none() =>
+                        {
+                            args.iter().all(known_root)
+                        }
+                        _ => true,
+                    }
+            }
+            ProjectedObservation::ForallPrefix => {
+                while let Type::Forall { body, .. } = cursor {
+                    cursor = body;
+                }
+                known_root(cursor)
+            }
+            ProjectedObservation::ProductSpine | ProjectedObservation::SumSpine => {
+                loop {
+                    cursor = match (observation, cursor) {
+                        (ProjectedObservation::ProductSpine, Type::Product { right, .. })
+                        | (ProjectedObservation::SumSpine, Type::Sum { right, .. }) => right,
+                        _ => break,
+                    };
+                }
+                known_root(cursor)
+            }
+            ProjectedObservation::FunctionParameters => {
+                if let Type::Function {
+                    param, abi_arity, ..
+                } = cursor
+                {
+                    cursor = param;
+                    let mut known = true;
+                    for _ in 1..*abi_arity {
+                        if !known_root(cursor) {
+                            known = false;
+                            break;
+                        }
+                        let Type::Product { right, .. } = cursor else {
+                            break;
+                        };
+                        cursor = right;
+                    }
+                    known
+                } else {
+                    known_root(cursor)
+                }
+            }
+        })
+    }
+
+    pub(crate) fn observed_outer_arity(&self, proof: &MarkedComptimeProof) -> Option<usize> {
+        match self.observation_type(proof)?.specialization.ty().as_type() {
+            crate::ast::Type::Forall { param, .. } => Some(param.effective_kind().arity()),
+            crate::ast::Type::Goal { .. } | crate::ast::Type::Infer { .. } => None,
+            _ => Some(0),
+        }
+    }
+
+    pub(crate) fn observed_nominal_head(
+        &self,
+        proof: &MarkedComptimeProof,
+    ) -> Option<Option<(&[crate::ast::PathSegment], usize)>> {
+        let ty = self.observation_type(proof)?;
+        Some(match ty.specialization.ty().as_type() {
+            crate::ast::Type::Goal { .. } | crate::ast::Type::Infer { .. } => return None,
+            crate::ast::Type::Path { segments, args, .. }
+                if ty.specialization.projected_rigid_path_arity().is_none() =>
+            {
+                Some((segments, args.len()))
+            }
+            _ => None,
         })
     }
 }
@@ -7814,18 +8395,14 @@ pub(crate) enum ProjectedTypeView {
     },
     Function {
         param: ProjectedValue,
-        abi_arity: usize,
         ret: ProjectedValue,
     },
     Forall {
-        name: String,
+        variable: crate::normalization::ReflectedVariable,
         arity: usize,
         body: ProjectedValue,
     },
-    TypeVar {
-        name: String,
-        arity: usize,
-    },
+    TypeVar(crate::normalization::ReflectedVariable),
     TypeName {
         segments: Vec<String>,
         param_arities: Vec<usize>,
@@ -7911,11 +8488,12 @@ pub(crate) enum ProjectedRecipeNode {
     },
     TermTypeFn {
         param: crate::ast::TypeParam,
+        variable: crate::normalization::ReflectedVariable,
         body: Arc<ProjectedCheckedRecipe>,
     },
     TermTypeApp {
         term: Arc<ProjectedCheckedRecipe>,
-        argument: crate::pass::typecheck_core::ScopedType,
+        argument: ProjectedType,
     },
     IntrinsicInjection {
         sum_type: ProjectedType,
@@ -8114,10 +8692,20 @@ impl ProjectedValue {
     pub(crate) fn reflection_candidate(
         &self,
         proof: &MarkedComptimeProof,
-    ) -> Option<crate::pass::typecheck_core::ProjectedReflectionCandidate> {
+    ) -> Option<(
+        crate::pass::typecheck_core::ProjectedReflectionCandidate,
+        crate::normalization::ProjectedReflection,
+    )> {
         match &self.0 {
             ProjectedValueKind::Type(ty) if ty.matches_proof(proof) => {
-                ty.ty.projected_reflection_candidate()
+                ty.ty.projected_reflection_candidate().map(|candidate| {
+                    (
+                        candidate,
+                        ty.closed
+                            .clone()
+                            .with_scope(ty.ty.projected_reflection_bindings()),
+                    )
+                })
             }
             ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => None,
         }
@@ -8191,7 +8779,6 @@ fn projected_type_measure(
             crate::ast::Type::Goal { .. } | crate::ast::Type::Infer { .. } => {
                 unreachable!("unresolved projected children are handled before node counting")
             }
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
     Some(total)
@@ -8249,22 +8836,38 @@ pub(crate) fn projected_type_view(
             left: child(ProjectedTypeEdge::SumLeft),
             right: child(ProjectedTypeEdge::SumRight),
         },
-        crate::ast::Type::Function { abi_arity, .. } => ProjectedTypeView::Function {
+        crate::ast::Type::Function { .. } => ProjectedTypeView::Function {
             param: child(ProjectedTypeEdge::FunctionParam),
-            abi_arity: *abi_arity,
             ret: child(ProjectedTypeEdge::FunctionReturn),
         },
-        crate::ast::Type::Forall { param, .. } => ProjectedTypeView::Forall {
-            name: param.name.clone(),
-            arity: param.effective_kind().arity(),
-            body: child(ProjectedTypeEdge::ForallBody),
-        },
+        crate::ast::Type::Forall { param, .. } => {
+            let body = ty
+                .structural_child(ProjectedTypeEdge::ForallBody)
+                .expect("a canonical forall view retains its body");
+            let variable = body
+                .closed
+                .variable(&param.name)
+                .expect("opening a projected forall attaches its semantic parameter");
+            ProjectedTypeView::Forall {
+                variable,
+                arity: param.effective_kind().arity(),
+                body: ProjectedValue(ProjectedValueKind::Type(body)),
+            }
+        }
         crate::ast::Type::Path { segments, args, .. } => {
             if let Some(arity) = ty.specialization.projected_rigid_path_arity() {
-                ProjectedTypeView::TypeVar {
-                    name: segments[0].name.clone(),
-                    arity,
-                }
+                let reflection = ty
+                    .closed
+                    .clone()
+                    .with_scope(ty.specialization.projected_reflection_bindings());
+                let variable = reflection.variable(segments[0].as_str()).ok_or_else(|| {
+                    crate::error::Error::macro_error(
+                        ty.ty.ty().span(),
+                        "a projected type parameter is missing its retained lexical binding",
+                    )
+                })?;
+                debug_assert_eq!(variable.arity(), arity);
+                ProjectedTypeView::TypeVar(variable)
             } else {
                 ProjectedTypeView::TypeName {
                     segments: segments
@@ -8295,7 +8898,6 @@ pub(crate) fn projected_type_view(
                 "__type_view__ inspected an unresolved source placeholder",
             ));
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     })
 }
 
@@ -8337,6 +8939,619 @@ pub(crate) fn projected_type_arguments(
         .map(Some)
 }
 
+#[derive(Default)]
+struct ProjectedTypeAlignment {
+    scope_context: Option<crate::pass::typecheck_core::ScopedType>,
+    incompatible_context: bool,
+    taken: std::collections::HashSet<String>,
+    protected: Vec<(String, crate::normalization::ReflectedVariable)>,
+    references: Vec<crate::normalization::ReflectedVariable>,
+    preferred: Vec<(String, crate::normalization::ReflectedVariable)>,
+    // Every source reference maps to one proven class and its temporary name.
+    bindings: Vec<(
+        crate::normalization::ReflectedVariable,
+        String,
+        crate::normalization::ReflectedVariable,
+    )>,
+    correspondence: bool,
+}
+
+impl ProjectedTypeAlignment {
+    fn used(ty: &ProjectedType) -> std::collections::HashSet<String> {
+        let mut result = std::collections::HashSet::new();
+        for root in [ty.ty.ty().as_type(), ty.specialization.ty().as_type()] {
+            enum Work<'a> {
+                Type(&'a crate::ast::Type<crate::ast::Lowered>),
+                Leave(&'a str),
+            }
+            let mut bound = std::collections::HashMap::<&str, usize>::new();
+            let mut work = vec![Work::Type(root)];
+            while let Some(next) = work.pop() {
+                let node = match next {
+                    Work::Leave(name) => {
+                        *bound.get_mut(name).expect("entered projected binder") -= 1;
+                        continue;
+                    }
+                    Work::Type(node) => node,
+                };
+                match node {
+                    crate::ast::Type::Path { segments, args, .. } => {
+                        if let [head] = segments.as_slice()
+                            && bound.get(head.as_str()).copied().unwrap_or_default() == 0
+                        {
+                            result.insert(head.name.clone());
+                        }
+                        work.extend(args.iter().map(Work::Type));
+                    }
+                    crate::ast::Type::Goal { args, .. } => work.extend(args.iter().map(Work::Type)),
+                    crate::ast::Type::Forall { param, body, .. } => {
+                        *bound.entry(&param.name).or_default() += 1;
+                        work.push(Work::Leave(&param.name));
+                        work.push(Work::Type(body));
+                    }
+                    crate::ast::Type::Function { param, ret, .. } => {
+                        work.push(Work::Type(ret));
+                        work.push(Work::Type(param));
+                    }
+                    crate::ast::Type::Product { left, right, .. }
+                    | crate::ast::Type::Sum { left, right, .. } => {
+                        work.push(Work::Type(right));
+                        work.push(Work::Type(left));
+                    }
+                    crate::ast::Type::Unit { .. }
+                    | crate::ast::Type::Bottom { .. }
+                    | crate::ast::Type::Infer { .. } => {}
+                }
+            }
+        }
+        result
+    }
+
+    fn collect(&mut self, ty: &ProjectedType) {
+        for scope in [&ty.ty, &ty.specialization] {
+            if let Some(context) = &self.scope_context {
+                self.incompatible_context |= !context.projected_context_matches(scope);
+            } else {
+                self.scope_context = Some(scope.clone());
+            }
+        }
+        let mut work = vec![ty.ty.ty().as_type(), ty.specialization.ty().as_type()];
+        while let Some(node) = work.pop() {
+            match node {
+                crate::ast::Type::Path { segments, args, .. } => {
+                    if let [head] = segments.as_slice()
+                        && let Some(reference) = ty.closed.variable(head.as_str())
+                    {
+                        self.preferred.push((head.name.clone(), reference));
+                    } else {
+                        self.taken
+                            .extend(segments.iter().map(|head| head.name.clone()));
+                    }
+                    work.extend(args);
+                }
+                crate::ast::Type::Goal { args, .. } => work.extend(args),
+                crate::ast::Type::Forall { param, body, .. } => {
+                    self.taken.insert(param.name.clone());
+                    work.push(body);
+                }
+                crate::ast::Type::Function { param, ret, .. } => {
+                    work.push(ret);
+                    work.push(param);
+                }
+                crate::ast::Type::Product { left, right, .. }
+                | crate::ast::Type::Sum { left, right, .. } => {
+                    work.push(right);
+                    work.push(left);
+                }
+                crate::ast::Type::Unit { .. }
+                | crate::ast::Type::Bottom { .. }
+                | crate::ast::Type::Infer { .. } => {}
+            }
+        }
+        self.taken.extend(
+            ty.ty
+                .projected_reflection_bindings()
+                .into_iter()
+                .filter(|(name, _, _)| ty.closed.variable(name).is_none())
+                .map(|(name, _, _)| name),
+        );
+        self.protected.extend(ty.closed.original_bindings());
+        let used = Self::used(ty);
+        for (head, reference) in ty.closed.lexical_bindings() {
+            if used.contains(&head) {
+                if reference.caller_identity().is_some() {
+                    self.protected
+                        .push((reference.name().to_owned(), reference.clone()));
+                }
+                self.references.push(reference);
+            }
+        }
+    }
+
+    fn collect_recipe(&mut self, root: &ProjectedCheckedRecipe) {
+        let mut work = vec![root];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(recipe) = work.pop() {
+            if !seen.insert(std::ptr::from_ref(recipe)) {
+                continue;
+            }
+            self.collect(&recipe.ty);
+            projected_recipe_types(&recipe.node, |ty| self.collect(ty));
+            if let ProjectedRecipeNode::Closed(term) = recipe.node.as_ref() {
+                self.collect_closed(term);
+            }
+            projected_recipe_children(&recipe.node, |child| work.push(child));
+        }
+    }
+
+    fn collect_closed(&mut self, term: &crate::normalization::CheckedTerm) {
+        self.taken.extend(term.reflection_reserved_names());
+        for (head, reference) in term.reflection_free_bindings() {
+            self.preferred.push((head, reference.clone()));
+            if reference.caller_identity().is_some() {
+                self.protected
+                    .push((reference.name().to_owned(), reference.clone()));
+            }
+            self.references.push(reference);
+        }
+    }
+
+    fn rigid_mismatch(
+        &self,
+        left: &crate::pass::typecheck_core::ScopedType,
+        right: &crate::pass::typecheck_core::ScopedType,
+        span: crate::span::Span,
+    ) -> Option<crate::error::Error> {
+        let lookup = |ty: &crate::pass::typecheck_core::ScopedType| {
+            let crate::ast::Type::Path { segments, .. } = ty.ty().as_type() else {
+                return None;
+            };
+            let [head] = segments.as_slice() else {
+                return None;
+            };
+            self.bindings
+                .iter()
+                .find(|(_, alias, _)| alias == head.as_str())
+                .map(|(_, _, reference)| reference)
+        };
+        let (Some(left), Some(right)) = (lookup(left), lookup(right)) else {
+            return None;
+        };
+        match crate::normalization::type_correspondence(&left.as_type(), &right.as_type()) {
+            Ok(crate::normalization::TypeComparison::Undetermined)
+            | Err(crate::normalization::IncompleteOwner) => Some(crate::error::Error::macro_error(
+                span,
+                "generic parameter correspondence requires complete containing types",
+            )),
+            _ => None,
+        }
+    }
+
+    fn finish(&mut self, span: crate::span::Span) -> Result<(), crate::error::Error> {
+        self.scope_context = None;
+        if self.incompatible_context {
+            return Err(crate::error::Error::macro_error(
+                span,
+                "reflected operands belong to incompatible inference contexts",
+            ));
+        }
+        for (name, reference) in &self.protected {
+            if let Some((previous, _, _)) = self.bindings.iter().find(|(_, alias, _)| alias == name)
+            {
+                if !previous.same_reference(reference) {
+                    return Err(crate::error::Error::macro_error(
+                        span,
+                        "reflected operands have incompatible original lexical scopes",
+                    ));
+                }
+            } else {
+                self.bindings
+                    .push((reference.clone(), name.clone(), reference.clone()));
+            }
+            self.taken.insert(name.clone());
+        }
+        for reference in &self.references {
+            if self
+                .bindings
+                .iter()
+                .any(|(source, _, _)| source.same_reference(reference))
+            {
+                continue;
+            }
+            let existing = self
+                .correspondence
+                .then(|| {
+                    self.bindings.iter().find(|(_, _, representative)| {
+                        crate::normalization::reflected_variables_correspond(
+                            reference,
+                            representative,
+                        )
+                    })
+                })
+                .flatten();
+            let (name, representative) = if let Some((_, name, representative)) = existing {
+                (name.clone(), representative.clone())
+            } else {
+                let name = self
+                    .preferred
+                    .iter()
+                    .find(|(head, candidate)| {
+                        !self.taken.contains(head) && candidate.same_reference(reference)
+                    })
+                    .map(|(head, _)| head.clone())
+                    .unwrap_or_else(|| {
+                        crate::pass::typecheck_core::fresh_type_var("__reflected__", &self.taken)
+                    });
+                self.taken.insert(name.clone());
+                (name, reference.clone())
+            };
+            self.bindings
+                .push((reference.clone(), name, representative));
+        }
+        Ok(())
+    }
+
+    fn binding(
+        &self,
+        reference: &crate::normalization::ReflectedVariable,
+    ) -> Option<&(
+        crate::normalization::ReflectedVariable,
+        String,
+        crate::normalization::ReflectedVariable,
+    )> {
+        self.bindings
+            .iter()
+            .find(|(source, _, _)| source.same_reference(reference))
+    }
+
+    fn apply(&self, source: &ProjectedType) -> Result<ProjectedType, crate::error::Error> {
+        let used = Self::used(source);
+        let mut names = std::collections::HashMap::new();
+        let mut scoped = Vec::new();
+        let mut lexical = Vec::new();
+        for (head, reference) in source.closed.lexical_bindings() {
+            if !used.contains(&head) {
+                continue;
+            }
+            let (_, name, representative) = self
+                .binding(&reference)
+                .expect("frozen projected reference class");
+            if head != *name {
+                names.insert(head, name.clone());
+            }
+            scoped.push((
+                name.clone(),
+                crate::ast::Kind::arrow_chain(representative.arity()),
+                representative.caller_identity(),
+            ));
+            lexical.push((name.clone(), representative.clone()));
+        }
+        let lexical_unchanged = lexical.iter().all(|(name, reference)| {
+            source
+                .closed
+                .variable(name)
+                .is_some_and(|old| old.same_reference(reference))
+        });
+        let scope_has = |ty: &crate::pass::typecheck_core::ScopedType| {
+            let current = ty.projected_reflection_bindings();
+            scoped.iter().all(|binding| current.contains(binding))
+        };
+        if names.is_empty()
+            && lexical_unchanged
+            && scope_has(&source.ty)
+            && scope_has(&source.specialization)
+        {
+            return Ok(source.clone());
+        }
+        let rebind = |ty: &crate::pass::typecheck_core::ScopedType| {
+            ty.projected_reflection_rebind(&names, &scoped)
+                .ok_or_else(|| {
+                    crate::error::Error::macro_error(
+                        source.ty.ty().span(),
+                        "reflected rebinding would change an original lexical permission",
+                    )
+                })
+        };
+        let mut result = source.clone();
+        result.ty = rebind(&source.ty)?;
+        result.specialization = rebind(&source.specialization)?;
+        result.closed = source
+            .closed
+            .retaining_bindings(&used)
+            .renamed(&names)
+            .with_lexical_bindings(lexical);
+        Ok(result)
+    }
+
+    fn apply_recipe(
+        &self,
+        root: &ProjectedCheckedRecipe,
+    ) -> Result<ProjectedCheckedRecipe, crate::error::Error> {
+        let root = Arc::new(root.clone());
+        let mut work = vec![(root.clone(), false)];
+        let mut ready = std::collections::HashMap::<
+            *const ProjectedCheckedRecipe,
+            Arc<ProjectedCheckedRecipe>,
+        >::new();
+        while let Some((recipe, finish)) = work.pop() {
+            let key = Arc::as_ptr(&recipe);
+            if ready.contains_key(&key) {
+                continue;
+            }
+            if !finish {
+                work.push((recipe.clone(), true));
+                projected_recipe_children(&recipe.node, |child| work.push((child.clone(), false)));
+                continue;
+            }
+            let mut ty = self.apply(&recipe.ty)?;
+            let mut node = recipe.node.as_ref().clone();
+            let mut changed = !ty.same_snapshot(&recipe.ty);
+            let mut child = |original: &mut Arc<ProjectedCheckedRecipe>| {
+                let mapped = ready[&Arc::as_ptr(original)].clone();
+                changed |= !Arc::ptr_eq(original, &mapped);
+                *original = mapped;
+            };
+            match &mut node {
+                ProjectedRecipeNode::Pair(left, right) => {
+                    child(left);
+                    child(right);
+                }
+                ProjectedRecipeNode::ProductProjection { product, .. } => child(product),
+                ProjectedRecipeNode::TermCall {
+                    function, argument, ..
+                } => {
+                    child(function);
+                    child(argument);
+                }
+                ProjectedRecipeNode::IntrinsicAbsurd { bottom } => child(bottom),
+                ProjectedRecipeNode::IntrinsicEither {
+                    value,
+                    left_body,
+                    right_body,
+                    ..
+                } => {
+                    child(value);
+                    child(left_body);
+                    child(right_body);
+                }
+                ProjectedRecipeNode::TermLet { value, body, .. } => {
+                    child(value);
+                    child(body);
+                }
+                ProjectedRecipeNode::TermFn { body, .. }
+                | ProjectedRecipeNode::TermTypeFn { body, .. } => child(body),
+                ProjectedRecipeNode::TermTypeApp { term, .. } => child(term),
+                ProjectedRecipeNode::IntrinsicInjection { value, .. } => child(value),
+                ProjectedRecipeNode::IntrinsicIfThenElse {
+                    condition,
+                    true_body,
+                    false_body,
+                } => {
+                    child(condition);
+                    child(true_body);
+                    child(false_body);
+                }
+                ProjectedRecipeNode::Closed(_)
+                | ProjectedRecipeNode::TemplateValue(_)
+                | ProjectedRecipeNode::Local { .. } => {}
+            }
+            let field = match &mut node {
+                ProjectedRecipeNode::ProductProjection { product_type, .. } => Some(product_type),
+                ProjectedRecipeNode::TermCall { function_type, .. }
+                | ProjectedRecipeNode::TermFn { function_type, .. } => Some(function_type),
+                ProjectedRecipeNode::IntrinsicEither { sum_type, .. }
+                | ProjectedRecipeNode::IntrinsicInjection { sum_type, .. } => Some(sum_type),
+                ProjectedRecipeNode::TermLet { value_type, .. } => Some(value_type),
+                ProjectedRecipeNode::TermTypeApp { argument, .. } => Some(argument),
+                _ => None,
+            };
+            if let Some(field) = field {
+                let mapped = self.apply(field)?;
+                changed |= !mapped.same_snapshot(field);
+                *field = mapped;
+            }
+            if let ProjectedRecipeNode::Closed(term) = &mut node
+                && let Some(mapped) = term.rebind_reflection(&self.bindings)
+            {
+                *term = crate::normalization::EvalRef::new(mapped);
+                changed = true;
+            }
+            if let ProjectedRecipeNode::TermTypeFn {
+                param,
+                variable,
+                body,
+            } = &mut node
+                && let Some((_, name, _)) = self.binding(variable)
+                && param.name != *name
+            {
+                param.rename(name.clone());
+                let span = ty.ty.ty().span();
+                ty.ty = body
+                    .ty
+                    .ty
+                    .projected_reflection_close_forall(param.clone(), span)
+                    .ok_or_else(|| {
+                        crate::error::Error::macro_error(
+                            span,
+                            "reflected type function lost its live binder",
+                        )
+                    })?;
+                ty.specialization = body
+                    .ty
+                    .specialization
+                    .projected_reflection_close_forall(param.clone(), span)
+                    .ok_or_else(|| {
+                        crate::error::Error::macro_error(
+                            span,
+                            "reflected type function lost its canonical binder",
+                        )
+                    })?;
+                let closed = if body.ty.closed.is_some() {
+                    Some(body.ty.closed.carrier(crate::ast::convert_type::<
+                        crate::ast::Lowered,
+                        crate::ast::UncheckedPrime,
+                    >(
+                        ty.specialization.ty().as_type()
+                    ))?)
+                } else {
+                    None
+                };
+                ty.closed = crate::normalization::ProjectedReflection::with_environment(
+                    closed,
+                    body.ty.closed.environment(),
+                )
+                .with_original_from(&body.ty.closed);
+                changed = true;
+            }
+            ready.insert(
+                key,
+                if changed {
+                    Arc::new(ProjectedCheckedRecipe {
+                        ty,
+                        node: crate::normalization::EvalRef::new(node),
+                    })
+                } else {
+                    recipe
+                },
+            );
+        }
+        Ok(ready
+            .remove(&Arc::as_ptr(&root))
+            .expect("aligned recipe root")
+            .as_ref()
+            .clone())
+    }
+}
+
+fn projected_recipe_children<'a>(
+    node: &'a ProjectedRecipeNode,
+    mut visit: impl FnMut(&'a Arc<ProjectedCheckedRecipe>),
+) {
+    match node {
+        ProjectedRecipeNode::Closed(_)
+        | ProjectedRecipeNode::TemplateValue(_)
+        | ProjectedRecipeNode::Local { .. } => {}
+        ProjectedRecipeNode::Pair(left, right) => {
+            visit(left);
+            visit(right);
+        }
+        ProjectedRecipeNode::ProductProjection { product, .. } => visit(product),
+        ProjectedRecipeNode::TermCall {
+            function, argument, ..
+        } => {
+            visit(function);
+            visit(argument);
+        }
+        ProjectedRecipeNode::IntrinsicAbsurd { bottom } => visit(bottom),
+        ProjectedRecipeNode::IntrinsicEither {
+            value,
+            left_body,
+            right_body,
+            ..
+        } => {
+            visit(value);
+            visit(left_body);
+            visit(right_body);
+        }
+        ProjectedRecipeNode::TermLet { value, body, .. } => {
+            visit(value);
+            visit(body);
+        }
+        ProjectedRecipeNode::TermFn { body, .. } | ProjectedRecipeNode::TermTypeFn { body, .. } => {
+            visit(body)
+        }
+        ProjectedRecipeNode::TermTypeApp { term, .. } => visit(term),
+        ProjectedRecipeNode::IntrinsicInjection { value, .. } => visit(value),
+        ProjectedRecipeNode::IntrinsicIfThenElse {
+            condition,
+            true_body,
+            false_body,
+        } => {
+            visit(condition);
+            visit(true_body);
+            visit(false_body);
+        }
+    }
+}
+
+fn projected_recipe_types(node: &ProjectedRecipeNode, mut visit: impl FnMut(&ProjectedType)) {
+    match node {
+        ProjectedRecipeNode::ProductProjection { product_type, .. } => visit(product_type),
+        ProjectedRecipeNode::TermCall { function_type, .. }
+        | ProjectedRecipeNode::TermFn { function_type, .. } => visit(function_type),
+        ProjectedRecipeNode::IntrinsicEither { sum_type, .. }
+        | ProjectedRecipeNode::IntrinsicInjection { sum_type, .. } => visit(sum_type),
+        ProjectedRecipeNode::TermLet { value_type, .. } => visit(value_type),
+        ProjectedRecipeNode::TermTypeApp { argument, .. } => visit(argument),
+        _ => {}
+    }
+}
+
+fn align_projected_type_operands(types: &mut [ProjectedType]) -> Result<(), crate::error::Error> {
+    align_projected_recipe_operands(&mut [], types)
+}
+
+fn align_projected_recipe_operands(
+    recipes: &mut [ProjectedCheckedRecipe],
+    types: &mut [ProjectedType],
+) -> Result<(), crate::error::Error> {
+    let mut alignment = ProjectedTypeAlignment::default();
+    for ty in types.iter() {
+        alignment.collect(ty);
+    }
+    for recipe in recipes.iter() {
+        alignment.collect_recipe(recipe);
+    }
+    let span = types
+        .first()
+        .map(|ty| ty.ty.ty().span())
+        .or_else(|| recipes.first().map(|recipe| recipe.ty.ty.ty().span()))
+        .unwrap_or_else(|| crate::span::Span::new(0, 0));
+    alignment.finish(span)?;
+    for ty in types.iter_mut() {
+        *ty = alignment.apply(ty)?;
+    }
+    for recipe in recipes.iter_mut() {
+        *recipe = alignment.apply_recipe(recipe)?;
+    }
+    Ok(())
+}
+
+fn merged_projected_reflection(
+    left: &ProjectedType,
+    right: &ProjectedType,
+    result: &crate::pass::typecheck_core::ScopedType,
+) -> Result<crate::normalization::ProjectedReflection, crate::error::Error> {
+    let left_used = left
+        .closed
+        .retaining_bindings(&ProjectedTypeAlignment::used(left));
+    let right_used = right
+        .closed
+        .retaining_bindings(&ProjectedTypeAlignment::used(right));
+    let merged = left_used
+        .merge_environment(&right_used, None)
+        .ok_or_else(|| {
+            crate::error::Error::macro_error(
+                result.ty().span(),
+                "reflected operands have incompatible lexical references",
+            )
+        })?;
+    let closed = if !crate::pass::typecheck_core::type_contains_goal(result.ty().as_type())
+        && !crate::pass::typecheck_core::type_contains_infer(result.ty().as_type())
+    {
+        Some(merged.carrier(crate::ast::convert_type::<
+            crate::ast::Lowered,
+            crate::ast::UncheckedPrime,
+        >(result.ty().as_type()))?)
+    } else {
+        None
+    };
+    Ok(
+        crate::normalization::ProjectedReflection::with_environment(closed, merged.environment())
+            .with_original_from(&merged),
+    )
+}
+
 fn authenticated_projected_type_operand(
     proof: &MarkedComptimeProof,
     value: &Value,
@@ -8346,9 +9561,7 @@ fn authenticated_projected_type_operand(
     match value {
         Value::Projected(value) => match &value.0 {
             ProjectedValueKind::Type(ty)
-                if ty.matches_proof(proof)
-                    && ty.seal.matches(&peer.seal)
-                    && ty.scope_compatible(peer) =>
+                if ty.matches_proof(proof) && ty.seal.matches(&peer.seal) =>
             {
                 Ok(ty.clone())
             }
@@ -8376,7 +9589,8 @@ fn authenticated_projected_type_operand(
                 seal: peer.seal.clone(),
                 ty: exact,
                 specialization,
-                closed: Some(reflected.clone()),
+                closed: crate::normalization::ProjectedReflection::closed(Some(reflected.clone()))
+                    .with_original_from(&peer.closed),
                 focus: None,
                 contains_focus: false,
                 producers: ProducerSet::default(),
@@ -8398,9 +9612,7 @@ fn authenticated_projected_recipe_operand(
     match value {
         Value::Projected(value) => match &value.0 {
             ProjectedValueKind::CheckedRecipe(recipe)
-                if recipe.matches_proof(proof)
-                    && recipe.ty.seal.matches(&peer.seal)
-                    && recipe.ty.scope_compatible(peer) =>
+                if recipe.matches_proof(proof) && recipe.ty.seal.matches(&peer.seal) =>
             {
                 Ok(recipe.clone())
             }
@@ -8414,10 +9626,7 @@ fn authenticated_projected_recipe_operand(
             )),
         },
         Value::CheckedTerm(term) => {
-            let reflected = crate::normalization::ReflectedType::new(
-                term.ty().clone(),
-                "a checked term operand must have an infer-free type",
-            )?;
+            let reflected = term.reflected_type().clone();
             let converted = crate::ast::convert_type::<
                 crate::ast::UncheckedPrime,
                 crate::ast::Lowered,
@@ -8433,7 +9642,8 @@ fn authenticated_projected_recipe_operand(
                     seal: peer.seal.clone(),
                     ty: exact,
                     specialization,
-                    closed: Some(reflected),
+                    closed: crate::normalization::ProjectedReflection::closed(Some(reflected))
+                        .with_original_from(&peer.closed),
                     focus: None,
                     contains_focus: false,
                     producers: ProducerSet::default(),
@@ -8465,7 +9675,7 @@ fn projected_binary_type(
     left: &Value,
     right: &Value,
     helper: &str,
-    kind: crate::pass::typecheck_core::ScopedTypeBinaryKind,
+    kind: impl FnOnce(&ProjectedType) -> crate::pass::typecheck_core::ScopedTypeBinaryKind,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([left, right]).ok_or_else(|| {
         crate::error::Error::macro_error(
@@ -8475,6 +9685,10 @@ fn projected_binary_type(
     })?;
     let left = authenticated_projected_type_operand(proof, left, peer, helper)?;
     let right = authenticated_projected_type_operand(proof, right, peer, helper)?;
+    let kind = kind(&left);
+    let mut operands = [left, right];
+    align_projected_type_operands(&mut operands)?;
+    let [left, right] = operands;
     let span = left.ty.ty().span();
     let ty = left
         .ty
@@ -8494,39 +9708,8 @@ fn projected_binary_type(
                 format!("{helper} received incompatible specialization snapshots"),
             )
         })?;
-    let closed = match (&left.closed, &right.closed) {
-        (Some(left), Some(right)) => {
-            let meta = crate::ast::Meta::new(span);
-            let ty = match kind {
-                crate::pass::typecheck_core::ScopedTypeBinaryKind::Product => {
-                    crate::ast::Type::Product {
-                        left: Box::new(left.as_type().clone()),
-                        right: Box::new(right.as_type().clone()),
-                        meta,
-                    }
-                }
-                crate::pass::typecheck_core::ScopedTypeBinaryKind::Sum => crate::ast::Type::Sum {
-                    left: Box::new(left.as_type().clone()),
-                    right: Box::new(right.as_type().clone()),
-                    meta,
-                },
-                crate::pass::typecheck_core::ScopedTypeBinaryKind::Function { abi_arity } => {
-                    crate::ast::Type::Function {
-                        param: Box::new(left.as_type().clone()),
-                        ret: Box::new(right.as_type().clone()),
-                        abi_arity,
-                        caps: (),
-                        meta,
-                    }
-                }
-            };
-            Some(crate::normalization::ReflectedType::new(
-                ty,
-                "a closed projected structural type must remain infer-free",
-            )?)
-        }
-        _ => None,
-    };
+    let closed = merged_projected_reflection(&left, &right, &specialization)?;
+
     Ok(ProjectedValue(ProjectedValueKind::Type(ProjectedType {
         seal: left.seal,
         ty,
@@ -8543,13 +9726,9 @@ pub(crate) fn projected_type_product(
     left: &Value,
     right: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
-    projected_binary_type(
-        proof,
-        left,
-        right,
-        "__type_product__",
-        crate::pass::typecheck_core::ScopedTypeBinaryKind::Product,
-    )
+    projected_binary_type(proof, left, right, "__type_product__", |_| {
+        crate::pass::typecheck_core::ScopedTypeBinaryKind::Product
+    })
 }
 
 pub(crate) fn projected_type_sum(
@@ -8557,28 +9736,24 @@ pub(crate) fn projected_type_sum(
     left: &Value,
     right: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
-    projected_binary_type(
-        proof,
-        left,
-        right,
-        "__type_sum__",
-        crate::pass::typecheck_core::ScopedTypeBinaryKind::Sum,
-    )
+    projected_binary_type(proof, left, right, "__type_sum__", |_| {
+        crate::pass::typecheck_core::ScopedTypeBinaryKind::Sum
+    })
 }
 
 pub(crate) fn projected_type_arrow(
     proof: &MarkedComptimeProof,
     params: &Value,
-    abi_arity: usize,
     result: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
-    projected_binary_type(
-        proof,
-        params,
-        result,
-        "__type_arrow__",
-        crate::pass::typecheck_core::ScopedTypeBinaryKind::Function { abi_arity },
-    )
+    projected_binary_type(proof, params, result, "__type_arrow__", |domain| {
+        crate::pass::typecheck_core::ScopedTypeBinaryKind::Function {
+            abi_arity: usize::from(!matches!(
+                domain.specialization.ty().as_type(),
+                crate::ast::Type::Unit { .. }
+            )),
+        }
+    })
 }
 
 pub(crate) fn projected_type_apply(
@@ -8594,6 +9769,9 @@ pub(crate) fn projected_type_apply(
     })?;
     let head = authenticated_projected_type_operand(proof, head, peer, "__type_apply__")?;
     let argument = authenticated_projected_type_operand(proof, argument, &head, "__type_apply__")?;
+    let mut operands = [head, argument];
+    align_projected_type_operands(&mut operands)?;
+    let [head, argument] = operands;
     if head.specialization_root_is_unresolved() {
         return Ok(None);
     }
@@ -8619,20 +9797,8 @@ pub(crate) fn projected_type_apply(
                 "__type_apply__ received incompatible specialization snapshots",
             )
         })?;
-    let closed = match (&head.closed, &argument.closed) {
-        (Some(head), Some(argument)) => {
-            let mut applied = head.as_type().clone();
-            let crate::ast::Type::Path { args, .. } = &mut applied else {
-                unreachable!("a canonical projected path had a non-path closed snapshot")
-            };
-            args.push(argument.as_type().clone());
-            Some(crate::normalization::ReflectedType::new(
-                applied,
-                "a closed projected type application must remain infer-free",
-            )?)
-        }
-        _ => None,
-    };
+    let closed = merged_projected_reflection(&head, &argument, &specialization)?;
+
     Ok(Some(ProjectedValue(ProjectedValueKind::Type(
         ProjectedType {
             seal: head.seal,
@@ -8660,6 +9826,9 @@ pub(crate) fn projected_type_instantiate(
     let scheme = authenticated_projected_type_operand(proof, scheme, peer, "__type_instantiate__")?;
     let argument =
         authenticated_projected_type_operand(proof, argument, &scheme, "__type_instantiate__")?;
+    let mut operands = [scheme, argument];
+    align_projected_type_operands(&mut operands)?;
+    let [scheme, argument] = operands;
     let crate::ast::Type::Forall { param, .. } = scheme.specialization.ty().as_type() else {
         return Ok(ProjectedTypeInstantiationOutcome::Diagnostic(format!(
             "__type_instantiate__ expected a forall type, got `{}`",
@@ -8694,24 +9863,8 @@ pub(crate) fn projected_type_instantiate(
             "__type_instantiate__ could not preserve its specialization snapshot",
         ));
     };
-    let closed = match (&scheme.closed, &argument.closed) {
-        (Some(scheme), Some(argument)) => {
-            let crate::ast::Type::Forall { param, body, .. } = scheme.as_type() else {
-                unreachable!("a canonical projected forall had a non-forall closed snapshot")
-            };
-            Some(crate::normalization::ReflectedType::new(
-                crate::pass::typecheck_core::subst_type(
-                    body,
-                    &std::collections::HashMap::from([(
-                        param.name.clone(),
-                        argument.as_type().clone(),
-                    )]),
-                ),
-                "a closed projected forall instantiation must remain infer-free",
-            )?)
-        }
-        _ => None,
-    };
+    let closed = merged_projected_reflection(&scheme, &argument, &specialization)?;
+
     Ok(ProjectedTypeInstantiationOutcome::Instantiated(
         ProjectedValue(ProjectedValueKind::Type(ProjectedType {
             seal: scheme.seal,
@@ -8725,10 +9878,125 @@ pub(crate) fn projected_type_instantiate(
     ))
 }
 
+fn projected_type_has_free_opened(ty: &ProjectedType) -> bool {
+    ProjectedTypeAlignment::used(ty).iter().any(|head| {
+        ty.closed
+            .variable(head)
+            .is_some_and(|variable| variable.is_opened())
+    })
+}
+
+pub(crate) fn projected_constructor_has_free_opened(
+    proof: &MarkedComptimeProof,
+    value: &ProjectedValue,
+) -> bool {
+    match &value.0 {
+        ProjectedValueKind::Type(ty) => {
+            ty.matches_proof(proof) && projected_type_has_free_opened(ty)
+        }
+        ProjectedValueKind::CheckedRecipe(root) if root.matches_proof(proof) => {
+            let mut work = vec![root];
+            let mut seen = std::collections::HashSet::new();
+            while let Some(recipe) = work.pop() {
+                if !seen.insert(std::ptr::from_ref(recipe)) {
+                    continue;
+                }
+                if projected_type_has_free_opened(&recipe.ty) {
+                    return true;
+                }
+                let mut found = false;
+                projected_recipe_types(&recipe.node, |ty| {
+                    found |= projected_type_has_free_opened(ty)
+                });
+                if found {
+                    return true;
+                }
+                if let ProjectedRecipeNode::Closed(term) = recipe.node.as_ref()
+                    && term
+                        .reflection_free_bindings()
+                        .iter()
+                        .any(|(_, variable)| variable.is_opened())
+                {
+                    return true;
+                }
+                projected_recipe_children(&recipe.node, |child| work.push(child));
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn close_projected_live_type(
+    body: ProjectedType,
+    variable: &crate::normalization::ReflectedVariable,
+    name: String,
+) -> Result<(ProjectedType, crate::ast::TypeParam), crate::error::Error> {
+    assert!(
+        variable.is_live(),
+        "projected construction closes its actual live binder"
+    );
+    if projected_type_has_free_opened(&body) {
+        return Err(crate::error::Error::macro_error(
+            body.ty.ty().span(),
+            "a quantified type result contains a parameter opened from another scheme",
+        ));
+    }
+    let span = body.ty.ty().span();
+    let param = crate::ast::TypeParam {
+        presentation: Default::default(),
+        name,
+        span,
+        kind: Some(Box::new(crate::ast::Kind::arrow_chain(variable.arity()))),
+    };
+    let ty = body
+        .ty
+        .projected_reflection_close_forall(param.clone(), span)
+        .ok_or_else(|| {
+            crate::error::Error::macro_error(
+                span,
+                "a quantified type would capture an original lexical binder",
+            )
+        })?;
+    let specialization = body
+        .specialization
+        .projected_reflection_close_forall(param.clone(), span)
+        .ok_or_else(|| {
+            crate::error::Error::macro_error(
+                span,
+                "a quantified type lost its canonical lexical binder",
+            )
+        })?;
+    let closed = if body.closed.is_some() {
+        Some(body.closed.carrier(crate::ast::convert_type::<
+            crate::ast::Lowered,
+            crate::ast::UncheckedPrime,
+        >(specialization.ty().as_type()))?)
+    } else {
+        None
+    };
+    let closed = crate::normalization::ProjectedReflection::with_environment(
+        closed,
+        body.closed.environment(),
+    )
+    .with_original_from(&body.closed);
+    Ok((
+        ProjectedType {
+            seal: body.seal,
+            ty,
+            specialization,
+            closed,
+            focus: None,
+            contains_focus: body.contains_focus,
+            producers: body.producers,
+        },
+        param,
+    ))
+}
+
 pub(crate) fn projected_type_forall_finish(
     proof: &MarkedComptimeProof,
-    name: String,
-    arity: usize,
+    variable: crate::normalization::ReflectedVariable,
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([body]).ok_or_else(|| {
@@ -8738,54 +10006,17 @@ pub(crate) fn projected_type_forall_finish(
         )
     })?;
     let body = authenticated_projected_type_operand(proof, body, peer, "__type_forall__")?;
-    let span = body.ty.ty().span();
-    let param = crate::ast::TypeParam {
-        presentation: Default::default(),
-        name,
-        span,
-        kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
-    };
-    let ty = body
-        .ty
-        .projected_forall_abstract(param.clone(), span)
-        .ok_or_else(|| {
-            crate::error::Error::macro_error(
-                span,
-                "__type_forall__ generated a binder that would capture an existing rigid",
-            )
-        })?;
-    let specialization = body
-        .specialization
-        .projected_forall_abstract(param.clone(), span)
-        .ok_or_else(|| {
-            crate::error::Error::macro_error(
-                span,
-                "__type_forall__ could not preserve its specialization scope",
-            )
-        })?;
-    let closed = body
-        .closed
-        .as_ref()
-        .map(|body| {
-            crate::normalization::ReflectedType::new(
-                crate::ast::Type::Forall {
-                    param,
-                    body: Box::new(body.as_type().clone()),
-                    meta: crate::ast::Meta::new(span),
-                },
-                "a closed projected forall must remain infer-free",
-            )
-        })
-        .transpose()?;
-    Ok(ProjectedValue(ProjectedValueKind::Type(ProjectedType {
-        seal: body.seal,
-        ty,
-        specialization,
-        closed,
-        focus: None,
-        contains_focus: body.contains_focus,
-        producers: body.producers,
-    })))
+    let mut alignment = ProjectedTypeAlignment::default();
+    alignment.collect(&body);
+    alignment.finish(body.ty.ty().span())?;
+    let name = alignment
+        .binding(&variable)
+        .map(|(_, name, _)| name.clone())
+        .unwrap_or_else(|| {
+            crate::pass::typecheck_core::fresh_type_var(variable.name(), &alignment.taken)
+        });
+    let (ty, _) = close_projected_live_type(alignment.apply(&body)?, &variable, name)?;
+    Ok(ProjectedValue(ProjectedValueKind::Type(ty)))
 }
 
 pub(crate) fn projected_term_type_app(
@@ -8802,6 +10033,11 @@ pub(crate) fn projected_term_type_app(
     let term = authenticated_projected_recipe_operand(proof, term, peer, "__term_type_app__")?;
     let argument =
         authenticated_projected_type_operand(proof, argument, &term.ty, "__term_type_app__")?;
+    let mut recipes = [term];
+    let mut types = [argument];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [term] = recipes;
+    let [argument] = types;
     let span = term.ty.ty.ty().span();
     let ty = term
         .ty
@@ -8823,24 +10059,7 @@ pub(crate) fn projected_term_type_app(
                 "__term_type_app__ could not preserve its specialization scope",
             )
         })?;
-    let closed = match (&term.ty.closed, &argument.closed) {
-        (Some(scheme), Some(argument)) => {
-            let crate::ast::Type::Forall { param, body, .. } = scheme.as_type() else {
-                unreachable!("a closed projected type-function term had a non-forall type")
-            };
-            Some(crate::normalization::ReflectedType::new(
-                crate::pass::typecheck_core::subst_type(
-                    body,
-                    &std::collections::HashMap::from([(
-                        param.name.clone(),
-                        argument.as_type().clone(),
-                    )]),
-                ),
-                "a closed projected term type application must remain infer-free",
-            )?)
-        }
-        _ => None,
-    };
+    let closed = merged_projected_reflection(&term.ty, &argument, &specialization)?;
     let producers = term.ty.producers.union(&argument.producers);
     let result = ProjectedType {
         seal: term.ty.seal.clone(),
@@ -8856,7 +10075,7 @@ pub(crate) fn projected_term_type_app(
             ty: result,
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TermTypeApp {
                 term: Arc::new(term),
-                argument: argument.ty,
+                argument,
             }),
         },
     )))
@@ -8894,6 +10113,11 @@ pub(crate) fn projected_intrinsic_injection(
         &payload_type,
         "projected sum injection",
     )?;
+    let mut recipes = [value];
+    let mut types = [sum_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [value] = recipes;
+    let [sum_type] = types;
     let mut result = sum_type.clone();
     result.producers = result.producers.union(&value.ty.producers);
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
@@ -8946,6 +10170,11 @@ pub(crate) fn projected_intrinsic_if_then_else(
         &result_type,
         "__intrinsic_if_then_else__",
     )?;
+    let mut recipes = [condition, true_body, false_body];
+    let mut types = [result_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [condition, true_body, false_body] = recipes;
+    let [result_type] = types;
     let mut result = result_type;
     result.producers = result
         .producers
@@ -8976,6 +10205,9 @@ pub(crate) fn projected_term_local(
         )
     })?;
     let ty = authenticated_projected_type_operand(proof, ty, peer, "projected local")?;
+    let mut types = [ty];
+    align_projected_type_operands(&mut types)?;
+    let [ty] = types;
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
         ProjectedCheckedRecipe {
             ty,
@@ -9000,6 +10232,11 @@ pub(crate) fn projected_term_let(
     let value_type = authenticated_projected_type_operand(proof, value_type, peer, "__term_let__")?;
     let value = authenticated_projected_recipe_operand(proof, value, &value_type, "__term_let__")?;
     let body = authenticated_projected_recipe_operand(proof, body, &value_type, "__term_let__")?;
+    let mut recipes = [value, body];
+    let mut types = [value_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [value, body] = recipes;
+    let [value_type] = types;
     let mut result = body.ty.clone();
     result.producers = result
         .producers
@@ -9098,6 +10335,11 @@ pub(crate) fn projected_term_fn(
         ));
     }
     let body = authenticated_projected_recipe_operand(proof, body, &function_type, "__term_fn__")?;
+    let mut recipes = [body];
+    let mut types = [function_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [body] = recipes;
+    let [function_type] = types;
     let mut result = function_type.clone();
     result.producers = result.producers.union(&body.ty.producers);
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
@@ -9114,8 +10356,7 @@ pub(crate) fn projected_term_fn(
 
 pub(crate) fn projected_term_type_fn_finish(
     proof: &MarkedComptimeProof,
-    name: String,
-    arity: usize,
+    variable: crate::normalization::ReflectedVariable,
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([body]).ok_or_else(|| {
@@ -9125,62 +10366,32 @@ pub(crate) fn projected_term_type_fn_finish(
         )
     })?;
     let body = authenticated_projected_recipe_operand(proof, body, peer, "__term_type_fn__")?;
-    let span = body.ty.ty.ty().span();
-    let param = crate::ast::TypeParam {
-        presentation: Default::default(),
-        name,
-        span,
-        kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
-    };
-    let ty = body
-        .ty
-        .ty
-        .projected_forall_abstract(param.clone(), span)
-        .ok_or_else(|| {
-            crate::error::Error::macro_error(
-                span,
-                "__term_type_fn__ generated a binder that would capture an existing rigid",
-            )
-        })?;
-    let specialization = body
-        .ty
-        .specialization
-        .projected_forall_abstract(param.clone(), span)
-        .ok_or_else(|| {
-            crate::error::Error::macro_error(
-                span,
-                "__term_type_fn__ could not preserve its specialization scope",
-            )
-        })?;
-    let closed = body
-        .ty
-        .closed
-        .as_ref()
-        .map(|body| {
-            crate::normalization::ReflectedType::new(
-                crate::ast::Type::Forall {
-                    param: param.clone(),
-                    body: Box::new(body.as_type().clone()),
-                    meta: crate::ast::Meta::new(span),
-                },
-                "a closed projected type function must remain infer-free",
-            )
-        })
-        .transpose()?;
-    let result = ProjectedType {
-        seal: body.ty.seal.clone(),
-        ty,
-        specialization,
-        closed,
-        focus: None,
-        contains_focus: body.ty.contains_focus,
-        producers: body.ty.producers.clone(),
-    };
+    if projected_constructor_has_free_opened(
+        proof,
+        &ProjectedValue(ProjectedValueKind::CheckedRecipe(body.clone())),
+    ) {
+        return Err(crate::error::Error::macro_error(
+            body.ty.ty.ty().span(),
+            "a quantified term result contains a parameter opened from another scheme",
+        ));
+    }
+    let mut alignment = ProjectedTypeAlignment::default();
+    alignment.collect_recipe(&body);
+    alignment.finish(body.ty.ty.ty().span())?;
+    let name = alignment
+        .binding(&variable)
+        .map(|(_, name, _)| name.clone())
+        .unwrap_or_else(|| {
+            crate::pass::typecheck_core::fresh_type_var(variable.name(), &alignment.taken)
+        });
+    let body = alignment.apply_recipe(&body)?;
+    let (ty, param) = close_projected_live_type(body.ty.clone(), &variable, name)?;
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
         ProjectedCheckedRecipe {
-            ty: result,
+            ty,
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TermTypeFn {
                 param,
+                variable,
                 body: Arc::new(body),
             }),
         },
@@ -9200,6 +10411,9 @@ pub(crate) fn projected_intrinsic_pair(
     })?;
     let left = authenticated_projected_recipe_operand(proof, left, peer, "__intrinsic_pair__")?;
     let right = authenticated_projected_recipe_operand(proof, right, peer, "__intrinsic_pair__")?;
+    let mut operands = [left, right];
+    align_projected_recipe_operands(&mut operands, &mut [])?;
+    let [left, right] = operands;
     let span = left.ty.ty.ty().span();
     let ty = left
         .ty
@@ -9229,6 +10443,7 @@ pub(crate) fn projected_intrinsic_pair(
                 "__intrinsic_pair__ received incompatible specialization snapshots",
             )
         })?;
+    let closed = merged_projected_reflection(&left.ty, &right.ty, &specialization)?;
     let producers = left.ty.producers.union(&right.ty.producers);
     let contains_focus = left.ty.contains_focus || right.ty.contains_focus;
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
@@ -9237,7 +10452,7 @@ pub(crate) fn projected_intrinsic_pair(
                 seal: left.ty.seal.clone(),
                 ty,
                 specialization,
-                closed: None,
+                closed,
                 focus: None,
                 contains_focus,
                 producers,
@@ -9274,6 +10489,11 @@ pub(crate) fn projected_intrinsic_product_projection(
         &product_type,
         "projected product projection",
     )?;
+    let mut recipes = [value];
+    let mut types = [product_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [value] = recipes;
+    let [product_type] = types;
     let edge = if left {
         ProjectedTypeEdge::ProductLeft
     } else {
@@ -9327,6 +10547,11 @@ pub(crate) fn projected_term_call(
         })?;
     let argument =
         authenticated_projected_recipe_operand(proof, argument, &parameter, "__term_call__")?;
+    let mut recipes = [function, argument];
+    let mut types = [function_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [function, argument] = recipes;
+    let [function_type] = types;
     let mut result = function_type
         .structural_child(ProjectedTypeEdge::FunctionReturn)
         .expect("a projected function parameter had a matching return child");
@@ -9361,6 +10586,11 @@ pub(crate) fn projected_intrinsic_absurd(
         authenticated_projected_type_operand(proof, result_type, peer, "__intrinsic_absurd__")?;
     let bottom =
         authenticated_projected_recipe_operand(proof, bottom, &result, "__intrinsic_absurd__")?;
+    let mut recipes = [bottom];
+    let mut types = [result];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [bottom] = recipes;
+    let [result] = types;
     if !matches!(
         bottom.ty.specialization.ty().as_type(),
         crate::ast::Type::Bottom { .. }
@@ -9414,6 +10644,11 @@ pub(crate) fn projected_intrinsic_either_prepare(
     )?;
     let value =
         authenticated_projected_recipe_operand(proof, value, &sum_type, "__intrinsic_either__")?;
+    let mut recipes = [value];
+    let mut types = [sum_type, result_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [value] = recipes;
+    let [sum_type, result_type] = types;
     let left_type = sum_type
         .structural_child(ProjectedTypeEdge::SumLeft)
         .ok_or_else(|| {
@@ -9468,18 +10703,23 @@ pub(crate) fn projected_intrinsic_either_finish(
         &prepared.result_type,
         "__intrinsic_either__",
     )?;
-    let mut result = prepared.result_type;
+    let mut recipes = [prepared.value, left_body, right_body];
+    let mut types = [prepared.sum_type, prepared.result_type];
+    align_projected_recipe_operands(&mut recipes, &mut types)?;
+    let [value, left_body, right_body] = recipes;
+    let [sum_type, mut result] = types;
+
     result.producers = result
         .producers
-        .union(&prepared.value.ty.producers)
+        .union(&value.ty.producers)
         .union(&left_body.ty.producers)
         .union(&right_body.ty.producers);
     Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
         ProjectedCheckedRecipe {
             ty: result,
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::IntrinsicEither {
-                sum_type: prepared.sum_type,
-                value: Arc::new(prepared.value),
+                sum_type,
+                value: Arc::new(value),
                 left_name: prepared.left_name,
                 left_body: Arc::new(left_body),
                 right_name: prepared.right_name,
@@ -9494,6 +10734,7 @@ pub(crate) fn specialize_projected_term(
     term: &ProjectedValue,
     pattern: &Value,
     target: &Value,
+    on_undetermined: impl Fn(),
 ) -> Result<ProjectedSpecializationOutcome, crate::error::Error> {
     let ProjectedValueKind::CheckedRecipe(recipe) = &term.0 else {
         return Err(crate::error::Error::macro_error(
@@ -9501,66 +10742,88 @@ pub(crate) fn specialize_projected_term(
             "__term_specialize__ expected a projected checked term",
         ));
     };
+    let span = recipe.ty.ty.ty().span();
     if !recipe.matches_proof(proof) {
         return Err(crate::error::Error::macro_error(
-            recipe.ty.ty.ty().span(),
+            span,
             "__term_specialize__ received a checked term from another invocation",
         ));
     }
-
-    let mut exact_result = recipe.ty.ty.clone();
-    let mut specialization_result = recipe.ty.specialization.clone();
+    let mut cursor = recipe.ty.clone();
+    let mut binders = Vec::new();
     let mut params = Vec::new();
-    let mut operand_scope = specialization_result.clone();
-    while let crate::ast::Type::Forall { param, .. } = operand_scope.ty().as_type() {
+    while let crate::ast::Type::Forall { param, .. } = cursor.specialization.ty().as_type() {
         params.push(param.clone());
-        operand_scope = operand_scope
-            .projected_structural_child(crate::pass::typecheck_core::ScopedTypeEdge::ForallBody)
+        let variable = cursor.closed.opened_variable(&cursor.specialization, param);
+        let mut body = cursor
+            .structural_child(ProjectedTypeEdge::ForallBody)
             .expect("a canonical forall carrier lost its body");
+        body.closed = body
+            .closed
+            .with_lexical_bindings([(param.name.clone(), variable.clone())]);
+        binders.push(variable);
+        cursor = body;
     }
-
-    fn operand(
-        value: &Value,
-        proof: &MarkedComptimeProof,
-        peer: &crate::pass::typecheck_core::ScopedType,
-        span: crate::span::Span,
-    ) -> Result<(crate::pass::typecheck_core::ScopedType, ProducerSet), crate::error::Error> {
-        match value {
-            Value::Projected(value) => match &value.0 {
-                ProjectedValueKind::Type(ty) if ty.matches_proof(proof) => {
-                    Ok((ty.specialization.clone(), ty.producers.clone()))
-                }
-                ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
-                    Err(crate::error::Error::macro_error(
-                        span,
-                        "__term_specialize__ received an unauthenticated projected type",
-                    ))
-                }
-            },
-            Value::ReflType(ty) => {
-                let ty = crate::ast::convert_type::<crate::ast::UncheckedPrime, crate::ast::Lowered>(
-                    ty.as_type(),
-                );
-                Ok((
-                    peer.projected_closed_peer(
-                        crate::pass::typecheck_core::InternedType::fresh_canonical(ty),
-                    ),
-                    ProducerSet::default(),
-                ))
-            }
-            _ => Err(crate::error::Error::macro_error(
-                span,
-                "__term_specialize__ expected reflected pattern and target types",
-            )),
-        }
+    let pattern =
+        authenticated_projected_type_operand(proof, pattern, &cursor, "__term_specialize__")?;
+    let target =
+        authenticated_projected_type_operand(proof, target, &cursor, "__term_specialize__")?;
+    let mut alignment = ProjectedTypeAlignment {
+        correspondence: true,
+        ..Default::default()
+    };
+    // Binder classes precede their independently opened fragments. This associates
+    // the solver parameter with the exact containing scheme before solving begins.
+    alignment.references.extend(binders.iter().cloned());
+    alignment.collect(&cursor);
+    alignment.collect_recipe(recipe);
+    alignment.collect(&pattern);
+    alignment.collect(&target);
+    alignment.finish(span)?;
+    for (param, variable) in params.iter_mut().zip(&binders) {
+        let (_, name, _) = alignment
+            .binding(variable)
+            .expect("frozen specialization binder");
+        param.rename(name.clone());
     }
-
-    let span = recipe.ty.ty.ty().span();
-    let (pattern, pattern_producers) = operand(pattern, proof, &operand_scope, span)?;
-    let (target, target_producers) = operand(target, proof, &operand_scope, span)?;
+    let recipe = alignment.apply_recipe(recipe)?;
+    let pattern = alignment.apply(&pattern)?;
+    let target = alignment.apply(&target)?;
+    if [&pattern, &target].into_iter().any(|ty| {
+        crate::pass::typecheck_core::type_contains_goal(ty.specialization.ty().as_type())
+            || crate::pass::typecheck_core::type_contains_infer(ty.specialization.ty().as_type())
+    }) {
+        on_undetermined();
+        return Err(crate::error::Error::macro_error(
+            span,
+            "__term_specialize__ requires the pattern and target type shapes to be determined",
+        ));
+    }
     let context = recipe.ty.seal.specialization_context();
+    let mismatch = |left: &crate::pass::typecheck_core::ScopedType,
+                    right: &crate::pass::typecheck_core::ScopedType,
+                    span| {
+        let error = alignment.rigid_mismatch(left, right, span);
+        if error.is_some() {
+            on_undetermined();
+        }
+        error
+    };
+    let solver_bindings = params
+        .iter()
+        .map(|param| (param.name.clone(), param.effective_kind(), None))
+        .collect::<Vec<_>>();
+    let pattern_scope = pattern
+        .specialization
+        .projected_reflection_rebind(&std::collections::HashMap::new(), &solver_bindings)
+        .expect("authenticated specialization aliases preserve original lexical permissions");
     let arguments = match crate::pass::typecheck_core::solve_scoped_specialization_by_name(
-        &params, &pattern, &target, span, context,
+        &params,
+        &pattern_scope,
+        &target.specialization,
+        span,
+        context,
+        Some(&mismatch),
     ) {
         Ok(crate::pass::typecheck_core::IsolatedSpecialization::Matched(arguments)) => arguments,
         Ok(crate::pass::typecheck_core::IsolatedSpecialization::NoMatch) => {
@@ -9572,35 +10835,47 @@ pub(crate) fn specialize_projected_term(
             ));
         }
     };
-
     let all_producers = recipe
         .ty
         .producers
-        .union(&pattern_producers)
-        .union(&target_producers);
-    let mut specialized = recipe.clone();
+        .union(&pattern.producers)
+        .union(&target.producers);
+    let mut specialized = recipe;
     specialized.ty.producers = all_producers.clone();
     for argument in arguments {
-        let Some(next_exact) = exact_result.projected_instantiate_forall(&argument) else {
+        let reflected = merged_projected_reflection(&pattern, &target, &argument)?;
+        let argument = ProjectedType {
+            seal: specialized.ty.seal.clone(),
+            ty: argument.clone(),
+            specialization: argument,
+            closed: reflected,
+            focus: None,
+            contains_focus: false,
+            producers: all_producers.clone(),
+        };
+        let Some(exact) = specialized.ty.ty.projected_instantiate_forall(&argument.ty) else {
             return Ok(ProjectedSpecializationOutcome::Diagnostic(
                 "__term_specialize__ produced an inapplicable type argument".to_owned(),
             ));
         };
-        let Some(next_specialization) =
-            specialization_result.projected_instantiate_forall(&argument)
+        let Some(canonical) = specialized
+            .ty
+            .specialization
+            .projected_instantiate_forall(&argument.specialization)
         else {
             return Ok(ProjectedSpecializationOutcome::Diagnostic(
                 "__term_specialize__ produced an inapplicable canonical type argument".to_owned(),
             ));
         };
+        let closed = merged_projected_reflection(&specialized.ty, &argument, &canonical)?;
         specialized = ProjectedCheckedRecipe {
             ty: ProjectedType {
-                seal: recipe.ty.seal.clone(),
-                ty: next_exact.clone(),
-                specialization: next_specialization.clone(),
-                closed: None,
-                focus: recipe.ty.focus.clone(),
-                contains_focus: recipe.ty.contains_focus,
+                seal: specialized.ty.seal.clone(),
+                ty: exact,
+                specialization: canonical,
+                closed,
+                focus: specialized.ty.focus.clone(),
+                contains_focus: specialized.ty.contains_focus,
                 producers: all_producers.clone(),
             },
             node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TermTypeApp {
@@ -9608,8 +10883,6 @@ pub(crate) fn specialize_projected_term(
                 argument,
             }),
         };
-        exact_result = next_exact;
-        specialization_result = next_specialization;
     }
     Ok(ProjectedSpecializationOutcome::Matched(ProjectedValue(
         ProjectedValueKind::CheckedRecipe(specialized),
@@ -9630,7 +10903,7 @@ pub(crate) fn focused_type_for_test(
         seal: proof.seal.clone(),
         specialization: ty.clone(),
         ty,
-        closed: Some(reflected),
+        closed: crate::normalization::ProjectedReflection::closed(Some(reflected)),
         focus: Some(ProjectedFocus {
             result_root: ProjectedResultRoot(0),
             path: Arc::from([]),
@@ -9685,7 +10958,7 @@ pub(crate) fn closed_specialized_type_for_test(
             specialization: crate::pass::typecheck_core::ScopedType::projected_for_test(
                 specialization,
             ),
-            closed: Some(closed),
+            closed: crate::normalization::ProjectedReflection::closed(Some(closed)),
             focus: Some(ProjectedFocus {
                 result_root: ProjectedResultRoot(0),
                 path: Arc::from([]),
@@ -9694,6 +10967,56 @@ pub(crate) fn closed_specialized_type_for_test(
             producers: ProducerSet::leaf(0),
         })),
     )
+}
+
+#[cfg(test)]
+pub(crate) fn projected_type_transport_matches_for_test(
+    left: &ProjectedValue,
+    right: &ProjectedValue,
+) -> bool {
+    let (ProjectedValueKind::Type(left), ProjectedValueKind::Type(right)) = (&left.0, &right.0)
+    else {
+        return false;
+    };
+    let left_bindings = left.closed.lexical_bindings();
+    let right_bindings = right.closed.lexical_bindings();
+    let bindings_match = left_bindings.len() == right_bindings.len()
+        && left_bindings.iter().all(|(name, variable)| {
+            right_bindings.iter().any(|(other_name, other)| {
+                name == other_name
+                    && variable.arity() == other.arity()
+                    && crate::normalization::reflected_variables_correspond(variable, other)
+            })
+        });
+    let left_original = left.closed.original_bindings();
+    let right_original = right.closed.original_bindings();
+    let original_match = left_original.len() == right_original.len()
+        && left_original.iter().all(|(name, variable)| {
+            right_original.iter().any(|(other_name, other)| {
+                name == other_name
+                    && variable.arity() == other.arity()
+                    && variable.same_reference(other)
+            })
+        });
+    let closed_match = match (left.closed.as_ref(), right.closed.as_ref()) {
+        (None, None) => true,
+        (Some(left), Some(right)) => matches!(
+            crate::normalization::type_correspondence(left, right),
+            Ok(crate::normalization::TypeComparison::Equal)
+        ),
+        _ => false,
+    };
+    left.seal.matches(&right.seal)
+        && left.ty.representation_is_exact(&right.ty)
+        && left
+            .specialization
+            .representation_is_exact(&right.specialization)
+        && bindings_match
+        && original_match
+        && closed_match
+        && left.focus == right.focus
+        && left.contains_focus == right.contains_focus
+        && left.producers.same_root(&right.producers)
 }
 
 #[cfg(test)]
@@ -9805,7 +11128,7 @@ fn open_specialized_type_reflection_for_test(
         seal,
         specialization,
         ty,
-        closed: None,
+        closed: crate::normalization::ProjectedReflection::default(),
         focus: Some(ProjectedFocus {
             result_root: ProjectedResultRoot(0),
             path: Arc::from([]),
@@ -9864,7 +11187,7 @@ pub(crate) fn open_function_reflection_evidence_for_test(
     else {
         return false;
     };
-    parent.closed.is_none()
+    parent.closed.as_ref().is_none()
         && parent.ty.projected_reflection_candidate().is_none()
         && param.ty.projected_reflection_candidate().is_some()
         && ret.ty.projected_reflection_candidate().is_none()
@@ -9917,7 +11240,7 @@ pub(crate) fn open_either_reflection_for_test() -> (
             seal: seal.clone(),
             specialization: ty.clone(),
             ty,
-            closed,
+            closed: crate::normalization::ProjectedReflection::closed(closed),
             focus,
             contains_focus,
             producers,
@@ -10046,7 +11369,7 @@ pub(crate) fn specialization_term_for_test() -> (MarkedComptimeProof, FillContex
             seal,
             specialization: ty.clone(),
             ty,
-            closed: None,
+            closed: crate::normalization::ProjectedReflection::default(),
             focus: Some(ProjectedFocus {
                 result_root: ProjectedResultRoot(0),
                 path: Arc::from([]),
@@ -10124,9 +11447,15 @@ impl MarkedComptimeProof {
 }
 
 #[derive(Clone, Debug)]
+enum FillDestination {
+    Projected(Value),
+    TerminalResult,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct FillRelation {
     previous: Option<crate::normalization::EvalRef<FillRelation>>,
-    destination: Value,
+    destination: FillDestination,
     candidate: Value,
     producers: ProducerSet,
 }
@@ -10139,7 +11468,9 @@ impl crate::normalization::ownership::Reclaim for FillRelation {
         if let Some(producers) = self.producers.0 {
             crate::normalization::ownership::shared(producers, pending);
         }
-        pending.push(self.destination.into());
+        if let FillDestination::Projected(destination) = self.destination {
+            pending.push(destination.into());
+        }
         pending.push(self.candidate.into());
     }
 }
@@ -10394,7 +11725,7 @@ impl FillAdoption {
                     self.phase = FillAdoptionPhase::Independent;
                 }
                 FillAdoptionPhase::Independent => {
-                    {
+                    if !projection.natural_result {
                         let (store, _owner, delta, _publication) = frontier.parts_mut();
                         store.require_goal_free_after_delta(delta, output.clone(), tcx)?;
                     }
@@ -10405,10 +11736,13 @@ impl FillAdoption {
                     install_checked_result_expectation(
                         checked,
                         terminal_result,
+                        projection.natural_result,
                         span,
                         frontier,
                         tcx,
                     )?;
+                    let (store, _owner, delta, _publication) = frontier.parts_mut();
+                    store.require_goal_free_after_delta(delta, output.clone(), tcx)?;
                     return Ok(FillAdoptionAdvance::Complete);
                 }
             }
@@ -10449,6 +11783,7 @@ fn require_relations_closed<'m>(
 fn install_checked_result_expectation<'m>(
     checked: &ProjectedCheckedResult,
     output: &crate::pass::typecheck_core::ScopedType,
+    natural_result: bool,
     span: crate::span::Span,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -10468,8 +11803,13 @@ fn install_checked_result_expectation<'m>(
         }
     };
     let (store, _owner, delta, _publication) = frontier.parts_mut();
-    let output = store.require_goal_free_after_delta(delta, output.clone(), tcx)?;
-    store.constrain(delta, result, output, span, tcx)
+    if natural_result {
+        let result = store.require_goal_free_after_delta(delta, result, tcx)?;
+        store.constrain(delta, output.clone(), result, span, tcx)
+    } else {
+        let output = store.require_goal_free_after_delta(delta, output.clone(), tcx)?;
+        store.constrain(delta, result, output, span, tcx)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -10482,7 +11822,7 @@ pub(crate) struct FillContext {
 #[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ReturnedFillRelationObservation {
-    pub(crate) destination_root: u32,
+    pub(crate) destination_root: Option<u32>,
     pub(crate) destination_path: Vec<ProjectedTypeEdge>,
     pub(crate) destination_closed: bool,
     pub(crate) candidate_display: String,
@@ -10557,9 +11897,18 @@ fn returned_fill_relation_observer_matches(module_path: &str, span: crate::span:
 #[cfg(test)]
 fn observe_authenticated_fill_relation(
     relation: &FillRelation,
+    terminal: &crate::pass::typecheck_core::ScopedType,
     candidate: &crate::pass::typecheck_core::ScopedType,
 ) -> ReturnedFillRelationObservation {
-    let Value::Projected(destination) = &relation.destination else {
+    if matches!(&relation.destination, FillDestination::TerminalResult) {
+        return ReturnedFillRelationObservation {
+            destination_root: None,
+            destination_path: Vec::new(),
+            destination_closed: terminal.projected_reflection_candidate().is_some(),
+            candidate_display: crate::pass::typecheck_core::display_type(candidate.ty().as_type()),
+        };
+    }
+    let FillDestination::Projected(Value::Projected(destination)) = &relation.destination else {
         unreachable!("an authenticated fill destination is projected")
     };
     let ProjectedValueKind::Type(destination) = &destination.0 else {
@@ -10570,7 +11919,7 @@ fn observe_authenticated_fill_relation(
         .as_ref()
         .expect("an authenticated fill destination retains its exact result focus");
     ReturnedFillRelationObservation {
-        destination_root: focus.result_root.0,
+        destination_root: Some(focus.result_root.0),
         destination_path: focus.path.to_vec(),
         destination_closed: destination.closed.is_some(),
         candidate_display: crate::pass::typecheck_core::display_type(candidate.ty().as_type()),
@@ -10594,6 +11943,7 @@ fn record_returned_fill_relations(
     });
 }
 
+#[cfg(test)]
 pub(crate) fn fresh_capabilities() -> (MarkedComptimeProof, FillContext) {
     let seal = InvocationSeal::fresh();
     capabilities_for(&seal)
@@ -10630,7 +11980,7 @@ pub(crate) fn projected_error_recipes_for_test() -> (
             seal,
             specialization: unit.clone(),
             ty: unit,
-            closed: Some(reflected_unit),
+            closed: crate::normalization::ProjectedReflection::closed(Some(reflected_unit)),
             focus: None,
             contains_focus: false,
             producers: ProducerSet::leaf(0),
@@ -10715,6 +12065,37 @@ impl FillContext {
             return None;
         }
         let destination_producers = destination_handle.authenticated_type_producers(proof)?;
+        self.append_authenticated(
+            proof,
+            FillDestination::Projected(destination),
+            destination_producers,
+            candidate,
+        )
+    }
+
+    pub(crate) fn append_result(
+        &self,
+        proof: &MarkedComptimeProof,
+        candidate: Value,
+    ) -> Option<Self> {
+        self.append_authenticated(
+            proof,
+            FillDestination::TerminalResult,
+            ProducerSet::default(),
+            candidate,
+        )
+    }
+
+    fn append_authenticated(
+        &self,
+        proof: &MarkedComptimeProof,
+        destination: FillDestination,
+        destination_producers: ProducerSet,
+        candidate: Value,
+    ) -> Option<Self> {
+        if !proof.seal.matches(&self.seal) {
+            return None;
+        }
         let candidate_producers = match &candidate {
             Value::Projected(candidate) => candidate.authenticated_type_producers(proof)?,
             Value::ReflType(_) => ProducerSet::default(),
@@ -10749,11 +12130,16 @@ impl FillContext {
             }
     }
 
-    pub(crate) fn relations_in_source_order(&self) -> Vec<(&Value, &Value)> {
+    #[cfg(test)]
+    pub(crate) fn relations_in_source_order(&self) -> Vec<(Option<&Value>, &Value)> {
         let mut relations = Vec::with_capacity(self.len);
         let mut current = self.head.as_deref();
         while let Some(relation) = current {
-            relations.push((&relation.destination, &relation.candidate));
+            let destination = match &relation.destination {
+                FillDestination::Projected(value) => Some(value),
+                FillDestination::TerminalResult => None,
+            };
+            relations.push((destination, &relation.candidate));
             current = relation.previous.as_deref();
         }
         relations.reverse();
@@ -10763,6 +12149,22 @@ impl FillContext {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn pre_input_completion_has_bounded_local_storage() {
+        let phase = std::mem::size_of::<super::PreInputCompletion>();
+        let progress = std::mem::size_of::<Option<Box<super::super::EquationSnapshot>>>();
+        let snapshot = std::mem::size_of::<super::super::EquationSnapshot>();
+        let policy = std::mem::size_of::<super::super::OrdinaryActionPolicy>();
+        eprintln!(
+            "pre-input phase={phase} progress-pointer={progress} snapshot={snapshot} policy={policy}"
+        );
+        assert!(phase <= 48);
+        assert_eq!(progress, 8);
+        assert_eq!(policy, 1);
+    }
+
     use super::*;
     mod boundary_reuse_tests;
 
@@ -10868,6 +12270,7 @@ mod tests {
                             mode,
                             super::super::OrdinaryCompletionDemand::PublicHeader,
                             false,
+                            super::super::OrdinaryActionPolicy::Ordinary,
                             &mut frontier,
                             &mut tcx,
                         )
@@ -10940,6 +12343,215 @@ mod tests {
                 assert_eq!(env.memo.user_macro_template_executions(), 1);
             }
         }
+    }
+
+    #[test]
+    fn projected_terminal_macro_header_waits_for_ordinary_expected_inference() {
+        for (context, target, result, defer) in [
+            ("concrete", "", ".", true),
+            ("open", "", ".", true),
+            ("open_forall", "", "[T] .", false),
+            ("absent", "", "[T] .", false),
+            ("forall", "", "[T] .", false),
+            ("concrete", "[.]", ".", false),
+            ("forall", "[([T] .)]", "[T] .", false),
+        ] {
+            let source = format!(
+                "module p; import __comptime__; \
+                 fn produce[A](callback: . -> A) -> A {{ callback(()) }} \
+                 pure fn implementation(ct: __Comptime__, _source: __Type__, \
+                 _value: __Checked_term__, _selector: __Type__, \
+                 _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {{ \
+                 __macro_error__(ct, \"macro body entered\"[__Diagnostic_text__]) }} \
+                 macro staged : [Source] Source -> [Selector] Selector -> [Target] Target {{ impl implementation }} \
+                 fn witness() -> ({result}) {{ staged[.](produce(.() {{ () }}))[.](()){target} }}"
+            );
+            let package = fixture(&source, "p");
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let scope =
+                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                    &normalized,
+                    Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+                );
+            let package = normalized.package();
+            let module = &package.module("p").unwrap().module;
+            let env = crate::pass::typecheck_core::ModuleEnv::build_with_typecheck_scope(
+                module,
+                None,
+                None,
+                Some(package),
+                scope,
+            )
+            .unwrap();
+            let source = &env.fn_defs["witness"].body;
+            let mut expected = (context != "absent").then(|| {
+                super::super::OwnerBoundType::Plain(
+                    crate::pass::typecheck_core::InternedType::fresh(
+                        env.fn_defs["witness"].ret.clone(),
+                    ),
+                )
+            });
+            let mut elaborations = Elaborations::new();
+            let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations);
+            let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
+                source.span(),
+                &tcx,
+                |_store, _owner| Ok(()),
+            )
+            .unwrap();
+            let (reservation, ()) = root
+                .reserve_root_child_with(
+                    crate::pass::typecheck_core::GoalOwnerKind::RetainedValue,
+                    source.span(),
+                    &tcx,
+                    |_store, _owner| Ok(()),
+                )
+                .unwrap();
+            let mut child = root.open_reserved_child(reservation).unwrap();
+            let mut frontier = root.retained_value_frontier(&mut child);
+            if matches!(context, "open" | "open_forall") {
+                let mut ty = frontier
+                    .reserve_projected_header_hole(source.span())
+                    .unwrap();
+                if context == "open_forall" {
+                    let crate::ast::Type::Forall { param, .. } = &env.fn_defs["witness"].ret else {
+                        panic!("the control retains a written forall header")
+                    };
+                    ty = ty
+                        .projected_forall_abstract(param.clone(), source.span())
+                        .expect("the independent goal can occur beneath the known binder");
+                }
+                expected = Some(super::super::OwnerBoundType::Retained {
+                    owner: frontier.owner(),
+                    ty,
+                });
+            }
+            let mut continuation = super::super::OrdinaryValueCursor::begin_child(
+                source,
+                expected,
+                &mut frontier,
+                &mut tcx,
+            )
+            .unwrap();
+            let super::super::PlannedOrdinaryValue::UserMacro(macro_call) =
+                continuation.cursor.planned.observed()
+            else {
+                panic!("a staged source retains its public call")
+            };
+            let super::super::PlannedUserMacroCallState::Advancing(
+                super::super::OrdinaryCallContinuation::Selecting(selecting),
+            ) = &macro_call.state
+            else {
+                panic!("the callback keeps the first public layer pending")
+            };
+            let transcript = selecting.call.user_macro_transcript.as_ref().unwrap();
+            assert!(transcript.terminal_type_layer.is_some());
+            assert!(
+                !transcript.terminal_public_layer_ready(),
+                "projection looks through written stages before terminal readiness"
+            );
+            let planning = super::super::ordinary_planning_work().open_goal_calls;
+            super::super::reset_direct_lambda_work();
+            super::super::reset_public_header_work();
+            let mut child_frontier = frontier.ordinary_child_frontier(&mut continuation.child);
+            for _ in 0..2 {
+                let mut exports = Vec::new();
+                let header = reserve_observed_cursor_header(
+                    &mut continuation.cursor,
+                    ObservedHeaderProjection::Whole,
+                    &mut exports,
+                    &mut child_frontier,
+                    &tcx,
+                )
+                .unwrap();
+                assert!(
+                    exports.is_empty(),
+                    "a local observation reserves no owner edge"
+                );
+                assert_eq!(env.memo.user_macro_template_executions(), 0);
+                assert_eq!(super::super::direct_lambda_work().body_entries, 0);
+                assert_eq!(super::super::public_header_work().unmarked_publications, 0);
+                assert_eq!(
+                    super::super::ordinary_planning_work().open_goal_calls,
+                    planning
+                );
+                if defer {
+                    assert!(
+                        header.is_none(),
+                        "an omitted terminal binder must wait for ordinary expected inference"
+                    );
+                } else {
+                    let header = header.expect("fixed and polymorphic headers remain observable");
+                    assert_eq!(
+                        matches!(header.ty().as_type(), crate::ast::Type::Forall { .. }),
+                        result != ".",
+                        "{context}, {target}"
+                    );
+                }
+            }
+            if defer && context != "open" {
+                let completed = super::super::OrdinaryValueCursor::advance_child_for_test(
+                    continuation,
+                    super::super::frontier::FrontierMode::Final,
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .unwrap();
+                assert!(matches!(
+                    completed,
+                    super::super::OrdinaryChildAdvance::Complete(_)
+                ));
+                assert_eq!(env.memo.user_macro_template_executions(), 0);
+                root.close_root_child(child, Vec::new(), &tcx).unwrap();
+                root.close_root_with(Vec::new(), &mut tcx, |_, _| Ok(()))
+                    .unwrap();
+                drop(tcx);
+                let error =
+                    <crate::pass::typecheck_full::LoweredTyper as crate::pass::typecheck_core::Typer<
+                        Lowered,
+                    >>::discharge_module_deferrals(&env, &mut elaborations)
+                    .expect_err("ordinary completion must run the retained action");
+                assert!(
+                    error.diagnostic().message.contains("macro body entered"),
+                    "{error:?}"
+                );
+                assert_eq!(env.memo.user_macro_template_executions(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn projected_explicit_polymorphic_target_rejects_before_macro_actions() {
+        let source = r#"module p; import __comptime__;
+            fn produce[A](callback: . -> A) -> A { callback(()) }
+            pure fn relay_impl(ct: __Comptime__, _source: __Type__,
+                _value: __Checked_term__, _selector: __Type__,
+                _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {
+                __macro_error__(ct, "inner action entered"[__Diagnostic_text__])
+            }
+            macro relay : [Source] Source -> [Selector] Selector -> [Target] Target { impl relay_impl }
+            pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__) ->
+                __Checked_term__ & __Fill_ctx__ {
+                (__macro_error__(ct, "outer action entered"[__Diagnostic_text__]), fills)
+            }
+            macro retain : . -> . { impl(fills) retain_impl }
+            fn witness() { retain(relay(produce(.() { () }))(())[([T] .)]) }
+        "#;
+        let package = fixture(source, "p");
+        let error =
+            match crate::pass::typecheck_full::check_package_preserving_normalization(&package) {
+                Ok(_) => panic!("a written polymorphic target cannot inhabit Unit"),
+                Err(error) => error.error,
+            };
+        assert!(matches!(error, crate::error::Error::Type(_)), "{error:?}");
+        assert!(
+            error.diagnostic().message.contains("type mismatch"),
+            "{error:?}"
+        );
+        assert!(
+            !error.diagnostic().message.contains("action entered"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -11090,7 +12702,8 @@ mod tests {
                 PROJECTED_PUBLIC_FORALL_BATCH_CALLS.with(|calls| calls.set(0));
                 let mut child_frontier = frontier.ordinary_child_frontier(&mut continuation.child);
                 let result =
-                    projected_call_header_result(call, span, &mut child_frontier, &tcx).unwrap();
+                    projected_call_header_result(call, span, None, &mut child_frontier, &tcx)
+                        .unwrap();
                 assert_eq!(
                     PROJECTED_HEADER_OBSERVER_CALLS.with(std::cell::Cell::get),
                     1
@@ -11133,14 +12746,22 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn boxed_fills_state_and_scheduler_payload_layouts_stay_exact() {
-        assert_eq!(std::mem::size_of::<MarkedProjection<'_>>(), 440);
         assert_eq!(
-            std::mem::size_of::<MarkedCallState<'_>>(),
-            1264 + std::mem::size_of::<&[crate::ast::CallStage<Lowered>]>()
-                + std::mem::size_of::<crate::span::Span>()
+            (
+                std::mem::size_of::<MarkedProjection<'_>>(),
+                std::mem::size_of::<MarkedCallState<'_>>(),
+                std::mem::size_of::<FillProducerRequest>(),
+                std::mem::size_of::<FillAdoptionAdvance>(),
+            ),
+            (
+                // The marked projection retains two optional reflection pointers.
+                456,
+                1280 + std::mem::size_of::<&[crate::ast::CallStage<Lowered>]>()
+                    + std::mem::size_of::<crate::span::Span>(),
+                128,
+                128,
+            )
         );
-        assert_eq!(std::mem::size_of::<FillProducerRequest>(), 128);
-        assert_eq!(std::mem::size_of::<FillAdoptionAdvance>(), 128);
     }
 
     #[test]
@@ -11207,7 +12828,7 @@ mod tests {
             seal: InvocationSeal::fresh(),
             ty: ty.clone(),
             specialization: ty,
-            closed: None,
+            closed: crate::normalization::ProjectedReflection::default(),
             focus: None,
             contains_focus: false,
             producers: ProducerSet::default(),
@@ -11221,7 +12842,7 @@ mod tests {
             for _ in 0..30_000 {
                 head = Some(crate::normalization::EvalRef::new(FillRelation {
                     previous: head,
-                    destination: Value::Unit,
+                    destination: FillDestination::Projected(Value::Unit),
                     candidate: Value::Unit,
                     producers: ProducerSet::default(),
                 }));
@@ -11368,9 +12989,9 @@ mod tests {
         let specialized = deferred_tail_test_recipe(ProjectedRecipeNode::TermTypeApp {
             term: deferred_tail_test_recipe(ProjectedRecipeNode::TermTypeApp {
                 term: deferred_tail_test_template(0),
-                argument: deferred_tail_test_scoped_type(),
+                argument: deferred_tail_test_type(),
             }),
-            argument: deferred_tail_test_scoped_type(),
+            argument: deferred_tail_test_type(),
         });
         let recipe = deferred_tail_test_call(specialized);
         let candidates = vec![deferred_tail_test_candidate(
@@ -11655,6 +13276,7 @@ mod tests {
                         span: crate::span::Span::new(0, 0),
                         kind: None,
                     },
+                    variable: crate::normalization::ReflectedVariable::live("A".into(), 0),
                     body: deferred_tail_test_template(0),
                 }),
             ),
@@ -11662,7 +13284,7 @@ mod tests {
                 "type application",
                 deferred_tail_test_recipe(ProjectedRecipeNode::TermTypeApp {
                     term: deferred_tail_test_template(0),
-                    argument: deferred_tail_test_scoped_type(),
+                    argument: deferred_tail_test_type(),
                 }),
             ),
             (
@@ -11867,6 +13489,7 @@ mod tests {
                         span: crate::span::Span::new(0, 0),
                         kind: None,
                     },
+                    variable: crate::normalization::ReflectedVariable::live("A".into(), 0),
                     body: hidden(),
                 }),
             ),
@@ -12369,7 +13992,7 @@ mod tests {
                 seal,
                 specialization: ty.clone(),
                 ty,
-                closed: None,
+                closed: crate::normalization::ProjectedReflection::default(),
                 focus: None,
                 contains_focus: false,
                 producers: ProducerSet::default(),
@@ -12506,6 +14129,38 @@ mod tests {
     }
 
     #[test]
+    fn projected_closed_snapshots_share_their_carrier_on_clone() {
+        use crate::normalization::ReflectedType;
+        let reflected = ReflectedType::new(
+            crate::ast::Type::Unit {
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+            },
+            "closed snapshot fixture",
+        )
+        .expect("Unit is infer-free");
+        let (_proof, _foreign, value) = closed_specialized_type_for_test(
+            crate::ast::convert_type(reflected.as_type()),
+            crate::ast::convert_type(reflected.as_type()),
+        );
+        let ProjectedValueKind::Type(typ) = &value.0 else {
+            panic!("type fixture");
+        };
+        let copy = typ.clone();
+        assert!(typ.closed.shares_storage_with(&copy.closed));
+        assert_eq!(typ.closed_reflected(), copy.closed_reflected());
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(std::mem::size_of::<ReflectedType>(), 24);
+            assert_eq!(
+                std::mem::size_of::<crate::normalization::ProjectedReflection>(),
+                8
+            );
+            assert_eq!(std::mem::size_of::<ProjectedType>(), 248);
+            assert_eq!(std::mem::size_of::<ProjectedValue>(), 256);
+        }
+    }
+
+    #[test]
     fn projected_type_layout_drops_the_redundant_creation_owner() {
         enum LegacyCreationOwner {
             Live(crate::ast::TypeGoalOwner),
@@ -12592,6 +14247,53 @@ mod tests {
             assert_eq!(std::mem::size_of::<ProjectedCheckedResult>(), 256);
             assert_eq!(std::mem::size_of::<ProjectedValue>(), 256);
         }
+    }
+
+    #[test]
+    fn identity_alignment_retains_projected_recipe_dag_nodes() {
+        let span = crate::span::Span::new(0, 0);
+        let reference = crate::normalization::ReflectedVariable::live("L".into(), 0);
+        let ty = crate::pass::typecheck_core::ScopedType::projected_for_test(
+            crate::ast::Type::synth_path(vec!["L".into()], Vec::new(), span),
+        )
+        .projected_reflection_rebind(
+            &std::collections::HashMap::new(),
+            &[("L".into(), crate::ast::Kind::arrow_chain(0), None)],
+        )
+        .unwrap();
+        let ty = ProjectedType {
+            seal: InvocationSeal::fresh(),
+            specialization: ty.clone(),
+            ty,
+            closed: crate::normalization::ProjectedReflection::closed(Some(reference.as_type())),
+            focus: None,
+            contains_focus: false,
+            producers: ProducerSet::default(),
+        };
+        let leaf = Arc::new(ProjectedCheckedRecipe {
+            ty: ty.clone(),
+            node: crate::normalization::EvalRef::new(ProjectedRecipeNode::TemplateValue(0)),
+        });
+        let root = ProjectedCheckedRecipe {
+            ty,
+            node: crate::normalization::EvalRef::new(ProjectedRecipeNode::Pair(
+                leaf.clone(),
+                leaf.clone(),
+            )),
+        };
+        let mut alignment = ProjectedTypeAlignment::default();
+        alignment.collect_recipe(&root);
+        alignment.finish(span).unwrap();
+        let aligned = alignment.apply_recipe(&root).unwrap();
+        assert!(crate::normalization::EvalRef::ptr_eq(
+            &root.node,
+            &aligned.node
+        ));
+        assert!(aligned.ty.closed.shares_storage_with(&root.ty.closed));
+        let ProjectedRecipeNode::Pair(left, right) = aligned.node.as_ref() else {
+            unreachable!()
+        };
+        assert!(Arc::ptr_eq(left, &leaf) && Arc::ptr_eq(right, &leaf));
     }
 
     #[test]
@@ -12718,7 +14420,7 @@ mod tests {
             seal: seal.clone(),
             specialization: ty.clone(),
             ty,
-            closed: None,
+            closed: crate::normalization::ProjectedReflection::default(),
             focus: None,
             contains_focus: false,
             producers: ProducerSet::default(),
@@ -12743,6 +14445,7 @@ mod tests {
         let checked = close_projected_recipe(
             &either(left_goal, right_goal),
             Vec::new(),
+            None,
             span,
             &mut frontier,
             &tcx,
@@ -12753,6 +14456,7 @@ mod tests {
         let error = close_projected_recipe(
             &either(unit.clone(), bottom),
             Vec::new(),
+            None,
             span,
             &mut frontier,
             &tcx,
@@ -12762,6 +14466,103 @@ mod tests {
             format!("{error:?}")
                 .contains("__intrinsic_either__ branch did not have the supplied result type")
         );
+    }
+
+    #[test]
+    fn projected_recipe_close_preserves_the_frozen_residual_type_binding() {
+        let package = fixture(
+            "module projected_carrier_close; fn witness() -> . { () }",
+            "projected_carrier_close",
+        );
+        let module = &package.module("projected_carrier_close").unwrap().module;
+        let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
+            .unwrap();
+        let span = env.fn_defs["witness"].body.span();
+        let mut elaborations = Elaborations::new();
+        let tcx = super::super::TypeCtx::new(&env, &mut elaborations);
+        let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
+            span,
+            &tcx,
+            |_store, _owner| Ok(()),
+        )
+        .unwrap();
+        let (reservation, ()) = root
+            .reserve_root_child_with(
+                crate::pass::typecheck_core::GoalOwnerKind::RetainedValue,
+                span,
+                &tcx,
+                |_store, _owner| Ok(()),
+            )
+            .unwrap();
+        let mut call = root.open_reserved_child(reservation).unwrap();
+        let mut frontier = root.retained_value_frontier(&mut call);
+        let param = crate::ast::TypeParam {
+            presentation: Default::default(),
+            name: "A".into(),
+            span,
+            kind: None,
+        };
+        let binding = crate::normalization::ReflectedVariable::live("A".into(), 0);
+        let same_spelling = crate::normalization::ReflectedVariable::live("A".into(), 0);
+        let scoped = {
+            let (store, owner, _delta, _publication) = frontier.parts_mut();
+            store
+                .scoped_type_with_lexical_foralls(
+                    owner,
+                    crate::pass::typecheck_core::InternedType::fresh_canonical(
+                        crate::ast::Type::synth_path(vec!["A".to_owned()], Vec::new(), span),
+                    ),
+                    std::slice::from_ref(&param),
+                    span,
+                )
+                .unwrap()
+        };
+        let recipe = ProjectedCheckedRecipe {
+            ty: ProjectedType {
+                seal: InvocationSeal::fresh(),
+                specialization: scoped.clone(),
+                ty: scoped,
+                closed: Default::default(),
+                focus: None,
+                contains_focus: false,
+                producers: ProducerSet::default(),
+            },
+            node: crate::normalization::EvalRef::new(ProjectedRecipeNode::Local {
+                name: "value".into(),
+            }),
+        };
+        let checked = close_projected_recipe(
+            &recipe,
+            vec![crate::pass::typecheck_full::FrozenResidualTypeBinder {
+                param,
+                binding: binding.clone(),
+            }],
+            None,
+            span,
+            &mut frontier,
+            &tcx,
+        )
+        .expect("close under the exact residual binder retained before evaluation");
+        let expected = |binding| {
+            crate::normalization::ReflectedType::new(
+                crate::ast::Type::synth_path(vec!["A".to_owned()], Vec::new(), span),
+                "fixture type is complete",
+            )
+            .unwrap()
+            .with_lexical_bindings([("A".into(), binding)])
+        };
+        let context = crate::normalization::EvalCtx::new();
+        let actual = crate::normalization::Value::ReflType(checked.reflected_type().clone());
+        assert!(crate::normalization::nf_eq(
+            &actual,
+            &crate::normalization::Value::ReflType(expected(binding)),
+            &context,
+        ));
+        assert!(!crate::normalization::nf_eq(
+            &actual,
+            &crate::normalization::Value::ReflType(expected(same_spelling)),
+            &context,
+        ));
     }
 
     #[test]
@@ -12847,7 +14648,7 @@ mod tests {
             seal: seal.clone(),
             specialization: ty.clone(),
             ty,
-            closed: None,
+            closed: crate::normalization::ProjectedReflection::default(),
             focus: None,
             contains_focus: false,
             producers: ProducerSet::default(),
@@ -12894,7 +14695,7 @@ mod tests {
             }),
         };
         PROJECTED_RECIPE_CLOSE_WORK.with(|work| work.set((0, 0)));
-        close_projected_recipe(&either, Vec::new(), span, &mut frontier, &tcx)
+        close_projected_recipe(&either, Vec::new(), None, span, &mut frontier, &tcx)
             .expect("close nested projected Either/Fn/Call recipe");
         PROJECTED_RECIPE_CLOSE_WORK.with(|work| {
             assert_eq!(
@@ -12913,11 +14714,12 @@ mod tests {
                     span,
                     kind: None,
                 },
+                variable: crate::normalization::ReflectedVariable::live("_ct_type_n99".into(), 0),
                 body: Arc::new(local("type_fn_body", unit.clone())),
             }),
         };
         let checked_type_fn =
-            close_projected_recipe(&type_fn, Vec::new(), span, &mut frontier, &tcx)
+            close_projected_recipe(&type_fn, Vec::new(), None, span, &mut frontier, &tcx)
                 .expect("close projected type function");
         assert!(matches!(
             checked_type_fn.ty(),
@@ -12946,7 +14748,16 @@ mod tests {
         let crate::ast::SignatureParam::Type(param) = &sig.params[0] else {
             panic!("replayed projected type function lost its binder")
         };
-        assert_eq!(param.name, "Ct");
+        let crate::ast::Type::Forall {
+            param: checked_param,
+            ..
+        } = checked_type_fn.ty()
+        else {
+            unreachable!("the closed recipe retained its forall type")
+        };
+        assert_eq!(param.name, checked_param.name);
+        assert_eq!(param.effective_kind(), crate::ast::Kind::Star);
+        assert_eq!(param.effective_kind(), checked_param.effective_kind());
 
         let wrong_kind = ProjectedCheckedRecipe {
             ty: projected_type(forall),
@@ -12957,11 +14768,13 @@ mod tests {
                     span,
                     kind: Some(Box::new(crate::ast::Kind::arrow_chain(1))),
                 },
+                variable: crate::normalization::ReflectedVariable::live("B".into(), 1),
                 body: Arc::new(local("unused_binder_body", unit)),
             }),
         };
-        let error = close_projected_recipe(&wrong_kind, Vec::new(), span, &mut frontier, &tcx)
-            .expect_err("reject a mismatched kind even when the type binder is unused");
+        let error =
+            close_projected_recipe(&wrong_kind, Vec::new(), None, span, &mut frontier, &tcx)
+                .expect_err("reject a mismatched kind even when the type binder is unused");
         assert!(format!("{error:?}").contains("type function binder had the wrong kind"));
     }
 
@@ -13059,6 +14872,7 @@ mod tests {
             staged,
             super::super::frontier::FrontierMode::ExpectedOnly,
             false,
+            super::super::OrdinaryActionPolicy::Ordinary,
             &mut frontier,
             &mut tcx,
         )
@@ -13076,12 +14890,12 @@ mod tests {
             (
                 "dep/core.kio",
                 "module dep/core; \
-                 pub newtype Box[A] : A { pub constructor make; pub projector get; };",
+                 pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "dep/core/core.kio",
                 "module dep/core/core; \
-                 pub newtype Box[A] : . { pub constructor make; pub projector get; };",
+                 pub type { Box[A]: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
@@ -13366,7 +15180,7 @@ mod tests {
         };
         assert!(left_recipe.ty.producers.is_empty());
         assert!(!right_recipe.ty.producers.is_empty());
-        assert!(right_recipe.ty.closed.is_none());
+        assert!(right_recipe.ty.closed.as_ref().is_none());
         let Some(StagedOperand::Lambda(right_lambda, _)) = pair.operands[1].state.as_ref() else {
             panic!("the producer-bearing sibling lost its retained lambda state")
         };
@@ -13390,7 +15204,7 @@ mod tests {
             sig,
         );
 
-        validate_projected_source_before_action(&staged, &recipe)
+        validate_projected_source_before_action(&staged, &recipe, &mut frontier, &tcx)
             .expect("the collapsed producerless subtree must not hide an eligible lambda sibling");
         assert_eq!(
             super::super::direct_lambda_work().body_entries,
@@ -13774,7 +15588,12 @@ mod tests {
             seal,
             specialization: Some(specialization),
             header_cursor: ProjectedHeaderCursor::default(),
+            pre_inputs: PreInputCompletion::default(),
+            expected_progress: None,
             terminal_result: None,
+            terminal_reflection: Default::default(),
+            reflection_alignment: None,
+            natural_result: false,
             transcript: None,
             sources: vec![RetainedProjectedSource {
                 state: Some(staged),
@@ -14113,7 +15932,9 @@ mod tests {
             .expect("independent result-header environment");
         let source = &env.fn_defs["witness"].body;
         let span = source.span();
-        for result_closed_by_relation in [false, true] {
+        for (result_closed_by_relation, use_terminal) in
+            [(false, false), (true, false), (true, true)]
+        {
             let mut elaborations = Elaborations::new();
             let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations);
             let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
@@ -14217,7 +16038,7 @@ mod tests {
                 .expect("compose the evaluator's projected call recipe")
                 .authenticated_checked_recipe(&proof)
                 .expect("the projected call recipe must keep its invocation proof");
-            let checked = ProjectedCheckedResult::Recipe(checked);
+            let mut checked = ProjectedCheckedResult::Recipe(checked);
             let mut projection = MarkedProjection {
                 seal,
                 specialization: Some(specialization),
@@ -14225,7 +16046,12 @@ mod tests {
                     phase: ProjectedHeaderPhase::Complete,
                     source: 0,
                 },
+                pre_inputs: PreInputCompletion::default(),
+                expected_progress: None,
                 terminal_result: Some(result.clone()),
+                terminal_reflection: Default::default(),
+                reflection_alignment: None,
+                natural_result: false,
                 transcript: None,
                 sources: vec![RetainedProjectedSource {
                     state: Some(staged),
@@ -14257,7 +16083,7 @@ mod tests {
                         seal: projection.seal.clone(),
                         specialization: result.clone(),
                         ty: result.clone(),
-                        closed: None,
+                        closed: crate::normalization::ProjectedReflection::default(),
                         focus: Some(ProjectedFocus {
                             result_root: ProjectedResultRoot(0),
                             path: Arc::from([]),
@@ -14275,14 +16101,65 @@ mod tests {
                     )
                     .expect("reflect the returned Unit fill candidate"),
                 );
-                empty_context
-                    .append(&projection_proof, destination, candidate)
-                    .expect("append the authenticated result fill")
+                if use_terminal {
+                    for reverse in [false, true] {
+                        let bottom = Value::ReflType(
+                            crate::normalization::ReflectedType::new(
+                                crate::ast::Type::Bottom {
+                                    meta: crate::ast::Meta::new(span),
+                                },
+                                "the contradictory fill candidate is Bottom",
+                            )
+                            .expect("reflect the contradictory Bottom fill candidate"),
+                        );
+                        let contradictory = if reverse {
+                            empty_context
+                                .append_result(&projection_proof, candidate.clone())
+                                .unwrap()
+                                .append(&projection_proof, destination.clone(), bottom)
+                                .unwrap()
+                        } else {
+                            empty_context
+                                .append(&projection_proof, destination.clone(), bottom)
+                                .unwrap()
+                                .append_result(&projection_proof, candidate.clone())
+                                .unwrap()
+                        };
+                        assert!(
+                            projection
+                                .prepare_adoption(
+                                    &contradictory,
+                                    &mut checked,
+                                    span,
+                                    &mut frontier,
+                                    &tcx
+                                )
+                                .is_err()
+                        );
+                        let (store, _owner, delta, _publication) = frontier.parts_mut();
+                        assert!(
+                            store
+                                .try_zonk_goal_free(delta, result.clone(), &tcx)
+                                .unwrap()
+                                .is_none(),
+                            "a contradictory mixed transcript must leave the result unsolved"
+                        );
+                    }
+                    empty_context
+                        .append(&projection_proof, destination, candidate.clone())
+                        .unwrap()
+                        .append_result(&projection_proof, candidate)
+                        .unwrap()
+                } else {
+                    empty_context
+                        .append(&projection_proof, destination, candidate)
+                        .expect("append the authenticated result fill")
+                }
             } else {
                 empty_context
             };
             let mut adoption = projection
-                .prepare_adoption(&context, span, &mut frontier, &tcx)
+                .prepare_adoption(&context, &mut checked, span, &mut frontier, &tcx)
                 .expect("prepare the returned fill context");
             assert!(adoption.relation_producers.is_empty());
             assert_eq!(adoption.independent_producers, [0]);
@@ -14460,6 +16337,7 @@ mod tests {
             staged,
             super::super::frontier::FrontierMode::Final,
             false,
+            super::super::OrdinaryActionPolicy::Ordinary,
             &mut frontier,
             &mut tcx,
         )
@@ -14814,9 +16692,10 @@ mod tests {
                 snapshot_projected_recipe(&mut recipe, &mut specialization, &mut frontier, &tcx)
                     .expect("snapshot the producer-free open Path recipe");
                 assert!(recipe.ty.producers.is_empty());
-                assert!(recipe.ty.closed.is_none());
-                let error = validate_projected_source_before_action(&staged, &recipe)
-                    .expect_err("a producer-free open source must fail before the action");
+                assert!(recipe.ty.closed.as_ref().is_none());
+                let error =
+                    validate_projected_source_before_action(&staged, &recipe, &mut frontier, &tcx)
+                        .expect_err("a producer-free open source must fail before the action");
                 assert_eq!(error.diagnostic().span, source.span());
             }
         }
@@ -15532,495 +17411,6 @@ mod tests {
     }
 
     #[test]
-    fn projected_computed_field_certificate_has_a_closed_recursive_syntax_boundary() {
-        let span = crate::span::Span::new(10, 20);
-        let meta = || Meta::<Lowered>::new(span);
-        let segment = |name: &str| PathSegment {
-            name: name.to_owned(),
-            span,
-        };
-        let path = |name: &str| Expr::Path {
-            occurrence: Default::default(),
-            segments: vec![segment(name)],
-            meta: meta(),
-            ext: (),
-        };
-        let unit = || Expr::Unit {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            meta: meta(),
-        };
-        let literal = |annotation| Expr::StrLit {
-            occurrence: Default::default(),
-            value: "value".to_owned(),
-            annotation,
-            meta: meta(),
-        };
-        let call = |callee, args| Expr::Call {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            diagnostic: Default::default(),
-            callee: Box::new(callee),
-            args,
-            meta: meta(),
-            ext: (),
-        };
-        let access = |receiver| Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind: crate::ast::ElaboratorKind::Access,
-            call: crate::ast::ElaboratorCall::FieldAccess {
-                receiver: Box::new(receiver),
-                labels: vec![crate::ast::FieldAccessLabel {
-                    label: "value".to_owned(),
-                    label_span: span,
-                    label_type: Some(vec![segment("Value")]),
-                    meta: meta(),
-                }],
-            },
-            meta: meta(),
-            ext: crate::ast::NodeId(10),
-        };
-        let root = |argument| {
-            call(
-                access(path("surface")),
-                vec![crate::ast::CallArg::Value(argument)],
-            )
-        };
-        let concrete = crate::ast::Type::Unit { meta: meta() };
-        let inferred = crate::ast::Type::Infer {
-            meta: meta(),
-            ext: (),
-        };
-        let goal = crate::ast::Type::Goal {
-            goal: crate::ast::TypeGoalRef::for_test(23, 0, 0),
-            args: Vec::new(),
-            meta: meta(),
-            ext: (),
-        };
-        let structured_infer = crate::ast::Type::Function {
-            param: Box::new(inferred.clone()),
-            ret: Box::new(concrete.clone()),
-            meta: meta(),
-            abi_arity: 1,
-            caps: (),
-        };
-
-        for source in [
-            root(path("value")),
-            root(unit()),
-            root(literal(None)),
-            root(access(path("surface"))),
-            root(call(
-                path("identity"),
-                vec![crate::ast::CallArg::Value(path("value"))],
-            )),
-            root(call(
-                path("pair"),
-                vec![
-                    crate::ast::CallArg::Type(concrete.clone()),
-                    crate::ast::CallArg::Value(access(path("surface"))),
-                    crate::ast::CallArg::Value(call(
-                        access(path("surface")),
-                        vec![crate::ast::CallArg::Value(literal(Some(concrete.clone())))],
-                    )),
-                ],
-            )),
-            root(call(
-                path("pair"),
-                vec![
-                    crate::ast::CallArg::Type(inferred.clone()),
-                    crate::ast::CallArg::Type(inferred.clone()),
-                    crate::ast::CallArg::Value(path("value")),
-                    crate::ast::CallArg::Value(access(path("surface"))),
-                ],
-            )),
-        ] {
-            assert!(
-                certified_computed_field_root(&source),
-                "a bounded computed-field source was rejected: {source:#?}"
-            );
-        }
-
-        let computed_receiver = access(call(
-            path("identity"),
-            vec![crate::ast::CallArg::Value(path("surface"))],
-        ));
-        assert!(path_receiver_field_access(&access(path("surface"))));
-        assert!(!path_receiver_field_access(&computed_receiver));
-        let update = Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind: crate::ast::ElaboratorKind::Filtered,
-            call: crate::ast::ElaboratorCall::FieldUpdate {
-                base: crate::ast::FieldUpdateBase::Update(Box::new(path("surface"))),
-                updates: vec![crate::ast::FieldUpdateLabel {
-                    label: "value".to_owned(),
-                    label_span: span,
-                    label_type: Some(vec![segment("Value")]),
-                    value: path("value"),
-                    meta: meta(),
-                }],
-            },
-            meta: meta(),
-            ext: crate::ast::NodeId(11),
-        };
-        assert!(!path_receiver_field_access(&update));
-        let lambda = Expr::FnExpr {
-            occurrence: Default::default(),
-            sig: crate::ast::Signature::from_groups(Vec::new()),
-            ret_ty: None,
-            body: Box::new(unit()),
-            meta: meta(),
-            caps: (),
-        };
-        let let_value = Expr::Let {
-            occurrence: Default::default(),
-            name: "local".to_owned(),
-            name_span: span,
-            ty: None,
-            pattern: (),
-            value: Box::new(path("value")),
-            body: Box::new(path("local")),
-            meta: meta(),
-        };
-        let sequence = Expr::Seq {
-            occurrence: Default::default(),
-            value: Box::new(unit()),
-            body: Box::new(path("value")),
-            meta: meta(),
-        };
-        let macro_call = Expr::UserMacro {
-            occurrence: Default::default(),
-            form: crate::ast::UserMacroCallForm::Ordinary,
-            name: "user".to_owned(),
-            stages: Vec::new(),
-            meta: meta(),
-            ext: crate::ast::NodeId(13),
-        };
-        let rec_order = Expr::RecOrder {
-            occurrence: Default::default(),
-            plan: Box::new(crate::ast::RecOrderPlan {
-                source_call: None,
-                tail_continuation: None,
-                name: "ordered".to_owned(),
-                disposition: crate::ast::RecOrderDisposition::Ordered(
-                    crate::ast::RecOrderTypeFlow::SynthesizedValue,
-                ),
-                annotation: None,
-                value: Box::new(path("value")),
-                body: Box::new(path("value")),
-                runtime_ty: concrete.clone(),
-            }),
-            meta: meta(),
-            ext: crate::ast::NodeId(14),
-        };
-
-        for source in [
-            call(
-                computed_receiver,
-                vec![crate::ast::CallArg::Value(path("value"))],
-            ),
-            call(update, vec![crate::ast::CallArg::Value(path("value"))]),
-            root(lambda),
-            root(let_value),
-            root(sequence),
-            root(macro_call),
-            root(rec_order),
-            call(
-                access(path("surface")),
-                vec![crate::ast::CallArg::Type(inferred.clone())],
-            ),
-            root(call(
-                access(path("surface")),
-                vec![crate::ast::CallArg::Type(inferred.clone())],
-            )),
-            call(
-                access(path("surface")),
-                vec![crate::ast::CallArg::Type(goal.clone())],
-            ),
-            root(call(
-                path("ordinary"),
-                vec![crate::ast::CallArg::Type(goal.clone())],
-            )),
-            root(call(
-                path("ordinary"),
-                vec![crate::ast::CallArg::Type(structured_infer)],
-            )),
-            root(literal(Some(inferred))),
-            root(literal(Some(goal))),
-            call(
-                path("ordinary"),
-                vec![crate::ast::CallArg::Value(path("value"))],
-            ),
-        ] {
-            assert!(
-                !certified_computed_field_root(&source),
-                "an excluded computed-field source was admitted: {source:#?}"
-            );
-        }
-    }
-
-    #[test]
-    fn projected_field_sources_complete_or_retain_producer_work_at_expected_only() {
-        let package = fixture(
-            "module projected_computed_field_header; \
-             host type String role(str); \
-             pub labels { lookup[P]: String -> (P | .) }; \
-             pub labels { inject[P]: String -> P }; \
-             pub labels { apply[P]: (P & P) -> (P | .) }; \
-             pub labels { unit_in[P]: P }; \
-             pub labels { identity: [A] A -> A }; \
-             type Surface[P] = \
-               Lookup[P] & Inject[P] & Apply[P] & Unit_in[P] & Identity; \
-             fn known() -> String { \"known\"[String] } \
-             fn identity[A](value: A) -> A { value } \
-             fn projection[P](surface: Surface[P]) -> P { surface.?{unit_in} } \
-             fn nonpath[P](surface: Surface[P]) -> P { identity(surface).?{unit_in} } \
-             fn simple[P](surface: Surface[P], name: String) -> P | . { \
-               surface.?{lookup}(name) \
-             } \
-             fn direct[P](surface: Surface[P]) -> P | . { \
-               surface.?{lookup}(known()) \
-             } \
-             fn nested[P](surface: Surface[P], value: P, name: String) -> P | . { \
-               surface.?{apply}((value, surface.?{inject}(name))) \
-             } \
-             fn bare[P](surface: Surface[P], value: P) -> P | . { \
-               surface.?{apply}((value, surface.?{unit_in})) \
-             } \
-             fn scalar[P](surface: Surface[P]) -> String { \
-               surface.?{identity}(\"value\"[String]) \
-             }",
-            "projected_computed_field_header",
-        );
-        let module = &package
-            .module("projected_computed_field_header")
-            .expect("projected computed-field module")
-            .module;
-        let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
-            .expect("projected computed-field environment");
-
-        for (name, expected_complete) in [
-            ("projection", true),
-            ("nonpath", true),
-            ("simple", true),
-            ("direct", true),
-            ("nested", true),
-            ("bare", true),
-            ("scalar", true),
-        ] {
-            let (item_index, witness) = module
-                .items
-                .iter()
-                .enumerate()
-                .find_map(|(index, item)| match item {
-                    crate::ast::Item::FnDef(def) if def.name == name => Some((index, def)),
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("projected computed-field `{name}` witness"));
-            let source = &witness.body;
-            let mut elaborations = Elaborations::new();
-            let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations).at_item(item_index);
-            for parameter in &witness.sig.params {
-                match parameter {
-                    crate::ast::SignatureParam::Type(parameter) => tcx.push_type_param_kinded(
-                        &parameter.name,
-                        parameter.effective_kind(),
-                        parameter.span,
-                    ),
-                    crate::ast::SignatureParam::Value(parameter) => tcx.push_value(
-                        parameter.name.clone(),
-                        parameter.ty.clone().expect("witness parameter annotation"),
-                    ),
-                }
-            }
-            let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
-                source.span(),
-                &tcx,
-                |_store, _owner| Ok(()),
-            )
-            .expect("open projected computed-field root");
-            let (reservation, ()) = root
-                .reserve_root_child_with(
-                    crate::pass::typecheck_core::GoalOwnerKind::RetainedValue,
-                    source.span(),
-                    &tcx,
-                    |_store, _owner| Ok(()),
-                )
-                .expect("reserve projected computed-field premise");
-            let mut call = root
-                .open_reserved_child(reservation)
-                .expect("open projected computed-field premise");
-            let mut frontier = root.retained_value_frontier(&mut call);
-            let public = frontier
-                .reserve_projected_header_hole(source.span())
-                .expect("reserve projected computed-field public type");
-            let owner = frontier.owner();
-            let mut continuation = super::super::OrdinaryValueCursor::begin_child(
-                source,
-                Some(super::super::OwnerBoundType::Retained {
-                    owner,
-                    ty: public.clone(),
-                }),
-                &mut frontier,
-                &mut tcx,
-            )
-            .unwrap_or_else(|error| panic!("plan projected computed-field `{name}`: {error:?}"));
-            assert_eq!(
-                continuation.next_mode,
-                super::super::frontier::FrontierMode::ExpectedOnly
-            );
-            assert!(matches!(
-                &continuation.cursor.planned,
-                super::super::PlannedOrdinaryValue::Recursive(
-                    super::super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
-                        | super::super::OrdinaryRecursiveFamily::Field
-                )
-            ));
-            if name == "nonpath" {
-                assert!(
-                    !certified_fresh_field_source(&continuation, &tcx),
-                    "a computed receiver must remain outside the private field certificate"
-                );
-                continue;
-            }
-            assert!(
-                certified_fresh_field_source(&continuation, &tcx),
-                "projected computed-field `{name}` missed the fresh certificate"
-            );
-            if matches!(name, "simple" | "projection") {
-                continuation.next_mode = super::super::frontier::FrontierMode::LexicalFallback;
-                assert!(
-                    !certified_fresh_field_source(&continuation, &tcx),
-                    "a progressed computed-field continuation was re-certified"
-                );
-                continuation.next_mode = super::super::frontier::FrontierMode::ExpectedOnly;
-                let mark = tcx.save();
-                tcx.push_pending_rec_order("pending".to_owned(), source, source.span());
-                assert!(
-                    !certified_fresh_field_source(&continuation, &tcx),
-                    "pending recursive-order work must block computed-field staging"
-                );
-                tcx.restore(mark);
-                assert!(certified_fresh_field_source(&continuation, &tcx));
-            }
-
-            let mut staged = stage_projected_source_operand(continuation, &mut frontier, &mut tcx)
-                .unwrap_or_else(|error| {
-                    panic!("stage projected computed-field `{name}`: {error:?}")
-                });
-            assert_eq!(
-                matches!(staged, StagedOperand::Completed { .. }),
-                expected_complete,
-                "unexpected ExpectedOnly completion for `{name}`"
-            );
-            if expected_complete {
-                let StagedOperand::Completed { completed, .. } = &staged else {
-                    unreachable!("a completed computed-field source changed family")
-                };
-                assert!(!crate::pass::typecheck_core::type_contains_goal(
-                    completed.scoped().ty().as_type()
-                ));
-                assert!(!crate::pass::typecheck_core::type_contains_infer(
-                    completed.scoped().ty().as_type()
-                ));
-                let progressed = {
-                    let (store, _owner, delta, _publication) = frontier.parts_mut();
-                    store
-                        .zonk_for_progress(delta, public.clone(), &tcx)
-                        .expect("zonk the computed-field public type")
-                };
-                let (store, _owner, delta, _publication) = frontier.parts_mut();
-                store
-                    .require_goal_free_after_delta(delta, progressed, &tcx)
-                    .expect("a completed computed-field source must close its public header");
-            } else {
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::Ordinary(continuation, None)
-                        if continuation.next_mode
-                            == super::super::frontier::FrontierMode::LexicalFallback
-                ));
-            }
-
-            let mut next_template = 0;
-            let mut next_producer = 0;
-            let mut producer_locations = Vec::new();
-            reserve_projected_source(
-                &mut staged,
-                0,
-                &mut next_template,
-                &mut next_producer,
-                &mut producer_locations,
-            );
-            assert_eq!(next_template, 1);
-            assert_eq!(next_producer, u32::from(!expected_complete));
-            if expected_complete {
-                assert!(matches!(
-                    staged,
-                    StagedOperand::Completed {
-                        leaf: Some(ProjectedLeaf {
-                            template_index: 0,
-                            producer: None,
-                        }),
-                        ..
-                    }
-                ));
-            } else {
-                assert_eq!(producer_locations.len(), 1);
-                assert_eq!(producer_locations[0].source, 0);
-                assert!(producer_locations[0].path.is_empty());
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::Ordinary(
-                        _,
-                        Some(ProjectedLeaf {
-                            template_index: 0,
-                            producer: Some(0),
-                        })
-                    )
-                ));
-                let seal = InvocationSeal::fresh();
-                let mut specialization =
-                    crate::pass::typecheck_core::IsolatedSpecializationContextBuilder::new(&tcx);
-                let mut recipe = seal_projected_operand_for_test(
-                    &mut staged,
-                    public,
-                    &seal,
-                    &mut specialization,
-                    &mut frontier,
-                    &mut tcx,
-                )
-                .expect("seal the pending computed-field recipe");
-                snapshot_projected_recipe(&mut recipe, &mut specialization, &mut frontier, &tcx)
-                    .expect("snapshot the pending computed-field recipe");
-                assert!(!recipe.ty.producers.is_empty());
-                assert!(recipe.ty.closed.is_none());
-                let error = validate_projected_source_before_action(&staged, &recipe)
-                    .expect_err("a pending computed-field producer must fail before the action");
-                assert_eq!(error.diagnostic().span, source.span());
-                assert!(
-                    error
-                        .diagnostic()
-                        .message
-                        .contains("value source needs a complete type")
-                );
-                assert_eq!(
-                    error
-                        .diagnostic()
-                        .extra
-                        .as_ref()
-                        .and_then(|extra| extra.help.as_deref()),
-                    Some(
-                        "add a type argument or annotation, or complete the value in an ordinary `let` first"
-                    )
-                );
-            }
-        }
-    }
-
-    #[test]
     fn projected_path_call_fast_path_does_not_complete_a_nested_pair_leaf() {
         let package = fixture(
             "module projected_nested_path_call; \
@@ -16535,7 +17925,12 @@ mod tests {
             seal,
             specialization: None,
             header_cursor: ProjectedHeaderCursor::default(),
+            pre_inputs: PreInputCompletion::default(),
+            expected_progress: None,
             terminal_result: Some(output.clone()),
+            terminal_reflection: Default::default(),
+            reflection_alignment: None,
+            natural_result: false,
             transcript: Some(super::super::UserMacroCallTranscript {
                 action: crate::ast::NodeId(1),
                 source_span: source.span(),

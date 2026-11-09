@@ -2,60 +2,81 @@
 module book/event;
 
 import book/order(Side, buy_side, sell_side);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
 
-pub labels Limit_req = { lr_side: Side, lr_price: I32, lr_qty: I32 };
+pub type Limit_req = { Lr_side: Side; Lr_price: I32; Lr_qty: I32 };
 
-pub labels Market_req = { mr_side: Side, mr_qty: I32 };
+pub type Market_req = { Mr_side: Side; Mr_qty: I32 };
 
-pub labels Amend_req = { ar_id: I32, ar_qty: I32 };
+pub type Amend_req = { Ar_id: I32; Ar_qty: I32 };
 
 /// A limit order names the worst price it will accept; a market order
 /// takes whatever the book has. A cancel names an order id; an amend
 /// names one and a new quantity.
-pub labels Event =
-  { limit: Limit_req }
-  | { market: Market_req }
-  | { cancel: I32 }
-  | { amend: Amend_req };
+pub type Event =
+  { Limit: Limit_req } | { Market: Market_req } | { Cancel: I32 } | { Amend: Amend_req }
+  ;
 
 fn limit_event(side: Side, price: I32, qty: I32) -> Event {
-  ({limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum)[Event]
+  (Limit.mk((Lr_side.mk(side), Lr_price.mk(price), Lr_qty.mk(qty))).>widen_sum)[Event]
 }
 
 fn market_event(side: Side, qty: I32) -> Event {
-  ({market = {mr_side = side, mr_qty = qty}}.>widen_sum)[Event]
+  (Market.mk((Mr_side.mk(side), Mr_qty.mk(qty))).>widen_sum)[Event]
 }
 
-fn cancel_event(id: I32) -> Event { ({cancel = id}.>widen_sum)[Event] }
+fn cancel_event(id: I32) -> Event { (Cancel.mk(id).>widen_sum)[Event] }
 
 fn amend_event(id: I32, qty: I32) -> Event {
-  ({amend = {ar_id = id, ar_qty = qty}}.>widen_sum)[Event]
+  (Amend.mk((Ar_id.mk(id), Ar_qty.mk(qty))).>widen_sum)[Event]
 }
 
-pub fn limit_of(e: Limit) -> Limit_req { e.?{limit} }
+pub fn limit_of(e: Limit) -> Limit_req {
+  e.>select { Limit.get }
+}
 
-pub fn market_of(e: Market) -> Market_req { e.?{market} }
+pub fn market_of(e: Market) -> Market_req {
+  e.>select { Market.get }
+}
 
-pub fn cancel_of(e: Cancel) -> I32 { e.?{cancel} }
+pub fn cancel_of(e: Cancel) -> I32 {
+  e.>select { Cancel.get }
+}
 
-pub fn amend_of(e: Amend) -> Amend_req { e.?{amend} }
+pub fn amend_of(e: Amend) -> Amend_req {
+  e.>select { Amend.get }
+}
 
-pub fn limit_side(r: Limit_req) -> Side { r.?{lr_side} }
+pub fn limit_side(r: Limit_req) -> Side {
+  r.>select { Lr_side.get }
+}
 
-pub fn limit_price(r: Limit_req) -> I32 { r.?{lr_price} }
+pub fn limit_price(r: Limit_req) -> I32 {
+  r.>select { Lr_price.get }
+}
 
-pub fn limit_qty(r: Limit_req) -> I32 { r.?{lr_qty} }
+pub fn limit_qty(r: Limit_req) -> I32 {
+  r.>select { Lr_qty.get }
+}
 
-pub fn market_side(r: Market_req) -> Side { r.?{mr_side} }
+pub fn market_side(r: Market_req) -> Side {
+  r.>select { Mr_side.get }
+}
 
-pub fn market_qty(r: Market_req) -> I32 { r.?{mr_qty} }
+pub fn market_qty(r: Market_req) -> I32 {
+  r.>select { Mr_qty.get }
+}
 
-pub fn amend_id(r: Amend_req) -> I32 { r.?{ar_id} }
+pub fn amend_id(r: Amend_req) -> I32 {
+  r.>select { Ar_id.get }
+}
 
-pub fn amend_qty(r: Amend_req) -> I32 { r.?{ar_qty} }
+pub fn amend_qty(r: Amend_req) -> I32 {
+  r.>select { Ar_qty.get }
+}
 
 pub fn event_count(events: Array[Event]) -> I32 { array_len(events) }
 

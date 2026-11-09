@@ -11,15 +11,13 @@ import testapi/text(string_concat);
 fn type_conflict_image() -> String {
   "module consumer;\n\nimport provider(T);\n\ntype T = . & .;\n\npub fn run() -> "
   ". { () }\n\npackage type_conflict;\n\nbridge { consumer; provider; }\n\nmodule "
-  "provider;\n\npub newtype T : . { pub constructor make; pub projector open; "
-  "};\n"[String]
+  "provider;\n\npub type { T: . { pub mk; pub get; }; };\n"[String]
 }
 
 fn type_same_origin_image() -> String {
   "module repeated;\n\nimport provider(T);\nimport provider(T);\n\npub fn run() "
   "-> . { () }\n\npackage type_same_origin;\n\nbridge { repeated; provider; }\n\n"
-  "module provider;\n\npub newtype T : . { pub constructor make; pub "
-  "projector open; };\n"[String]
+  "module provider;\n\npub type { T: . { pub mk; pub get; }; };\n"[String]
 }
 
 fn value_conflict_image() -> String {
@@ -52,16 +50,16 @@ fn module_alias_same_origin_image() -> String {
 fn type_alias_collision_image() -> String {
   "module alias_collision;\n\nimport provider(T);\nimport provider as source;\n\n"
   "type T = source.T;\n\npub fn run() -> . { () }\n\npackage alias_collision;\n\n"
-  "bridge { alias_collision; provider; }\n\nmodule provider;\n\npub newtype T : "
-  ". { pub constructor make; pub projector open; };\n"[String]
+  "bridge { alias_collision; provider; }\n\nmodule provider;\n\npub type { T: . "
+  "{ pub mk; pub get; }; };\n"[String]
 }
 
 fn ordinary_alias_members_image() -> String {
   "module alias_members;\n\nimport provider as source;\n\ntype Mid[A] = "
   "source.Box[A];\ntype Alias[A] = Mid[A];\n\npub fn run() -> . { "
-  "Alias.open[.](Alias.make[.](())) }\n\npackage alias_members;\n\nbridge { "
-  "alias_members; provider; }\n\nmodule provider;\n\npub newtype Box[A] : A { "
-  "pub constructor make; pub projector open; };\n"[String]
+  "Alias.get[.](Alias.mk[.](())) }\n\npackage alias_members;\n\nbridge { "
+  "alias_members; provider; }\n\nmodule provider;\n\npub type { Box[A]: A { pub "
+  "mk; pub get; }; };\n"[String]
 }
 
 fn repeated_compiler_block_image() -> String {

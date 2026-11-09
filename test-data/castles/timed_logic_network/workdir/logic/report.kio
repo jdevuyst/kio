@@ -3,6 +3,7 @@ module logic/report;
 import list/list as traversal;
 import logic/model as model;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -28,9 +29,9 @@ pub fn header(count: I32) {
 }
 
 pub fn edge(event: model.Event) {
-  io.print(assignment(event.?{model.target}, event.?{model.value})
+  io.print(assignment(event.>select { model.Target.get }, event.>select { model.Value.get })
     .>text.string_concat("\n")
-    .>>text.string_concat(time(event.?{model.at})))
+    .>>text.string_concat(time(event.>select { model.At.get })))
 }
 
 pub fn canceled(now: I32, event: model.Event) {
@@ -39,8 +40,11 @@ pub fn canceled(now: I32, event: model.Event) {
   , text.string_concat(
     , "cancel "
     , text.string_concat(
-      , assignment(event.?{model.target}, event.?{model.value})
-      , text.string_concat(" due=", text.string_concat(fmt.int_to_string(event.?{model.at}), "\n"))
+      , assignment(event.>select { model.Target.get }, event.>select { model.Value.get })
+      , text.string_concat(
+        , " due="
+        , text.string_concat(fmt.int_to_string(event.>select { model.At.get }), "\n")
+        )
       )
     )
   ))
@@ -49,7 +53,10 @@ pub fn canceled(now: I32, event: model.Event) {
 fn show_wire(message: String, signal: model.Signal) -> String {
   text.string_concat(
   , message
-  , text.string_concat(" ", assignment(signal.?{model.wire}, signal.?{model.level}))
+  , text.string_concat(
+    , " "
+    , assignment(signal.>select { model.Wire.get }, signal.>select { model.Level.get })
+    )
   )
 }
 
@@ -57,18 +64,21 @@ pub fn summary(state: model.State) {
   io.print(text.string_concat(
   , "settled-at="
   , text.string_concat(
-    , fmt.int_to_string(state.?{model.last_time})
+    , fmt.int_to_string(state.>select { model.Last_time.get })
     , text.string_concat(
       , " edges="
       , text.string_concat(
-        , fmt.int_to_string(state.?{model.edges})
+        , fmt.int_to_string(state.>select { model.Edges.get })
         , text.string_concat(
           , " canceled="
-          , text.string_concat(fmt.int_to_string(state.?{model.canceled}), "\n")
+          , text.string_concat(fmt.int_to_string(state.>select { model.Canceled.get }), "\n")
           )
         )
       )
     )
   ));
-  io.print(text.string_concat(traversal.foldl(show_wire, "final", state.?{model.wires}), "\n"))
+  io.print(text.string_concat(
+  , traversal.foldl(show_wire, "final", state.>select { model.Wires.get })
+  , "\n"
+  ))
 }

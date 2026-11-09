@@ -427,9 +427,7 @@ fn closed_cases() -> Vec<ClosedCase> {
         ("fn", " run() { () }"),
         ("host", " type A;"),
         ("import", " __intrinsics__;"),
-        ("labels", " { field: . };"),
         ("literal", " one = 1;"),
-        ("newtype", " A : . { constructor make; projector read; };"),
         ("op", " ~ _ { impl run; };"),
         ("pub", " fn run() { () }"),
         ("pure", " fn run() { () }"),
@@ -483,51 +481,21 @@ fn closed_cases() -> Vec<ClosedCase> {
         add(
             "",
             &format!("module app; {visibility}rec "),
-            &[
-                ("newtype", " A : A { constructor make; projector read; };"),
-                ("labels", " A = { next: A };"),
-            ],
+            &[("type", " { A: A { mk; get; }; };")],
         );
     }
     add(
         "",
         "module app; rec { ",
         &[
-            (
-                "labels",
-                " A = { next: B }; newtype B : A { constructor make; projector read; }; }",
-            ),
-            (
-                "newtype",
-                " A : B { constructor make; projector read; }; type B = A; }",
-            ),
-            (
-                "pub",
-                " newtype A : B { constructor make; projector read; }; type B = A; }",
-            ),
-            (
-                "type",
-                " A = B; newtype B : A { constructor make; projector read; }; }",
-            ),
+            ("pub", " type A = B; type { B: A { mk; get; }; }; }"),
+            ("type", " A = B; type { B: A { mk; get; }; }; }"),
         ],
     );
     add(
         "",
         "module app; rec { pub ",
-        &[
-            (
-                "labels",
-                " A = { next: B }; newtype B : A { constructor make; projector read; }; }",
-            ),
-            (
-                "newtype",
-                " A : B { constructor make; projector read; }; type B = A; }",
-            ),
-            (
-                "type",
-                " A = B; newtype B : A { constructor make; projector read; }; }",
-            ),
-        ],
+        &[("type", " A = B; type { B: A { mk; get; }; }; }")],
     );
     add(
         "",
@@ -570,44 +538,34 @@ fn closed_cases() -> Vec<ClosedCase> {
     add("", "module app; host type A role(str) { owned ", &[]);
     add(
         "",
-        "module app; newtype A : . { ",
+        "module app; type { A: . { ",
         &[
-            ("constructor", " make; projector read; };"),
-            ("projector", " read; constructor make; };"),
-            ("pub", " constructor make; projector read; };"),
+            ("mk", "; get; }; };"),
+            ("get", "; mk; }; };"),
+            ("pub", " mk; get; }; };"),
         ],
     );
     add(
         "",
-        "module app; newtype A : . { pub ",
-        &[
-            ("constructor", " make; projector read; };"),
-            ("projector", " read; constructor make; };"),
-        ],
+        "module app; type { A: . { pub ",
+        &[("mk", "; get; }; };"), ("get", "; mk; }; };")],
     );
     add(
         "",
-        "module app; newtype A : . { constructor make; ",
-        &[("projector", " read; };"), ("pub", " projector read; };")],
+        "module app; type { A: . { mk; ",
+        &[("get", "; }; };"), ("pub", " get; }; };")],
     );
     add(
         "",
-        "module app; newtype A : . { projector read; ",
-        &[
-            ("constructor", " make; };"),
-            ("pub", " constructor make; };"),
-        ],
+        "module app; type { A: . { get; ",
+        &[("mk", "; }; };"), ("pub", " mk; }; };")],
     );
     add(
         "",
-        "module app; newtype A : . { projector read; pub ",
-        &[("constructor", " make; };")],
+        "module app; type { A: . { get; pub ",
+        &[("mk", "; }; };")],
     );
-    add(
-        "",
-        "module app; newtype A : . { constructor make; projector read; ",
-        &[],
-    );
+    add("", "module app; type { A: . { mk; get; ", &[]);
     add(
         "",
         "module app; macro make: . -> . { ",
@@ -688,8 +646,8 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; labels { field: . }; fn run(value: Field) { let .({field ",
-        &[("as", " local}) = value; local }")],
+        "module app; import dep/api(Entry ",
+        &[("as", " Local);")],
     );
     add("", "module app; fn run() { recur(", &[]);
     add(
@@ -1031,15 +989,11 @@ fn closed_cases() -> Vec<ClosedCase> {
         &[
             (
                 "pub",
-                " type A = B; newtype B : A { constructor make; projector read; }; } } }; nonbreaking { add { api.A; } } }",
+                " type A = B; type { B: A { mk; get; }; }; } } }; nonbreaking { add { api.A; } } }",
             ),
             (
                 "type",
-                " A = B; newtype B : A { constructor make; projector read; }; } } }; nonbreaking { add { api.A; } } }",
-            ),
-            (
-                "newtype",
-                " A : B { constructor make; projector read; }; type B = A; } } }; nonbreaking { add { api.A; } } }",
+                " A = B; type { B: A { mk; get; }; }; } } }; nonbreaking { add { api.A; } } }",
             ),
         ],
     );
@@ -1124,10 +1078,6 @@ fn closed_cases() -> Vec<ClosedCase> {
         &[
             ("host", " type A; } } } }"),
             ("import", " __intrinsics__; pub fn run() -> .; } } } }"),
-            (
-                "newtype",
-                " A : . { constructor make; projector read; }; } } } }",
-            ),
             ("pub", " fn run() -> .; } } } }"),
             ("pure", " pub fn run() -> .; } } } }"),
             ("type", " A = .; } } } }"),

@@ -1,0 +1,9 @@
+module main;
+
+import provider(macro identity);
+
+fn accept(_inputs: . & (. -> .)) { () }
+
+fn result() {
+  identity(accept)() { () }
+}

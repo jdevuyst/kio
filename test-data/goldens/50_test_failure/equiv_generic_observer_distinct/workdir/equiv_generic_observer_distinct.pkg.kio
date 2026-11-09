@@ -1,0 +1,14 @@
+package equiv_generic_observer_distinct;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

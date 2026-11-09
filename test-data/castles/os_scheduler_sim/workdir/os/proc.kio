@@ -4,6 +4,7 @@ module os/proc;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import os/config as config;
 import os/num as num;
@@ -18,17 +19,21 @@ import testapi/iter(loop);
 /// `compute` occupies the CPU for its payload's worth of ticks. `touch`
 /// references the process's virtual page `payload` exactly once: one tick when
 /// the page is resident, and a trap into the pager when it is not.
-pub labels Phase = { compute: I32 } | { touch: I32 };
+pub type Phase = { Compute: I32 } | { Touch: I32 };
 
-pub fn compute_phase(ticks: I32) -> Phase { ({compute = ticks}.>widen_sum)[Phase] }
+pub fn compute_phase(ticks: I32) -> Phase { (Compute.mk(ticks).>widen_sum)[Phase] }
 
-pub fn touch_phase(vp: I32) -> Phase { ({touch = vp}.>widen_sum)[Phase] }
+pub fn touch_phase(vp: I32) -> Phase { (Touch.mk(vp).>widen_sum)[Phase] }
 
 pub fn phase_text(p: Phase) -> String {
   match(p) {
     (
-    , .(c: Compute) { text.cat("cpu", text.num_text(c.?{compute})) }
-    , .(t: Touch) { text.cat("read", text.num_text(t.?{touch})) }
+    , .(c: Compute) {
+        text.cat("cpu", text.num_text(c.>select { Compute.get }))
+      }
+    , .(t: Touch) {
+        text.cat("read", text.num_text(t.>select { Touch.get }))
+      }
     )
   }
 }
@@ -46,82 +51,128 @@ pub fn pid_tag(pid: I32) -> String {
 /// process finished on, the ticks it spent running, queued, and blocked, and
 /// the times it was switched onto the CPU, trapped, and found its page
 /// resident.
-pub labels Pcb = {
-, arrive: Array[I32]
-, pc: Array[I32]
-, rem: Array[I32]
-, finish: Array[I32]
-, cpu_ticks: Array[I32]
-, wait_ticks: Array[I32]
-, block_ticks: Array[I32]
-, switches: Array[I32]
-, faults: Array[I32]
-, hits: Array[I32]
+pub type Pcb = {
+  Arrive: Array[I32];
+  Pc: Array[I32];
+  Rem: Array[I32];
+  Finish: Array[I32];
+  Cpu_ticks: Array[I32];
+  Wait_ticks: Array[I32];
+  Block_ticks: Array[I32];
+  Switches: Array[I32];
+  Faults: Array[I32];
+  Hits: Array[I32]
 };
 
 pub fn new_pcb(arrive: Array[I32]) -> Pcb {
   let n = config.proc_count();
-  {
-  , arrive
-  , pc = array_make_filled(n, 0)
-  , rem = array_make_filled(n, 0)
-  , finish = array_make_filled(n, config.nothing())
-  , cpu_ticks = array_make_filled(n, 0)
-  , wait_ticks = array_make_filled(n, 0)
-  , block_ticks = array_make_filled(n, 0)
-  , switches = array_make_filled(n, 0)
-  , faults = array_make_filled(n, 0)
-  , hits = array_make_filled(n, 0)
-  }
+  (
+  , Arrive.mk(arrive)
+  , Pc.mk(array_make_filled(n, 0))
+  , Rem.mk(array_make_filled(n, 0))
+  , Finish.mk(array_make_filled(n, config.nothing()))
+  , Cpu_ticks.mk(array_make_filled(n, 0))
+  , Wait_ticks.mk(array_make_filled(n, 0))
+  , Block_ticks.mk(array_make_filled(n, 0))
+  , Switches.mk(array_make_filled(n, 0))
+  , Faults.mk(array_make_filled(n, 0))
+  , Hits.mk(array_make_filled(n, 0))
+  )
 }
 
 fn bump(column: Array[I32], pid: I32) { array_set(column, pid, add_i32(array_get(column, pid), 1)) }
 
-pub fn arrive_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{arrive}, pid) }
+pub fn arrive_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Arrive.get }, pid)
+}
 
-pub fn pc_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{pc}, pid) }
+pub fn pc_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Pc.get }, pid)
+}
 
-pub fn set_pc(p: Pcb, pid: I32, next: I32) { array_set(p.?{pc}, pid, next) }
+pub fn set_pc(p: Pcb, pid: I32, next: I32) {
+  array_set(p.>select { Pc.get }, pid, next)
+}
 
-pub fn rem_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{rem}, pid) }
+pub fn rem_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Rem.get }, pid)
+}
 
-pub fn set_rem(p: Pcb, pid: I32, left: I32) { array_set(p.?{rem}, pid, left) }
+pub fn set_rem(p: Pcb, pid: I32, left: I32) {
+  array_set(p.>select { Rem.get }, pid, left)
+}
 
-pub fn finish_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{finish}, pid) }
+pub fn finish_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Finish.get }, pid)
+}
 
-pub fn set_finish(p: Pcb, pid: I32, tick: I32) { array_set(p.?{finish}, pid, tick) }
+pub fn set_finish(p: Pcb, pid: I32, tick: I32) {
+  array_set(p.>select { Finish.get }, pid, tick)
+}
 
-pub fn add_cpu_tick(p: Pcb, pid: I32) { bump(p.?{cpu_ticks}, pid) }
+pub fn add_cpu_tick(p: Pcb, pid: I32) {
+  bump(p.>select { Cpu_ticks.get }, pid)
+}
 
-pub fn add_wait_tick(p: Pcb, pid: I32) { bump(p.?{wait_ticks}, pid) }
+pub fn add_wait_tick(p: Pcb, pid: I32) {
+  bump(p.>select { Wait_ticks.get }, pid)
+}
 
-pub fn add_block_tick(p: Pcb, pid: I32) { bump(p.?{block_ticks}, pid) }
+pub fn add_block_tick(p: Pcb, pid: I32) {
+  bump(p.>select { Block_ticks.get }, pid)
+}
 
-pub fn add_switch(p: Pcb, pid: I32) { bump(p.?{switches}, pid) }
+pub fn add_switch(p: Pcb, pid: I32) {
+  bump(p.>select { Switches.get }, pid)
+}
 
-pub fn add_fault(p: Pcb, pid: I32) { bump(p.?{faults}, pid) }
+pub fn add_fault(p: Pcb, pid: I32) {
+  bump(p.>select { Faults.get }, pid)
+}
 
-pub fn add_hit(p: Pcb, pid: I32) { bump(p.?{hits}, pid) }
+pub fn add_hit(p: Pcb, pid: I32) {
+  bump(p.>select { Hits.get }, pid)
+}
 
-pub fn cpu_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{cpu_ticks}, pid) }
+pub fn cpu_ticks_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Cpu_ticks.get }, pid)
+}
 
-pub fn wait_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{wait_ticks}, pid) }
+pub fn wait_ticks_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Wait_ticks.get }, pid)
+}
 
-pub fn block_ticks_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{block_ticks}, pid) }
+pub fn block_ticks_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Block_ticks.get }, pid)
+}
 
-pub fn switches_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{switches}, pid) }
+pub fn switches_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Switches.get }, pid)
+}
 
-pub fn faults_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{faults}, pid) }
+pub fn faults_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Faults.get }, pid)
+}
 
-pub fn hits_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{hits}, pid) }
+pub fn hits_at(p: Pcb, pid: I32) -> I32 {
+  array_get(p.>select { Hits.get }, pid)
+}
 
-pub fn cpu_column(p: Pcb) -> Array[I32] { p.?{cpu_ticks} }
+pub fn cpu_column(p: Pcb) -> Array[I32] {
+  p.>select { Cpu_ticks.get }
+}
 
-pub fn switch_column(p: Pcb) -> Array[I32] { p.?{switches} }
+pub fn switch_column(p: Pcb) -> Array[I32] {
+  p.>select { Switches.get }
+}
 
-pub fn fault_column(p: Pcb) -> Array[I32] { p.?{faults} }
+pub fn fault_column(p: Pcb) -> Array[I32] {
+  p.>select { Faults.get }
+}
 
-pub fn hit_column(p: Pcb) -> Array[I32] { p.?{hits} }
+pub fn hit_column(p: Pcb) -> Array[I32] {
+  p.>select { Hits.get }
+}
 
 /// A process is finished once the tick it completed on has been recorded.
 pub fn is_done(p: Pcb, pid: I32) -> Bool { num.geq(finish_at(p, pid), 0) }

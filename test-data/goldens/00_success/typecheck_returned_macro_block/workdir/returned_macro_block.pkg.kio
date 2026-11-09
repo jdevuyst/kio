@@ -1,0 +1,10 @@
+package returned_macro_block;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

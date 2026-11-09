@@ -50,7 +50,7 @@ fn building_row(b: city.Building) -> String {
 }
 
 rec(loop) fn each_building(bs: lst.List[city.Building]) {
-  match(bs.>lst.List.un_list) {
+  match(bs.>lst.List.get) {
     (
     , .(b: city.Building, rest: lst.List[city.Building]) {
         line(building_row(b));
@@ -73,7 +73,7 @@ fn event_row(e: events.Event) -> String {
 }
 
 rec(loop) fn each_event(es: lst.List[events.Event]) {
-  match(es.>lst.List.un_list) {
+  match(es.>lst.List.get) {
     (
     , .(e: events.Event, rest: lst.List[events.Event]) {
         line(event_row(e));
@@ -92,7 +92,7 @@ pub fn print_events(es: lst.List[events.Event]) {
 
 /// The active multiset, tallest roof first.
 rec(loop) fn each_height(xs: ms.Active, acc: String, first: Bool) -> String {
-  match(xs.>lst.List.un_list) {
+  match(xs.>lst.List.get) {
     (
     , .(h: I32, rest: ms.Active) {
         let .(gap: String) = if(first) { "" } else { "," };
@@ -116,7 +116,7 @@ fn step_row(s: sweep.Step) -> String {
 }
 
 rec(loop) fn each_step(steps: lst.List[sweep.Step]) {
-  match(steps.>lst.List.un_list) {
+  match(steps.>lst.List.get) {
     (
     , .(s: sweep.Step, rest: lst.List[sweep.Step]) { line(step_row(s)); recur each_step(rest) }
     , .(_empty: .) { () }
@@ -135,7 +135,7 @@ fn show_point(p: sweep.Point) -> String {
 }
 
 rec(loop) fn each_point(ps: lst.List[sweep.Point], acc: String, first: Bool) -> String {
-  match(ps.>lst.List.un_list) {
+  match(ps.>lst.List.get) {
     (
     , .(p: sweep.Point, rest: lst.List[sweep.Point]) {
         let .(gap: String) = if(first) { "" } else { " " };

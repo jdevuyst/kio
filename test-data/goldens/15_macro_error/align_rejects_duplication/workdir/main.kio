@@ -2,6 +2,6 @@ module main;
 
 import macros/algebraic_macros(macro align);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
 fn duplicate(a: A) -> A & A { align(a) }

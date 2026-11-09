@@ -1,3 +1,0 @@
-module scope/origin;
-
-pub(scope) labels { item: . };

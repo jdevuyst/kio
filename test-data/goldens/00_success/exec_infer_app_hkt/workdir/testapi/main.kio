@@ -4,19 +4,19 @@ import testapi(String);
 import testapi/io(print);
 
 // A concrete arity-1 newtype to brand against.
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
 // Lift a value into the branded position `Box(A)` via the brand's
 // constructor. Called with no explicit type-arg: the typer infers
 // `[A]` from the bare value-arg's type (`A` matched against
 // `String`).
-fn lift[A](x: A) -> Box[A] { Box.mk_box[A](x) }
+fn lift[A](x: A) -> Box[A] { Box.mk[A](x) }
 
 // Peel the brand back off via the brand's projector. Called with no
 // explicit type-arg: the typer infers `[A]` from the value-arg's
 // type by recursing through the applied-brand pattern (`Box(A)`
 // matched against `Box(String)`).
-fn peel[A](x: Box[A]) -> A { Box.un_box[A](x) }
+fn peel[A](x: Box[A]) -> A { Box.get[A](x) }
 
 // Round-trip via inference at both call sites. `unify_pattern`
 // recurses through the applied `Type::Path` (head against head, arg

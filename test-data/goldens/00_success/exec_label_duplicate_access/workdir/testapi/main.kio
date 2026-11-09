@@ -2,14 +2,15 @@ module testapi/main;
 
 import __intrinsics__;
 
+import macros/row_macros(macro select);
 import testapi(I32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-labels { foo: I32 };
+type { Foo: I32 { mk; get } }
 
 pub fn main() {
-  let both = {foo = 7}.?{foo, foo};
+  let both = Foo.mk(7).>select { Foo.get; Foo.get };
   print(int_to_string(__fst__[I32][I32](both)));
   print(int_to_string(__snd__[I32][I32](both)))
 }

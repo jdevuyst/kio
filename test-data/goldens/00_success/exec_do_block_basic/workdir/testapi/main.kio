@@ -9,11 +9,11 @@ import testapi/io(print);
 // `box_bind`'s signature
 // `[A] [B] (Box(A) & (A -> Box(B))) -> Box(B)` is the canonical
 // bind shape the do-block looks for.
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get(m)) }
 
 // The do-block elaborates to
 // `box_bind(box_pure("do basic ok\n"), .(a: String) { box_pure(a) })`.
@@ -23,4 +23,4 @@ fn run() -> Box[String] {
   do(box_bind) { let a <- box_pure("do basic ok\n"[String]); box_pure(a) }
 }
 
-pub fn main() { print(Box.un_box(run())) }
+pub fn main() { print(Box.get(run())) }

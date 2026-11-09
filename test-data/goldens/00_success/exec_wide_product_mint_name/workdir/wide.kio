@@ -1,22 +1,37 @@
 module wide;
 
+import macros/row_macros(macro select);
 import testapi(I32);
 import testapi/arith(add_i32);
 
-pub labels Row = { alpha: I32, bravo: I32, charlie: I32, delta: I32, echo: I32 };
+pub type {
+  Alpha: I32 { pub mk; pub get };
+  Bravo: I32 { pub mk; pub get };
+  Charlie: I32 { pub mk; pub get };
+  Delta: I32 { pub mk; pub get };
+  Echo: I32 { pub mk; pub get }
+}
+
+pub type Row = Alpha & Bravo & Charlie & Delta & Echo;
 
 pub type Cells = Alpha & Bravo & Charlie & Delta & Echo;
 
 pub type Grid = Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells & Cells;
 
-pub fn row(n: I32) -> Cells { {alpha = n, bravo = n, charlie = n, delta = n, echo = n} }
+pub fn row(n: I32) -> Cells { (Alpha.mk(n), Bravo.mk(n), Charlie.mk(n), Delta.mk(n), Echo.mk(n)) }
 
 pub fn grid() -> Grid {
   (row(1), row(2), row(3), row(4), row(5), row(6), row(7), row(8), row(9), row(10))
 }
 
 fn row_total(r: Cells) -> I32 {
-  add_i32(r.?{alpha}, add_i32(r.?{bravo}, add_i32(r.?{charlie}, add_i32(r.?{delta}, r.?{echo}))))
+  add_i32(
+  , r.>select { Alpha.get }
+  , add_i32(
+    , r.>select { Bravo.get }
+    , add_i32(r.>select { Charlie.get }, add_i32(r.>select { Delta.get }, r.>select { Echo.get }))
+    )
+  )
 }
 
 pub fn grid_total(

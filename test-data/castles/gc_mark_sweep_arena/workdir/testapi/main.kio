@@ -6,8 +6,8 @@ module testapi/main;
 
 import gc/compact(compact, plan);
 import gc/fixture(build_image);
-import gc/heap(top, {heap_cells}, {heap_roots});
-import gc/mark(mark_heap, {mark_bits}, {mark_trace});
+import gc/heap(Heap_cells, Heap_roots, top);
+import gc/mark(Mark_bits, Mark_trace, mark_heap);
 import gc/report(
 , addr_list
 , blank
@@ -20,14 +20,15 @@ import gc/report(
 , print_sweep
 , print_verify
 );
-import gc/sweep(sweep, {live_objects});
+import gc/sweep(Live_objects, sweep);
 import gc/verify(audit);
+import macros/row_macros(macro select);
 import testapi(String);
 
 pub fn main() {
   let image = build_image();
-  let cells = image.?{heap_cells};
-  let roots = image.?{heap_roots};
+  let cells = image.>select { Heap_cells.get };
+  let roots = image.>select { Heap_roots.get };
   let before_top = top(cells);
   line("gc_mark_sweep_arena");
   blank();
@@ -36,8 +37,8 @@ pub fn main() {
   print_heap("heap before gc", cells);
   blank();
   let marking = mark_heap(cells, roots);
-  let marks = marking.?{mark_bits};
-  print_mark(marking.?{mark_trace});
+  let marks = marking.>select { Mark_bits.get };
+  print_mark(marking.>select { Mark_trace.get });
   blank();
   let census = sweep(cells, marks);
   print_sweep(cells, marks, census);
@@ -49,5 +50,5 @@ pub fn main() {
   blank();
   print_heap("heap after gc", cells);
   blank();
-  print_verify(audit(cells, roots, census.?{live_objects}))
+  print_verify(audit(cells, roots, census.>select { Live_objects.get }))
 }

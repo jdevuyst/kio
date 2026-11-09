@@ -42,15 +42,13 @@ least one fixture per kind:
   same-line trailing
 - `26_doc_comments` — `///` doc-comment lines (`comment.doc`) and
   `////` rulers (still `comment.line`)
-- `28_label_value_labels` — label names in `{label = value}` construction
-  classify the same way as label declaration entries
+- `28_label_value_labels` — compact nominal declarations, member calls and
+  imported row-macro calls retain their syntax roles
 - `29_file_variants` — signature changelog, dependency declaration, and
   dependency lock file syntax; package files are covered by the package
   keyword and module smoke fixtures
-- `30_import_label_item` — a comment/newline-bearing selective label item and
-  adjacent expression shorthand are label references, while whitespace-
-  bearing singleton blocks stay identifiers and contextual `import(...)` stays
-  a function call
+- `30_import_label_item` — a comment/newline-bearing nominal import selector,
+  singleton blocks and contextual `import(...)` retain their syntax roles
 - `27_import_operator_grammar` — full fixed and variadic selected grammars
   retain their tags, slots, separators and delimiters
 - `32_callable_declaration_targets` — fixed, variadic and macro
@@ -68,10 +66,8 @@ least one fixture per kind:
   the provider path's final segment classifies both path and alias occurrences
   as module names, while the intervening contextual `as` is a declaration
   keyword
-- `36_contextual_keyword_roles` — `as` classifies as a declaration keyword
-  in multiline row-let syntax with leading, repeated interior, and trailing
-  commas and comment trivia, while duplicate-spelled labels, binders,
-  references, import path leaves, and aliases retain their ordinary roles
+- `36_contextual_keyword_roles` — multiline import `as` remains a declaration
+  keyword while same-spelled aliases, binders, and references retain their roles
 - `07_placeholders_and_slots` — `_` / `__` / `___` slot tokens, `#` /
   `#1` / `#42` placeholders, and `.#` / `.$$$$` placeholder-lambda
   intros

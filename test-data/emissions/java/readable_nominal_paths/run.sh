@@ -27,5 +27,5 @@ check_host() {
 }
 
 check_host
-printf '\npub newtype Unrelated : . { pub constructor make_unrelated; pub projector read_unrelated }\n' >> api.kio
+printf '\npub type { Unrelated: . { pub mk; pub get } }\n' >> api.kio
 check_host

@@ -7,7 +7,7 @@ below are the program's own source.
 
 The `hkt` package is a **worked example**, not a drop-in library. Its job is
 to exercise Kio's whole higher-kinded-type vocabulary end to end against two
-arity-1 newtypes acting as *brands*, so you can see every piece — kind-`*→*`
+arity-1 nominal types acting as *brands*, so you can see every piece — kind-`*→*`
 binders, type-constructor application, first-class instance dictionaries,
 `do` pipelines, and `derive` — running in one small program.
 
@@ -16,7 +16,7 @@ case study links to them rather than restating them:
 
 - [`higher-kinded-types.md`](../guides/higher-kinded-types.md)
   is the **language reference** for the HKT machinery — kind annotations,
-  type-constructor application, the polymorphic-newtype-payload contract,
+  type-constructor application, the polymorphic nominal payload contract,
   multi-arity type constructors, instance dictionaries, and explicit
   conversions. Read it for the
   *why* behind any mechanism this case study merely *uses*.
@@ -92,21 +92,21 @@ host fn string_concat(p0: String, p1: String) -> String;
 __INSERT_CODE_HERE__
 -->
 
-## Brands: two arity-1 newtypes
+## Brands: two arity-1 nominal types
 
 The package's two type constructors are both **canonical** — each an arity-1
-newtype whose payload is exactly its type parameter:
+nominal type whose payload is exactly its type parameter:
 
 ```kio {@hkt}
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
+pub type { Identity[A]: A { pub mk; pub get } }
 ```
 
-`Box[A] : A` and `Identity[A] : A` are the same value-level shape — a thin
+`Box[A]` and `Identity[A]` are the same value-level shape — a thin
 wrapper around `A` — but they are **nominally distinct** type constructors.
 The POC treats them as *brands*: their job is to carry a type-system
-identity. Constructing with `Box.mk_box` and then projecting with `Box.un_box`
+identity. Constructing with `Box.mk` and then projecting with `Box.get`
 preserves the payload. Their runtime representation and
 conversion costs follow the [backend contracts](../../specs/backends/README.md),
 not a universal runtime-identity rule.
@@ -123,94 +123,88 @@ and the type checker keeps the two apart.
 
 ## Instance dictionaries with polymorphic payloads
 
-Four instance newtypes capture the operations the program dispatches over.
+Four instance nominal types capture the operations the program dispatches over.
 Each carries a **polymorphic function** as its payload — the language feature
 that makes first-class `Functor[F]` / `Monad[F]` instances possible:
 
 ```kio {@hkt}
-pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
-  pub constructor mk_monad;
-  pub projector bind
-  }
+pub type { Monad[*F]: [A][B] (F[A] & (A -> F[B])) -> F[B] { pub mk; pub get } }
 
-pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
-  pub constructor mk_functor;
-  pub projector fmap
-  }
+pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { pub mk; pub get } }
 
-pub newtype Pure[*F] : [A] A -> F[A] { pub constructor mk_pure; pub projector lift }
+pub type { Pure[*F]: [A] A -> F[A] { pub mk; pub get } }
 
-pub newtype Extract[*F] : [A] F[A] -> A { pub constructor mk_extract; pub projector peel }
+pub type { Extract[*F]: [A] F[A] -> A { pub mk; pub get } }
 ```
 
 The `[*F]` binder is kind-`*→*`: it stands for a one-argument type
 constructor, applied as `F[A]` and `F[B]` inside each payload. The payload is
 itself polymorphic — `Monad`'s `[A][B]` are bound at construction time inside
-the lambda literal that goes into `mk_monad`, and the projector preserves
-that polymorphism. So `Monad.bind(monad)` yields a value whose remaining
+the lambda literal that goes into `Monad.mk`, and the projector preserves
+that polymorphism. So `Monad.get(monad)` yields a value whose remaining
 `[A][B]` polymorphism is intact, and one instance handles every carrier pair.
 
 `Pure[F]` lifts a bare `A` into `F[A]`; `Extract[F]` peels an `F[A]` back to
 `A`. These two exist because a brand-*generic* body has no brand-crossing
-primitive over an opaque `F` — there is no way to call `Box.mk_box` when all
+primitive over an opaque `F` — there is no way to call `Box.mk` when all
 you know is "some `F`." Generic code threads `Pure[F]` / `Extract[F]`
 instances and dispatches through their members instead.
 
-> Why a newtype payload may be a polymorphic function is explained in
-> [`higher-kinded-types.md` § Polymorphic newtype payloads](../guides/higher-kinded-types.md).
+> Why a nominal payload may be a polymorphic function is explained in
+> [`higher-kinded-types.md` § Polymorphic nominal payloads](../guides/higher-kinded-types.md).
 > For host-side storage and projection, see the [host guides](../README.md#host-integrations)
 > and [`specs/backends/README.md` § Polymorphic newtype payloads](../../specs/backends/README.md#polymorphic-newtype-payloads).
 
 ## Concrete instances per brand
 
-Each brand gets its instances built from its own `mk_*` / `un_*` members. The
+Each brand gets its instances built from its own `mk` / `get` members. The
 instance bodies are where the concrete brand crossing happens — `Box` lifts
-and projects through `Box.mk_box` / `Box.un_box`, `Identity` through its own:
+and projects through `Box.mk` / `Box.get`, `Identity` through its own:
 
 ```kio {@hkt}
 fn box_monad() -> Monad[Box] {
-  Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
+  Monad.mk(.[A][B](m, k) { k(Box.get(m)) })
 }
 
 fn box_functor() -> Functor[Box] {
-  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+  Functor.mk(.[A][B](step, value) { Box.mk(step(Box.get(value))) })
 }
 
 fn box_pure() -> Pure[Box] {
-  Pure.mk_pure(.[A](x) { Box.mk_box(x) })
+  Pure.mk(.[A](x) { Box.mk(x) })
 }
 
 fn box_extract() -> Extract[Box] {
-  Extract.mk_extract(.[A](m) { Box.un_box(m) })
+  Extract.mk(.[A](m) { Box.get(m) })
 }
 
 fn identity_monad() -> Monad[Identity] {
-  Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) })
+  Monad.mk(.[A][B](m, k) { k(Identity.get(m)) })
 }
 
 fn identity_functor() -> Functor[Identity] {
-  Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
+  Functor.mk(.[A][B](step, value) { Identity.mk(step(Identity.get(value))) })
 }
 
 fn identity_pure() -> Pure[Identity] {
-  Pure.mk_pure(.[A](x) { Identity.mk_id(x) })
+  Pure.mk(.[A](x) { Identity.mk(x) })
 }
 
 fn identity_extract() -> Extract[Identity] {
-  Extract.mk_extract(.[A](m) { Identity.un_id(m) })
+  Extract.mk(.[A](m) { Identity.get(m) })
 }
 ```
 
 The `Monad` and `Functor` payload literals are polymorphic in `[A][B]`,
 matching each dictionary's payload shape; `Pure` and `Extract` are
-polymorphic in `[A]`. The bodies peel via `un_*`, apply the operation, and
-re-wrap via `mk_*` where needed. The `Identity` instances are byte-for-byte
-the same shape as the `Box` ones with `mk_id` / `un_id` swapped in — the only
-thing that differs between the two brands' instances is which newtype's
+polymorphic in `[A]`. The bodies peel via `get`, apply the operation, and
+re-wrap via `mk` where needed. The `Identity` instances are byte-for-byte
+the same shape as the `Box` ones with `Identity` in place of `Box` — the only
+thing that differs between the two brands' instances is which nominal type's
 members they name.
 
 Note that none of these construction sites spell explicit type arguments —
-`Box.mk_box(x)`, `Box.un_box(m)`, `k(...)` — even though the members are
+`Box.mk(x)`, `Box.get(m)`, `k(...)` — even though the members are
 type-parameterized. The carrier types are inferred from the surrounding
 context (the instance's declared return type and the lambda's binders). The
 POC leans on inference everywhere it can, which is what a user would
@@ -219,7 +213,7 @@ naturally write.
 ## Concrete brand crossing: `rebrand`
 
 The first two output lines come from round-tripping a value through a brand:
-build the branded value with the newtype's own constructor, peel and re-lift
+build the branded value with the nominal type's own constructor, peel and re-lift
 through threaded instances, then project back out. The brand-generic part is
 `rebrand`, which is parametric over `[*F]` — it works against any brand whose
 `Pure` and `Extract` instances you hand it:
@@ -229,30 +223,30 @@ through threaded instances, then project back out. The brand-generic part is
 // `F`, so the body threads the two instances and dispatches through their
 // members. Peel `x : F[A]` down to `A`, then re-lift back up to `F[A]`.
 fn rebrand[*F][A](pur: Pure[F], ext: Extract[F], x: F[A]) -> F[A] {
-  Pure.lift(pur)(Extract.peel(ext)(x))
+  Pure.get(pur)(Extract.get(ext)(x))
 }
 ```
 
-`Extract.peel(ext)` projects the `Extract[F]` dictionary to its underlying
-`F[A] -> A` function; `Pure.lift(pur)` projects `Pure[F]` to `A -> F[A]`.
+`Extract.get(ext)` projects the `Extract[F]` dictionary to its underlying
+`F[A] -> A` function; `Pure.get(pur)` projects `Pure[F]` to `A -> F[A]`.
 Composing them is the type-constructor-generic identity on `F[A]`. The body
 never names `Box` or `Identity` — it cannot, since `F` is abstract — so the
 same compiled body serves both brands.
 
 The two drivers pick a brand at the call site, build the branded value with
-the *concrete* newtype's constructor, and supply that brand's instances:
+the *concrete* nominal type's constructor, and supply that brand's instances:
 
 ```kio {@hkt}
 fn run_box(s: String) -> String {
-  let branded = Box.mk_box(s);
+  let branded = Box.mk(s);
   let rebranded = rebrand(box_pure(), box_extract(), branded);
-  Box.un_box(rebranded)
+  Box.get(rebranded)
 }
 
 fn run_identity(s: String) -> String {
-  let branded = Identity.mk_id(s);
+  let branded = Identity.mk(s);
   let rebranded = rebrand(identity_pure(), identity_extract(), branded);
-  Identity.un_id(rebranded)
+  Identity.get(rebranded)
 }
 ```
 
@@ -270,16 +264,16 @@ pure `let`, all via imported `do` with the *projected* dictionary's `bind`:
 
 ```kio {@hkt}
 fn pipeline[*F](monad: Monad[F], pur: Pure[F], seed: F[String]) -> F[String] {
-  do(Monad.bind(monad)) {
+  do(Monad.get(monad)) {
     let prefix <- seed;
     let middle = " ok"[String];
-    let trailed <- Pure.lift(pur)(string_concat(prefix, middle));
-    Pure.lift(pur)(string_concat(trailed, "\n"[String]))
+    let trailed <- Pure.get(pur)(string_concat(prefix, middle));
+    Pure.get(pur)(string_concat(trailed, "\n"[String]))
   }
 }
 ```
 
-`Monad.bind(monad)` projects the `Monad[F]` instance to a value whose
+`Monad.get(monad)` projects the `Monad[F]` instance to a value whose
 `[A][B]` polymorphism survives — that is what makes it a valid bind function
 for `do` against an abstract `F`. Inside the block:
 
@@ -287,29 +281,29 @@ for `do` against an abstract `F`. Inside the block:
   names the carrier `prefix : String`.
 - `let middle = " ok"[String];` is a pure let — no bind, just a local
   binding interleaved between steps.
-- `let trailed <- Pure.lift(pur)(...);` lifts the concatenated string back
+- `let trailed <- Pure.get(pur)(...);` lifts the concatenated string back
   into `F[String]` (via the threaded `Pure` instance, since `F` is abstract)
   and binds the next step.
 - the final expression is the block's overall `F[String]` result.
 
-The `do` library applies its projected sequence to `Monad.bind(monad)`.
+The `do` library applies its projected sequence to `Monad.get(monad)`.
 The sequence contains nested bind calls; the supplied bind expression is
 evaluated exactly once, including when no bind step uses it. Because the whole
 thing is `[*F]`-generic and lifts through
-`Pure.lift(pur)` rather than any concrete constructor, the same source runs
+`Pure.get(pur)` rather than any concrete constructor, the same source runs
 against either brand:
 
 ```kio {@hkt}
 fn run_box_pipeline(s: String) -> String {
   let monad = box_monad();
-  let seed = Box.mk_box(s);
-  Box.un_box(pipeline(monad, box_pure(), seed))
+  let seed = Box.mk(s);
+  Box.get(pipeline(monad, box_pure(), seed))
 }
 
 fn run_identity_pipeline(s: String) -> String {
   let monad = identity_monad();
-  let seed = Identity.mk_id(s);
-  Identity.un_id(pipeline(monad, identity_pure(), seed))
+  let seed = Identity.mk(s);
+  Identity.get(pipeline(monad, identity_pure(), seed))
 }
 ```
 
@@ -368,23 +362,23 @@ dependencies before applying the outer rule. The precise resolution contract
 is in [`specs/language.md` § The `derive` macro](../../specs/language.md#the-derive-macro).
 
 The derived instance is used exactly like a hand-written one — project it
-with `Functor.fmap`, apply the mapping function over a branded value, and
+with `Functor.get`, apply the mapping function over a branded value, and
 project the carrier back out:
 
 ```kio {@hkt}
 fn run_derived_functor(s: String) -> String {
   let functor = derived_identity_functor();
-  let branded = Identity.mk_id(s);
+  let branded = Identity.mk(s);
   let mapped =
-    Functor.fmap(functor)[String][String](
+    Functor.get(functor)[String][String](
     , .(value) { string_concat(value, " ok\n"[String]) }
     , branded
     );
-  Identity.un_id(mapped)
+  Identity.get(mapped)
 }
 ```
 
-`Functor.fmap(functor)` projects the dictionary to its `fmap` value; the
+`Functor.get(functor)` projects the dictionary to its `fmap` value; the
 following type group selects the two carriers (`String`, `String`), and the
 value group supplies the mapping function and branded value as one product.
 The dictionary projection, explicit instantiation and value application are
@@ -428,9 +422,9 @@ and workflow for writing and running `equiv` laws, see
 
 To reuse the HKT pieces in your own package:
 
-1. Copy the instance newtypes you need (`Monad`, `Functor`, `Pure`,
+1. Copy the instance nominal types you need (`Monad`, `Functor`, `Pure`,
    `Extract`) and any brands (`Box`, `Identity`, or your own arity-1
-   newtypes) into a module of your package.
+   nominal types) into a module of your package.
 2. Supply a host that provides `String`, `print`, and `string_concat` (or
    adjust the program to your host's capabilities), replacing the `testapi`
    scaffolding.

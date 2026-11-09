@@ -6,4 +6,4 @@ module testapi/types;
 // identical to writing `A & B` inline.
 pub type Both[A][B] = A & B;
 
-pub newtype Pair[A][B] : Both[A][B] { pub constructor mk_pair; pub projector un_pair }
+pub type { Pair[A][B]: Both[A][B] { pub mk; pub get } }

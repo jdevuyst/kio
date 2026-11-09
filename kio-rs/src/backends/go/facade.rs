@@ -2491,16 +2491,16 @@ mod prepared_tests {
         let package = package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Id[A] : A { pub constructor make_id; pub projector read_id; }; \
-             pub newtype Const[A] : . { pub constructor make_const; pub projector read_const; }; \
-             pub rec newtype Self_cycle : Self_cycle { pub constructor make_self; pub projector read_self; }; \
+             pub type { Id[A]: A { pub mk; pub get; }; }; \
+             pub type { Const[A]: . { pub mk; pub get; }; }; \
+             pub rec type { Self_cycle: Self_cycle { pub mk; pub get; }; }; \
              rec { \
-               pub newtype Left : Right { pub constructor make_left; pub projector read_left; }; \
-               pub newtype Right : Left { pub constructor make_right; pub projector read_right; }; \
+               pub type { Left: Right { pub mk; pub get; }; }; \
+               pub type { Right: Left { pub mk; pub get; }; }; \
              } \
              rec { \
-               pub newtype Cut : Carrier { pub constructor make_cut; pub projector read_cut; }; \
-               pub newtype Carrier : Cut { pub constructor make_carrier; projector read_carrier; }; \
+               pub type { Cut: Carrier { pub mk; pub get; }; }; \
+               pub type { Carrier: Cut { pub mk; get; }; }; \
              } \
              host fn nested(value: Id[Id[I32]]) -> Id[Id[I32]]; \
              host fn constant(value: Const[Self_cycle]) -> Const[Self_cycle]; \
@@ -2549,12 +2549,12 @@ mod prepared_tests {
     fn recursive_skin_identity_is_root_order_and_extension_invariant() {
         let declarations = "module api; host type I32 role(i32); \
             rec { \
-              pub newtype Left[A] : (. | (A & Right[A])) { pub constructor make; pub projector open; }; \
-              pub newtype Right[A] : (. | (A & Left[A])) { pub constructor make; pub projector open; }; \
+              pub type { Left[A]: (. | (A & Right[A])) { pub mk; pub get; }; }; \
+              pub type { Right[A]: (. | (A & Left[A])) { pub mk; pub get; }; }; \
             }";
         let left = "host fn left(value: Left[I32]) -> Left[I32];";
         let right = "host fn right(value: Right[I32]) -> Right[I32];";
-        let extension = "pub rec newtype Other[A] : (. | Other[A]) { pub constructor make; pub projector open; };";
+        let extension = "pub rec type { Other[A]: (. | Other[A]) { pub mk; pub get; }; };";
         let mut observed = Vec::new();
         for roots in [
             left.to_owned(),
@@ -2586,8 +2586,8 @@ mod prepared_tests {
         let package = package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Id[A] : A { pub constructor make_id; pub projector read_id; }; \
-             pub newtype N[*F][A] : F[A] { pub constructor make_n; pub projector read_n; }; \
+             pub type { Id[A]: A { pub mk; pub get; }; }; \
+             pub type { N[*F][A]: F[A] { pub mk; pub get; }; }; \
              host fn hkt(value: N[N[Id]][ I32]) -> N[N[Id]][ I32];",
         );
         let prepared =
@@ -2609,7 +2609,7 @@ mod prepared_tests {
         let package = package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Id[A] : A { pub constructor make_id; pub projector read_id; }; \
+             pub type { Id[A]: A { pub mk; pub get; }; }; \
              host fn wrapped_function(value: Id[I32 -> I32]) -> .; \
              host fn wrapped_forall(value: Id[[A] A -> A]) -> .;",
         );
@@ -2653,7 +2653,7 @@ mod prepared_tests {
         let package = package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Const[A] : . { pub constructor make_const; pub projector read_const; }; \
+             pub type { Const[A]: . { pub mk; pub get; }; }; \
              host fn ignore(value: Const[I32 & I32]) -> Const[I32 & I32];",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
@@ -2731,9 +2731,9 @@ mod prepared_tests {
     fn nominal_projection_preserves_an_opaque_payload_of_a_transparent_outer() {
         let package = package(
             "module api; \
-             pub newtype Hidden : . { constructor hide; projector reveal; }; \
-             pub newtype Outer : Hidden { pub constructor wrap; pub projector unwrap; }; \
-             newtype Private_outer : Hidden { pub constructor wrap; pub projector unwrap; };",
+             pub type { Hidden: . { mk; get; }; }; \
+             pub type { Outer: Hidden { pub mk; pub get; }; }; \
+             type { Private_outer: Hidden { pub mk; pub get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare nested nominal visibility");
@@ -2787,16 +2787,16 @@ mod prepared_tests {
     fn ordinary_church_payload_does_not_mint_existential_projector_capability() {
         let package = package(
             "module api; \
-             pub newtype Church : [R] ([Hidden] . -> R) -> R { \
-               pub constructor make_church; pub projector read_church; \
-             };",
+             pub type { Church: [R] ([Hidden] . -> R) -> R { \
+               pub mk; pub get; \
+             }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare ordinary Church-shaped newtype sites");
         let catalog =
             GoFacadeCatalog::prepare(&prepared).expect("realize ordinary Church-shaped facade");
         let live = catalog
-            .site(&newtype_site("Church", "read_church", true))
+            .site(&newtype_site("Church", "get", true))
             .expect("ordinary Church-shaped projector site")
             .live()
             .expect("ordinary Church-shaped projector is live");
@@ -2817,12 +2817,12 @@ mod prepared_tests {
     fn existential_member_capability_owns_identity_and_right_spine_cuts() {
         let package = package(
             "module api; \
-             pub newtype Single <Hidden> : Hidden { \
-               pub constructor make_single; pub projector read_single; \
-             }; \
-             pub newtype Packed[A] <Hidden> <Secret> : A & Hidden & Secret { \
-               pub constructor make_packed; pub projector read_packed; \
-             };",
+             pub type { Single <Hidden>: Hidden { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { \
+               pub mk; pub get; \
+             }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare existential newtype sites");
@@ -2830,7 +2830,7 @@ mod prepared_tests {
             GoFacadeCatalog::prepare(&prepared).expect("realize existential newtype facades");
 
         let single = catalog
-            .site(&newtype_site("Single", "read_single", true))
+            .site(&newtype_site("Single", "get", true))
             .expect("identity existential projector site")
             .live()
             .expect("identity existential projector is live")
@@ -2886,7 +2886,7 @@ mod prepared_tests {
         }
 
         let packed = catalog
-            .site(&newtype_site("Packed", "read_packed", true))
+            .site(&newtype_site("Packed", "get", true))
             .expect("right-spine existential projector site")
             .live()
             .expect("right-spine existential projector is live")
@@ -2948,7 +2948,7 @@ mod prepared_tests {
         }
 
         let constructor = catalog
-            .site(&newtype_site("Packed", "make_packed", false))
+            .site(&newtype_site("Packed", "mk", false))
             .expect("existential constructor site")
             .live()
             .expect("existential constructor is live")
@@ -2979,16 +2979,16 @@ mod prepared_tests {
         let package = package(
             "module api; \
              pub type Erased[A] = .; \
-             pub newtype Empty <Hidden> : Erased[Hidden] { \
-               pub constructor make_empty; pub projector read_empty; \
-             };",
+             pub type { Empty <Hidden>: Erased[Hidden] { \
+               pub mk; pub get; \
+             }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare nullary existential projector");
         let catalog =
             GoFacadeCatalog::prepare(&prepared).expect("realize nullary existential projector");
         let member = catalog
-            .site(&newtype_site("Empty", "read_empty", true))
+            .site(&newtype_site("Empty", "get", true))
             .expect("nullary existential projector site")
             .live()
             .expect("nullary existential projector is live")
@@ -3171,7 +3171,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Carrier : . { pub constructor make; projector read; };
+        type { Carrier: . { pub mk; get; }; };
         host fn old(value: (. | (. & Carrier))) -> .;
       }
     }
@@ -3223,7 +3223,7 @@ v(2) {
     fn bridged_opaque_inventory_emits_carrier_without_callable_sites() {
         let package = package(
             "module api; \
-             pub newtype Opaque : . { constructor make_opaque; projector read_opaque; };",
+             pub type { Opaque: . { mk; get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare opaque-only inventory");
@@ -3239,7 +3239,7 @@ v(2) {
     fn unrelated_same_leaf_inventory_only_adds_its_identity_derived_carrier() {
         let api = "module api; \
             host type I32 role(i32); \
-            pub newtype Token : . { constructor make_token; projector read_token; }; \
+            pub type { Token: . { mk; get; }; }; \
             host fn stable(value: (I32 | Token)) -> (I32 | Token);";
         let base_package = package(api);
         let base_prepared = PreparedBoundaryCallableSites::collect_live(&base_package)
@@ -3253,7 +3253,7 @@ v(2) {
                 (
                     "other",
                     "module other; \
-                     pub newtype Token : . { constructor make_token; projector read_token; };",
+                     pub type { Token: . { mk; get; }; };",
                 ),
             ],
             "api; other;",

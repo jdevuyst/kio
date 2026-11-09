@@ -1,0 +1,36 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import macros/spine_macros(macro one_sum, macro one_sum_);
+import testapi(String);
+import testapi/io(print);
+
+fn leading_bottom[A](value: A) -> A { let collapsed = one_sum_(__right__[!][A](value)); collapsed }
+
+fn trailing_bottom[A](value: A) -> A { let collapsed = one_sum_(__left__[A][!](value)); collapsed }
+
+fn repeated_after_bottom[A](value: A) -> A {
+  let collapsed = one_sum_(__right__[!][A | A](__right__[A][A](value)));
+  collapsed
+}
+
+fn only_bottom(value: ! | !) -> ! { one_sum_(value) }
+
+fn required_absurd[A](value: !) -> A { one_sum(value)[A] }
+
+equiv leading_bottom_law[A](value: A) {
+  leading_bottom(value);
+  value
+}
+
+equiv repeated_after_bottom_law[A](value: A) {
+  repeated_after_bottom(value);
+  value
+}
+
+pub fn main() {
+  print(leading_bottom("leading Bottom removed\n"[String]));
+  print(trailing_bottom("trailing Bottom removed\n"[String]));
+  print(repeated_after_bottom("repeated arm preserved\n"[String]))
+}

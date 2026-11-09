@@ -1,0 +1,60 @@
+module main;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pure fn specialize_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, result_type: __Type__
+, term: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let prefix =
+    __type_forall_prefix_fold__(ct)[.](
+    , __term_type__(ct, term)
+    , ()
+    , .(_state: ., _var: __Type_var__) -> . { () }
+    );
+  let result = __term_specialize__(ct, term, __snd__(prefix), result_type);
+  let selected =
+    __either__(
+    , result
+    , .(success: __Checked_term__) -> __Checked_term__ { success }
+    , .(tail: . | __Diagnostic_text__) -> __Checked_term__ {
+        __either__(
+        , tail
+        , .(_miss: .) -> __Checked_term__ { __macro_error__(ct, "specialization did not match") }
+        , .(message: __Diagnostic_text__) -> __Checked_term__ { __macro_error__(ct, message) }
+        )
+      }
+    );
+  (selected, fills)
+}
+
+macro specialize : [Result] ([A] A -> A) -> Result { impl(fills) specialize_impl }
+
+fn identity[A](value: A) -> A { value }
+
+fn same_spelled[A](value: A) -> A { specialize[A -> A](identity)(value) }
+
+fn renamed_caller[Caller](value: Caller) -> Caller { specialize[Caller -> Caller](identity)(value) }
+
+fn two_callers[A][B](left: A, right: B) -> A & B {
+  specialize[(A & B) -> (A & B)](identity)((left, right))
+}
+
+equiv same_spelled_caller[A](value: A) {
+  same_spelled(value);
+  value
+}
+
+equiv renamed_caller_control[A](value: A) {
+  renamed_caller(value);
+  value
+}
+
+equiv two_caller_dependencies[A][B](left: A, right: B) {
+  two_callers(left, right);
+  (left, right)
+}

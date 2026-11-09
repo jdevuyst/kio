@@ -1,24 +1,25 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Int, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-// Construction and access preserve each label's nominal boundary.
-labels { hed: Int, mid: String, tal: Int };
+// Construction and selection preserve each field's nominal boundary.
+type { Hed: Int; Mid: String; Tal: Int }
 
 fn show(r: Hed & Mid & Tal) {
   match(r) {
     .(h: Hed, m: Mid, t: Tal) {
-      print(int_to_string(h.?{hed}));
+      print(int_to_string(h.>select { Hed.get }));
       print(", ");
-      print(m.?{mid});
+      print(m.>select { Mid.get });
       print(", ");
-      print(int_to_string(t.?{tal}));
+      print(int_to_string(t.>select { Tal.get }));
       print("\n")
     }
   }
 }
 
-pub fn main() { let r = ({hed = 7}, {mid = "kio"}, {tal = 11}); show(r) }
+pub fn main() { let r = (Hed.mk(7), Mid.mk("kio"), Tal.mk(11)); show(r) }

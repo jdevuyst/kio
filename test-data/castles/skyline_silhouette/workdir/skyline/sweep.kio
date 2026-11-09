@@ -11,6 +11,7 @@ module skyline/sweep;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import skyline/events as events;
 import skyline/list as lst;
 import skyline/logic as logic;
@@ -21,34 +22,48 @@ import testapi/iter(loop);
 /// One row of the trace: where the event fired, which edge it was, the active
 /// multiset once it had been applied, the silhouette height that followed, and
 /// whether that height differed from the one before it.
-pub labels Step = { pos: I32, tag: String, held: ms.Active, top: I32, emitted: Bool };
+pub type Step = { Pos: I32; Tag: String; Held: ms.Active; Top: I32; Emitted: Bool };
 
 /// A key point: the silhouette steps to height `y` at `x` and stays there until
 /// the next key point.
-pub labels Point = { x: I32, y: I32 };
+pub type Point = { X: I32; Y: I32 };
 
 /// What one sweep produced: the trace, and the key points read off it.
 pub type Trace = lst.List[Step] & lst.List[Point];
 
 fn step(pos: I32, tag: String, held: ms.Active, top: I32, emitted: Bool) -> Step {
-  {pos, tag, held, top, emitted}
+  (Pos.mk(pos), Tag.mk(tag), Held.mk(held), Top.mk(top), Emitted.mk(emitted))
 }
 
-fn point(x: I32, y: I32) -> Point { {x, y} }
+fn point(x: I32, y: I32) -> Point { (X.mk(x), Y.mk(y)) }
 
-pub fn pos_of(s: Step) -> I32 { s.?{pos} }
+pub fn pos_of(s: Step) -> I32 {
+  s.>select { Pos.get }
+}
 
-pub fn tag_of(s: Step) -> String { s.?{tag} }
+pub fn tag_of(s: Step) -> String {
+  s.>select { Tag.get }
+}
 
-pub fn held_of(s: Step) -> ms.Active { s.?{held} }
+pub fn held_of(s: Step) -> ms.Active {
+  s.>select { Held.get }
+}
 
-pub fn top_of(s: Step) -> I32 { s.?{top} }
+pub fn top_of(s: Step) -> I32 {
+  s.>select { Top.get }
+}
 
-pub fn emitted_of(s: Step) -> Bool { s.?{emitted} }
+pub fn emitted_of(s: Step) -> Bool {
+  s.>select { Emitted.get }
+}
 
-pub fn x_of(p: Point) -> I32 { p.?{x} }
+pub fn x_of(p: Point) -> I32 {
+  p.>select { X.get }
+}
 
-pub fn y_of(p: Point) -> I32 { p.?{y} }
+pub fn y_of(p: Point) -> I32 {
+  p.>select { Y.get }
+}
 
 pub fn steps_of(t: Trace) -> lst.List[Step] {
   match(t) {
@@ -88,7 +103,7 @@ rec(loop) {
   , steps: lst.List[Step]
   , points: lst.List[Point]
   ) -> Trace {
-    match(es.>lst.List.un_list) {
+    match(es.>lst.List.get) {
       (
       , .(e: events.Event, rest: lst.List[events.Event]) {
           let next = apply(e, held);

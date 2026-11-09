@@ -24,14 +24,13 @@
 //! compile error, not a silent drop.
 
 use crate::ast::{
-    DocComment, FnDef, HostFn, HostType, Item, LabelForward, Labels, LiteralAlias, Module, Newtype,
-    Op, OpBody, OperatorGrammar, PackageFile, Surface, TypeAlias, TypeRecGroup, UserMacroDef,
-    VariadicOperator,
+    DocComment, FnDef, HostFn, HostType, Item, Labels, LiteralAlias, Module, Newtype, Op, OpBody,
+    OperatorGrammar, PackageFile, Surface, TypeAlias, TypeRecGroup, UserMacroDef, VariadicOperator,
 };
 
 /// One documentable declaration, borrowed from a Surface-phase
 /// module. Recursive type entries retain their written group owner alongside
-/// the selected declaration, and labels expose their generated nominal names.
+/// the selected declaration, and compact groups expose their nominal entries.
 ///
 /// Consumers read a `DocEntry` through [`DocEntry::name`],
 /// [`DocEntry::doc`], [`DocEntry::kind`], [`DocEntry::anchor`], and
@@ -44,12 +43,9 @@ pub enum DocEntry<'a> {
     TypeAlias(&'a TypeAlias<Surface>, Option<&'a TypeRecGroup>),
     LiteralAlias(&'a LiteralAlias<Surface>),
     Newtype(&'a Newtype<Surface>, Option<&'a TypeRecGroup>),
-    /// The named form `labels T = { … };` only — the anonymous form has
-    /// no documentable name (see [`documented_items_module`]).
+    /// The alias owner of a named compact `type T = { … };` declaration.
     Labels(&'a Labels<Surface>, &'a str, Option<&'a TypeRecGroup>),
-    /// A nonminting label declaration and its braced selection spelling.
-    LabelForward(&'a LabelForward<Surface>, String),
-    /// A nominal introduced by labels, rendered from its source owner.
+    /// A nominal introduced by a compact group, rendered from its source owner.
     LabelNominal {
         labels: &'a Labels<Surface>,
         entry: &'a crate::ast::LabelEntry,
@@ -75,7 +71,6 @@ impl<'a> DocEntry<'a> {
             DocEntry::LiteralAlias(l) => &l.name,
             DocEntry::Newtype(n, _) => &n.name,
             DocEntry::Labels(_, name, _) => name,
-            DocEntry::LabelForward(_, name) => name,
             DocEntry::LabelNominal { name, .. } => name,
             DocEntry::Op(_, name) | DocEntry::VariadicOperator(_, name) => name,
             DocEntry::Macro(e) => &e.name,
@@ -95,7 +90,6 @@ impl<'a> DocEntry<'a> {
             DocEntry::LiteralAlias(l) => l.doc.as_ref(),
             DocEntry::Newtype(n, _) => n.doc.as_ref(),
             DocEntry::Labels(t, _, _) | DocEntry::LabelNominal { labels: t, .. } => t.doc.as_ref(),
-            DocEntry::LabelForward(forward, _) => forward.doc.as_ref(),
             DocEntry::Op(o, _) => o.doc.as_ref(),
             DocEntry::VariadicOperator(o, _) => o.doc.as_ref(),
             DocEntry::Macro(e) => e.doc.as_ref(),
@@ -105,15 +99,15 @@ impl<'a> DocEntry<'a> {
     }
 
     /// The declaration-kind label used in rendered output
-    /// (`"fn"`, `"newtype"`, `"host type"`, …).
+    /// (`"fn"`, `"type"`, `"host type"`, …).
     pub fn kind(&self) -> &'static str {
         match self {
             DocEntry::Fn(_) | DocEntry::RecFn(_) => "fn",
-            DocEntry::TypeAlias(_, _) => "type",
+            DocEntry::TypeAlias(_, _)
+            | DocEntry::Newtype(_, _)
+            | DocEntry::LabelNominal { .. }
+            | DocEntry::Labels(_, _, _) => "type",
             DocEntry::LiteralAlias(_) => "literal",
-            DocEntry::Newtype(_, _) | DocEntry::LabelNominal { .. } => "newtype",
-            DocEntry::Labels(_, _, _) => "labels",
-            DocEntry::LabelForward(_, _) => "label",
             DocEntry::Op(_, _) => "op",
             DocEntry::VariadicOperator(_, _) => "varop",
             DocEntry::Macro(_) => "macro",
@@ -125,8 +119,6 @@ impl<'a> DocEntry<'a> {
     /// Stable identity shared by the declaration's module and boundary sections.
     pub fn anchor(&self, module_path: &str) -> String {
         let (kind, identity) = match self {
-            Self::Labels(_, name, _) => ("labels", (*name).to_owned()),
-            Self::LabelForward(_, name) => ("label", name.clone()),
             Self::Op(_, grammar) | Self::VariadicOperator(_, grammar) => ("op", grammar.clone()),
             other => ("item", other.name().to_owned()),
         };
@@ -152,8 +144,7 @@ impl<'a> DocEntry<'a> {
         crate::pretty::pretty_item_type(&self.as_item())
     }
 
-    /// Exact written head of a type-oriented entry, including a label's
-    /// lowercase source token when the selected name is its generated nominal.
+    /// Exact written head of a type-oriented entry.
     pub fn type_name_span(&self) -> Option<crate::span::Span> {
         match self {
             Self::TypeAlias(alias, _) => Some(alias.name_span),
@@ -173,7 +164,6 @@ impl<'a> DocEntry<'a> {
             Self::LiteralAlias(literal) => &literal.vis,
             Self::Newtype(newtype, _) => &newtype.vis,
             Self::Labels(labels, _, _) | Self::LabelNominal { labels, .. } => &labels.vis,
-            Self::LabelForward(forward, _) => &forward.vis,
             Self::Op(op, _) => &op.vis,
             Self::VariadicOperator(op, _) => &op.vis,
             Self::Macro(macro_def) => &macro_def.vis,
@@ -207,7 +197,6 @@ impl<'a> DocEntry<'a> {
             DocEntry::Labels(t, _, _) | DocEntry::LabelNominal { labels: t, .. } => {
                 Item::Labels((*t).clone(), ())
             }
-            DocEntry::LabelForward(forward, _) => Item::LabelForward((*forward).clone(), ()),
             DocEntry::Op(o, _) => Item::Op(Box::new((*o).clone()), ()),
             DocEntry::VariadicOperator(o, _) => Item::VariadicOperator(Box::new((*o).clone()), ()),
             DocEntry::Macro(e) => Item::Macro((*e).clone(), ()),
@@ -243,12 +232,6 @@ pub fn documented_entries_for_item(item: &Item<Surface>) -> Vec<DocEntry<'_>> {
         Item::LiteralAlias(l, _) => vec![DocEntry::LiteralAlias(l)],
         Item::Newtype(n) => vec![DocEntry::Newtype(n, None)],
         Item::Labels(t, _) => labels_entries(t, None),
-        Item::LabelForward(forward, _) => {
-            vec![DocEntry::LabelForward(
-                forward,
-                format!("{{{}}}", forward.name),
-            )]
-        }
         Item::Op(o, _) => {
             let OpBody::Normal { pattern, .. } = &o.body;
             vec![DocEntry::Op(o, OperatorGrammar::fixed(pattern).render())]
@@ -284,15 +267,13 @@ fn labels_entries<'a>(labels: &'a Labels, group: Option<&'a TypeRecGroup>) -> Ve
         entries.push(DocEntry::Labels(labels, name, group));
     }
     entries.extend(labels.entries.iter().filter_map(|entry| {
-        let name = crate::ast::mint_label_newtype_name(&entry.name);
-        (!entry.is_reuse_marker() && labels.type_alias_name.as_ref() != Some(&name)).then_some(
-            DocEntry::LabelNominal {
-                labels,
-                entry,
-                name,
-                group,
-            },
-        )
+        let name = entry.name.clone();
+        (labels.type_alias_name.as_ref() != Some(&name)).then_some(DocEntry::LabelNominal {
+            labels,
+            entry,
+            name,
+            group,
+        })
     }));
     entries
 }
@@ -309,8 +290,8 @@ pub fn doc_entry_for_name<'a>(item: &'a Item<Surface>, name: &str) -> Option<Doc
 /// The match is **exhaustive with no wildcard**: a new [`Item`]
 /// variant forces a deliberate documentable / non-documentable
 /// decision here. `equiv` is the sole non-documentable module item
-/// (a test-claim with no public-API surface). Anonymous `labels` have no
-/// declaration name of their own, but expose their generated nominal entries.
+/// (a test-claim with no public-API surface). Anonymous nominal groups expose
+/// their entries without introducing an aggregate declaration name.
 pub fn documented_items_module(module: &Module<Surface>) -> Vec<DocEntry<'_>> {
     module
         .items
@@ -346,10 +327,10 @@ mod tests {
             "fn value(x: .) -> . { x }",
             "type Alias = .;",
             "literal text = \"x\";",
-            "newtype Box : . { constructor make; projector read; };",
-            "labels Row = { field: . };",
-            "labels { field: . };",
-            "type {forward} = {field};",
+            "type { Box: . { mk; get; }; }",
+            "type Row = { Field: .; };",
+            "type { Field: .; }",
+            "type Forward = Field;",
             "op _ + _ { impl add; };",
             "varop [* *] { foldl push empty; };",
             "macro choose : . -> . { impl choose_impl; };",
@@ -417,20 +398,20 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_label_nominals_keep_the_written_owner_and_skip_reuse() {
+    fn compact_nominals_keep_the_written_owner_and_ordinary_rhs() {
         let module = crate::pass::parser::parse(
-            "module pkg; labels { field: . }; labels Row = { field: _, other: . };",
+            "module pkg; type { Field: .; } type Row = Field & { Other: .; };",
         )
         .unwrap();
         let entries = documented_items_module(&module);
         let names = entries.iter().map(DocEntry::name).collect::<Vec<_>>();
         assert_eq!(names, ["Field", "Row", "Other"]);
         for (name, owner) in [
-            ("Field", "labels { field: . };"),
-            ("Other", "labels Row = { field: _, other: . };"),
+            ("Field", "type { Field: . }"),
+            ("Other", "type Row = Field & { Other: . };"),
         ] {
             let entry = entries.iter().find(|entry| entry.name() == name).unwrap();
-            assert_eq!(entry.kind(), "newtype");
+            assert_eq!(entry.kind(), "type");
             assert_eq!(entry.signature(), owner);
             assert_eq!(entry.source(), owner);
             assert_eq!(entry.ty(), None);
@@ -438,31 +419,31 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_label_docs_keep_a_distinct_nonminting_identity() {
+    fn alias_docs_keep_their_written_identity() {
         let module = crate::pass::parser::parse(concat!(
             "module pkg; fn field() -> . { () }\n",
-            "/// The forwarded label.\n",
-            "pub type {field} = {original};\n",
+            "/// The alias.\n",
+            "pub type Field = Original;\n",
         ))
         .unwrap();
         let entries = documented_items_module(&module);
         assert_eq!(
             entries.iter().map(DocEntry::name).collect::<Vec<_>>(),
-            ["field", "{field}"]
+            ["field", "Field"]
         );
         let forward = &entries[1];
-        assert_eq!(forward.kind(), "label");
-        assert_eq!(forward.signature(), "pub type {field} = {original};");
-        assert_eq!(forward.source(), "pub type {field} = {original};");
+        assert_eq!(forward.kind(), "type");
+        assert_eq!(forward.signature(), "pub type Field = Original;");
+        assert_eq!(forward.source(), "pub type Field = Original;");
         assert!(forward.doc().is_some());
         assert!(forward.is_exported());
-        assert_eq!(forward.type_name_span(), None);
+        assert!(forward.type_name_span().is_some());
         assert_eq!(forward.ty(), None);
-        assert_eq!(forward.anchor("pkg"), "label-pkg-_7bfield_7d");
+        assert_eq!(forward.anchor("pkg"), "item-pkg-Field");
         assert_ne!(forward.anchor("pkg"), entries[0].anchor("pkg"));
         assert!(doc_entry_for_name(&module.items[1], "field").is_none());
-        assert!(doc_entry_for_name(&module.items[1], "Field").is_none());
-        assert!(doc_entry_for_name(&module.items[1], "{field}").is_some());
+        assert!(doc_entry_for_name(&module.items[1], "Field").is_some());
+        assert!(doc_entry_for_name(&module.items[1], "{field}").is_none());
     }
 
     #[test]

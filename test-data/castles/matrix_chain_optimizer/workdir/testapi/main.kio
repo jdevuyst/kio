@@ -1,9 +1,10 @@
 module testapi/main;
 
 import chain as chain;
-import chain(Evaluation, Matrix, {cols}, {cost}, {first}, {last}, {leaves}, {rows});
+import chain(Cols, Cost, Evaluation, First, Last, Leaves, Matrix, Rows);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import optimizer as optimizer;
 import testapi(Array, Bool, I32, String);
 import testapi/arith as math;
@@ -20,16 +21,16 @@ fn field(name: String, value: I32) -> String { text.string_concat(name, fmt.int_
 fn replay_report(plan: optimizer.Plan, matrices: Array[Matrix], solution: tree.Tree) {
   match(tree.replay(solution, matrices)) {
     .(result: Evaluation) {
-      io.print(field("replay=", result.?{rows}));
-      io.print(field("x", result.?{cols}));
-      io.print(field(" cost=", result.?{cost}));
-      io.print(field(" leaves=", result.?{leaves}));
-      io.print(field(" order=", math.add_i32(result.?{first}, 1)));
-      io.print(field("..", math.add_i32(result.?{last}, 1)));
+      io.print(field("replay=", result.>select { Rows.get }));
+      io.print(field("x", result.>select { Cols.get }));
+      io.print(field(" cost=", result.>select { Cost.get }));
+      io.print(field(" leaves=", result.>select { Leaves.get }));
+      io.print(field(" order=", math.add_i32(result.>select { First.get }, 1)));
+      io.print(field("..", math.add_i32(result.>select { Last.get }, 1)));
       line(text.string_concat(
       , " matches-table="
       , fmt.bool_to_string(chain.equal(
-        , result.?{cost}
+        , result.>select { Cost.get }
         , optimizer.cost(plan, 0, math.sub_i32(arrays.array_len(matrices), 1))
         ))
       ))
@@ -40,7 +41,9 @@ fn replay_report(plan: optimizer.Plan, matrices: Array[Matrix], solution: tree.T
 
 fn baseline_cost(label: String, matrices: Array[Matrix], solution: tree.Tree) {
   match(tree.replay(solution, matrices)) {
-    .(result: Evaluation) { io.print(field(label, result.?{cost})) };
+    .(result: Evaluation) {
+      io.print(field(label, result.>select { Cost.get }))
+    };
     .(error: String) { io.print(text.string_concat(label, error)) }
   }
 }

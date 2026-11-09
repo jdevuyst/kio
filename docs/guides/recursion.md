@@ -105,7 +105,7 @@ rec(loop) {
 
 Every member becomes an ordinary module function. With no modifier it is
 module-private, `pub(path)` admits imports from that subtree, and `pub` makes it
-public—the same visibility choices that newtype constructors and projectors
+public—the same visibility choices that nominal constructors and projectors
 have. Later declarations in the same module call these wrappers normally. In a
 group member's own body, calls to members of that group still use
 `recur name(...)`.
@@ -213,7 +213,7 @@ Recursive types use the same contextual word but different, capability-free
 forms. A singleton nominal marks its own recursive scope:
 
 ```kio {@module}
-rec newtype Chain[A] : . | (A & Chain[A]) { constructor chain; projector un_chain }
+rec type { Chain[A]: . | (A & Chain[A]) }
 ```
 
 Genuinely mutual declarations use bare braces, with no loop name:
@@ -221,16 +221,15 @@ Genuinely mutual declarations use bare braces, with no loop name:
 ```kio {@module}
 rec {
   type Tree[A] = Branch[A];
-  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) { constructor branch; projector un_branch }
+  type { Branch[A]: . | (A & Tree[A] & Tree[A]) }
 }
 ```
 
 The first form must contain a real self-cycle; the second must be exactly one
-mutual cycle whose every cycle crosses a `newtype` boundary. Neither form sees
-unrelated later declarations. `rec labels` is the surface counterpart for a
-single recursive label declaration. These forms control type-name scope and
+mutual cycle whose every cycle crosses a nominal boundary. Neither form sees unrelated later declarations.
+These forms control type-name scope and
 do not make a function recursive, call a host loop, or admit `recur name(...)`
-calls. See [Aliases, newtypes, visibility, and purity](declarations.md#recursive-newtypes)
+calls. See [Aliases, nominal types, visibility, and purity](declarations.md#recursive-nominal-types)
 and [Structural sums and pattern matching](sums.md#recursive-sums).
 
 ## Lowering

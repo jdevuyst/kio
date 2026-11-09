@@ -8,15 +8,15 @@ host fn selection();
 
 host fn invocation();
 
-pub newtype Box[A] : A { pub constructor make; projector open }
+pub type { Box[A]: A { pub mk; get } }
 
-pub fn read(value: Box[Number]) -> Number { value.>Box.open }
+pub fn read(value: Box[Number]) -> Number { value.>Box.get }
 
-pub newtype Poly : [B] B -> Box[B] { pub constructor make; pub projector open }
+pub type { Poly: [B] B -> Box[B] { pub mk; pub get } }
 
 pub fn outer[A](unused: A) -> Poly {
-  Poly.make(.[B] {
+  Poly.mk(.[B] {
     selection();
-    .(value: B) { invocation(); Box.make(value) }
+    .(value: B) { invocation(); Box.mk(value) }
   })
 }

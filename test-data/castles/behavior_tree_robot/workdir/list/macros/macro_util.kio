@@ -4,18 +4,17 @@ module list/macros/macro_util;
 import __intrinsics__;
 
 import __comptime__;
-import list/macros/testapi(String);
 
 /// Shared success-or-diagnostic result returned by checked-term construction helpers.
 pub type Macro_result = __Checked_term__ | __Diagnostic_text__;
 
-/// Optional reflected target type supplied by an explicit or expected macro target.
+/// Optional reflected type represented as ordinary library data.
 pub type Optional_type = __Type__ | .;
 
 /// Pair of reflected types used by structural recursion over source and target shapes.
 pub type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -126,24 +125,19 @@ pure fn sum_view(ct: __Comptime__, typ: __Type__) -> Maybe_type_pair {
 }
 
 /// Cons-list of reflected types used for product, sum, and DNF spines.
-pub rec newtype Type_list : . | (__Type__ & Type_list) {
-  pub constructor mk_type_list;
-  pub projector un_type_list
-  }
+pub rec type { Type_list: . | (__Type__ & Type_list) { pub mk; pub get } }
 
 /// Builds the empty reflected-type list.
-pub pure fn type_nil() -> Type_list {
-  Type_list.mk_type_list(__left__[.][__Type__ & Type_list](()))
-}
+pub pure fn type_nil() -> Type_list { Type_list.mk(__left__[.][__Type__ & Type_list](())) }
 
 /// Prepends one reflected type to a `Type_list`.
 pub pure fn type_cons(ct: __Comptime__, head: __Type__, tail: Type_list) -> Type_list {
-  Type_list.mk_type_list(__right__[.][__Type__ & Type_list]((head, tail)))
+  Type_list.mk(__right__[.][__Type__ & Type_list]((head, tail)))
 }
 
 pure fn type_empty(ct: __Comptime__, xs: Type_list) -> Comptime_bool {
   __either__[.][__Type__ & Type_list][Comptime_bool](
-  , Type_list.un_type_list(xs)
+  , Type_list.get(xs)
   , .(_done: .) -> Comptime_bool { .t }
   , .(_cell: __Type__ & Type_list) -> Comptime_bool { .f }
   )
@@ -157,7 +151,7 @@ type Reverse_step = Type_list | Reverse_next;
 
 pure fn reverse_step(ct: __Comptime__, fuel: Type_list, acc: Reverse_state) -> Reverse_step {
   __either__[.][__Type__ & Type_list][Reverse_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Reverse_step { __left__[Type_list][Reverse_next](acc) }
   , .(cell: __Type__ & Type_list) -> Reverse_step {
       __right__[Type_list][Reverse_next]((
@@ -254,7 +248,7 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
           , type_list_equal_state_bool(ct, state)
           , .() -> Type_list_equal_step {
               __either__[.][__Type__ & Type_list][Type_list_equal_step](
-              , Type_list.un_type_list(fuel)
+              , Type_list.get(fuel)
               , .(_left_done: .) -> Type_list_equal_step {
                   __if_then_else__(
                   , type_empty(ct, type_list_equal_state_tail(ct, state))
@@ -268,7 +262,7 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
                 }
               , .(left_cell: __Type__ & Type_list) -> Type_list_equal_step {
                   __either__[.][__Type__ & Type_list][Type_list_equal_step](
-                  , Type_list.un_type_list(type_list_equal_state_tail(ct, state))
+                  , Type_list.get(type_list_equal_state_tail(ct, state))
                   , .(_right_done: .) -> Type_list_equal_step {
                       __left__[Comptime_bool][Type_list_equal_next](.f)
                     }
@@ -358,7 +352,7 @@ pub pure fn take_first_type_matching(ct: __Comptime__, target: __Type__, types: 
       let loop_step_fn =
         .(fuel: Type_take_fuel, state: Type_take_state) -> Type_take_step {
           __either__[.][__Type__ & Type_list][Type_take_step](
-          , Type_list.un_type_list(type_take_types(ct, fuel))
+          , Type_list.get(type_take_types(ct, fuel))
           , .(_done: .) -> Type_take_step {
               __left__[Maybe_type_take][Type_take_next](type_take_none(ct))
             }
@@ -433,7 +427,7 @@ pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, hay
           , type_multiset_ok(ct, state)
           , .() -> Type_multiset_step {
               __either__[.][__Type__ & Type_list][Type_multiset_step](
-              , Type_list.un_type_list(fuel)
+              , Type_list.get(fuel)
               , .(_done: .) -> Type_multiset_step {
                   __left__[Comptime_bool][Type_multiset_next](.t)
                 }
@@ -498,11 +492,11 @@ fn dnf_branch_cons(ct: __Comptime__, head: Dnf_branch, tail: Dnf_branch_list) ->
 /// Returns the only DNF branch when a list has exactly one branch.
 pub pure fn single_dnf_branch(ct: __Comptime__, xs: Dnf_branch_list) -> Dnf_branch | . {
   __either__[.][Dnf_branch & Dnf_branch_list][Dnf_branch | .](
-  , Type_list.un_type_list(xs)
+  , Type_list.get(xs)
   , .() -> Dnf_branch | . { __right__[Dnf_branch][.](()) }
   , .(cell: Dnf_branch & Dnf_branch_list) -> Dnf_branch | . {
       __either__[.][Dnf_branch & Dnf_branch_list][Dnf_branch | .](
-      , Type_list.un_type_list(__snd__[Dnf_branch][Dnf_branch_list](cell))
+      , Type_list.get(__snd__[Dnf_branch][Dnf_branch_list](cell))
       , .() -> Dnf_branch | . {
           __left__[Dnf_branch][.](__fst__[Dnf_branch][Dnf_branch_list](cell))
         }
@@ -535,7 +529,7 @@ pure fn dnf_product_rights_rev(ct: __Comptime__, left: __Type__, rights: Type_li
   , acc
   , .(loop_recur: (Type_list & Type_list) -> Type_list, loop_fuel: Type_list, loop_state: Type_list) -> Type_list {
       __either__[.][__Type__ & Type_list][Type_list](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> Type_list { loop_state }
       , .(cell: __Type__ & Type_list) -> Type_list {
           loop_recur(
@@ -558,7 +552,7 @@ pure fn dnf_product_rev(ct: __Comptime__, lefts: Type_list, rights: Type_list, a
   , acc
   , .(loop_recur: (Type_list & Type_list) -> Type_list, loop_fuel: Type_list, loop_state: Type_list) -> Type_list {
       __either__[.][__Type__ & Type_list][Type_list](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> Type_list { loop_state }
       , .(cell: __Type__ & Type_list) -> Type_list {
           loop_recur(
@@ -659,11 +653,11 @@ pub pure fn right_fold_product(ct: __Comptime__, xs: Type_list) -> __Type__ {
   , ()
   , .(loop_recur: (Type_list & .) -> __Type__, loop_fuel: Type_list, _loop_state: .) -> __Type__ {
       __either__[.][__Type__ & Type_list][__Type__](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> __Type__ { __type_unit__(ct) }
       , .(cell: __Type__ & Type_list) -> __Type__ {
           __either__[.][__Type__ & Type_list][__Type__](
-          , Type_list.un_type_list(__snd__[__Type__][Type_list](cell))
+          , Type_list.get(__snd__[__Type__][Type_list](cell))
           , .(_last: .) -> __Type__ { __fst__[__Type__][Type_list](cell) }
           , .(_tail: __Type__ & Type_list) -> __Type__ {
               __type_product__(
@@ -686,11 +680,11 @@ pub pure fn right_fold_sum(ct: __Comptime__, xs: Type_list) -> __Type__ {
   , ()
   , .(loop_recur: (Type_list & .) -> __Type__, loop_fuel: Type_list, _loop_state: .) -> __Type__ {
       __either__[.][__Type__ & Type_list][__Type__](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> __Type__ { __type_bottom__(ct) }
       , .(cell: __Type__ & Type_list) -> __Type__ {
           __either__[.][__Type__ & Type_list][__Type__](
-          , Type_list.un_type_list(__snd__[__Type__][Type_list](cell))
+          , Type_list.get(__snd__[__Type__][Type_list](cell))
           , .(_last: .) -> __Type__ { __fst__[__Type__][Type_list](cell) }
           , .(_tail: __Type__ & Type_list) -> __Type__ {
               __type_sum__(
@@ -707,19 +701,14 @@ pub pure fn right_fold_sum(ct: __Comptime__, xs: Type_list) -> __Type__ {
 }
 
 /// Cons-list of checked terms paired with type spines during materialization.
-pub rec newtype Term_list : . | (__Checked_term__ & Term_list) {
-  pub constructor mk_term_list;
-  pub projector un_term_list
-  }
+pub rec type { Term_list: . | (__Checked_term__ & Term_list) { pub mk; pub get } }
 
 /// Builds the empty checked-term list.
-pub pure fn term_nil() -> Term_list {
-  Term_list.mk_term_list(__left__[.][__Checked_term__ & Term_list](()))
-}
+pub pure fn term_nil() -> Term_list { Term_list.mk(__left__[.][__Checked_term__ & Term_list](())) }
 
 /// Prepends one checked term to a `Term_list`.
 pub pure fn term_cons(ct: __Comptime__, head: __Checked_term__, tail: Term_list) -> Term_list {
-  Term_list.mk_term_list(__right__[.][__Checked_term__ & Term_list]((head, tail)))
+  Term_list.mk(__right__[.][__Checked_term__ & Term_list]((head, tail)))
 }
 
 type Maybe_term = __Checked_term__ | .;
@@ -742,7 +731,7 @@ pure fn no_term_take(ct: __Comptime__) -> Maybe_term_take { __right__[Term_take]
 
 pure fn split_first_term(ct: __Comptime__, terms: Term_list) -> Maybe_term_take {
   __either__[.][__Checked_term__ & Term_list][Maybe_term_take](
-  , Term_list.un_term_list(terms)
+  , Term_list.get(terms)
   , .(_done: .) -> Maybe_term_take { no_term_take(ct) }
   , .(cell: __Checked_term__ & Term_list) -> Maybe_term_take {
       some_term_take(
@@ -786,7 +775,7 @@ type Fold_term_step = __Checked_term__ | Fold_term_next;
 
 pure fn fold_term_product_step(ct: __Comptime__, fuel: Type_list, state: Fold_term_state) -> Fold_term_step {
   __either__[.][__Type__ & Type_list][Fold_term_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Fold_term_step {
       __left__[__Checked_term__][Fold_term_next](finish_fold_term_product(
       , ct
@@ -852,17 +841,14 @@ pub pure fn right_fold_term_product_from_reversed(
 pub type Slot = __Type__ & __Checked_term__;
 
 /// Cons-list of typed checked-term slots.
-pub rec newtype Slot_list : . | (Slot & Slot_list) {
-  pub constructor mk_slot_list;
-  pub projector un_slot_list
-  }
+pub rec type { Slot_list: . | (Slot & Slot_list) { pub mk; pub get } }
 
 /// Builds the empty slot list.
-pub pure fn slot_nil() -> Slot_list { Slot_list.mk_slot_list(__left__[.][Slot & Slot_list](())) }
+pub pure fn slot_nil() -> Slot_list { Slot_list.mk(__left__[.][Slot & Slot_list](())) }
 
 /// Prepends one typed checked-term slot.
 pub pure fn slot_cons(ct: __Comptime__, head: Slot, tail: Slot_list) -> Slot_list {
-  Slot_list.mk_slot_list(__right__[.][Slot & Slot_list]((head, tail)))
+  Slot_list.mk(__right__[.][Slot & Slot_list]((head, tail)))
 }
 
 /// Projects the reflected type from a slot.
@@ -878,7 +864,7 @@ pub pure fn slot_term(ct: __Comptime__, slot: Slot) -> __Checked_term__ {
 /// Reports whether a slot list is empty.
 pub pure fn slot_empty(ct: __Comptime__, slots: Slot_list) -> Comptime_bool {
   __either__[.][Slot & Slot_list][Comptime_bool](
-  , Slot_list.un_slot_list(slots)
+  , Slot_list.get(slots)
   , .(_done: .) -> Comptime_bool { .t }
   , .(_cell: Slot & Slot_list) -> Comptime_bool { .f }
   )
@@ -900,13 +886,13 @@ type Slot_reverse_step = Slot_list | Slot_reverse_next;
 
 pure fn slot_reverse_step(ct: __Comptime__, fuel: Type_list, state: Slot_reverse_state) -> Slot_reverse_step {
   __either__[.][__Type__ & Type_list][Slot_reverse_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Slot_reverse_step {
       __left__[Slot_list][Slot_reverse_next](slot_reverse_acc(state))
     }
   , .(type_cell: __Type__ & Type_list) -> Slot_reverse_step {
       __either__[.][Slot & Slot_list][Slot_reverse_step](
-      , Slot_list.un_slot_list(slot_reverse_source(state))
+      , Slot_list.get(slot_reverse_source(state))
       , .(_missing: .) -> Slot_reverse_step {
           __left__[Slot_list][Slot_reverse_next](slot_reverse_acc(state))
         }
@@ -1011,7 +997,7 @@ type Product_slots_step = Slot_list | Product_slots_next;
 
 pure fn product_slots_step(ct: __Comptime__, fuel: Type_list, cursor: Product_cursor) -> Product_slots_step {
   __either__[.][__Type__ & Type_list][Product_slots_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Product_slots_step {
       __left__[Slot_list][Product_slots_next](slot_reverse_by_types(
       , ct
@@ -1021,7 +1007,7 @@ pure fn product_slots_step(ct: __Comptime__, fuel: Type_list, cursor: Product_cu
     }
   , .(cell: __Type__ & Type_list) -> Product_slots_step {
       __either__[.][__Type__ & Type_list][Product_slots_step](
-      , Type_list.un_type_list(__snd__[__Type__][Type_list](cell))
+      , Type_list.get(__snd__[__Type__][Type_list](cell))
       , .(_last: .) -> Product_slots_step {
           __left__[Slot_list][Product_slots_next](slot_reverse_by_types(
           , ct
@@ -1304,11 +1290,11 @@ pure fn split_type_prefix(ct: __Comptime__, prefix: Type_list, xs: Type_list) ->
     , loop_state: Type_list
     ) -> Maybe_type_list {
       __either__[.][__Type__ & Type_list][Maybe_type_list](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> Maybe_type_list { some_type_list(loop_state) }
       , .(prefix_cell: __Type__ & Type_list) -> Maybe_type_list {
           __either__[.][__Type__ & Type_list][Maybe_type_list](
-          , Type_list.un_type_list(loop_state)
+          , Type_list.get(loop_state)
           , .(_short: .) -> Maybe_type_list { no_type_list_value() }
           , .(source_cell: __Type__ & Type_list) -> Maybe_type_list {
               __if_then_else__(
@@ -1367,7 +1353,7 @@ pure fn split_slots_by_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_l
     , loop_state: Slot_prefix_state
     ) -> Maybe_slot_split {
       __either__[.][__Type__ & Type_list][Maybe_slot_split](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> Maybe_slot_split {
           some_slot_split(
           , slot_prepend_reverse_by_types(
@@ -1381,7 +1367,7 @@ pure fn split_slots_by_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_l
         }
       , .(prefix_cell: __Type__ & Type_list) -> Maybe_slot_split {
           __either__[.][Slot & Slot_list][Maybe_slot_split](
-          , Slot_list.un_slot_list(slot_prefix_remaining(loop_state))
+          , Slot_list.get(slot_prefix_remaining(loop_state))
           , .(_short: .) -> Maybe_slot_split { no_slot_split() }
           , .(slot_cell: Slot & Slot_list) -> Maybe_slot_split {
               __if_then_else__(
@@ -1454,7 +1440,7 @@ pure fn literal_atom(ct: __Comptime__, target: __Type__, factors: Type_list, slo
           , slot_empty(ct, __snd__[Slot_list][Slot_list](parts))
           , .() -> Macro_result {
               __either__[.][Slot & Slot_list][Macro_result](
-              , Slot_list.un_slot_list(__fst__[Slot_list][Slot_list](parts))
+              , Slot_list.get(__fst__[Slot_list][Slot_list](parts))
               , .(_empty: .) -> Macro_result {
                   err(ct, "DNF branch atom slot is empty"[__Diagnostic_text__])
                 }
@@ -1510,7 +1496,7 @@ pure fn materialize_product_search(
       , loop_state: Product_materialize_state
       ) -> Product_materialize_attempt {
         __either__[.][Dnf_branch & Dnf_branch_list][Product_materialize_attempt](
-        , Type_list.un_type_list(product_materialize_candidates(ct, loop_fuel))
+        , Type_list.get(product_materialize_candidates(ct, loop_fuel))
         , .(_done: .) -> Product_materialize_attempt {
             .() -> Macro_result { loop_state }
           }
@@ -1767,13 +1753,13 @@ pub pure fn take_first_matching(
       let loop_step_fn =
         .(fuel: Type_list, state: Take_state) -> Take_step {
           __either__[.][__Type__ & Type_list][Take_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Take_step {
               __left__[Maybe_matched_slot][Take_next](no_matched_slot(ct))
             }
           , .(type_cell: __Type__ & Type_list) -> Take_step {
               __either__[.][Slot & Slot_list][Take_step](
-              , Slot_list.un_slot_list(take_slots(state))
+              , Slot_list.get(take_slots(state))
               , .(_missing_slot: .) -> Take_step {
                   __left__[Maybe_matched_slot][Take_next](no_matched_slot(ct))
                 }
@@ -1910,7 +1896,7 @@ pub pure fn build_product_from_slots(
       let loop_step_fn =
         .(fuel: Type_list, state: Build_product_state) -> Build_product_step {
           __either__[.][__Type__ & Type_list][Build_product_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Build_product_step {
               __left__[Macro_result][Build_product_next](finish_product_build(
               , ct
@@ -2035,7 +2021,7 @@ pub pure fn build_widen_product_from_slots(
       let loop_step_fn =
         .(fuel: Type_list, state: Build_product_state) -> Build_product_step {
           __either__[.][__Type__ & Type_list][Build_product_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Build_product_step {
               __left__[Macro_result][Build_product_next](ok(
               , ct
@@ -2133,7 +2119,7 @@ pub pure fn first_product_type(ct: __Comptime__, source: __Type__, _value: __Che
   __Type__ | .
    {
   __either__[.][__Type__ & Type_list][__Type__ | .](
-  , Type_list.un_type_list(product_spine(ct, source))
+  , Type_list.get(product_spine(ct, source))
   , .(_empty: .) -> __Type__ | . { __right__[__Type__][.](()) }
   , .(cell: __Type__ & Type_list) -> __Type__ | . {
       __left__[__Type__][.](__fst__[__Type__][Type_list](cell))
@@ -2146,7 +2132,7 @@ pub pure fn first_sum_type(ct: __Comptime__, source: __Type__, _value: __Checked
   __Type__ | .
    {
   __either__[.][__Type__ & Type_list][__Type__ | .](
-  , Type_list.un_type_list(sum_spine(ct, source))
+  , Type_list.get(sum_spine(ct, source))
   , .(_empty: .) -> __Type__ | . { __right__[__Type__][.](()) }
   , .(cell: __Type__ & Type_list) -> __Type__ | . {
       __left__[__Type__][.](__fst__[__Type__][Type_list](cell))
@@ -2158,19 +2144,16 @@ pub pure fn first_sum_type(ct: __Comptime__, source: __Type__, _value: __Checked
 pub type Target_slot = __Type__ & Type_list;
 
 /// Cons-list of target arms and their injection suffixes.
-pub rec newtype Target_slot_list : . | (Target_slot & Target_slot_list) {
-  pub constructor mk_target_slot_list;
-  pub projector un_target_slot_list
-  }
+pub rec type { Target_slot_list: . | (Target_slot & Target_slot_list) { pub mk; pub get } }
 
 /// Builds the empty target-slot list.
 pub pure fn target_slot_nil() -> Target_slot_list {
-  Target_slot_list.mk_target_slot_list(__left__[.][Target_slot & Target_slot_list](()))
+  Target_slot_list.mk(__left__[.][Target_slot & Target_slot_list](()))
 }
 
 /// Prepends one target slot.
 pub pure fn target_slot_cons(ct: __Comptime__, head: Target_slot, tail: Target_slot_list) -> Target_slot_list {
-  Target_slot_list.mk_target_slot_list(__right__[.][Target_slot & Target_slot_list]((head, tail)))
+  Target_slot_list.mk(__right__[.][Target_slot & Target_slot_list]((head, tail)))
 }
 
 /// Projects the target arm type from a target slot.
@@ -2189,7 +2172,7 @@ type Target_slot_reverse_step = Target_slot_list | Target_slot_reverse_next;
 
 pure fn target_slot_reverse_step(ct: __Comptime__, fuel: Target_slot_list, acc: Target_slot_list) -> Target_slot_reverse_step {
   __either__[.][Target_slot & Target_slot_list][Target_slot_reverse_step](
-  , Target_slot_list.un_target_slot_list(fuel)
+  , Target_slot_list.get(fuel)
   , .(_done: .) -> Target_slot_reverse_step {
       __left__[Target_slot_list][Target_slot_reverse_next](acc)
     }
@@ -2235,7 +2218,7 @@ type Target_slots_step = Target_slot_list | Target_slots_next;
 
 pure fn target_slots_step(ct: __Comptime__, fuel: Type_list, acc: Target_slot_list) -> Target_slots_step {
   __either__[.][__Type__ & Type_list][Target_slots_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Target_slots_step {
       __left__[Target_slot_list][Target_slots_next](target_slot_reverse(ct, acc))
     }
@@ -2307,7 +2290,7 @@ pub pure fn target_slot_prepend_reverse(
       let loop_step_fn =
         .(fuel: Target_slot_list, acc: Target_slot_list) -> Target_slot_reverse_step {
           __either__[.][Target_slot & Target_slot_list][Target_slot_reverse_step](
-          , Target_slot_list.un_target_slot_list(fuel)
+          , Target_slot_list.get(fuel)
           , .(_done: .) -> Target_slot_reverse_step {
               __left__[Target_slot_list][Target_slot_reverse_next](acc)
             }
@@ -2346,7 +2329,7 @@ pub pure fn take_first_target_matching(ct: __Comptime__, target: __Type__, slots
       let loop_step_fn =
         .(fuel: Target_slot_list, prefix_rev: Target_slot_list) -> Target_take_step {
           __either__[.][Target_slot & Target_slot_list][Target_take_step](
-          , Target_slot_list.un_target_slot_list(fuel)
+          , Target_slot_list.get(fuel)
           , .(_done: .) -> Target_take_step {
               __left__[Maybe_target_slot_take][Target_take_next](no_target_slot_take(ct))
             }
@@ -2393,17 +2376,12 @@ pub pure fn take_first_target_matching(ct: __Comptime__, target: __Type__, slots
 }
 
 /// Cons-list of source-to-target sum-arm routes.
-pub rec newtype Route_list : . | (Type_list & Route_list) {
-  pub constructor mk_route_list;
-  pub projector un_route_list
-  }
+pub rec type { Route_list: . | (Type_list & Route_list) { pub mk; pub get } }
 
-pure fn route_nil() -> Route_list {
-  Route_list.mk_route_list(__left__[.][Type_list & Route_list](()))
-}
+pure fn route_nil() -> Route_list { Route_list.mk(__left__[.][Type_list & Route_list](())) }
 
 pure fn route_cons(head: Type_list, tail: Route_list) -> Route_list {
-  Route_list.mk_route_list(__right__[.][Type_list & Route_list]((head, tail)))
+  Route_list.mk(__right__[.][Type_list & Route_list]((head, tail)))
 }
 
 type Route_reverse_next = Route_list & Route_list;
@@ -2412,7 +2390,7 @@ type Route_reverse_step = Route_list | Route_reverse_next;
 
 pure fn route_reverse_step(fuel: Route_list, acc: Route_list) -> Route_reverse_step {
   __either__[.][Type_list & Route_list][Route_reverse_step](
-  , Route_list.un_route_list(fuel)
+  , Route_list.get(fuel)
   , .(_done: .) -> Route_reverse_step { __left__[Route_list][Route_reverse_next](acc) }
   , .(cell: Type_list & Route_list) -> Route_reverse_step {
       __right__[Route_list][Route_reverse_next]((
@@ -2498,7 +2476,7 @@ pub pure fn route_source_arms_unique(
       let loop_step_fn =
         .(fuel: Type_list, state: Unique_route_state) -> Unique_route_step {
           __either__[.][__Type__ & Type_list][Unique_route_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Unique_route_step {
               __left__[Route_result][Unique_route_next](routes_ok(
               , ct
@@ -2571,7 +2549,7 @@ pub pure fn route_source_arms_collapse(
       let loop_step_fn =
         .(fuel: Type_list, routes_rev: Collapse_route_state) -> Collapse_route_step {
           __either__[.][__Type__ & Type_list][Collapse_route_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Collapse_route_step {
               __left__[Route_result][Collapse_route_next](routes_ok(
               , ct
@@ -2651,7 +2629,7 @@ pure fn prefix_before_suffix(ct: __Comptime__, targets: Type_list, suffix: Type_
           , .() -> Prefix_step { __left__[Type_list][Prefix_next](prefix_acc(state)) }
           , .() -> Prefix_step {
               __either__[.][__Type__ & Type_list][Prefix_step](
-              , Type_list.un_type_list(fuel)
+              , Type_list.get(fuel)
               , .(_done: .) -> Prefix_step { __left__[Type_list][Prefix_next](prefix_acc(state)) }
               , .(cell: __Type__ & Type_list) -> Prefix_step {
                   __right__[Type_list][Prefix_next]((
@@ -2705,7 +2683,7 @@ pure fn suffix_base_term(
 , value: __Checked_term__
 ) -> __Checked_term__ {
   __either__[.][__Type__ & Type_list][__Checked_term__](
-  , Type_list.un_type_list(suffix)
+  , Type_list.get(suffix)
   , .(_empty: .) -> __Checked_term__ { value }
   , .(cell: __Type__ & Type_list) -> __Checked_term__ {
       __if_then_else__(
@@ -2736,7 +2714,7 @@ pub pure fn inject_at_suffix(
       let loop_step_fn =
         .(fuel: Type_list, state: Inject_prefix_state) -> Inject_prefix_step {
           __either__[.][__Type__ & Type_list][Inject_prefix_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Inject_prefix_step {
               __left__[__Checked_term__][Inject_prefix_next](inject_prefix_term(ct, state))
             }
@@ -2855,7 +2833,7 @@ pure fn extend_dispatch(
 
 pure fn finish_dispatch(ct: __Comptime__, state: Dispatch_loop_state) -> Dispatch_result {
   __either__[.][Type_list & Route_list][Dispatch_result](
-  , Route_list.un_route_list(dispatch_routes(ct, state))
+  , Route_list.get(dispatch_routes(ct, state))
   , .(_done: .) -> Dispatch_result {
       dispatch_ok(ct, dispatch_mapper(ct, dispatch_state(ct, state)))
     }
@@ -2873,13 +2851,13 @@ pure fn build_sum_dispatcher(
 , routes: Route_list
 ) -> Dispatch_result {
   __either__[.][__Type__ & Type_list][Dispatch_result](
-  , Type_list.un_type_list(type_reverse(ct, source_spine))
+  , Type_list.get(type_reverse(ct, source_spine))
   , .(_no_source: .) -> Dispatch_result {
       dispatch_err(ct, "sum source spine is empty"[__Diagnostic_text__])
     }
   , .(source_cell: __Type__ & Type_list) -> Dispatch_result {
       __either__[.][Type_list & Route_list][Dispatch_result](
-      , Route_list.un_route_list(route_reverse(ct, routes))
+      , Route_list.get(route_reverse(ct, routes))
       , .(_no_route: .) -> Dispatch_result {
           dispatch_err(ct, "sum route list is empty"[__Diagnostic_text__])
         }
@@ -2907,13 +2885,13 @@ pure fn build_sum_dispatcher(
               let loop_step_fn =
                 .(fuel: Type_list, state: Dispatch_loop_state) -> Dispatch_step {
                   __either__[.][__Type__ & Type_list][Dispatch_step](
-                  , Type_list.un_type_list(fuel)
+                  , Type_list.get(fuel)
                   , .(_done: .) -> Dispatch_step {
                       __left__[Dispatch_result][Dispatch_next](finish_dispatch(ct, state))
                     }
                   , .(source_head: __Type__ & Type_list) -> Dispatch_step {
                       __either__[.][Type_list & Route_list][Dispatch_step](
-                      , Route_list.un_route_list(dispatch_routes(ct, state))
+                      , Route_list.get(dispatch_routes(ct, state))
                       , .(_missing_route: .) -> Dispatch_step {
                           __left__[Dispatch_result][Dispatch_next](dispatch_err(
                           , ct
@@ -2986,13 +2964,13 @@ fn type_pair_err(message: __Diagnostic_text__) -> Type_pair_result {
 
 fn first_two_types(ct: __Comptime__, types: Type_list) -> Type_pair_result {
   __either__[.][__Type__ & Type_list][Type_pair_result](
-  , Type_list.un_type_list(types)
+  , Type_list.get(types)
   , .(_empty: .) -> Type_pair_result {
       type_pair_err("type spine has fewer than two slots"[__Diagnostic_text__])
     }
   , .(first_cell: __Type__ & Type_list) -> Type_pair_result {
       __either__[.][__Type__ & Type_list][Type_pair_result](
-      , Type_list.un_type_list(__snd__[__Type__][Type_list](first_cell))
+      , Type_list.get(__snd__[__Type__][Type_list](first_cell))
       , .(_one: .) -> Type_pair_result {
           type_pair_err("type spine has fewer than two slots"[__Diagnostic_text__])
         }

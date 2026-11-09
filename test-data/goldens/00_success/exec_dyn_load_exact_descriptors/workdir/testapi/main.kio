@@ -26,6 +26,7 @@ import loader(
 , Host_fn_binding
 , Host_fn_bindings
 );
+import loader(Apply, Hostfn_in, I32_in, I32_out, Lookup, Pair_in, Str_out, Unit_in);
 import loader(Hostfn, Hostfns, Image, Loaded, Lr_diag, Lr_image, Surface);
 import loader(contract_check, contract_cons, contract_nil, diag_message);
 import loader(export_info_name, export_info_sig, export_term, mk_expect);
@@ -34,10 +35,10 @@ import loader(host_fn_binding_descriptor, host_fn_binding_groups, un_host_fn_bin
 import loader(host_fn_bindings_cons, host_fn_bindings_nil);
 import loader(image_exports, image_hostfns, instantiate, mk_host_adapter, mk_host_fn_binding);
 import loader(un_export_infos, un_hostfns, un_load_outcome);
-import loader({apply}, {hostfn_in}, {i32_in}, {i32_out}, {lookup}, {pair_in}, {str_out}, {unit_in});
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import prime(Group_slots, Term, group_slots_cons, group_slots_nil, un_group_slots);
 import result(Call_result, call_done, call_stuck);
@@ -159,24 +160,23 @@ fn print_source_derivation_results() {
   ));
   print(source_result_line(
   , "local undersaturated transparent alias: "[String]
-  , "module alias_partial;\nnewtype Higher[*F] : . { constructor mk_higher; "
-    "projector un_higher; };\ntype Pair[A][B] = A & B;\nhost fn rejected(x: "
-    "Higher[Pair[.]]) -> .;\n"[String]
+  , "module alias_partial;\ntype { Higher[*F]: . { mk; get; }; };\ntype "
+    "Pair[A][B] = A & B;\nhost fn rejected(x: Higher[Pair[.]]) -> .;\n"[String]
   ));
   print(source_result_line(
   , "selective undersaturated transparent alias: "[String]
   , "module selective_decoy;\npub type Pair[A] = A;\nmodule selective_provider;\n"
     "pub type Pair[A][B] = A & B;\nmodule selective_consumer;\nimport "
-    "selective_provider(Pair);\nimport selective_decoy as decoy;\nnewtype "
-    "Higher[*F] : . { constructor mk_higher; projector un_higher; };\nhost fn "
-    "rejected(x: Higher[Pair[.]]) -> .;\n"[String]
+    "selective_provider(Pair);\nimport selective_decoy as decoy;\ntype { "
+    "Higher[*F]: . { mk; get; }; };\nhost fn rejected(x: Higher[Pair[.]]) -> "
+    ".;\n"[String]
   ));
   print(source_result_line(
   , "qualified undersaturated transparent alias: "[String]
   , "module qualified_provider;\npub type Pair[A][B] = A & B;\nmodule "
     "qualified_consumer;\nimport qualified_provider as provider;\ntype Pair[A] "
-    "= A;\nnewtype Higher[*F] : . { constructor mk_higher; projector "
-    "un_higher; };\nhost fn rejected(x: Higher[provider.Pair[.]]) -> .;\n"[String]
+    "= A;\ntype { Higher[*F]: . { mk; get; }; };\nhost fn rejected(x: "
+    "Higher[provider.Pair[.]]) -> .;\n"[String]
   ));
   print(source_result_line(
   , "saturated transparent alias: "[String]
@@ -185,87 +185,79 @@ fn print_source_derivation_results() {
   ));
   print(source_result_line(
   , "partially applied newtype: "[String]
-  , "module nominal_partial;\npub newtype Higher[*F] : . { constructor "
-    "mk_higher; projector un_higher; };\npub newtype Pair[A][B] : A & B { pub "
-    "constructor mk_pair; pub projector un_pair; };\nhost fn accepted(x: "
+  , "module nominal_partial;\npub type { Higher[*F]: . { mk; get; }; };\npub "
+    "type { Pair[A][B]: A & B { pub mk; pub get; }; };\nhost fn accepted(x: "
     "Higher[Pair[.]]) -> .;\npackage nominal_partial;\nbridge { "
     "nominal_partial; }\n"[String]
   ));
   print(source_result_line(
   , "opaque nominal with private payload: "[String]
-  , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
-    "un_hidden; };\npub newtype Box : Hidden { constructor mk_box; projector "
-    "un_box; };\npub fn keep(value: Box) -> Box { value }\npackage guest;\n"
+  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
+    "mk; get; }; };\npub fn keep(value: Box) -> Box { value }\npackage guest;\n"
     "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "opaque self-shadowing nominal header: "[String]
-  , "module guest;\npub newtype A[A] : . { constructor mk_a; projector un_a; "
-    "};\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub type { A[A]: . { mk; get; }; };\npackage guest;\nbridge "
+    "{ guest; }\n"[String]
   ));
   print(source_result_line(
   , "construct-only self-shadowing nominal header: "[String]
-  , "module guest;\npub newtype B[B] : . { pub constructor mk_b; projector "
-    "un_b; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub type { B[B]: . { pub mk; get; }; };\npackage guest;\n"
+    "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "inspect-only self-shadowing nominal header: "[String]
-  , "module guest;\npub newtype C[C] : . { constructor mk_c; pub projector "
-    "un_c; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub type { C[C]: . { mk; pub get; }; };\npackage guest;\n"
+    "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "public-member self-shadowing nominal header: "[String]
-  , "module guest;\npub newtype D[D] : . { pub constructor mk_d; pub projector "
-    "un_d; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub type { D[D]: . { pub mk; pub get; }; };\npackage guest;\n"
+    "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "ambient-decoy self-shadowing nominal header: "[String]
-  , "module guest;\nnewtype Zzcps_n : . { constructor mk_decoy; projector "
-    "un_decoy; };\npub newtype E[E] : . { pub constructor mk_e; pub projector "
-    "un_e; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\ntype { Zzcps_n: . { mk; get; }; };\npub type { E[E]: . { "
+    "pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "malformed opaque nominal header: "[String]
-  , "module guest;\npub newtype Box[A B] : . { constructor mk_box; projector "
-    "un_box; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub type { Box[A B]: . { mk; get; }; };\npackage guest;\n"
+    "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "private nominal in export signature: "[String]
-  , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
-    "un_hidden; };\npub fn expose(value: Hidden) -> Hidden { value }\npackage "
-    "guest;\nbridge { guest; }\n"[String]
+  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub fn expose(value: "
+    "Hidden) -> Hidden { value }\npackage guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "scoped nominal in export signature: "[String]
-  , "module guest;\npub(guest) newtype Hidden : . { constructor mk_hidden; "
-    "projector un_hidden; };\npub fn expose(value: Hidden) -> Hidden { value }\n"
-    "package guest;\nbridge { guest; }\n"[String]
-  ));
-  print(source_result_line(
-  , "unbridged nominal in export signature: "[String]
-  , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
-    "projector un_hidden; };\nmodule guest;\nimport hidden(Hidden);\npub fn "
+  , "module guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub fn "
     "expose(value: Hidden) -> Hidden { value }\npackage guest;\nbridge { guest; "
     "}\n"[String]
   ));
   print(source_result_line(
+  , "unbridged nominal in export signature: "[String]
+  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
+    "guest;\nimport hidden(Hidden);\npub fn expose(value: Hidden) -> Hidden { "
+    "value }\npackage guest;\nbridge { guest; }\n"[String]
+  ));
+  print(source_result_line(
   , "private nominal in member signature: "[String]
-  , "module guest;\nnewtype Hidden : . { constructor mk_hidden; projector "
-    "un_hidden; };\npub newtype Box : Hidden { pub constructor mk_box; pub "
-    "projector un_box; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
+    "pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "scoped nominal in member signature: "[String]
-  , "module guest;\npub(guest) newtype Hidden : . { constructor mk_hidden; "
-    "projector un_hidden; };\npub newtype Box : Hidden { pub constructor "
-    "mk_box; pub projector un_box; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "module guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub type { "
+    "Box: Hidden { pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "unbridged nominal in member signature: "[String]
-  , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
-    "projector un_hidden; };\nmodule guest;\nimport hidden(Hidden);\npub newtype "
-    "Box : Hidden { pub constructor mk_box; pub projector un_box; };\npackage "
-    "guest;\nbridge { guest; }\n"[String]
+  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
+    "guest;\nimport hidden(Hidden);\npub type { Box: Hidden { pub mk; pub get; "
+    "}; };\npackage guest;\nbridge { guest; }\n"[String]
   ));
   ()
 }
@@ -551,15 +543,15 @@ fn canonical_export_contract() -> Contract {
   contract_cons(
   , mk_expect("left.echo_alias"[String], "(h{host/a.Value}) -> h{host/a.Value}"[String])
   , contract_cons(
-    , mk_expect("left.Box.mk_box"[String], "(h{host/a.Value}) -> n{left.Box}"[String])
+    , mk_expect("left.Box.mk"[String], "(h{host/a.Value}) -> n{left.Box}"[String])
     , contract_cons(
-      , mk_expect("left.Box.un_box"[String], "(n{left.Box}) -> h{host/a.Value}"[String])
+      , mk_expect("left.Box.get"[String], "(n{left.Box}) -> h{host/a.Value}"[String])
       , contract_cons(
         , mk_expect("right.echo"[String], "(h{host/b.Value}) -> h{host/b.Value}"[String])
         , contract_cons(
-          , mk_expect("right.Box.mk_box"[String], "(h{host/b.Value}) -> n{right.Box}"[String])
+          , mk_expect("right.Box.mk"[String], "(h{host/b.Value}) -> n{right.Box}"[String])
           , contract_cons(
-            , mk_expect("right.Box.un_box"[String], "(n{right.Box}) -> h{host/b.Value}"[String])
+            , mk_expect("right.Box.get"[String], "(n{right.Box}) -> h{host/b.Value}"[String])
             , contract_nil()
             )
           )
@@ -582,8 +574,8 @@ fn describe_canonical_export_contracts(im: Image) -> String {
   let selective = find_export_sig(exports, "left.echo_selective"[String]);
   let alias = find_export_sig(exports, "left.echo_alias"[String]);
   let other = find_export_sig(exports, "right.echo"[String]);
-  let left_ctor = find_export_sig(exports, "left.Box.mk_box"[String]);
-  let right_ctor = find_export_sig(exports, "right.Box.mk_box"[String]);
+  let left_ctor = find_export_sig(exports, "left.Box.mk"[String]);
+  let right_ctor = find_export_sig(exports, "right.Box.mk"[String]);
   let left_box = find_export_sig(exports, "left.echo_box"[String]);
   let right_box = find_export_sig(exports, "right.echo_box"[String]);
   let implicit_unit = find_export_sig(exports, "left.implicit_unit"[String]);
@@ -1211,13 +1203,13 @@ fn describe_preflight_results(im: Image) -> String {
 }
 
 fn call_zero_i32[P](surface: Surface[P], name: String) -> String {
-  match(surface.?{lookup}(name)) {
+  match((surface.>select { Lookup.get[P] })(name)) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
               }
             }
@@ -1231,13 +1223,13 @@ fn call_zero_i32[P](surface: Surface[P], name: String) -> String {
 }
 
 fn call_zero_string[P](surface: Surface[P], name: String) -> String {
-  match(surface.?{lookup}(name)) {
+  match((surface.>select { Lookup.get[P] })(name)) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{str_out}(answer)) {
+              match((surface.>select { Str_out.get[P] })(answer)) {
                 (.(s: String) { s }, .(diag: Diag) { diag_message(diag) })
               }
             }
@@ -1251,22 +1243,24 @@ fn call_zero_string[P](surface: Surface[P], name: String) -> String {
 }
 
 fn apply_named[P](surface: Surface[P], name: String, argument: P) -> P | Diag {
-  match(surface.?{lookup}(name)) {
+  match((surface.>select { Lookup.get[P] })(name)) {
     (
-    , .(callee: P) { surface.?{apply}((callee, argument)) }
+    , .(callee: P) {
+        (surface.>select { Apply.get[P] })((callee, argument))
+      }
     , .(diag: Diag) { widen_sum(diag)[P | Diag] }
     )
   }
 }
 
 fn call_polymorphic_identity[P](surface: Surface[P]) -> String {
-  match(surface.?{hostfn_in}(polymorphic_identity())) {
+  match((surface.>select { Hostfn_in.get[P] })(polymorphic_identity())) {
     (
     , .(callback: P) {
         match(apply_named(surface, "left.call_polymorphic_identity"[String], callback)) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
               }
             }
@@ -1280,27 +1274,30 @@ fn call_polymorphic_identity[P](surface: Surface[P]) -> String {
 }
 
 fn describe_injected_descriptor[P](surface: Surface[P], descriptor: Host_fn) -> String {
-  match(surface.?{hostfn_in}(descriptor)) {
+  match((surface.>select { Hostfn_in.get[P] })(descriptor)) {
     (.(_callback: P) { "accepted"[String] }, .(diag: Diag) { diag_message(diag) })
   }
 }
 
 fn call_repeated_binders[P](surface: Surface[P]) -> String {
-  match(surface.?{hostfn_in}(repeated_binders())) {
+  match((surface.>select { Hostfn_in.get[P] })(repeated_binders())) {
     (
     , .(callback: P) {
-        match(surface.?{apply}((callback, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callback, surface.>select { Unit_in.get[P] }))) {
           (
           , .(after_a: P) {
-              match(surface.?{apply}((after_a, surface.?{unit_in}))) {
+              match((surface.>select { Apply.get[P] })((after_a, surface.>select { Unit_in.get[P] }))) {
                 (
                 , .(after_b: P) {
                     let pair =
-                      surface.?{pair_in}((surface.?{i32_in}(11[I32]), surface.?{i32_in}(13[I32])));
-                    match(surface.?{apply}((after_b, pair))) {
+                      (surface.>select { Pair_in.get[P] })((
+                      , (surface.>select { I32_in.get[P] })(11[I32])
+                      , (surface.>select { I32_in.get[P] })(13[I32])
+                      ));
+                    match((surface.>select { Apply.get[P] })((after_b, pair))) {
                       (
                       , .(answer: P) {
-                          match(surface.?{i32_out}(answer)) {
+                          match((surface.>select { I32_out.get[P] })(answer)) {
                             (.(n: I32) { int_to_string(n) }, .(diag: Diag) { diag_message(diag) })
                           }
                         }
@@ -1347,17 +1344,18 @@ fn describe_hostfn_in_edge_results[P](surface: Surface[P]) -> String {
 }
 
 fn call_box_roundtrip[P](surface: Surface[P], value: I32) -> String {
-  let box_result = apply_named(surface, "left.Box.mk_box"[String], surface.?{i32_in}(value));
+  let box_result =
+    apply_named(surface, "left.Box.mk"[String], (surface.>select { I32_in.get[P] })(value));
   match(box_result) {
     (
     , .(boxed: P) {
         match(apply_named(surface, "left.echo_box"[String], boxed)) {
           (
           , .(echoed: P) {
-              match(apply_named(surface, "left.Box.un_box"[String], echoed)) {
+              match(apply_named(surface, "left.Box.get"[String], echoed)) {
                 (
                 , .(unboxed: P) {
-                    match(surface.?{i32_out}(unboxed)) {
+                    match((surface.>select { I32_out.get[P] })(unboxed)) {
                       (
                       , .(answer: I32) { int_to_string(answer) }
                       , .(diag: Diag) { diag_message(diag) }

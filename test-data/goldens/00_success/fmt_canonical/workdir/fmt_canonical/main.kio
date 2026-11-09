@@ -6,9 +6,9 @@ import a/b as q;
 import a/b(T);
 import g_pkg(g);
 
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
+type { Box[A]: A { pub mk; pub get; }; };
 
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list; };
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; };
 
 type Logger = String -> .;
 
@@ -38,7 +38,7 @@ fn use_let_simple() -> . { let x = (); x }
 
 fn use_fn_simple() -> . { .(x) { print(x) }("hi"[String]) }
 
-fn dotted_callee() -> . { Box.mk_box[String]("hi"[String]) }
+fn dotted_callee() -> . { Box.mk[String]("hi"[String]) }
 
 fn mixed_args() -> . { id[String]("hi"[String]) }
 

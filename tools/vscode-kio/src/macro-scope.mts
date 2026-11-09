@@ -47,10 +47,6 @@ export function macroScope(root: Node): MacroScope {
       if (stem) bind(stem.text, false, true);
       return;
     }
-    if (["row_let_entry", "row_let_shorthand_path"].includes(node.type)) {
-      for (const binder of leaves(node, ["variable_parameter"])) bind(binder.text);
-      return;
-    }
     if (["identifier", "variable_parameter"].includes(node.type)) { bind(node.text); return; }
     let annotated = false;
     for (const child of node.namedChildren) {
@@ -130,7 +126,7 @@ export function macroScope(root: Node): MacroScope {
       family = previousFamily;
       return;
     }
-    if (["let_statement", "neutral_bind", "row_let_stmt"].includes(node.type)) {
+    if (["let_statement", "neutral_bind"].includes(node.type)) {
       const children = node.namedChildren;
       const equal = children.findIndex((child) => ["=", "<-"].includes(child.text));
       if (equal !== -1) {

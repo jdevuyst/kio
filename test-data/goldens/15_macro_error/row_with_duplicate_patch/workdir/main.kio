@@ -1,0 +1,9 @@
+module main;
+
+import macros/row_macros(macro with);
+
+type { A: . { mk; get } }
+
+fn rejected() -> A {
+  A.mk(()).>with { A.mk(()); A.mk(()) }
+}

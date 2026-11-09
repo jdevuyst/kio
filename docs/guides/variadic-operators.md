@@ -3,7 +3,7 @@
 `varop` defines a delimited expression containing any number of comma-separated
 elements. It names ordinary functions that combine those elements from the
 left or right. This guide builds on [functions](../tutorials/language.md),
-[newtypes](declarations.md#nominal-newtypes), and [fixed operators](operators.md).
+[nominal types](declarations.md#nominal-types), and [fixed operators](operators.md).
 
 <!--kio {harness=collections accumulate placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -30,12 +30,12 @@ import it with `import macros/spine_macros(macro widen_sum);` when the dependenc
 is named `macros`:
 
 ```kio {@collections}
-rec newtype List[A] : . | (A & List[A]) { pub constructor pack; pub projector unpack }
+rec type { List[A]: . | (A & List[A]) }
 
-fn nil[A]() -> List[A] { List.pack(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
 fn cons[A](head: A, tail: List[A]) -> List[A] {
-  List.pack(widen_sum((head, tail))[. | (A & List[A])])
+  List.mk(widen_sum((head, tail))[. | (A & List[A])])
 }
 
 varop [* *] { foldr cons nil }
@@ -130,7 +130,7 @@ the same host `I32` and a host addition operation
 `add: (I32 & I32) -> I32`:
 
 ```kio {@collections}
-newtype Entry_totals : I32 & I32 { pub constructor pack; pub projector unpack }
+type { Entry_totals: I32 & I32 }
 
 fn entry(key: I32, value: I32) -> I32 & I32 { (key, value) }
 
@@ -142,7 +142,7 @@ fn accumulate_entry((keys: I32, values: I32), (key: I32, value: I32)) -> I32 & I
   (add(keys, key), add(values, value))
 }
 
-fn finish_entries(totals: I32 & I32) -> Entry_totals { Entry_totals.pack(totals) }
+fn finish_entries(totals: I32 & I32) -> Entry_totals { Entry_totals.mk(totals) }
 
 varop [% %] { foldl1 accumulate_entry seed_entry; finalize finish_entries }
 
@@ -162,7 +162,7 @@ is accepted, and `kio fmt` places the primary clause first.
 ## Export and import
 
 Every step, base, seed, and finalizer is a function name or ordinary imported
-or newtype-member path, such as `helpers.cons`. Parentheses may group any of
+or nominal-member path, such as `helpers.cons`. Parentheses may group any of
 these references repeatedly. `finalize ()` means no finalizer, like omitting
 the field; formatting preserves either spelling.
 Put calls, lambdas, or argument
@@ -170,7 +170,7 @@ adaptation in a named helper. Declare local targets before the `varop`, and the
 `varop` before functions using its syntax.
 
 Use `pub varop` to export the syntax. Its directly named targets must be at
-least as visible as the operator; for a newtype member, this includes both the
+least as visible as the operator; for a nominal member, this includes both the
 type or identity alias and the member. Import the delimiter pair without the
 body: `import list(varop [* *]);`. Canonical marked spacing stays; commas are
 implicit and do not appear in the pair. Importing a helper alone does not

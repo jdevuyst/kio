@@ -3,27 +3,26 @@
 // placeholders. Used by the E2E test as a non-trivial document
 // to exercise the semantic-tokens provider on.
 module fixture;
+import highlight/source(Item, item, Field);
 import highlight/macros(macro outer, macro transform, macro _transform, macro if);
 
-env {
-  type I32 role(i32);
-  type String role(str);
-  fn print(s: String) -> .;
-}
+host type I32 role(i32);
+host type String role(str);
+host fn print(s: String);
 
-labels { greet: String };
-labels Greeting = { greet: _ };
+type { Greet: String; }
+type Greeting = Greet;
 
-newtype Box[A] : A { constructor mk_box; projector un_box; };
-newtype _Box[_A] : _A { constructor mk_marked; projector un_marked; };
+type { Box[A]: A { mk; get; }; }
+type { _Box[_A]: _A { mk; get; }; }
 
 op _ <+> _ { impl pick; };
 
 fn pick(a: I32, b: I32) -> I32 { a }
 
 fn raw_type_args[A][_A](x: A, y: _A) -> _A {
-  let _ = Box.un_box[A](Box.mk_box[A](x));
-  _Box.un_marked[_A](_Box.mk_marked[_A](y))
+  let _ = Box.get[A](Box.mk[A](x));
+  _Box.get[_A](_Box.mk[_A](y))
 }
 
 fn ufcs(receiver: I32) -> I32 {
@@ -38,22 +37,21 @@ fn ufcs(receiver: I32) -> I32 {
   receiver.>transform;
   transform.<receiver;
   _transform.<receiver;
-  receiver.>_Box.un_marked;
-  _Box.un_marked.<receiver
+  receiver.>_Box.get;
+  _Box.get.<receiver
 }
 
 pub fn main() -> . {
-  let g = {greet = "hello\n"};
+  let g = "hello\n";
   let n = 1[I32] <+> 2[I32];
   let f = .x. { x1 };
-  let boxed = Box.mk_box[I32](n);
-  let unboxed = Box.un_box[I32](boxed);
-  let marked = _Box.mk_marked[I32](unboxed);
-  let _unmarked = _Box.un_marked[I32](marked);
+  let boxed = Box.mk[I32](n);
+  let unboxed = Box.get[I32](boxed);
+  let marked = _Box.mk[I32](unboxed);
+  let _unmarked = _Box.get[I32](marked);
   if (.t) {
     print("y")
   } else {
     print("n")
   }
 }
-import highlight/source(Item, item, {item});

@@ -6,10 +6,12 @@ pure fn identity_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term_
   value
 }
 
-pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
+pure fn unit_impl(ct: __Comptime__, _inputs: __Checked_term__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
 
 pub macro block : [A] A -> A { trailing product; impl identity_impl }
 
-pub macro let : . -> . -> . { trailing product; impl unit_impl }
+pub macro let : (. & .) -> . { trailing product; impl unit_impl }
 
-pub macro recur : . -> . -> . { trailing product; impl unit_impl }
+pub macro recur : (. & .) -> . { trailing product; impl unit_impl }

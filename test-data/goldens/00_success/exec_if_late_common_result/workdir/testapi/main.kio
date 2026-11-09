@@ -6,7 +6,7 @@ import macros/spine_macros(macro widen_sum);
 import testapi(Bool, String);
 import testapi/io as io;
 
-labels Choice = { left: . } | { right: . };
+type Choice = { Left: . } | { Right: . };
 
 fn first[A](value: A, _witness: A) -> A { value }
 
@@ -21,9 +21,9 @@ pub fn main() {
   let select =
     first(
     , .(condition: Bool) {
-        if(condition) { widen_sum({left=}) } else { widen_sum({right=}) }
+        if(condition) { widen_sum(Left.mk(())) } else { widen_sum(Right.mk(())) }
       }
-    , .(_condition: Bool) -> Choice { widen_sum({left=}) }
+    , .(_condition: Bool) -> Choice { widen_sum(Left.mk(())) }
     );
   io.print(describe(select(.t)));
   io.print(describe(select(.f)))

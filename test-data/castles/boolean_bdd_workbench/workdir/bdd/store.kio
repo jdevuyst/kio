@@ -5,25 +5,24 @@ import list/core as lists;
 import list/list as walk;
 import macros/control(macro if);
 import macros/match(macro match);
-import macros/spine_macros(macro reorder_prod, macro widen_sum);
+import macros/row_macros(macro select);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 
-pub newtype Node_id : I32 { pub constructor from_int; pub projector to_int }
+pub type { Node_id: I32 { pub mk; pub get } }
 
-pub labels Node = { level: I32, low: Node_id, high: Node_id };
+pub type Node = { Level: I32; Low: Node_id; High: Node_id };
 
-pub labels Store = { nodes: lists.List[Node_id & Node], next: I32, reused: I32, reduced: I32 };
+pub type Store = { Nodes: lists.List[Node_id & Node]; Next: I32; Reused: I32; Reduced: I32 };
 
-pub fn false_id() -> Node_id { Node_id.from_int(0) }
+pub fn false_id() -> Node_id { Node_id.mk(0) }
 
-pub fn true_id() -> Node_id { Node_id.from_int(1) }
+pub fn true_id() -> Node_id { Node_id.mk(1) }
 
-pub fn same_id(a: Node_id, b: Node_id) -> Bool {
-  arith.eq_i32(a.>Node_id.to_int, b.>Node_id.to_int)
-}
+pub fn same_id(a: Node_id, b: Node_id) -> Bool { arith.eq_i32(a.>Node_id.get, b.>Node_id.get) }
 
-pub fn terminal(id: Node_id) -> Bool { arith.lt_i32(id.>Node_id.to_int, 2) }
+pub fn terminal(id: Node_id) -> Bool { arith.lt_i32(id.>Node_id.get, 2) }
 
 pub fn truth(id: Node_id) -> Bool { same_id(id, true_id()) }
 
@@ -31,12 +30,14 @@ pub fn from_bool(b: Bool) -> Node_id {
   if(b) { true_id() } else { false_id() }
 }
 
-pub fn empty() -> Store { {nodes = lists.nil[_], next = 2, reused = 0, reduced = 0} }
+pub fn empty() -> Store { (Nodes.mk(lists.nil[_]), Next.mk(2), Reused.mk(0), Reduced.mk(0)) }
 
-pub fn size(s: Store) -> I32 { walk.length(s.?{nodes}) }
+pub fn size(s: Store) -> I32 {
+  walk.length(s.>select { Nodes.get })
+}
 
 pub fn lookup(s: Store, id: Node_id) -> Node | . {
-  match(walk.find(.(key: Node_id, _node: Node) { same_id(key, id) }, s.?{nodes})) {
+  match(walk.find(.(key: Node_id, _node: Node) { same_id(key, id) }, s.>select { Nodes.get })) {
     .(_key: Node_id, node: Node) { node.>widen_sum };
     .() { ().>widen_sum }
   }
@@ -44,7 +45,9 @@ pub fn lookup(s: Store, id: Node_id) -> Node | . {
 
 pub fn top(s: Store, id: Node_id) -> I32 {
   match(lookup(s, id)) {
-    .(n: Node) { n.?{level} };
+    .(n: Node) {
+      n.>select { Level.get }
+    };
     .() { 3 }
   }
 }
@@ -52,8 +55,12 @@ pub fn top(s: Store, id: Node_id) -> I32 {
 pub fn branch(s: Store, id: Node_id, at: I32, high_branch: Bool) -> Node_id {
   match(lookup(s, id)) {
     .(n: Node) {
-      if(arith.eq_i32(n.?{level}, at)) {
-        if(high_branch) { n.?{high} } else { n.?{low} }
+      if(arith.eq_i32(n.>select { Level.get }, at)) {
+        if(high_branch) {
+          n.>select { High.get }
+        } else {
+          n.>select { Low.get }
+        }
       } else {
         id
       }
@@ -64,23 +71,53 @@ pub fn branch(s: Store, id: Node_id, at: I32, high_branch: Bool) -> Node_id {
 
 fn same_node(a: Node, b: Node) -> Bool {
   logic.and(
-  , arith.eq_i32(a.?{level}, b.?{level})
-  , logic.and(same_id(a.?{low}, b.?{low}), same_id(a.?{high}, b.?{high}))
+  , arith.eq_i32(a.>select { Level.get }, b.>select { Level.get })
+  , logic.and(
+    , same_id(a.>select { Low.get }, b.>select { Low.get })
+    , same_id(a.>select { High.get }, b.>select { High.get })
+    )
   )
 }
 
 pub fn intern(s: Store, level: I32, low: Node_id, high: Node_id) -> Store & Node_id {
   if(same_id(low, high)) {
-    ((s.!{reduced = arith.add_i32(s.?{reduced}, 1)}.>reorder_prod)[Store], low)
+    (
+    , (
+      , Nodes.mk(s.>select { Nodes.get })
+      , Next.mk(s.>select { Next.get })
+      , Reused.mk(s.>select { Reused.get })
+      , Reduced.mk(arith.add_i32(s.>select { Reduced.get }, 1))
+      )
+    , low
+    )
   } else {
-    let node = {level, low, high};
-    match(walk.find(.(_key: Node_id, existing: Node) { same_node(node, existing) }, s.?{nodes})) {
+    let node = (Level.mk(level), Low.mk(low), High.mk(high));
+    match(walk.find(
+    , .(_key: Node_id, existing: Node) { same_node(node, existing) }
+    , s.>select { Nodes.get }
+    )) {
       .(id: Node_id, _existing: Node) {
-        ((s.!{reused = arith.add_i32(s.?{reused}, 1)}.>reorder_prod)[Store], id)
+        (
+        , (
+          , Nodes.mk(s.>select { Nodes.get })
+          , Next.mk(s.>select { Next.get })
+          , Reused.mk(arith.add_i32(s.>select { Reused.get }, 1))
+          , Reduced.mk(s.>select { Reduced.get })
+          )
+        , id
+        )
       };
       .() {
-        let id = Node_id.from_int(s.?{next});
-        (s.!{nodes = lists.cons((id, node), s.?{nodes}), next = arith.add_i32(s.?{next}, 1)}, id)
+        let id = Node_id.mk(s.>select { Next.get });
+        (
+        , (
+          , Nodes.mk(lists.cons((id, node), s.>select { Nodes.get }))
+          , Next.mk(arith.add_i32(s.>select { Next.get }, 1))
+          , Reused.mk(s.>select { Reused.get })
+          , Reduced.mk(s.>select { Reduced.get })
+          )
+        , id
+        )
       }
     }
   }

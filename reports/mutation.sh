@@ -122,7 +122,10 @@ MUTATION_TEST_ONLY_SOURCES='src/pass/typecheck_full/annotation_plan_public_tests
 # them explicit makes a candidate exclusion or a catalog edit fail closed.
 MUTATION_OPTIMIZER_FIRING_SITES='project_after_tuple
 compose_recovered_tail_access
+let_tuple_reconstruction
+propagate_bound_tuple_slots
 let_bound_tuple_projection
+recover_bound_conditional
 inject_then_match
 absurd_propagate
 match_fusion

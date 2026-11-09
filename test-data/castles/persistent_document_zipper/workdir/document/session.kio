@@ -12,15 +12,12 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-newtype Snapshot : String & tree.Node { constructor make; projector open }
+type { Snapshot: String & tree.Node { mk; get } }
 
-pub newtype Session : zipper.Cursor & lists.List[zipper.Cursor] & lists.List[Snapshot] {
-  constructor make;
-  projector open
-  }
+pub type { Session: zipper.Cursor & lists.List[zipper.Cursor] & lists.List[Snapshot] { mk; get } }
 
 pub fn start() -> Session {
-  Session.make((zipper.start(tree.leaf("document")), lists.nil[_], lists.nil[_]))
+  Session.mk((zipper.start(tree.leaf("document")), lists.nil[_], lists.nil[_]))
 }
 
 pub fn error(state: Session, message: String) -> Session {
@@ -33,53 +30,53 @@ fn describe_cursor(cursor: zipper.Cursor) {
 }
 
 pub fn where(state: Session) -> Session {
-  let .(cursor, _history, _snapshots) = Session.open(state);
+  let .(cursor, _history, _snapshots) = Session.get(state);
   describe_cursor(cursor);
   state
 }
 
 pub fn apply(state: Session, operation: zipper.Cursor -> (zipper.Cursor | String), edit: Bool) -> Session {
-  let .(cursor, history, snapshots) = Session.open(state);
+  let .(cursor, history, snapshots) = Session.get(state);
   match(operation(cursor)) {
     .(changed: zipper.Cursor) {
       let past = if(edit) { lists.cons(cursor, history) } else { history };
       describe_cursor(changed);
-      Session.make((changed, past, snapshots))
+      Session.mk((changed, past, snapshots))
     };
     .(message: String) { error(state, message) }
   }
 }
 
 pub fn undo(state: Session) -> Session {
-  let .(_cursor, history, snapshots) = Session.open(state);
+  let .(_cursor, history, snapshots) = Session.get(state);
   match(lists.uncons(history)) {
     .(previous: zipper.Cursor, rest: lists.List[zipper.Cursor]) {
       describe_cursor(previous);
-      Session.make((previous, rest, snapshots))
+      Session.mk((previous, rest, snapshots))
     };
     .() { error(state, "no edit to undo") }
   }
 }
 
 pub fn snapshot(state: Session, title: String) -> Session {
-  let .(cursor, history, snapshots) = Session.open(state);
+  let .(cursor, history, snapshots) = Session.get(state);
   let existing =
     traversal.find(
-    , .(saved: Snapshot) { let .(name, _root) = Snapshot.open(saved); text.string_eq(name, title) }
+    , .(saved: Snapshot) { let .(name, _root) = Snapshot.get(saved); text.string_eq(name, title) }
     , snapshots
     );
   match(existing) {
     .(_saved: Snapshot) { error(state, "snapshot name already exists") };
     .() {
-      let saved = Snapshot.make((title, zipper.focus(zipper.root(cursor))));
+      let saved = Snapshot.mk((title, zipper.focus(zipper.root(cursor))));
       io.print(title.>text.string_concat("\n").>>text.string_concat("  retained: "));
-      Session.make((cursor, history, lists.cons(saved, snapshots)))
+      Session.mk((cursor, history, lists.cons(saved, snapshots)))
     }
   }
 }
 
 pub fn show(state: Session) -> Session {
-  let .(cursor, history, snapshots) = Session.open(state);
+  let .(cursor, history, snapshots) = Session.get(state);
   let root = zipper.focus(zipper.root(cursor));
   io.print("current document\n");
   tree.render(root);
@@ -99,7 +96,7 @@ pub fn show(state: Session) -> Session {
 rec(loop) fn render_snapshots(snapshots: lists.List[Snapshot]) {
   match(lists.uncons(snapshots)) {
     .(saved: Snapshot, rest: lists.List[Snapshot]) {
-      let .(title, root) = Snapshot.open(saved);
+      let .(title, root) = Snapshot.get(saved);
       io.print(title.>text.string_concat("\n").>>text.string_concat("snapshot "));
       tree.render(root);
       recur render_snapshots(rest)
@@ -109,7 +106,7 @@ rec(loop) fn render_snapshots(snapshots: lists.List[Snapshot]) {
 }
 
 pub fn snapshots(state: Session) -> Session {
-  let .(_cursor, _history, retained) = Session.open(state);
+  let .(_cursor, _history, retained) = Session.get(state);
   if(traversal.null(retained)) {
     io.print("  no snapshots\n")
   } else {

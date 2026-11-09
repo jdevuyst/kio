@@ -1145,7 +1145,6 @@ impl<'m> FrontierFrame<'m> {
             crate::ast::Type::Infer { .. } => {
                 unreachable!("a source `_` reached structural close preparation")
             }
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
             crate::ast::Type::Path { .. }
             | crate::ast::Type::Goal { .. }
             | crate::ast::Type::Unit { .. }

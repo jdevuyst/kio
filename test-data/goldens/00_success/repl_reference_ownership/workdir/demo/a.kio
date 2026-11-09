@@ -11,9 +11,9 @@ equiv proof() {
   ()
 }
 
-pub labels { original: . };
+pub type { Original: . }
 
-pub type {field} = {original};
+pub type Field = Original;
 
 pub fn field() { () }
 

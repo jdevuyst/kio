@@ -10,6 +10,7 @@ module turtle/state;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32);
@@ -17,15 +18,15 @@ import turtle/canvas as canvas;
 
 /// Which way the turtle faces. Row 0 is the top of the plot, so `north` walks
 /// toward smaller `y`.
-pub labels Facing = { north: . } | { east: . } | { south: . } | { west: . };
+pub type Facing = { North: . } | { East: . } | { South: . } | { West: . };
 
-fn north_facing() -> Facing { ({north=}.>widen_sum)[Facing] }
+fn north_facing() -> Facing { (North.mk(()).>widen_sum)[Facing] }
 
-fn east_facing() -> Facing { ({east=}.>widen_sum)[Facing] }
+fn east_facing() -> Facing { (East.mk(()).>widen_sum)[Facing] }
 
-fn south_facing() -> Facing { ({south=}.>widen_sum)[Facing] }
+fn south_facing() -> Facing { (South.mk(()).>widen_sum)[Facing] }
 
-fn west_facing() -> Facing { ({west=}.>widen_sum)[Facing] }
+fn west_facing() -> Facing { (West.mk(()).>widen_sum)[Facing] }
 
 pub fn facing_name(f: Facing) -> String {
   match(f) {
@@ -71,68 +72,102 @@ pub fn turn_left(f: Facing) -> Facing {
 
 /// The whole interpreter state: the paper, the turtle, and the two counters
 /// the report reads back.
-pub labels State = {
-, paper: canvas.Canvas
-, width: I32
-, height: I32
-, tx: I32
-, ty: I32
-, heading: Facing
-, down: Bool
-, executed: I32
-, clipped: I32
+pub type State = {
+  Paper: canvas.Canvas;
+  Width: I32;
+  Height: I32;
+  Tx: I32;
+  Ty: I32;
+  Heading: Facing;
+  Down: Bool;
+  Executed: I32;
+  Clipped: I32
 };
 
 /// The turtle before the first command: origin of a blank canvas, facing east,
 /// pen up.
 pub fn start_state(w: I32, h: I32) -> State {
-  {
-  , paper = canvas.blank(w, h)
-  , width = w
-  , height = h
-  , tx = 0
-  , ty = 0
-  , heading = east_facing()
-  , down = .f
-  , executed = 0
-  , clipped = 0
-  }
+  (
+  , Paper.mk(canvas.blank(w, h))
+  , Width.mk(w)
+  , Height.mk(h)
+  , Tx.mk(0)
+  , Ty.mk(0)
+  , Heading.mk(east_facing())
+  , Down.mk(.f)
+  , Executed.mk(0)
+  , Clipped.mk(0)
+  )
 }
 
-pub fn paper_of(s: State) -> canvas.Canvas { s.?{paper} }
+pub fn paper_of(s: State) -> canvas.Canvas {
+  s.>select { Paper.get }
+}
 
-pub fn width_of(s: State) -> I32 { s.?{width} }
+pub fn width_of(s: State) -> I32 {
+  s.>select { Width.get }
+}
 
-pub fn height_of(s: State) -> I32 { s.?{height} }
+pub fn height_of(s: State) -> I32 {
+  s.>select { Height.get }
+}
 
-pub fn tx_of(s: State) -> I32 { s.?{tx} }
+pub fn tx_of(s: State) -> I32 {
+  s.>select { Tx.get }
+}
 
-pub fn ty_of(s: State) -> I32 { s.?{ty} }
+pub fn ty_of(s: State) -> I32 {
+  s.>select { Ty.get }
+}
 
-pub fn heading_of(s: State) -> Facing { s.?{heading} }
+pub fn heading_of(s: State) -> Facing {
+  s.>select { Heading.get }
+}
 
-pub fn down_of(s: State) -> Bool { s.?{down} }
+pub fn down_of(s: State) -> Bool {
+  s.>select { Down.get }
+}
 
-pub fn executed_of(s: State) -> I32 { s.?{executed} }
+pub fn executed_of(s: State) -> I32 {
+  s.>select { Executed.get }
+}
 
-pub fn clipped_of(s: State) -> I32 { s.?{clipped} }
+pub fn clipped_of(s: State) -> I32 {
+  s.>select { Clipped.get }
+}
 
 /// Each update is its own named function because a row update reorders the
 /// product it rebuilds; the declared `State` return type is what puts the
 /// fields back in the order every other reader expects.
-pub fn with_paper(s: State, cv: canvas.Canvas) -> State { s.!{paper = cv} }
+pub fn with_paper(s: State, cv: canvas.Canvas) -> State {
+  s.>with { Paper.mk(cv) }
+}
 
-pub fn with_pos(s: State, x: I32, y: I32) -> State { s.!{tx = x, ty = y} }
+pub fn with_pos(s: State, x: I32, y: I32) -> State {
+  s.>with { Tx.mk(x); Ty.mk(y) }
+}
 
-pub fn with_heading(s: State, f: Facing) -> State { s.!{heading = f} }
+pub fn with_heading(s: State, f: Facing) -> State {
+  s.>with { Heading.mk(f) }
+}
 
-pub fn with_pen(s: State, d: Bool) -> State { s.!{down = d} }
+pub fn with_pen(s: State, d: Bool) -> State {
+  s.>with { Down.mk(d) }
+}
 
 /// One more command executed.
-pub fn tick(s: State) -> State { s.!{executed = add_i32(s.?{executed}, 1)} }
+pub fn tick(s: State) -> State {
+  s.>with {
+    Executed.mk(add_i32(s.>select { Executed.get }, 1))
+  }
+}
 
 /// One more dab of ink discarded for landing off the paper.
-pub fn clip(s: State) -> State { s.!{clipped = add_i32(s.?{clipped}, 1)} }
+pub fn clip(s: State) -> State {
+  s.>with {
+    Clipped.mk(add_i32(s.>select { Clipped.get }, 1))
+  }
+}
 
 pub fn pen_name(d: Bool) -> String {
   if(d) { "down" } else { "up" }

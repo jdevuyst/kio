@@ -1,5 +1,6 @@
 module pid/pipeline;
 
+import macros/row_macros(macro select);
 import pid/controller(memory_after, update);
 import pid/model(
 , Calibration_cfg
@@ -14,42 +15,32 @@ import pid/model(
 , Target
 , Third
 , Timeline
-, {calibration_cfg}
-, {first}
-, {gains_cfg}
-, {initial_memory}
-, {raw_one}
-, {raw_three}
-, {raw_two}
-, {second}
-, {target}
-, {third}
 );
 
 pub fn run(scenario: Scenario) -> Timeline {
   let first =
     update(
-    , scenario.?{target}
-    , scenario.?{raw_one}
-    , scenario.?{calibration_cfg}
-    , scenario.?{gains_cfg}
-    , scenario.?{initial_memory}
+    , scenario.>select { Target.get }
+    , scenario.>select { Raw_one.get }
+    , scenario.>select { Calibration_cfg.get }
+    , scenario.>select { Gains_cfg.get }
+    , scenario.>select { Initial_memory.get }
     );
   let second =
     update(
-    , scenario.?{target}
-    , scenario.?{raw_two}
-    , scenario.?{calibration_cfg}
-    , scenario.?{gains_cfg}
+    , scenario.>select { Target.get }
+    , scenario.>select { Raw_two.get }
+    , scenario.>select { Calibration_cfg.get }
+    , scenario.>select { Gains_cfg.get }
     , memory_after(first)
     );
   let third =
     update(
-    , scenario.?{target}
-    , scenario.?{raw_three}
-    , scenario.?{calibration_cfg}
-    , scenario.?{gains_cfg}
+    , scenario.>select { Target.get }
+    , scenario.>select { Raw_three.get }
+    , scenario.>select { Calibration_cfg.get }
+    , scenario.>select { Gains_cfg.get }
     , memory_after(second)
     );
-  {first, second, third}
+  (First.mk(first), Second.mk(second), Third.mk(third))
 }

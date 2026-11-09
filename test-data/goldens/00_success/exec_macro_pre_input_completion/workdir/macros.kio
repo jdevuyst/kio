@@ -1,0 +1,28 @@
+module macros;
+
+import __comptime__;
+
+pure fn infer_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _result: .) -> __Checked_term__ {
+  value
+}
+
+pub macro infer : [Source] Source -> [Result] Result { impl infer_impl }
+
+pure fn retain_impl(
+, _ct: __Comptime__
+, fills: __Fill_ctx__
+, _source: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+
+pub macro retain : [Source] Source -> Source { impl(fills) retain_impl }
+
+pure fn marked_impl(
+, _ct: __Comptime__
+, fills: __Fill_ctx__
+, _source: __Type__
+, value: __Checked_term__
+, _result: .
+) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+
+pub macro marked : [Source] Source -> [Result] Result { impl(fills) marked_impl }

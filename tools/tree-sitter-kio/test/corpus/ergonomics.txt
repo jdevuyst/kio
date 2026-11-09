@@ -246,15 +246,17 @@ module m; fn run() { .x1. { x1 } } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (ERROR
-        (separator_dot)
-        (entity_name_label)
         (separator_dot))
-      (label_value_expr
-        (bracket_lbrace)
-        (label_value_label
-          (label_path
-            (entity_name_label)))
-        (bracket_rbrace))
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        (ERROR
+          (separator_dot))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -270,6 +272,7 @@ module m; fn run() { .x1. { x1 } } fn neighbor() { () }
         (bracket_lparen)
         (bracket_rparen))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural invalid_placeholder_intro_.x_.
@@ -294,15 +297,17 @@ module m; fn run() { .x_. { x1 } } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (ERROR
-        (separator_dot)
-        (entity_name_label)
         (separator_dot))
-      (label_value_expr
-        (bracket_lbrace)
-        (label_value_label
-          (label_path
-            (entity_name_label)))
-        (bracket_rbrace))
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        (ERROR
+          (separator_dot))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -318,6 +323,7 @@ module m; fn run() { .x_. { x1 } } fn neighbor() { () }
         (bracket_lparen)
         (bracket_rparen))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural invalid_placeholder_intro_.__x.
@@ -342,15 +348,17 @@ module m; fn run() { .__x. { x1 } } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (ERROR
-        (separator_dot)
-        (entity_name_label)
         (separator_dot))
-      (label_value_expr
-        (bracket_lbrace)
-        (label_value_label
-          (label_path
-            (entity_name_label)))
-        (bracket_rbrace))
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        (ERROR
+          (separator_dot))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -366,6 +374,7 @@ module m; fn run() { .__x. { x1 } } fn neighbor() { () }
         (bracket_lparen)
         (bracket_rparen))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural invalid_placeholder_intro_. x.
@@ -390,15 +399,17 @@ module m; fn run() { . x. { x1 } } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (ERROR
-        (separator_dot)
-        (entity_name_label)
         (separator_dot))
-      (label_value_expr
-        (bracket_lbrace)
-        (label_value_label
-          (label_path
-            (entity_name_label)))
-        (bracket_rbrace))
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        (ERROR
+          (separator_dot))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -414,6 +425,7 @@ module m; fn run() { . x. { x1 } } fn neighbor() { () }
         (bracket_lparen)
         (bracket_rparen))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural invalid_placeholder_intro_.x .
@@ -438,15 +450,17 @@ module m; fn run() { .x . { x1 } } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (ERROR
-        (separator_dot)
-        (entity_name_label)
         (separator_dot))
-      (label_value_expr
-        (bracket_lbrace)
-        (label_value_label
-          (label_path
-            (entity_name_label)))
-        (bracket_rbrace))
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        (ERROR
+          (separator_dot))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -462,6 +476,7 @@ module m; fn run() { .x . { x1 } } fn neighbor() { () }
         (bracket_lparen)
         (bracket_rparen))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural invalid_placeholder_intro_.(x: .).
@@ -718,9 +733,9 @@ module m; fn run() { let .(x: A) = a; let .(left, (right, _: A)) = pair; let .(w
       (bracket_rbrace))))
 
 ================================================================================
-structural let_explicit_row_and_existential
+structural let_explicit_existential
 ================================================================================
-module m; fn run() { let .({field as x, other}) = row; let .(<A> packed) = value; packed }
+module m; fn run() { let .(<A> packed) = value; packed }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -739,26 +754,6 @@ module m; fn run() { let .({field as x, other}) = row; let .(<A> packed) = value
           (bracket_rparen))))
     (expression_block
       (bracket_lbrace)
-      (row_let_stmt
-        (keyword_let)
-        (separator_dot)
-        (bracket_lparen)
-        (bracket_lbrace)
-        (row_let_entry
-          (label_path
-            (entity_name_label))
-          (keyword_declaration)
-          (variable_parameter))
-        (separator_comma)
-        (row_let_entry
-          (row_let_shorthand_path
-            (variable_parameter)))
-        (bracket_rbrace)
-        (bracket_rparen)
-        (operator_builtin)
-        (expression_path
-          (identifier)))
-      (separator_semicolon)
       (let_statement
         (keyword_let)
         (separator_dot)
@@ -1130,7 +1125,7 @@ module m; fn run() { let x <- value; x } fn neighbor() { () }
       (ERROR
         (identifier)
         (operator_run)
-        (entity_name_label))
+        (identifier))
       (separator_semicolon)
       (expression_path
         (identifier))
@@ -1150,10 +1145,11 @@ module m; fn run() { let x <- value; x } fn neighbor() { () }
         (bracket_rparen))
       (bracket_rbrace))))
 
+
 ================================================================================
-structural neutral_pure_row_let
+structural neutral_pure_value_let
 ================================================================================
-module m; fn run() { do (bind) { let .({field as x}) = row; x } } fn neighbor() { () }
+module m; fn run() { do (bind) { let x = row; x } } fn neighbor() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1182,18 +1178,9 @@ module m; fn run() { do (bind) { let .({field as x}) = row; x } } fn neighbor() 
           (bracket_rparen))
         first: (neutral_block
           (bracket_lbrace)
-          (row_let_stmt
+          (let_statement
             (keyword_let)
-            (separator_dot)
-            (bracket_lparen)
-            (bracket_lbrace)
-            (row_let_entry
-              (label_path
-                (entity_name_label))
-              (keyword_declaration)
-              (variable_parameter))
-            (bracket_rbrace)
-            (bracket_rparen)
+            (identifier)
             (operator_builtin)
             (expression_path
               (identifier)))
@@ -3288,39 +3275,36 @@ module source; fn run() { let .(<A> (,(left: A, right))) = value; value }
           (bracket_rparen))))
     (expression_block
       (bracket_lbrace)
-      (operator_expression
-        (expression_path
-          (identifier))
-        (ERROR
-          (separator_dot)
-          (bracket_lparen)
-          (existential_binder
-            (operator_run)
-            (variable_parameter)
-            (operator_run))
-          (bracket_lparen)
-          (separator_comma)
-          (local_binding_pattern
-            (local_pattern_tuple
-              (bracket_lparen)
-              (local_binding_pattern
-                (identifier)
-                (operator_builtin)
-                (type_path
-                  (entity_name_type)))
-              (separator_comma)
-              (local_binding_pattern
-                (identifier))
-              (bracket_rparen)))
-          (bracket_rparen)
-          (bracket_rparen))
-        (operator_builtin)
-        (expression_path
-          (identifier)))
-      (separator_semicolon)
       (expression_path
         (identifier))
+      (ERROR
+        (separator_dot)
+        (bracket_lparen)
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (bracket_lparen)
+        (separator_comma)
+        (local_binding_pattern
+          (local_pattern_tuple
+            (bracket_lparen)
+            (local_binding_pattern
+              (identifier)
+              (operator_builtin)
+              (type_path
+                (entity_name_type)))
+            (separator_comma)
+            (local_binding_pattern
+              (identifier))
+            (bracket_rparen)))
+        (bracket_rparen)
+        (bracket_rparen)
+        (identifier)
+        (separator_semicolon)
+        (identifier))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural let_opening_untyped
@@ -3344,30 +3328,28 @@ module source; fn run() { let .(<A> (left, right)) = value; value }
           (bracket_rparen))))
     (expression_block
       (bracket_lbrace)
-      (operator_expression
-        (expression_path
-          (identifier))
+      (expression_path
+        (identifier))
+      (ERROR
+        (separator_dot)
+        (bracket_lparen)
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (bracket_lparen)
+        (identifier)
+        (separator_comma)
         (ERROR
-          (separator_dot)
-          (bracket_lparen)
-          (existential_binder
-            (operator_run)
-            (variable_parameter)
-            (operator_run))
-          (bracket_lparen)
-          (identifier)
-          (separator_comma)
           (local_binding_pattern
             (identifier))
           (bracket_rparen)
-          (bracket_rparen))
-        (operator_builtin)
-        (expression_path
-          (identifier)))
-      (separator_semicolon)
-      (expression_path
+          (bracket_rparen)
+          (identifier)
+          (separator_semicolon))
         (identifier))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural let_opening_empty
@@ -3391,26 +3373,24 @@ module source; fn run() { let .(<A> ()) = value; value }
           (bracket_rparen))))
     (expression_block
       (bracket_lbrace)
-      (operator_expression
-        (expression_path
-          (identifier))
-        (ERROR
-          (separator_dot)
-          (bracket_lparen)
-          (existential_binder
-            (operator_run)
-            (variable_parameter)
-            (operator_run))
-          (bracket_lparen)
-          (bracket_rparen)
-          (bracket_rparen))
-        (operator_builtin)
-        (expression_path
-          (identifier)))
-      (separator_semicolon)
       (expression_path
         (identifier))
+      (ERROR
+        (separator_dot)
+        (bracket_lparen)
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (bracket_lparen)
+        (ERROR
+          (bracket_rparen)
+          (bracket_rparen)
+          (identifier)
+          (separator_semicolon))
+        (identifier))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural let_opening_outer_annotation

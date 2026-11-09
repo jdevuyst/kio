@@ -4,9 +4,8 @@
 //! variant with a `visit_*` method that converts it to its Lowered
 //! counterpart. Variants inhabited at Lowered have default
 //! implementations that clone-and-recurse via `self.walk_*`.
-//! Variants uninhabited at Lowered — `Expr::LabelValue`,
-//! `Type::LabelSugar`, `Item::Labels` — have no default
-//! `rewrite_*` methods the implementer must provide. `Expr::Tuple`
+//! `Item::Labels` is uninhabited at Lowered, so the implementer provides
+//! its `rewrite_*` method. `Expr::Tuple`
 //! / `Expr::FnPlaceholder` are uninhabited already at Desugared
 //! (eliminated by [`crate::pass::desugar`]); their dispatch arms in
 //! `walk_expr` discharge via `match ext {}` and the walker has no
@@ -16,15 +15,14 @@
 //! `walk_item` returns `Vec<Item<Lowered>>` so an implementer may
 //! drop (`vec![]`) or expand to multiple items. [`crate::pass::label_elab`]
 //! expands each `Item::Labels` into one generated `Item::Newtype` per explicit
-//! declaration plus the named-form `Item::TypeAlias` when present; reuse
-//! markers contribute only alias references.
+//! declaration plus the named-form `Item::TypeAlias` when present. Ordinary
+//! RHS references remain ordinary type operands in that alias.
 //!
 //! Inputs are taken owned (matching label_elab's existing API).
 
 use crate::ast::{
-    CallArg, Desugared, ElaboratorCall, Equiv, Expr, FieldAccessLabel, FieldUpdateLabel, FnDef,
-    HostFn, HostFnParam, HostFnValueParam, HostType, Item, LabelSugarLabel, LabelValueLabel,
-    Labels, Lowered, Meta, Module, Newtype, NodeId, PackageFile, Param, RecOrderPlan, Signature,
+    CallArg, Desugared, Equiv, Expr, FnDef, HostFn, HostFnParam, HostFnValueParam, HostType, Item,
+    Labels, Lowered, Meta, Module, Newtype, PackageFile, Param, RecOrderPlan, Signature,
     SignatureParam, Type, TypeAlias, TypeRecGroup, convert_type_member,
 };
 use crate::error::Error;
@@ -38,28 +36,10 @@ pub trait DesugaredToLowered {
     // Rewrite hooks (no defaults).
     // -------------------------------------------------------------
 
-    fn rewrite_expr_label_value(
-        &mut self,
-        labels: Vec<LabelValueLabel<Desugared>>,
-        meta: Meta<Desugared>,
-        ext: NodeId,
-    ) -> Result<Expr<Lowered>, Error>;
-
-    fn rewrite_type_label_sugar(
-        &mut self,
-        labels: Vec<LabelSugarLabel<Desugared>>,
-        meta: Meta<Desugared>,
-    ) -> Result<Type<Lowered>, Error>;
-
     /// `Item::Labels` may be dropped, transformed, or expanded.
     /// label_elab expands each `Labels` to generated `Newtype`s plus
     /// an optional named-form `TypeAlias`.
     fn rewrite_item_labels(&mut self, d: Labels<Desugared>) -> Result<Vec<Item<Lowered>>, Error>;
-
-    fn rewrite_item_label_forward(
-        &mut self,
-        forward: crate::ast::LabelForward<Desugared>,
-    ) -> Result<Vec<Item<Lowered>>, Error>;
 
     fn rewrite_type_rec_group(
         &mut self,
@@ -298,72 +278,6 @@ pub trait DesugaredToLowered {
         })
     }
 
-    fn visit_expr_elaborator(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
-        let Expr::Elaborator {
-            source_trivia: _,
-            occurrence: _,
-            kind,
-            call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        let call = match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => ElaboratorCall::FieldAccess {
-                receiver: Box::new(self.walk_expr(*receiver)?),
-                labels: labels
-                    .into_iter()
-                    .map(|label| {
-                        let FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta { span, .. },
-                        } = label;
-                        Ok(FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
-                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
-                updates: updates
-                    .into_iter()
-                    .map(|update| {
-                        let FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value,
-                            meta: Meta { span, .. },
-                        } = update;
-                        Ok(FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value: self.walk_expr(value)?,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-        };
-        Ok(Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind,
-            call,
-            meta: Meta::new(span),
-            ext,
-        })
-    }
-
     fn visit_expr_rec_order(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::RecOrder {
             occurrence: _,
@@ -597,7 +511,7 @@ pub trait DesugaredToLowered {
             Item::TypeAlias(a) => Ok(vec![Item::TypeAlias(self.walk_alias(a)?)]),
             Item::Newtype(d) => Ok(vec![Item::Newtype(self.walk_newtype(d)?)]),
             Item::Labels(d, _) => self.rewrite_item_labels(d),
-            Item::LabelForward(d, _) => self.rewrite_item_label_forward(d),
+
             Item::TypeRecGroup(group) => self.rewrite_type_rec_group(group),
             Item::Equiv(e, _) => Ok(vec![Item::Equiv(self.walk_equiv(e)?, ())]),
             Item::Macro(s, _) => {
@@ -864,14 +778,12 @@ pub trait DesugaredToLowered {
             Expr::Call { .. } => self.visit_expr_call(e),
             Expr::FnExpr { .. } => self.visit_expr_fn(e),
             Expr::Let { .. } => self.visit_expr_let(e),
-            Expr::RowLet { ext, .. } => match ext {},
             Expr::Seq { .. } => self.visit_expr_seq(e),
             Expr::Unit { .. } => self.visit_expr_unit(e),
             Expr::StrLit { .. } => self.visit_expr_str_lit(e),
             Expr::IntLit { .. } => self.visit_expr_int_lit(e),
             Expr::FloatLit { .. } => self.visit_expr_float_lit(e),
             Expr::BoolLit { .. } => self.visit_expr_bool_lit(e),
-            Expr::Elaborator { .. } => self.visit_expr_elaborator(e),
             Expr::RecOrder { .. } => self.visit_expr_rec_order(e),
             Expr::RecQuote {
                 plan, meta, ext, ..
@@ -906,12 +818,6 @@ pub trait DesugaredToLowered {
             }
             Expr::UserMacro { .. } => self.visit_expr_user_macro(e),
             Expr::BlockCall { ext, .. } => match ext {},
-            Expr::LabelValue {
-                occurrence: _,
-                labels,
-                meta,
-                ext,
-            } => self.rewrite_expr_label_value(labels, meta, ext),
             // Statically uninhabited at Desugared.
             Expr::Tuple { ext, .. } => match ext {},
             Expr::FnPlaceholder { ext, .. } => match ext {},
@@ -931,7 +837,6 @@ pub trait DesugaredToLowered {
             Type::Sum { .. } => self.visit_type_sum(ty),
             Type::Forall { .. } => self.visit_type_forall(ty),
             Type::Infer { .. } => self.visit_type_infer(ty),
-            Type::LabelSugar { labels, meta, .. } => self.rewrite_type_label_sugar(labels, meta),
         }
     }
 }

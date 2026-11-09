@@ -185,7 +185,7 @@ applies to host methods and public newtype members. Only declaration-head
 groups join the callable's parameter list; a returned function remains a
 returned function, with its own parameter list.
 
-Every exported **`pub newtype`** contributes a **per-type handle** under
+Every public nominal type contributes a **per-type handle** under
 its module namespace, even when it exports no members: a newtype `T` in
 module `a/b` is reached at
 `pkg.A.KioModule_b.KioType_T`. Every handle uses the disjoint exact class
@@ -645,10 +645,10 @@ outer arm 0's payload uses `<alias>_0_value_0` and
 alias treats the declaring module plus newtype as its owner and the member as
 its leaf. An owner containing a source underscore uses the reserved exact
 form, word-casing each component before encoding remaining `_` as `_u`
-and `/` as `_s`; for example, newtype `A_b` member
-`c` in module `api` contributes an
-`Exp_KioItem_api__AB__c_<slot>` alias. This stays distinct from newtype `A`
-member `b_c`, whose readable alias is `Exp_Api__A_bC_<slot>`.
+and `/` as `_s`; for example, nominal type `A_b` member
+`mk` in module `api` contributes an
+`Exp_KioItem_api__AB__mk_<slot>` alias. This stays distinct from nominal type `A`
+member `mk`, whose readable alias is `Exp_Api__A_mk_<slot>`.
 
 ### Carve-outs
 

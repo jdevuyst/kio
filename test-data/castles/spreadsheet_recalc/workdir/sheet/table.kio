@@ -11,12 +11,12 @@ import sheet/list(List, cons, nil, reverse);
 import testapi(Bool);
 import testapi/iter(loop);
 
-pub newtype Table[V] : List[Addr & V] { pub constructor pack; pub projector unpack }
+pub type { Table[V]: List[Addr & V] { pub mk; pub get } }
 
-pub fn empty[V] -> Table[V] { Table.pack[V](nil[Addr & V]) }
+pub fn empty[V] -> Table[V] { Table.mk[V](nil[Addr & V]) }
 
 rec(loop) fn find_or[V](entries: List[Addr & V], key: Addr, fallback: V) -> V {
-  match(entries.>List.unpack) {
+  match(entries.>List.get) {
     (
     , .(head: Addr & V, rest: List[Addr & V]) {
         let .(k: Addr, v: V) = head;
@@ -29,12 +29,10 @@ rec(loop) fn find_or[V](entries: List[Addr & V], key: Addr, fallback: V) -> V {
 
 /// Every lookup in the engine is total: an unset key reads as the caller's
 /// default rather than failing.
-pub fn get_or[V](t: Table[V], key: Addr, fallback: V) -> V {
-  find_or(t.>Table.unpack, key, fallback)
-}
+pub fn get_or[V](t: Table[V], key: Addr, fallback: V) -> V { find_or(t.>Table.get, key, fallback) }
 
 rec(loop) fn without[V](entries: List[Addr & V], key: Addr, acc: List[Addr & V]) -> List[Addr & V] {
-  match(entries.>List.unpack) {
+  match(entries.>List.get) {
     (
     , .(head: Addr & V, rest: List[Addr & V]) {
         let .(k: Addr, _v: V) = head;
@@ -52,5 +50,5 @@ rec(loop) fn without[V](entries: List[Addr & V], key: Addr, acc: List[Addr & V])
 /// Dropping the old entry rather than shadowing it keeps the table at one
 /// entry per cell, so a long edit script does not grow the lookup cost.
 pub fn put[V](t: Table[V], key: Addr, value: V) -> Table[V] {
-  Table.pack[V](cons((key, value), without(t.>Table.unpack, key, nil[Addr & V])))
+  Table.mk[V](cons((key, value), without(t.>Table.get, key, nil[Addr & V])))
 }

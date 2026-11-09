@@ -1,7 +1,7 @@
 module api;
 
-pub newtype Callable[A] : A -> A { pub constructor mk; pub projector get }
+pub type { Callable[A]: A -> A { pub mk; pub get } }
 
-pub newtype Holder[*F] : . { pub constructor mk; pub projector get }
+pub type { Holder[*F]: . { pub mk; pub get } }
 
 pub fn hold_callable() -> Holder[Callable] { Holder.mk[Callable](()) }

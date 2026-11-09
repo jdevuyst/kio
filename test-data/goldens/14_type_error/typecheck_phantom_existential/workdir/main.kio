@@ -3,4 +3,4 @@ module main;
 // Phantom existential `<U>`: declared on the newtype header but
 // never appears in the payload `a`. Rejected at the typer because
 // the binder is information-free.
-newtype Pack[A] <U> : A { constructor mk_pack; projector un_pack }
+type { Pack[A] <U>: A { mk; get } }

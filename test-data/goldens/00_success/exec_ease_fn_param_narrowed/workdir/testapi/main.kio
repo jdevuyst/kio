@@ -4,9 +4,9 @@ import macros/algebraic_macros(macro ease);
 import testapi(String);
 import testapi/io(print);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 // Source: `A -> .`. The call site has a richer (product) view
 // of the value it has — it carries an `A & B` (both factors)
@@ -16,9 +16,9 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // The walk swaps source/target at the contravariant leaf
 // `(A & B, A)`; the leaf `ease` engine fires `R-Project-Prod` to
 // drop the `B` factor.
-fn source(x: A) { print(A.un_a(x)) }
+fn source(x: A) { print(A.get(x)) }
 
 pub fn main() {
   let wider_arg = ease(source)[(A & B) -> .];
-  wider_arg((A.mk_a("ease! param narrowed ok\n"), B.mk_b("unused")))
+  wider_arg((A.mk("ease! param narrowed ok\n"), B.mk("unused")))
 }

@@ -5,21 +5,21 @@ import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io(print);
 
-pub rec labels Tree = { leaf: String } | { branch: Tree & Tree };
+pub rec type Tree = { Leaf: String } | { Branch: Tree & Tree };
 
 rec {
   pub type Chain = . | Node;
-  pub newtype Node : String & Chain { pub constructor mk_node; pub projector un_node }
+  pub type { Node: String & Chain { pub mk; pub get } }
 }
 
 rec {
-  pub newtype Even : . | Odd { pub constructor mk_even; pub projector un_even };
-  pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
+  pub type { Even: . | Odd { pub mk; pub get } };
+  pub type { Odd: . | Even { pub mk; pub get } }
 }
 
-fn leaf(text: String) -> Tree { widen_sum({leaf = text}) }
+fn leaf(text: String) -> Tree { widen_sum(Leaf.mk(text)) }
 
-fn branch(left: Tree, right: Tree) -> Tree { widen_sum({branch = (left, right)}) }
+fn branch(left: Tree, right: Tree) -> Tree { widen_sum(Branch.mk((left, right))) }
 
 fn first(tree: Tree) -> Tree {
   match(tree) {
@@ -42,13 +42,13 @@ fn leaf_text(tree: Tree) -> String {
 
 fn chain_nil() -> Chain { widen_sum(()) }
 
-fn chain_cons(text: String, tail: Chain) -> Chain { widen_sum(Node.mk_node((text, tail))) }
+fn chain_cons(text: String, tail: Chain) -> Chain { widen_sum(Node.mk((text, tail))) }
 
 fn chain_head(chain: Chain) -> String {
   match(chain) {
     (
     , .(value: Node) {
-        match(Node.un_node(value)) {
+        match(Node.get(value)) {
           .(text: String, _tail: Chain) { text }
         }
       }
@@ -57,15 +57,15 @@ fn chain_head(chain: Chain) -> String {
   }
 }
 
-fn zero() -> Even { Even.mk_even(widen_sum(())) }
+fn zero() -> Even { Even.mk(widen_sum(())) }
 
-fn one() -> Odd { Odd.mk_odd(widen_sum(zero())) }
+fn one() -> Odd { Odd.mk(widen_sum(zero())) }
 
-fn two() -> Even { Even.mk_even(widen_sum(one())) }
+fn two() -> Even { Even.mk(widen_sum(one())) }
 
 fn force_mutual(value: Even) -> String {
-  match(Even.un_even(value)) {
-    (.(odd: Odd) { let _predecessor = Odd.un_odd(odd); "mutual\n" }, .(_zero: .) { "zero\n" })
+  match(Even.get(value)) {
+    (.(odd: Odd) { let _predecessor = Odd.get(odd); "mutual\n" }, .(_zero: .) { "zero\n" })
   }
 }
 

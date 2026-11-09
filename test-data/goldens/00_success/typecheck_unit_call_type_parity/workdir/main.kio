@@ -6,7 +6,7 @@ host type Token;
 
 type Unit_alias = .;
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
 host fn host_identity[A](value: A) -> A;
 
@@ -130,11 +130,11 @@ pub fn check() {
   ().>>two_units(());
   two_units(()).<();
   two_units(()).<<();
-  consume_box_constructor(Box.mk_box[Token]);
-  consume_unit_box_constructor(Box.mk_box[.]);
-  let boxed = Box.mk_box[.](());
-  boxed.>Box.un_box;
-  boxed.>>Box.un_box;
-  Box.un_box.<boxed;
-  Box.un_box.<<boxed
+  consume_box_constructor(Box.mk[Token]);
+  consume_unit_box_constructor(Box.mk[.]);
+  let boxed = Box.mk[.](());
+  boxed.>Box.get;
+  boxed.>>Box.get;
+  Box.get.<boxed;
+  Box.get.<<boxed
 }

@@ -552,6 +552,10 @@ suite("Kio extension — availability and recovery", () => {
       const hover = () => vscode.commands.executeCommand("vscode.executeHoverProvider", document.uri, new vscode.Position(0, 1)).then(() => {}, () => {});
       await hover();
       assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Warning);
+      // Trigger the crash only after the failed request has been observed.
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(document.uri, new vscode.Position(1, 0), "// Recover after the request failure.\n");
+      assert.ok(await vscode.workspace.applyEdit(edit));
       await until(() => running.logs.filter((line) => line.includes("language client started")).length === 2, "automatic recovery after failed request");
       assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Information);
       const starts = fs.readFileSync(`${control}.starts`, "utf8").trim().split("\n");

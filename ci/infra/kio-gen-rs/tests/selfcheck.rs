@@ -186,10 +186,16 @@ fn generated_support_exercises_ordinary_and_marked_type_names() {
         .map(|(_, source)| source.as_str())
         .expect("generated root module");
 
-    assert!(root.contains("pub newtype I32_box  : I32"), "{root}");
-    assert!(root.contains("pub newtype _I32_box : I32"), "{root}");
     assert!(
-        root.contains("_I32_box.mk_marked_i32_box(x)"),
+        root.contains("pub type { I32_box: I32 { pub mk; pub get; }; }"),
+        "{root}"
+    );
+    assert!(
+        root.contains("pub type { _I32_box: I32 { pub mk; pub get; }; }"),
+        "{root}"
+    );
+    assert!(
+        root.contains("_I32_box.mk(x)"),
         "marked type name must occur at a member-call type head: {root}"
     );
     assert!(
@@ -696,42 +702,6 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             // Catalog members enter the typing environment as wrapper functions
             // reached through Term::App and Term::Var.
             unreachable!("TypeMember not produced by the current generator")
-        }
-        Term::LabelConstruct {
-            label,
-            constructor,
-            payload,
-        } => {
-            // Look up the label's expected payload type by walking the
-            // label catalog. The constructor member's signature is
-            // `payload -> LabelType`; we pull both ends from there.
-            use kio_gen::generate;
-            let label_ty = generate::label_catalog()
-                .into_iter()
-                .find(|t| matches!(t, Type::Label { label: name, .. } if name == label))
-                .ok_or_else(|| format!("unknown label: {label}"))?;
-            let Type::Label {
-                payload: ref p,
-                constructor: ref c,
-                ..
-            } = label_ty
-            else {
-                return Err(format!(
-                    "label_catalog entry for {label} is not Type::Label"
-                ));
-            };
-            if c != constructor {
-                return Err(format!(
-                    "LabelConstruct: declared ctor `{constructor}` doesn't match catalog `{c}`"
-                ));
-            }
-            let pt = type_of(payload, env)?;
-            if pt != **p {
-                return Err(format!(
-                    "LabelConstruct({label}): payload {pt:?} != expected {p:?}"
-                ));
-            }
-            Ok(label_ty)
         }
         Term::Into { inner }
         | Term::Onto { inner }

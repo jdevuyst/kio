@@ -27,16 +27,16 @@ import testapi(I32, String);
 // i32 equality against the named character codes (`chars.kio`), keeping
 // the token sum small and the parser's punctuation checks uniform.
 /// Defines the word-token arm (an identifier, intrinsic name, or keyword-shaped word).
-pub labels { tk_word: String };
+pub type { Tk_word: String }
 
 /// Defines the numeric-literal-token arm (the raw source text, sign and any fractional part kept).
-pub labels { tk_num: String };
+pub type { Tk_num: String }
 
 /// Defines the string-literal-token arm (the decoded content, quotes stripped).
-pub labels { tk_str: String };
+pub type { Tk_str: String }
 
 /// Defines the punctuation-token arm, carrying the mark's character code.
-pub labels { tk_punct: I32 };
+pub type { Tk_punct: I32 }
 
 /// A Kio' lexical token — a newtype over the closed sum of token shapes.
 ///
@@ -46,22 +46,22 @@ pub labels { tk_punct: I32 };
 /// sum and distribute over the `&` in the cons-list payload, exploding
 /// the cons cell's DNF and confusing `match`. The same reason `prime.kio`
 /// makes `Term` a newtype.
-pub labels { token: Tk_word | Tk_num | Tk_str | Tk_punct };
+pub type { Token: Tk_word | Tk_num | Tk_str | Tk_punct }
 
 /// The bare token sum inside a `Token` — the widen target the token constructors inject into.
 pub type Token_shape = Tk_word | Tk_num | Tk_str | Tk_punct;
 
 /// Builds a word token from its spelling.
-pub fn tk_word(s: String) -> Token { {token = widen_sum({tk_word = s})[Token_shape]} }
+pub fn tk_word(s: String) -> Token { Token.mk(widen_sum(Tk_word.mk(s))[Token_shape]) }
 
 /// Builds a numeric-literal token from its raw source text.
-pub fn tk_num(s: String) -> Token { {token = widen_sum({tk_num = s})[Token_shape]} }
+pub fn tk_num(s: String) -> Token { Token.mk(widen_sum(Tk_num.mk(s))[Token_shape]) }
 
 /// Builds a string-literal token from its decoded content.
-pub fn tk_str(s: String) -> Token { {token = widen_sum({tk_str = s})[Token_shape]} }
+pub fn tk_str(s: String) -> Token { Token.mk(widen_sum(Tk_str.mk(s))[Token_shape]) }
 
 /// Builds a punctuation token from its character code.
-pub fn tk_punct(c: I32) -> Token { {token = widen_sum({tk_punct = c})[Token_shape]} }
+pub fn tk_punct(c: I32) -> Token { Token.mk(widen_sum(Tk_punct.mk(c))[Token_shape]) }
 
 /// One-step destructor on a `Token`: projects out the token sum for dispatch.
 pub fn un_token(t: Token) -> Token_shape { Token.get(t) }
@@ -77,14 +77,14 @@ pub fn un_token(t: Token) -> Token_shape { Token.get(t) }
 // token itself stays position-free, so every dispatch on a `Token`'s shape
 // is untouched by the position plumbing.
 /// A cons-list of `(token, source-byte-offset)` cells.
-pub rec labels { toks: . | (Token & I32 & Toks) };
+pub rec type { Toks: . | (Token & I32 & Toks) }
 
 /// The empty token list.
-pub fn toks_nil() -> Toks { {toks = widen_sum(())[. | (Token & I32 & Toks)]} }
+pub fn toks_nil() -> Toks { Toks.mk(widen_sum(())[. | (Token & I32 & Toks)]) }
 
 /// Prepends one token with its source byte offset.
 pub fn toks_cons(head: Token, pos: I32, tail: Toks) -> Toks {
-  {toks = widen_sum((head, (pos, tail)))[. | (Token & I32 & Toks)]}
+  Toks.mk(widen_sum((head, (pos, tail)))[. | (Token & I32 & Toks)])
 }
 
 /// One-step destructor on a token list.
@@ -99,22 +99,22 @@ pub fn un_toks(ts: Toks) -> . | (Token & I32 & Toks) { Toks.get(ts) }
 // payload in the expected arm, and the list constructors round-trip.
 equiv un_word(s: String) {
   un_token(tk_word(s));
-  widen_sum({tk_word = s})[Token_shape]
+  widen_sum(Tk_word.mk(s))[Token_shape]
 }
 
 equiv un_num_tok(s: String) {
   un_token(tk_num(s));
-  widen_sum({tk_num = s})[Token_shape]
+  widen_sum(Tk_num.mk(s))[Token_shape]
 }
 
 equiv un_str_tok(s: String) {
   un_token(tk_str(s));
-  widen_sum({tk_str = s})[Token_shape]
+  widen_sum(Tk_str.mk(s))[Token_shape]
 }
 
 equiv un_punct_tok(c: I32) {
   un_token(tk_punct(c));
-  widen_sum({tk_punct = c})[Token_shape]
+  widen_sum(Tk_punct.mk(c))[Token_shape]
 }
 
 equiv un_toks_cons(h: Token, p: I32, t: Toks) {

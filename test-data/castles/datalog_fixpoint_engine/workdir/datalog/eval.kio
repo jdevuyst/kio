@@ -18,39 +18,52 @@ import datalog/subst as subst;
 import datalog/unify as unify;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32);
 import testapi/iter(loop);
 
-pub labels Round = { rd_index: I32, rd_derivs: I32, rd_added: I32 };
+pub type Round = { Rd_index: I32; Rd_derivs: I32; Rd_added: I32 };
 
 pub type Trace = list.List[Round];
 
 fn round(index: I32, derivs: I32, added: I32) -> Round {
-  {rd_index = index, rd_derivs = derivs, rd_added = added}
+  (Rd_index.mk(index), Rd_derivs.mk(derivs), Rd_added.mk(added))
 }
 
-pub fn round_index(r: Round) -> I32 { r.?{rd_index} }
+pub fn round_index(r: Round) -> I32 {
+  r.>select { Rd_index.get }
+}
 
-pub fn round_derivs(r: Round) -> I32 { r.?{rd_derivs} }
+pub fn round_derivs(r: Round) -> I32 {
+  r.>select { Rd_derivs.get }
+}
 
-pub fn round_added(r: Round) -> I32 { r.?{rd_added} }
+pub fn round_added(r: Round) -> I32 {
+  r.>select { Rd_added.get }
+}
 
-pub labels Run = { run_trace: Trace, run_derivs: I32, run_db: Atoms };
+pub type Run = { Run_trace: Trace; Run_derivs: I32; Run_db: Atoms };
 
 fn mk_run(trace: Trace, derivs: I32, db: Atoms) -> Run {
-  {run_trace = trace, run_derivs = derivs, run_db = db}
+  (Run_trace.mk(trace), Run_derivs.mk(derivs), Run_db.mk(db))
 }
 
-pub fn trace_of(r: Run) -> Trace { r.?{run_trace} }
+pub fn trace_of(r: Run) -> Trace {
+  r.>select { Run_trace.get }
+}
 
-pub fn derivs_of(r: Run) -> I32 { r.?{run_derivs} }
+pub fn derivs_of(r: Run) -> I32 {
+  r.>select { Run_derivs.get }
+}
 
-pub fn db_of(r: Run) -> Atoms { r.?{run_db} }
+pub fn db_of(r: Run) -> Atoms {
+  r.>select { Run_db.get }
+}
 
-labels Absorbed = { ab_db: Atoms, ab_added: Atoms };
+type Absorbed = { Ab_db: Atoms; Ab_added: Atoms };
 
-fn absorbed(db: Atoms, added: Atoms) -> Absorbed { {ab_db = db, ab_added = added} }
+fn absorbed(db: Atoms, added: Atoms) -> Absorbed { (Ab_db.mk(db), Ab_added.mk(added)) }
 
 fn holds(db: Atoms, fact: Atom) -> Bool {
   list.any(db, .(f: Atom) { atom_eq(f, fact) })
@@ -59,7 +72,7 @@ fn holds(db: Atoms, fact: Atom) -> Bool {
 /// Insert this round's conclusions, keeping the database a set. What was
 /// genuinely new is handed back as the next round's delta.
 rec(loop) fn absorb(db: Atoms, candidates: Atoms, added: Atoms) -> Absorbed {
-  match(candidates.>list.List.un_list) {
+  match(candidates.>list.List.get) {
     (
     , .(fact: Atom, rest: Atoms) {
         if(holds(db, fact)) {
@@ -100,8 +113,8 @@ rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I
   let candidates = naive_heads(rules, db);
   let attempted = list.length(candidates);
   let step = absorb(db, candidates, list.nil[Atom]);
-  let next_db = step.?{ab_db};
-  let added = list.length(step.?{ab_added});
+  let next_db = step.>select { Ab_db.get };
+  let added = list.length(step.>select { Ab_added.get });
   let total = add_i32(derivs, attempted);
   let next_trace = list.snoc(trace, round(index, attempted, added));
   if(eq_i32(added, 0)) {
@@ -129,8 +142,8 @@ rec(loop) fn semi_rounds(
   let candidates = delta_heads(rules, db, old, delta);
   let attempted = list.length(candidates);
   let step = absorb(db, candidates, list.nil[Atom]);
-  let next_db = step.?{ab_db};
-  let next_delta = step.?{ab_added};
+  let next_db = step.>select { Ab_db.get };
+  let next_delta = step.>select { Ab_added.get };
   let added = list.length(next_delta);
   let total = add_i32(derivs, attempted);
   let next_trace = list.snoc(trace, round(index, attempted, added));

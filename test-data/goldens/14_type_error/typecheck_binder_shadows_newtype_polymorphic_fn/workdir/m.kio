@@ -1,9 +1,9 @@
 module m;
 
-newtype A : . { constructor mk; projector un }
+type { A: . { mk; get } }
 
-// `[A]` is a scheme binder. `A.mk(())` is a value-level newtype-member
-// call that builds the *concrete* newtype `A` (whose type is `m.A`), not
+// `[A]` is a scheme binder. `A.mk(())` is a value-level nominal-member
+// call that builds the *concrete* nominal type `A` (whose type is `m.A`), not
 // a value of the binder `A`. The declared return `-> A` (the binder) is a
 // lie: `bad(x)` could be instantiated at any type, so returning an `m.A`
 // is unsound. `kio check` must reject this (exit 14). Before the

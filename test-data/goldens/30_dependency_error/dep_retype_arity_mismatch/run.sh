@@ -1,7 +1,7 @@
 #!/bin/sh
 # `retype` onto a counterpart of a different type-parameter arity is a
 # materialize-time dependency error. The dependency's
-# `newtype Box[A] : A` and the consumer's `newtype Box[A][B] : A` have
+# `type { Box[A]: A }` and the consumer's `type { Box[A][B]: A }` have
 # byte-equal payloads (`A`), so a payload-only congruence check would pass
 # — but they are not interchangeable, because every `Box(..)` use site
 # applies a different number of type arguments. The arity must be checked

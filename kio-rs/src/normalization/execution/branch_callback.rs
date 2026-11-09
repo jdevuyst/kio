@@ -7,16 +7,16 @@ pub(super) struct Callback<'code> {
 
 pub(super) enum Finish {
     Either {
-        left_ty: EvalRef<EvalAstType>,
-        right_ty: EvalRef<EvalAstType>,
-        result_ty: EvalRef<EvalAstType>,
+        left_ty: ReflectedType,
+        right_ty: ReflectedType,
+        result_ty: ReflectedType,
         value: EvalRef<CheckedTerm>,
         left_name: String,
         left_body: Option<EvalRef<CheckedTerm>>,
         right_name: Option<String>,
     },
     Conditional {
-        direct_type: Option<EvalRef<EvalAstType>>,
+        direct_type: Option<ReflectedType>,
         projected: bool,
         left: Option<Value>,
     },
@@ -81,9 +81,9 @@ pub(super) fn prepare(
     }
     if source.builtin == ComptimeBuiltin::IntrinsicIfThenElse {
         let direct_type = if source.code.is_some() {
-            let typ = canonical_refl_type(&args[0], ctx)?;
+            let typ = reflected_type_carrier(&args[0])?.clone();
             as_checked_term_ref(&args[1])?;
-            Some(EvalRef::new(typ))
+            Some(typ)
         } else {
             None
         };
@@ -96,22 +96,24 @@ pub(super) fn prepare(
             EvalArgs::Empty,
         ));
     }
-    let sum_type = canonical_refl_type(&args[0], ctx)?;
-    let Type::Sum { left, right, .. } = unfold_canonical_refl_type(&sum_type, ctx) else {
+    let sum_type = unfold_reflected_carrier(reflected_type_carrier(&args[0])?, ctx);
+    if !matches!(sum_type.as_type(), Type::Sum { .. }) {
         return None;
-    };
-    let result_ty = canonical_refl_type(&args[1], ctx)?;
+    }
+    let left = sum_type.child(reflection_bindings::TypeChild::Left);
+    let right = sum_type.child(reflection_bindings::TypeChild::Right);
+    let result_ty = reflected_type_carrier(&args[1])?.clone();
     let value = as_checked_term(&args[2])?;
-    if !checked_type_equiv(&value, &sum_type, ctx) {
+    if !checked_reflected_type_equiv(&value, &sum_type, source.builtin, ctx) {
         return None;
     }
     let left_name = fresh_checked_term_value_name("left");
-    let payload = checked_term_local_value(left_name.clone(), (*left).clone());
+    let payload = reflected_local_value(left_name.clone(), left.clone());
     Some((
         Finish::Either {
-            left_ty: EvalRef::new(*left),
-            right_ty: EvalRef::new(*right),
-            result_ty: EvalRef::new(result_ty),
+            left_ty: left,
+            right_ty: right,
+            result_ty,
             value,
             left_name,
             left_body: None,
@@ -136,16 +138,14 @@ impl Finish {
                 let Some(body) = as_checked_term(&body) else {
                     return Step::Done(None);
                 };
-                if !checked_type_equiv(&body, &result_ty, ctx) {
+                if !checked_reflected_type_equiv(&body, &result_ty, source.builtin, ctx) {
                     return Step::Done(None);
                 }
                 if let Some(left_body) = left_body {
-                    let result_ty = result_ty.unwrap_or_clone();
-                    Step::Done(Some(checked_term_node_value(
-                        CheckedTermNode::IntrinsicEither {
-                            left_ty: left_ty.unwrap_or_clone(),
-                            right_ty: right_ty.unwrap_or_clone(),
-                            result_ty: result_ty.clone(),
+                    Step::Done(reflected_checked_value(
+                        ProjectedTermConstruction::Either {
+                            left_ty,
+                            right_ty,
                             value,
                             left_name,
                             left_body,
@@ -153,11 +153,10 @@ impl Finish {
                             right_body: body,
                         },
                         result_ty,
-                    )))
+                    ))
                 } else {
                     let right_name = fresh_checked_term_value_name("right");
-                    let payload =
-                        checked_term_local_value(right_name.clone(), right_ty.as_ref().clone());
+                    let payload = reflected_local_value(right_name.clone(), right_ty.clone());
                     Step::Next(
                         Finish::Either {
                             left_ty,
@@ -239,7 +238,7 @@ impl Finish {
 
 fn finish_conditional(
     source: &callback::Source<'_>,
-    direct_type: Option<EvalRef<EvalAstType>>,
+    direct_type: Option<ReflectedType>,
     projected: bool,
     left: Value,
     right: Value,
@@ -264,24 +263,23 @@ fn finish_conditional(
     #[cfg(not(feature = "surface"))]
     let _ = projected;
     let result_ty = match direct_type {
-        Some(typ) => typ.unwrap_or_clone(),
-        None => canonical_refl_type(&args[0], ctx)?,
+        Some(typ) => typ,
+        None => reflected_type_carrier(&args[0])?.clone(),
     };
     let condition = as_checked_term(&args[1])?;
     let true_body = as_checked_term(&left)?;
     let false_body = as_checked_term(&right)?;
-    if !checked_type_equiv(&true_body, &result_ty, ctx)
-        || !checked_type_equiv(&false_body, &result_ty, ctx)
+    if !checked_reflected_type_equiv(&true_body, &result_ty, source.builtin, ctx)
+        || !checked_reflected_type_equiv(&false_body, &result_ty, source.builtin, ctx)
     {
         return None;
     }
-    Some(checked_term_node_value(
-        CheckedTermNode::IntrinsicIfThenElse {
-            result_ty: result_ty.clone(),
+    reflected_checked_value(
+        ProjectedTermConstruction::IfThenElse {
             condition,
             true_body,
             false_body,
         },
         result_ty,
-    ))
+    )
 }

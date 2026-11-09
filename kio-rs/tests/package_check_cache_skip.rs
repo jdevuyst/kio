@@ -187,8 +187,7 @@ fn identity_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
-     pub type Target_request = __Type__ | .;\n\n\
-     pub pure fn id_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
+     pub pure fn id_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
        value\n\
      }\n\n\
      pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
@@ -198,24 +197,18 @@ fn second_value_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
-     pub type Target_request = __Type__ | .;\n\n\
-     pub pure fn second_impl(_ct: __Comptime__, _first_source: __Type__, _first: __Checked_term__, _second_source: __Type__, second: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
+     pub pure fn second_impl(_ct: __Comptime__, _first_source: __Type__, _first: __Checked_term__, _second_source: __Type__, second: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
        second\n\
      }\n\n\
      pub macro second_value : [First] First -> [Second] Second -> [Target] Target { impl second_impl; };\n"
 }
 
-fn source_infer_user_macro_module() -> &'static str {
+fn natural_identity_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
-     pub type Target_request = __Type__ | .;\n\n\
-     pub pure fn id_default_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Target_request) -> __Checked_term__ {\n\
-       __either__[__Type__][.][__Checked_term__](\n\
-         , target\n\
-         , .(_target: __Type__) -> __Checked_term__ { value }\n\
-         , .(_empty: .) -> __Checked_term__ { value }\n\
-         )\n\
+     pub pure fn id_default_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
+       value\n\
      }\n\n\
      pub macro id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
 }
@@ -224,24 +217,18 @@ fn unit_identity_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
-     pub type Target_request = __Type__ | .;\n\n\
-     pub pure fn id_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
+     pub pure fn id_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
        __term_unit__(ct)\n\
      }\n\n\
      pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
 }
 
-fn unit_infer_user_macro_module() -> &'static str {
+fn natural_unit_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
-     pub type Target_request = __Type__ | .;\n\n\
-     pub pure fn id_default_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Target_request) -> __Checked_term__ {\n\
-       __either__[__Type__][.][__Checked_term__](\n\
-         , target\n\
-         , .(_target: __Type__) -> __Checked_term__ { value }\n\
-         , .(_empty: .) -> __Checked_term__ { __term_unit__(ct) }\n\
-         )\n\
+     pub pure fn id_default_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
+       __term_unit__(ct)\n\
      }\n\n\
      pub macro id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
 }
@@ -290,9 +277,9 @@ fn typed_modules_reuse_one_semantic_entry_across_package_names() {
     let provider = "module shared;\n\n\
         host type Host_value;\n\n\
         host fn host_value() -> Host_value;\n\n\
-        pub newtype Token : . { pub constructor mk_token; pub projector un_token; };\n\n\
+        pub type { Token: . { pub mk; pub get; }; };\n\n\
         fn secret() -> . { () }\n\n\
-        pub fn run() -> Token { Token.mk_token(()) }\n";
+        pub fn run() -> Token { Token.mk(()) }\n";
     let consumer = "module consumer;\n\n\
         import shared as s;\n\n\
         pub fn call() -> s.Token { s.run() }\n";
@@ -724,7 +711,7 @@ fn typed_cache_misses_when_transitive_same_package_surface_moves() {
     pkg.write(
         "pkg/c.kio",
         "module pkg/c;\n\n\
-         pub newtype Box : . { pub constructor mk_box; pub projector un_box; };\n\n\
+         pub type { Box: . { pub mk; pub get; }; };\n\n\
          pub type Shared = Box;\n",
     );
     let (code3, log3) = kio_check(pkg.path());
@@ -892,8 +879,8 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
             .collect::<Vec<_>>();
         assert_eq!(
             stats,
-            ["hits=1 misses=1 first-writes=1"],
-            "exactly one active template scope must produce one verified replay: {log}"
+            ["hits=0 misses=2 first-writes=1"],
+            "distinct caller binders must be evaluated separately within one semantic key: {log}"
         );
         for owner in [first, second] {
             let emitted =
@@ -921,14 +908,115 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
 }
 
 #[test]
-fn user_macro_infer_branch_memo_hits_repeated_shape() {
+fn user_macro_template_batch_reuses_the_same_caller_binders() {
+    let pkg = TempPkg::new();
+    pkg.write(
+        "pkg.pkg.kio",
+        &package_file_no_cache_with_prime_target(
+            "pkg",
+            "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n",
+        ),
+    );
+    pkg.write("pkg.kio", pkg_root_module());
+    pkg.write("elaborators.kio", second_value_user_macro_module());
+    pkg.write(
+        "pkg/main.kio",
+        "module pkg/main;\n\
+         import elaborators(macro second_value);\n\
+         pub fn run[A][B](left: A, first: B, second: B) -> B {\n\
+           let selected = second_value(left)(first)[B];\n\
+           second_value(left)(second)[B]\n\
+         }\n",
+    );
+
+    let (code, log) = kio_build_prime_with_extra_env(
+        pkg.path(),
+        &[
+            ("KIO_DEBUG_MEMO", "1"),
+            ("KIO_DEBUG_MEMO_VERIFY", "1"),
+            ("KIO_DEBUG_TIMING", "frontend"),
+        ],
+    );
+    assert_eq!(code, 0, "same-caller Kio' build should succeed: {log}");
+    let timing = log
+        .lines()
+        .find(|line| line.starts_with("frontend-timing: pkg "))
+        .unwrap_or_else(|| panic!("expected frontend timing line: {log}"));
+    assert!(
+        timing.contains("user_macro_template_batch_obligations=2")
+            && timing.contains("user_macro_template_batch_unique=1")
+            && timing.contains("user_macro_template_batch_duplicates=1"),
+        "same caller references must still dedupe before template evaluation: {timing}"
+    );
+    let stats = log
+        .lines()
+        .filter_map(|line| line.strip_prefix("memo user-macro: "))
+        .filter(|counts| *counts != "hits=0 misses=0 first-writes=0")
+        .collect::<Vec<_>>();
+    assert_eq!(stats, ["hits=0 misses=1 first-writes=1"], "{log}");
+    let emitted = fs::read_to_string(pkg.path().join("out/kio-prime/pkg/main.kio"))
+        .expect("read emitted same-caller required-target calls");
+    assert!(
+        emitted.contains(
+            "pub fn run[A][B](left: A, first: B, second: B) -> B { let selected = first; second }"
+        ),
+        "deduplication must substitute each current value under the same A/B scope: {emitted}"
+    );
+}
+
+#[test]
+fn user_macro_natural_result_memo_reuses_the_same_caller_binder() {
+    let pkg = TempPkg::new();
+    pkg.write(
+        "pkg.pkg.kio",
+        &package_file_no_cache_with_prime_target(
+            "pkg",
+            "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n",
+        ),
+    );
+    pkg.write("pkg.kio", pkg_root_module());
+    pkg.write("elaborators.kio", natural_identity_user_macro_module());
+    pkg.write(
+        "pkg/main.kio",
+        "module pkg/main;\n\
+         import elaborators(macro id_default);\n\
+         pub fn run[A](first: A, second: A) -> A {\n\
+           let first_result = id_default(first)[_];\n\
+           let second_result = id_default(second)[_];\n\
+           second_result\n\
+         }\n",
+    );
+
+    let (code, log) = kio_build_prime_with_extra_env(
+        pkg.path(),
+        &[("KIO_DEBUG_MEMO", "1"), ("KIO_DEBUG_MEMO_VERIFY", "1")],
+    );
+    assert_eq!(code, 0, "same-caller natural result should succeed: {log}");
+    let stats = log
+        .lines()
+        .filter_map(|line| line.strip_prefix("memo user-macro: "))
+        .filter(|counts| *counts != "hits=0 misses=0 first-writes=0")
+        .collect::<Vec<_>>();
+    assert_eq!(stats, ["hits=1 misses=1 first-writes=1"], "{log}");
+    let emitted = fs::read_to_string(pkg.path().join("out/kio-prime/pkg/main.kio"))
+        .expect("read emitted same-caller natural-result calls");
+    assert!(
+        emitted.contains(
+            "pub fn run[A](first: A, second: A) -> A {\n  let first_result = first;\n  let second_result = second;\n  second_result\n}"
+        ),
+        "memo replay must substitute the second call's value under the same A scope: {emitted}"
+    );
+}
+
+#[test]
+fn user_macro_natural_result_memo_hits_repeated_shape() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_macro_module());
+    pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
@@ -956,7 +1044,7 @@ fn user_macro_infer_branch_memo_hits_repeated_shape() {
         memo_line.contains("hits=1")
             && memo_line.contains("misses=1")
             && memo_line.contains("first-writes=1"),
-        "repeated inferred-target user-macro shape should reuse one result: {memo_line}"
+        "repeated natural-result user-macro shape should reuse one result: {memo_line}"
     );
 }
 
@@ -968,7 +1056,7 @@ fn user_macro_rechecks_do_not_write_persistent_template_cache() {
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_macro_module());
+    pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
@@ -1040,14 +1128,14 @@ fn typed_cache_misses_when_imported_user_macro_impl_changes() {
 }
 
 #[test]
-fn typed_cache_misses_when_imported_user_macro_infer_branch_changes() {
+fn typed_cache_misses_when_imported_user_macro_natural_result_changes() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_macro_module());
+    pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
@@ -1068,15 +1156,15 @@ fn typed_cache_misses_when_imported_user_macro_infer_branch_changes() {
         "second check should establish the warm cache path: {log2}"
     );
 
-    pkg.write("elaborators.kio", unit_infer_user_macro_module());
+    pkg.write("elaborators.kio", natural_unit_user_macro_module());
     let (code3, log3) = kio_check(pkg.path());
     assert_ne!(
         code3, 0,
-        "changing only the private infer branch must force pkg/main to re-typecheck: {log3}"
+        "changing the natural-result implementation must force pkg/main to re-typecheck: {log3}"
     );
     assert!(
         log3.contains("expected `String`") || log3.contains("found `()`"),
-        "the fresh user-macro infer-branch error should be visible, not hidden by typed cache: {log3}"
+        "the fresh user-macro natural-result error should be visible, not hidden by typed cache: {log3}"
     );
 }
 

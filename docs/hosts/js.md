@@ -142,7 +142,7 @@ escaping remaining underscores (`Native_token` → `KioType_NativeToken`).
 Leading and trailing underscores are preserved by word casing. An export `main` from module `greeter/main` is
 therefore reached as `pkg.greeter.KioModule_main.main`.
 
-A public `newtype` adds a namespace containing only its public constructor
+A public nominal type adds a namespace containing only its public constructor
 and projector. When both are public, the newtype is nonexistential, and its
 payload-visible graph has no uncut cycle, those methods and public functions use
 the same `{TypeName: payload}` boundary object. Otherwise,

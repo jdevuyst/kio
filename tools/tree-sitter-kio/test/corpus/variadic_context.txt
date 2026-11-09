@@ -234,7 +234,7 @@ varop [! !] { foldl1 helpers.foldr1 finalize; };
 ================================================================================
 complete imported grammars retain fixed groups and split variadic heads
 ================================================================================
-import syntax(op, import, variadic, {entry}, op _ (=) _, op _ ~ ___ ~, op _ ? _ : ___, varop [< <]);
+import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : ___, varop [< <]);
 --------------------------------------------------------------------------------
 
 (source_file
@@ -252,10 +252,8 @@ import syntax(op, import, variadic, {entry}, op _ (=) _, op _ ~ ___ ~, op _ ? _ 
     (import_named_item
       (identifier))
     (separator_comma)
-    (import_label_item
-      (bracket_lbrace)
-      (entity_name_label)
-      (bracket_rbrace))
+    (import_named_item
+      (identifier))
     (separator_comma)
     (import_operator_item
       (keyword_op)
@@ -303,7 +301,7 @@ op import variadic foldl foldr foldl1 foldr1 finalize
   (ERROR
     (entity_name_module)
     (identifier)
-    (entity_name_label)
-    (entity_name_label)
-    (entity_name_label)
-    (entity_name_label)))
+    (keyword_declaration)
+    (keyword_declaration)
+    (keyword_declaration)
+    (keyword_declaration)))

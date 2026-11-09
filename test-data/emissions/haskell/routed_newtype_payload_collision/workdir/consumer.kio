@@ -5,9 +5,9 @@ import domain(Items);
 import list/list as list;
 import wrong as actual;
 
-labels State = { direct: Items };
+type State = { Direct: Items };
 
-newtype Callback[A] : A -> . { constructor callback; projector uncallback }
+type { Callback[A]: A -> . { mk; get } }
 
 fn keep_state(state: State) -> State { state }
 

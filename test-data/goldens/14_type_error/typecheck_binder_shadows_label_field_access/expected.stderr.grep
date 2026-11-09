@@ -1,1 +1,1 @@
-field `a` is not visible on receiver type `A`
+expected `testapi\.main\.A`, found `A`

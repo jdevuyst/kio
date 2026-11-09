@@ -36,7 +36,7 @@ fn title_text(c: schema.Col, last: Bool) -> String {
 }
 
 rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
-  match(cols.>list.List.un_list) {
+  match(cols.>list.List.get) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let last = list.is_empty(rest);
@@ -49,7 +49,7 @@ rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
 }
 
 rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
-  match(cols.>list.List.un_list) {
+  match(cols.>list.List.get) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let piece =
@@ -66,7 +66,7 @@ rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
 }
 
 rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> String {
-  match(cols.>list.List.un_list) {
+  match(cols.>list.List.get) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let v = rel.row_cell(row, c);
@@ -84,7 +84,7 @@ rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> Strin
 }
 
 rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         print(text.cat3(margin(), row_onto(cols, r, ""), "\n"));

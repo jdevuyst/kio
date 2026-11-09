@@ -861,7 +861,7 @@ fn reflection_metric_kind(name: &str) -> ReflectionMetricKind {
         "__type_product_spine_fold__"
         | "__type_sum_spine_fold__"
         | "__type_args_fold__"
-        | "__type_function_params_fold__"
+        | "__type_forall_prefix_fold__"
         | "__type_arity_fold__"
         | "__type_name_param_arities_fold__"
         | "__type_instantiate__" => ReflectionMetricKind::TypeFold,

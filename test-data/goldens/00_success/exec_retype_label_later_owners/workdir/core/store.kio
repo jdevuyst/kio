@@ -1,5 +1,5 @@
 module core/store;
 
-pub labels { foo: . };
+pub type { Foo: . { pub mk; pub get } }
 
-pub fn accept_foo(value: Foo) { value.?{foo} }
+pub fn accept_foo(value: Foo) { Foo.get(value) }

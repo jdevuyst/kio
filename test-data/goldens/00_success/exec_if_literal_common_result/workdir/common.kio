@@ -10,10 +10,10 @@ pure fn common_impl(
 , left: __Checked_term__
 , _right_type: __Type__
 , right: __Checked_term__
-, target: __Type__
+, _target: .
 ) -> __Checked_term__ & __Fill_ctx__ {
-  let with_left = __fill__(ct, fills, target, __term_type__(ct, left));
-  let with_right = __fill__(ct, with_left, target, __term_type__(ct, right));
+  let with_left = __fill_result__(ct, fills, __term_type__(ct, left));
+  let with_right = __fill_result__(ct, with_left, __term_type__(ct, right));
   (left, with_right)
 }
 
@@ -30,7 +30,7 @@ pure fn from_number_impl(
 , _source: __Type__
 , _number: __Checked_term__
 , text: __Checked_term__
-, _target: __Type__ | .
+, _target: .
 ) -> __Checked_term__ { text }
 
 pub macro from_number : [Source] Source -> String -> [Target] Target { impl from_number_impl }

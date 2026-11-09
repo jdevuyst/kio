@@ -1615,7 +1615,7 @@ fn render_export_driver(
         ExportDriver::FunctorDictRoundtrip => {
             let unbox_pattern = pkg_product_pattern(
                 target_namespace,
-                &newtype_export_boundary("testapi/types", "Box", "un_box", BoundaryRoot::Ret),
+                &newtype_export_boundary("testapi/types", "Box", "get", BoundaryRoot::Ret),
             );
             format!(
                 r#"  integers <- Data.IORef.newIORef ([] :: [Data.Int.Int32])
@@ -1652,9 +1652,9 @@ fn render_export_driver(
                 make = pkg_export("testapi/main", "box_functor"),
                 echo = pkg_export("testapi/main", "echo_functor"),
                 apply = pkg_export("testapi/main", "apply_functor"),
-                mk_box = pkg_newtype_export("testapi/types", "Box", "mk_box"),
-                un_box = pkg_newtype_export("testapi/types", "Box", "un_box"),
-                fmap = pkg_newtype_export("testapi/types", "Functor", "fmap"),
+                mk_box = pkg_newtype_export("testapi/types", "Box", "mk"),
+                un_box = pkg_newtype_export("testapi/types", "Box", "get"),
+                fmap = pkg_newtype_export("testapi/types", "Functor", "get"),
             )
         }
         ExportDriver::DirectSumForallBoundary => {
@@ -1865,7 +1865,7 @@ fn render_export_driver(
   let KioRunnerBox native = kio
   {unwrap} pkg native >>= printNumber
 "#,
-                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk_wrapped"),
+                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk"),
                 read = pkg_export("testapi/main", "read"),
                 make = pkg_export("testapi/main", "make"),
                 unwrap = pkg_export("testapi/main", "unwrap"),
@@ -1899,7 +1899,7 @@ fn render_export_driver(
                 make_empty = pkg_export("testapi/main", "make_empty"),
                 call = pkg_export("testapi/main", "call"),
                 make_callable = pkg_export("testapi/main", "make_callable"),
-                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk_wrapped"),
+                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk"),
                 read_nominal = pkg_export("testapi/main", "read_nominal"),
                 make_nominal = pkg_export("testapi/main", "make_nominal"),
             )
@@ -2036,7 +2036,7 @@ fn render_export_driver(
             pkg_export("testapi/main", "first_or"),
         ),
         // `bump(Wrap) -> Wrap` exported in `testapi/main`, where `Wrap` is
-        // a bare scalar-payload newtype (`newtype Wrap : I32`). The
+        // a bare scalar-payload newtype (`type { Wrap: I32 }`). The
         // Haskell skin erases the bare scalar newtype at the boundary, so
         // the export takes / returns the raw `Int32` payload directly
         // (`Int32 -> m Int32`). Round-trip `7` through it; it prints as `7`.
@@ -2051,14 +2051,14 @@ fn render_export_driver(
         ),
         ExportDriver::RecursiveNewtypeBoundary => format!(
             "  payload <- {base_payload} pkg\n\
-             \x20\x20root <- {make_root} pkg payload\n\
+             \x20\x20root <- {mk_root} pkg payload\n\
              \x20\x20kept <- {keep} pkg root\n\
-             \x20\x20projected <- {read_root} pkg kept\n\
+             \x20\x20projected <- {get_root} pkg kept\n\
              \x20\x20{accept_payload} pkg projected >>= (putStrLn . show)\n",
             base_payload = pkg_export("main", "base_payload"),
-            make_root = pkg_newtype_export("main", "Root", "make_root"),
+            mk_root = pkg_newtype_export("main", "Root", "mk"),
             keep = pkg_export("main", "keep"),
-            read_root = pkg_newtype_export("main", "Root", "read_root"),
+            get_root = pkg_newtype_export("main", "Root", "get"),
             accept_payload = pkg_export("main", "accept_payload"),
         ),
         ExportDriver::NewtypeVisibilityFacade => {
@@ -2147,39 +2147,39 @@ fn render_export_driver(
              \x20 spreadOpenCount <- Data.IORef.readIORef spreadOpens\n\
              \x20 recursiveOpenCount <- Data.IORef.readIORef recursiveOpens\n\
              \x20 if spreadResult == 91 && recursiveResult == 92 && spreadOpenCount == 1 && recursiveOpenCount == 1 then pure () else fail \"existential continuation count changed\"\n",
-            make_constructor_spread = pkg_newtype_export("testapi/types", "Constructor_spread", "make_constructor_spread"),
+            make_constructor_spread = pkg_newtype_export("testapi/types", "Constructor_spread", "mk"),
             invoke_constructor_i32 = pkg_export("testapi/types", "invoke_constructor_spread_i32"),
             invoke_constructor_unit = pkg_export("testapi/types", "invoke_constructor_spread_unit"),
             make_projector_spread = pkg_export("testapi/types", "make_projector_spread_value"),
-            read_projector_spread = pkg_newtype_export("testapi/types", "Projector_spread", "read_projector_spread"),
+            read_projector_spread = pkg_newtype_export("testapi/types", "Projector_spread", "get"),
             make_existential_spread = pkg_export("testapi/types", "make_existential_spread_value"),
-            read_existential_spread = pkg_newtype_export("testapi/types", "Existential_spread", "read_existential_spread"),
+            read_existential_spread = pkg_newtype_export("testapi/types", "Existential_spread", "get"),
             make_recursive_existential = pkg_export("testapi/types", "make_recursive_existential_function_value"),
-            read_recursive_existential = pkg_newtype_export("testapi/types", "Recursive_existential_function", "read_recursive_existential_function"),
+            read_recursive_existential = pkg_newtype_export("testapi/types", "Recursive_existential_function", "get"),
             make_a = pkg_export("testapi/types", "make_a"),
             read_a = pkg_export("testapi/types", "read_a"),
             make_b = pkg_export("testapi/types", "make_b"),
             read_b = pkg_export("testapi/types", "read_b"),
             make_constructor_only =
-                pkg_newtype_export("testapi/types", "Constructor_only", "make_constructor_only",),
+                pkg_newtype_export("testapi/types", "Constructor_only", "mk",),
             read_constructor_only = pkg_export("testapi/types", "read_constructor_only_value",),
             make_projector_only = pkg_export("testapi/types", "make_projector_only_value",),
             read_projector_only =
-                pkg_newtype_export("testapi/types", "Projector_only", "read_projector_only",),
+                pkg_newtype_export("testapi/types", "Projector_only", "get",),
             make_both_public =
-                pkg_newtype_export("testapi/types", "Both_public", "make_both_public",),
+                pkg_newtype_export("testapi/types", "Both_public", "mk",),
             read_both_public =
-                pkg_newtype_export("testapi/types", "Both_public", "read_both_public",),
+                pkg_newtype_export("testapi/types", "Both_public", "get",),
             make_left = pkg_export("testapi/left", "make"),
             read_left = pkg_export("testapi/left", "read"),
-            make_shared_left = pkg_newtype_export("testapi/left", "Shared", "make_shared"),
-            read_shared_left = pkg_newtype_export("testapi/left", "Shared", "read_shared"),
+            make_shared_left = pkg_newtype_export("testapi/left", "Shared", "mk"),
+            read_shared_left = pkg_newtype_export("testapi/left", "Shared", "get"),
             make_right = pkg_export("testapi/right", "make"),
             read_right = pkg_export("testapi/right", "read"),
-            make_shared_right = pkg_newtype_export("testapi/right", "Shared", "make_shared"),
-            read_shared_right = pkg_newtype_export("testapi/right", "Shared", "read_shared"),
+            make_shared_right = pkg_newtype_export("testapi/right", "Shared", "mk"),
+            read_shared_right = pkg_newtype_export("testapi/right", "Shared", "get"),
             make_constructor_pair =
-                pkg_newtype_export("testapi/types", "Constructor_pair", "make_constructor_pair",),
+                pkg_newtype_export("testapi/types", "Constructor_pair", "mk",),
             constructor_pair_ret = pkg_product_pattern(
                 target_namespace,
                 &export_boundary(
@@ -2195,16 +2195,16 @@ fn render_export_driver(
                 &newtype_export_boundary(
                     "testapi/types",
                     "Projector_pair",
-                    "read_projector_pair",
+                    "get",
                     BoundaryRoot::Ret,
                 ),
             ),
             read_projector_pair =
-                pkg_newtype_export("testapi/types", "Projector_pair", "read_projector_pair",),
+                pkg_newtype_export("testapi/types", "Projector_pair", "get",),
             make_constructor_generic = pkg_newtype_export(
                 "testapi/types",
                 "Constructor_generic",
-                "make_constructor_generic",
+                "mk",
             ),
             read_constructor_generic =
                 pkg_export("testapi/types", "read_constructor_generic_value"),
@@ -2212,27 +2212,27 @@ fn render_export_driver(
             read_projector_generic = pkg_newtype_export(
                 "testapi/types",
                 "Projector_generic",
-                "read_projector_generic",
+                "get",
             ),
             make_packed_function =
-                pkg_newtype_export("testapi/types", "Packed_function", "make_packed_function",),
+                pkg_newtype_export("testapi/types", "Packed_function", "mk",),
             read_packed_function =
-                pkg_newtype_export("testapi/types", "Packed_function", "read_packed_function",),
+                pkg_newtype_export("testapi/types", "Packed_function", "get",),
             make_existential_unit = pkg_export("testapi/types", "make_existential_unit_value"),
             read_existential_unit =
-                pkg_newtype_export("testapi/types", "Existential_unit", "read_existential_unit",),
+                pkg_newtype_export("testapi/types", "Existential_unit", "get",),
             make_existential_empty = pkg_export("testapi/types", "make_existential_empty_value"),
             read_existential_empty = pkg_newtype_export(
                 "testapi/types",
                 "Existential_empty",
-                "read_existential_empty",
+                "get",
             ),
             recursive_both_base_payload =
                 pkg_export("testapi/types", "recursive_both_base_payload"),
             make_recursive_both =
-                pkg_newtype_export("testapi/types", "Recursive_both", "make_recursive_both",),
+                pkg_newtype_export("testapi/types", "Recursive_both", "mk",),
             read_recursive_both =
-                pkg_newtype_export("testapi/types", "Recursive_both", "read_recursive_both",),
+                pkg_newtype_export("testapi/types", "Recursive_both", "get",),
             recursive_both_payload_is_base =
                 pkg_export("testapi/types", "recursive_both_payload_is_base"),
             recursive_constructor_base_payload =
@@ -2240,7 +2240,7 @@ fn render_export_driver(
             make_recursive_constructor = pkg_newtype_export(
                 "testapi/types",
                 "Recursive_constructor",
-                "make_recursive_constructor",
+                "mk",
             ),
             read_recursive_constructor =
                 pkg_export("testapi/types", "read_recursive_constructor_value"),
@@ -2251,7 +2251,7 @@ fn render_export_driver(
             read_recursive_projector = pkg_newtype_export(
                 "testapi/types",
                 "Recursive_projector",
-                "read_recursive_projector",
+                "get",
             ),
             recursive_projector_payload_is_base =
                 pkg_export("testapi/types", "recursive_projector_payload_is_base"),
@@ -2282,14 +2282,14 @@ fn render_export_driver(
             );
             let inner = pkg_product_pattern(
                 target_namespace,
-                &newtype_export_boundary("testapi/main", "Inner", "un_inner", BoundaryRoot::Ret),
+                &newtype_export_boundary("testapi/main", "Inner", "get", BoundaryRoot::Ret),
             );
             let outer = pkg_product_pattern(
                 target_namespace,
-                &newtype_export_boundary("testapi/main", "Outer", "un_outer", BoundaryRoot::Ret),
+                &newtype_export_boundary("testapi/main", "Outer", "get", BoundaryRoot::Ret),
             );
             let choice =
-                newtype_export_boundary("testapi/main", "Choice", "un_choice", BoundaryRoot::Ret);
+                newtype_export_boundary("testapi/main", "Choice", "get", BoundaryRoot::Ret);
             let first = pkg_sum_pattern(target_namespace, &choice, StructuralKey::positional(0), 0);
             let middle =
                 pkg_sum_pattern(target_namespace, &choice, StructuralKey::bare("Inner"), 1);
@@ -2419,8 +2419,8 @@ fn render_export_driver(
             i_value = pkg_export("testapi/i", "value"),
             child_fn = pkg_export("testapi/api", "child"),
             child_module = pkg_export("testapi/api/child", "value"),
-            make_child = pkg_newtype_export("testapi/api", "Child", "make_child"),
-            read_child = pkg_newtype_export("testapi/api", "Child", "read_child"),
+            make_child = pkg_newtype_export("testapi/api", "Child", "mk"),
+            read_child = pkg_newtype_export("testapi/api", "Child", "get"),
         ),
         ExportDriver::PublicWordNames => format!(
             "  {plain} pkg >>= print\n\
@@ -2441,10 +2441,10 @@ fn render_export_driver(
             trailing = pkg_export("word_api", "read_word_"),
             both = pkg_export("word_api", "_read_word_"),
             double = pkg_export("word_api", "read_word__"),
-            wrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "wrap_word"),
-            unwrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "unwrap_word"),
-            other_wrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "wrap_word"),
-            other_unwrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "unwrap_word"),
+            wrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "mk"),
+            unwrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "get"),
+            other_wrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "mk"),
+            other_unwrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "get"),
             keep = pkg_export("word_api/word_nodes", "keep_word"),
             keep_pair = pkg_export("word_api", "keep_pair"),
             pair_ret = pkg_product_pattern(
@@ -2506,16 +2506,16 @@ fn render_export_driver(
                 "  {apply_via} pkg (\\s -> pure (T.pack \"via: \" <> s)) (T.pack \"apply\") >>= TIO.putStrLn\n  {apply_via} pkg (\\n -> pure (n + 8)) (7 :: Int) >>= (putStrLn . show)\n"
             )
         }
-        // `mk_pair` constructs the exported `Pair` newtype's nominal carrier
-        // from one tuple parameter; `un_pair` projects
+        // `mk` constructs the exported `Pair` newtype's nominal carrier
+        // from one tuple parameter; `get` projects
         // the product return through its boundary pattern.
         ExportDriver::TypeRoundtrip => format!(
             "  boxed <- {} pkg (T.pack \"export-type-left\", T.pack \"export-type-right\")\n  {} pkg boxed >>= \\({} l r) -> do\n    TIO.putStrLn l\n    TIO.putStrLn r\n",
-            pkg_newtype_export("testapi/types", "Pair", "mk_pair"),
-            pkg_newtype_export("testapi/types", "Pair", "un_pair"),
+            pkg_newtype_export("testapi/types", "Pair", "mk"),
+            pkg_newtype_export("testapi/types", "Pair", "get"),
             pkg_product_pattern(
                 target_namespace,
-                &newtype_export_boundary("testapi/types", "Pair", "un_pair", BoundaryRoot::Ret,)
+                &newtype_export_boundary("testapi/types", "Pair", "get", BoundaryRoot::Ret,)
             ),
         ),
         ExportDriver::Main { .. } | ExportDriver::Coexist => return None,
@@ -2654,7 +2654,7 @@ fn render_haskell_body_for_binding(
         }
         HostFnBodyKind::RoundPolyUnitSlot => "\\arg0 -> pure arg0".to_owned(),
         HostFnBodyKind::ObservePacked { .. } => {
-            let read = pkg_newtype_export("testapi/types", "Packed", "read_packed");
+            let read = pkg_newtype_export("testapi/types", "Packed", "get");
             format!("\\arg0 -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations + 1, openings)); {read} pkg arg0 (pure (\\(seed, step) -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations, openings + 1)); step seed }})) }}")
         }
         HostFnBodyKind::StagedSecond { .. } => "\\_arg0 arg1 -> pure arg1".to_owned(),
@@ -3252,11 +3252,10 @@ mod tests {
             contract.host_types,
         )
         .expect("public-word-names driver");
-        let first_wrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "wrap_word");
-        let second_wrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "wrap_word");
-        let first_unwrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "unwrap_word");
-        let second_unwrap =
-            pkg_newtype_export("word_api/other_nodes", "_Word_box__", "unwrap_word");
+        let first_wrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "mk");
+        let second_wrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "mk");
+        let first_unwrap = pkg_newtype_export("word_api/word_nodes", "_Word_box__", "get");
+        let second_unwrap = pkg_newtype_export("word_api/other_nodes", "_Word_box__", "get");
         for literal in [
             format!("firstBox <- {first_wrap} pkg (77 :: Data.Int.Int32)"),
             format!("secondBox <- {second_wrap} pkg (88 :: Data.Int.Int32)"),

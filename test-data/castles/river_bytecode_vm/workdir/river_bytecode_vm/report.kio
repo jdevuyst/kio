@@ -1,6 +1,7 @@
 module river_bytecode_vm/report;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import river_bytecode_vm/constants as c;
 import river_bytecode_vm/model(
 , Alerts
@@ -15,17 +16,6 @@ import river_bytecode_vm/model(
 , Ticks
 , Waits
 , Wolf
-, {alerts}
-, {cabbage}
-, {checksum}
-, {farmer}
-, {goat}
-, {halt_code}
-, {moves}
-, {pc}
-, {ticks}
-, {waits}
-, {wolf}
 );
 import river_bytecode_vm/util as util;
 import river_bytecode_vm/vm as vm;
@@ -58,19 +48,32 @@ fn bool_pair(left_label: String, left_value: Bool, right_label: String, right_va
 
 pub fn render() -> String {
   let final_state = vm.run();
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  , moves as move_count
-  , waits as wait_count
-  , alerts as alert_count
-  , ticks as tick_count
-  , checksum as checksum_value
-  , halt_code as halt_value
-  }) = final_state;
+  let .(
+  , pc_value
+  , farmer_side
+  , wolf_side
+  , goat_side
+  , cabbage_side
+  , move_count
+  , wait_count
+  , alert_count
+  , tick_count
+  , checksum_value
+  , halt_value
+  ) =
+    final_state.>select {
+      Pc.get;
+      Farmer.get;
+      Wolf.get;
+      Goat.get;
+      Cabbage.get;
+      Moves.get;
+      Waits.get;
+      Alerts.get;
+      Ticks.get;
+      Checksum.get;
+      Halt_code.get
+    };
   string_concat(
   , "river_bytecode_vm: v1\n"
   , string_concat(

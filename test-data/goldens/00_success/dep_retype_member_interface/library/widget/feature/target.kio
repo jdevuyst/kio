@@ -1,9 +1,9 @@
 module feature/target;
 
-pub(feature) newtype Box[B] : B { pub(feature) constructor pack; pub(feature) projector unpack }
+pub(feature) type { Box[B]: B { pub(feature) mk; pub(feature) get } }
 
-pub newtype Public[B] : B { pub constructor wrap; pub projector value }
+pub type { Public[B]: B { pub mk; pub get } }
 
-pub newtype Hidden : . { constructor conceal; projector inspect }
+pub type { Hidden: . { mk; get } }
 
-pub newtype Opaque : . { constructor create; projector inspect }
+pub type { Opaque: . { mk; get } }

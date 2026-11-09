@@ -1,22 +1,23 @@
 module roster/scoring;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import roster/scenario as scenario;
 import roster/types(
+, Day
+, Demand
+, Fairness_penalty
+, Preference
+, Preference_penalty
+, Rest_conflicts
+, Same_day_conflicts
 , Scorecard
 , Shift
-, {day}
-, {demand}
-, {fairness_penalty}
-, {preference_penalty}
-, {preference}
-, {rest_conflicts}
-, {same_day_conflicts}
-, {skill_shortfalls}
-, {skill}
-, {slot}
-, {total_score}
-, {worker}
+, Skill
+, Skill_shortfalls
+, Slot
+, Total_score
+, Worker
 );
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
@@ -30,22 +31,28 @@ fn both(left: Bool, right: Bool) -> Bool {
   if(left) { right } else { .f }
 }
 
-fn same_worker(left: Shift, right: Shift) -> Bool { eq_i32(left.?{worker}, right.?{worker}) }
+fn same_worker(left: Shift, right: Shift) -> Bool {
+  eq_i32(left.>select { Worker.get }, right.>select { Worker.get })
+}
 
-fn same_day(left: Shift, right: Shift) -> Bool { eq_i32(left.?{day}, right.?{day}) }
+fn same_day(left: Shift, right: Shift) -> Bool {
+  eq_i32(left.>select { Day.get }, right.>select { Day.get })
+}
 
 fn different_slot(left: Shift, right: Shift) -> Bool {
-  if(eq_i32(left.?{slot}, right.?{slot})) { .f } else { .t }
+  if(eq_i32(left.>select { Slot.get }, right.>select { Slot.get })) { .f } else { .t }
 }
 
 fn same_day_conflict(left: Shift, right: Shift) -> Bool {
   both(both(same_worker(left, right), same_day(left, right)), different_slot(left, right))
 }
 
-fn next_day(left: Shift, right: Shift) -> Bool { eq_i32(add_i32(left.?{day}, 1), right.?{day}) }
+fn next_day(left: Shift, right: Shift) -> Bool {
+  eq_i32(add_i32(left.>select { Day.get }, 1), right.>select { Day.get })
+}
 
 fn night_to_morning(left: Shift, right: Shift) -> Bool {
-  both(eq_i32(left.?{slot}, 2), eq_i32(right.?{slot}, 0))
+  both(eq_i32(left.>select { Slot.get }, 2), eq_i32(right.>select { Slot.get }, 0))
 }
 
 fn rest_conflict(left: Shift, right: Shift) -> Bool {
@@ -99,11 +106,21 @@ fn worker_has_skill(worker_id: I32, skill_id: I32) -> Bool {
 }
 
 fn skill_shortfall_for(s: Shift) -> I32 {
-  bool_score(worker_has_skill(s.?{worker}, s.?{skill}), 0, s.?{demand})
+  bool_score(
+  , worker_has_skill(s.>select { Worker.get }, s.>select { Skill.get })
+  , 0
+  , s.>select { Demand.get }
+  )
 }
 
 fn preference_penalty_for(s: Shift) -> I32 {
-  if(eq_i32(s.?{preference}, 0)) { 0 } else if(eq_i32(s.?{preference}, 1)) { 1 } else { 3 }
+  if(eq_i32(s.>select { Preference.get }, 0)) {
+    0
+  } else if(eq_i32(s.>select { Preference.get }, 1)) {
+    1
+  } else {
+    3
+  }
 }
 
 pub rec(loop) fn sum_skill_shortfalls(index: I32, acc: I32) -> I32 {
@@ -149,7 +166,7 @@ rec(loop) fn all_pair_conflicts(i: I32, same_day_acc: I32, rest_acc: I32) -> I32
 pub rec(loop) fn worker_load(worker_id: I32, index: I32, acc: I32) -> I32 {
   if(lt_i32(index, scenario.shift_count())) {
     let item = scenario.shift_at(index);
-    let delta = bool_score(eq_i32(item.?{worker}, worker_id), 1, 0);
+    let delta = bool_score(eq_i32(item.>select { Worker.get }, worker_id), 1, 0);
     recur worker_load(worker_id, add_i32(index, 1), add_i32(acc, delta))
   } else {
     acc
@@ -183,19 +200,22 @@ pub fn scorecard() -> Scorecard {
       )
     , preference_total
     );
-  {
-  , skill_shortfalls = skill_total
-  , same_day_conflicts = same_total
-  , rest_conflicts = rest_total
-  , fairness_penalty = fairness_total_value
-  , preference_penalty = preference_total
-  , total_score = total
-  }
+  (
+  , Skill_shortfalls.mk(skill_total)
+  , Same_day_conflicts.mk(same_total)
+  , Rest_conflicts.mk(rest_total)
+  , Fairness_penalty.mk(fairness_total_value)
+  , Preference_penalty.mk(preference_total)
+  , Total_score.mk(total)
+  )
 }
 
 pub fn roster_is_healthy(card: Scorecard) -> Bool {
   leq_i32(
-  , add_i32(add_i32(card.?{skill_shortfalls}, card.?{same_day_conflicts}), card.?{rest_conflicts})
+  , add_i32(
+    , add_i32(card.>select { Skill_shortfalls.get }, card.>select { Same_day_conflicts.get })
+    , card.>select { Rest_conflicts.get }
+    )
   , 2
   )
 }

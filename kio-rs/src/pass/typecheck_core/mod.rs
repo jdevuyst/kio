@@ -42,10 +42,8 @@
 //! - **`<P: Phase + Clone>`** — for helpers that don't
 //!   pattern-match on Type variants beyond what every phase has
 //!   (`right_fold_sum`, `intrinsic_call`).
-//! - **`<P: Phase<TypeLabelSugar = Never> [+ ItemLabels = Never]>`** — for
-//!   helpers that pattern-match on
-//!   `Type::LabelSugar` (and `Item::Labels` for the module-level
-//!   walkers) and discharge each via `match *ext {}`. Lowered and
+//! - **`<P: Phase [+ ItemLabels = Never]>`** — for module-level
+//!   walkers that discharge `Item::Labels` via `match *ext {}`. Lowered and
 //!   Prime both satisfy these bounds; Surface and Desugared
 //!   aren't typer input phases.
 //! - **`<P: DeclarationPhase>`** — for declaration and signature checks
@@ -131,8 +129,8 @@ pub(crate) use goals::{
     IsolatedSpecialization, IsolatedSpecializationContext, IsolatedSpecializationContextBuilder,
     PreparedCloseType, PreparedGoalClose, PreparedGoalCommit, PreparedTypeShell,
     ProjectedReflectionCandidate, ProjectedTypeCloseScratch, PublicationGoalEscape,
-    PublicationGoalInput, ReservedGoalRef, ReservedParentHeaderExport, RigidScope, ScopedType,
-    ScopedTypeBinaryKind, ScopedTypeEdge, contains_goal_beneath_forall,
+    PublicationGoalInput, ReservedGoalRef, ReservedParentHeaderExport, RigidMismatchContext,
+    RigidScope, ScopedType, ScopedTypeBinaryKind, ScopedTypeEdge, contains_goal_beneath_forall,
     solve_canonical_specialization_by_name, solve_scoped_specialization_by_name,
 };
 #[cfg(all(feature = "surface", test))]
@@ -197,6 +195,8 @@ pub use variance::{
 };
 
 mod env;
+#[cfg(feature = "surface")]
+pub(crate) use env::TypeBinderId;
 pub use env::{
     Local, ModuleEnv, PendingRecOrderState, TypeCtx, module_path_key, populate_cross_module_imports,
 };
@@ -219,8 +219,6 @@ pub use apply::{apply_mono, check_call_against, synth_call};
 
 mod synth;
 pub(crate) use synth::newtype_member_scheme_in_routed_module;
-#[cfg(feature = "surface")]
-pub(crate) use synth::synth_value_arg_interned;
 #[cfg(feature = "surface")]
 pub(crate) use synth::unify_pattern_with_holes_state;
 pub use synth::{
@@ -425,9 +423,8 @@ where
 // TyperPhase + Typer traits
 // =========================================================================
 
-/// Phases the typer can run against. Lowered has the elaboration-
-/// bearing variants (`Expr::UserMacro`, `Expr::Elaborator`)
-/// inhabited; Prime has them all uninhabited.
+/// Phases the typer can run against. `Expr::UserMacro` is inhabited at
+/// Lowered and uninhabited at Prime.
 ///
 /// `Elaborations` carries the per-phase completion side channel. At Lowered it
 /// is the full `typecheck_full::Elaborations` table; at Prime it is the narrower
@@ -439,13 +436,9 @@ where
 /// `synth_expr` (Path, Call, FnExpr, Let, literals) live in
 /// [`typecheck_core`] and are shared across phases via helpers
 /// like [`synth_let`] / [`synth_fn`] / [`synth_call`] (which call
-/// back into `T::synth_expr` for sub-expressions). The elaboration
-/// arms — `Elaborator` / `UserMacro` — are inhabited
-/// only at Lowered; the Lowered `Typer` impl routes user macros through
-/// the ordinary value cursor and field syntax to
-/// `synth_field_access` / `synth_field_update`,
-/// while the Prime impl discharges them via
-/// `match *ext {}`.
+/// back into `T::synth_expr` for sub-expressions). The Lowered `Typer`
+/// routes user macros through the ordinary value cursor; the Prime impl
+/// discharges that uninhabited variant via `match *ext {}`.
 pub trait TyperPhase:
     DeclarationPhase + crate::ast::Phase<FnBody = crate::ast::Expr<Self>>
 {
@@ -537,7 +530,7 @@ where
         tcx: &mut TypeCtx<'m, '_, P>,
     ) -> Result<Synth<P>, Error>
     where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+        P: crate::ast::Phase + Clone,
     {
         apply::synth_call(callee, args, site, tcx)
     }
@@ -554,16 +547,14 @@ where
         tcx: &mut TypeCtx<'m, '_, P>,
     ) -> Result<InternedType<P>, Error>
     where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+        P: crate::ast::Phase + Clone,
     {
         apply::check_call_against_interned(callee, args, expected, site, tcx)
     }
 
     /// Bidirectional check: verify `e` has type `expected`.
-    /// Per-phase because the `Expr::FnExpr` bidirectional check,
-    /// `Expr::UserMacro` (`iso` / `into` / `onto` / `align` /
-    /// `ease`) and `Expr::Elaborator` (field access / update) paths all
-    /// need elaboration-aware machinery at Lowered.
+    /// Per-phase because function and user-macro checking use
+    /// elaboration-aware machinery at Lowered.
     fn check_value_against_interned<'m>(
         e: &'m crate::ast::Expr<P>,
         expected: &InternedType<P>,
@@ -646,6 +637,14 @@ where
         resolved: InternedType<P>,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
+
+    /// Retain the checked result of a proof-gated lambda for runtime erasure.
+    fn record_proof_fn_body_type<'m>(
+        _fn_site: crate::ast::ExpressionSite,
+        _resolved: InternedType<P>,
+        _tcx: &mut TypeCtx<'m, '_, P>,
+    ) {
+    }
 
     /// Record a constructor/projector occurrence at its exact terminal
     /// newtype identity. This differs from [`HeaderRecording::record_binder_at`]'s
@@ -801,7 +800,7 @@ pub fn default_check_value_against<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     if let crate::ast::Expr::Path { segments, .. } = e
         && segments.len() == 1
@@ -887,14 +886,14 @@ where
     // as let, minus the binder: synth and discard the value (it must
     // be `.`), then check the body against `expected`.
     if let crate::ast::Expr::Seq { value, body, .. } = e {
-        let value_ty = <P::Typer as Typer<P>>::synth_expr(value, tcx)?.into_mono()?;
-        if !matches!(value_ty, crate::ast::Type::Unit { .. }) {
+        let value_ty = <P::Typer as Typer<P>>::synth_expr(value, tcx)?.into_mono_interned()?;
+        if !synth::statement_type_is_unit(&value_ty, tcx) {
             return Err(Error::type_(
                 value.span(),
                 format!(
                     "expression-statement `e;` must have type `.`, got `{}`. Use `let _ = e;` \
                      to discard a non-unit value deliberately",
-                    display_type(&value_ty)
+                    display_type(value_ty.as_type())
                 ),
             ));
         }

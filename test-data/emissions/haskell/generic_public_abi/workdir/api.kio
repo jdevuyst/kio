@@ -10,27 +10,21 @@ host fn inspect[*G](callback: [X][Y] G[X & Y] -> G[X & Y]);
 
 host fn shadow[A](callback: [A] (A & A) -> (A & A));
 
-newtype Comptime_a : . { constructor mk_comptime_a; projector un_comptime_a }
+type { Comptime_a: . { mk; get } }
 
-pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+pub type { Pair[A][B]: A & B { pub mk; pub get } }
 
-pub newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack }
+pub type { Pack[A] <U>: A & U { pub mk; pub get } }
 
-pub newtype Tagged[H][M] : H & M { pub constructor mk_tagged; pub projector un_tagged }
+pub type { Tagged[H][M]: H & M { pub mk; pub get } }
 
-pub newtype Envelope[R] <Payload> : R & Payload {
-  constructor mk_envelope;
-  pub projector un_envelope
-  }
+pub type { Envelope[R] <Payload>: R & Payload { mk; pub get } }
 
 pub fn preserve_callback[Result](value: Result & ([X] X -> X)) -> Result & ([X] X -> X) { value }
 
 host fn relay_pack[A](value: Pack[A] & A) -> A | Pack[A];
 
-pub newtype Pair_endo[*F][A][B] : F[A & B] -> F[A & B] {
-  pub constructor mk_pair_endo;
-  pub projector apply_pair_endo
-  }
+pub type { Pair_endo[*F][A][B]: F[A & B] -> F[A & B] { pub mk; pub get } }
 
 pub fn exchange_pair[A][B](pair: A & B) -> B | A { exchange(pair) }
 
@@ -43,10 +37,10 @@ pub fn relay_packed[A](value: Pack[A] & A) -> A | Pack[A] { relay_pack(value) }
 pub fn keep_nested_pack(value: Pack[. & .]) -> Pack[. & .] { value }
 
 pub fn apply_given[*F][A][B](dictionary: Pair_endo[F][A][B], value: F[A & B]) -> F[A & B] {
-  Pair_endo.apply_pair_endo[F][A][B](dictionary)(value)
+  Pair_endo.get[F][A][B](dictionary)(value)
 }
 
 pub fn run_pair_endo[*F][A][B](value: F[A & B]) -> F[A & B] {
-  let dictionary = Pair_endo.mk_pair_endo[F][A][B](.(item) { item });
-  Pair_endo.apply_pair_endo[F][A][B](dictionary)(value)
+  let dictionary = Pair_endo.mk[F][A][B](.(item) { item });
+  Pair_endo.get[F][A][B](dictionary)(value)
 }

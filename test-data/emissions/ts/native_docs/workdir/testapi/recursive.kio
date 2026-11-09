@@ -1,8 +1,8 @@
 module testapi/recursive;
 
-pub newtype Hidden[A] : . { constructor make_hidden; projector read_hidden }
+pub type { Hidden[A]: . { mk; get } }
 
 /// STRUCTURAL-DOC Root uses an existing recursive structural declaration.
-pub rec newtype Root : Hidden[Root] { pub constructor make_root; pub projector read_root }
+pub rec type { Root: Hidden[Root] { pub mk; pub get } }
 
 pub fn keep(value: Root) -> Root { value }

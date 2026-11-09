@@ -8,20 +8,20 @@ import host_descriptor(host_type_id, mk_host_fn, mk_host_id);
 import host_descriptor(mk_roleless_host_type, param_kinds_cons, param_kinds_nil, role_from_name);
 import hostrec(serve_default, test_bool_default);
 import loader(
-, {apply}
-, {hostfn_in}
-, {i32_in}
-, {i32_out}
-, {left_in}
-, {lookup}
-, {pair_in}
-, {pair_out}
-, {right_in}
-, {str_in}
-, {str_out}
-, {sum_is_left}
-, {sum_payload}
-, {unit_in}
+, Apply
+, Hostfn_in
+, I32_in
+, I32_out
+, Left_in
+, Lookup
+, Pair_in
+, Pair_out
+, Right_in
+, Str_in
+, Str_out
+, Sum_is_left
+, Sum_payload
+, Unit_in
 );
 import loader(Diag, Image, Loaded, Lr_diag, Lr_image, Surface);
 import loader(Host_adapter, Host_fn_binding, Host_fn_bindings, Hostfn, Hostfns);
@@ -32,6 +32,7 @@ import loader(hostfn_descriptor, hostfn_groups, un_hostfns);
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import prime(Group_slots, group_slots_cons, group_slots_nil, un_group_slots);
 import result(Call_result, call_done, call_stuck);
@@ -1073,13 +1074,18 @@ fn failure_string(message: String) -> String { runner_failure(message); ""[Strin
 // Apply one ordinary Surface stage, preserving an earlier diagnostic.
 fn apply_result[P](surf: Surface[P], result: P | Diag, arg: P) -> P | Diag {
   match(result) {
-    (.(f: P) { surf.?{apply}((f, arg)) }, .(d: Diag) { widen_sum(d)[P | Diag] })
+    (
+    , .(f: P) {
+        (surf.>select { Apply.get[P] })((f, arg))
+      }
+    , .(d: Diag) { widen_sum(d)[P | Diag] }
+    )
   }
 }
 
 // Look the export up and apply it to one argument.
 fn call_export[P](surf: Surface[P], name: String, arg: P) -> P | Diag {
-  apply_result(surf, surf.?{lookup}(name), arg)
+  apply_result(surf, (surf.>select { Lookup.get[P] })(name), arg)
 }
 
 // Render a call's i32 result as its printed line.
@@ -1087,7 +1093,7 @@ fn i32_line[P](surf: Surface[P], r: P | Diag) -> String {
   match(r) {
     (
     , .(v: P) {
-        match(surf.?{i32_out}(v)) {
+        match((surf.>select { I32_out.get[P] })(v)) {
           (
           , .(n: I32) { string_concat(int_to_string(n), "\n"[String]) }
           , .(d: Diag) { failure_string(diag_line("i32 result — "[String], d)) }
@@ -1104,7 +1110,7 @@ fn str_line[P](surf: Surface[P], r: P | Diag) -> String {
   match(r) {
     (
     , .(v: P) {
-        match(surf.?{str_out}(v)) {
+        match((surf.>select { Str_out.get[P] })(v)) {
           (
           , .(s: String) { string_concat(s, "\n"[String]) }
           , .(d: Diag) { failure_string(diag_line("string result — "[String], d)) }
@@ -1118,17 +1124,24 @@ fn str_line[P](surf: Surface[P], r: P | Diag) -> String {
 
 // export-namespace-roundtrip: `answer()` then `echo("namespace-utils")`.
 fn script_namespace[P](surf: Surface[P]) {
-  print(i32_line(surf, call_export(surf, "testapi/main.answer"[String], surf.?{unit_in})));
+  print(i32_line(
+  , surf
+  , call_export(surf, "testapi/main.answer"[String], surf.>select { Unit_in.get[P] })
+  ));
   print(str_line(
   , surf
-  , call_export(surf, "testapi/utils.echo"[String], surf.?{str_in}("namespace-utils"[String]))
+  , call_export(
+    , surf
+    , "testapi/utils.echo"[String]
+    , (surf.>select { Str_in.get[P] })("namespace-utils"[String])
+    )
   ))
 }
 
 // export-callback-roundtrip: `apply_twice((n) => n + 3, 10)` then
 // `make_step(4)` applied to `5`.
 fn script_callback[P](surf: Surface[P]) {
-  match(surf.?{hostfn_in}(cb_add3_descriptor())) {
+  match((surf.>select { Hostfn_in.get[P] })(cb_add3_descriptor())) {
     (
     , .(cb: P) {
         print(i32_line(
@@ -1136,7 +1149,7 @@ fn script_callback[P](surf: Surface[P]) {
         , call_export(
           , surf
           , "testapi/main.apply_twice"[String]
-          , surf.?{pair_in}((cb, surf.?{i32_in}(10[I32])))
+          , (surf.>select { Pair_in.get[P] })((cb, (surf.>select { I32_in.get[P] })(10[I32])))
           )
         ))
       }
@@ -1144,10 +1157,15 @@ fn script_callback[P](surf: Surface[P]) {
     )
   };
   let make_step_result =
-    call_export(surf, "testapi/main.make_step"[String], surf.?{i32_in}(4[I32]));
+    call_export(surf, "testapi/main.make_step"[String], (surf.>select { I32_in.get[P] })(4[I32]));
   match(make_step_result) {
     (
-    , .(step: P) { print(i32_line(surf, surf.?{apply}((step, surf.?{i32_in}(5[I32]))))) }
+    , .(step: P) {
+        print(i32_line(
+        , surf
+        , (surf.>select { Apply.get[P] })((step, (surf.>select { I32_in.get[P] })(5[I32])))
+        ))
+      }
     , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
@@ -1155,11 +1173,21 @@ fn script_callback[P](surf: Surface[P]) {
 
 // export-module-roundtrip: `api.tag()`, `api.value()`, `api.echo(...)`.
 fn script_module[P](surf: Surface[P]) {
-  print(str_line(surf, call_export(surf, "testapi/api.tag"[String], surf.?{unit_in})));
-  print(i32_line(surf, call_export(surf, "testapi/api.value"[String], surf.?{unit_in})));
   print(str_line(
   , surf
-  , call_export(surf, "testapi/api.echo"[String], surf.?{str_in}("module-echo"[String]))
+  , call_export(surf, "testapi/api.tag"[String], surf.>select { Unit_in.get[P] })
+  ));
+  print(i32_line(
+  , surf
+  , call_export(surf, "testapi/api.value"[String], surf.>select { Unit_in.get[P] })
+  ));
+  print(str_line(
+  , surf
+  , call_export(
+    , surf
+    , "testapi/api.echo"[String]
+    , (surf.>select { Str_in.get[P] })("module-echo"[String])
+    )
   ))
 }
 
@@ -1171,7 +1199,10 @@ fn script_multilabel[P](surf: Surface[P]) {
     call_export(
     , surf
     , "testapi/main.say"[String]
-    , surf.?{pair_in}((surf.?{i32_in}(42[I32]), surf.?{str_in}("shown\n"[String])))
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { I32_in.get[P] })(42[I32])
+      , (surf.>select { Str_in.get[P] })("shown\n"[String])
+      ))
     );
   match(say_result) {
     (.(_done: P) { () }, .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) })
@@ -1180,21 +1211,24 @@ fn script_multilabel[P](surf: Surface[P]) {
     call_export(
     , surf
     , "testapi/main.echo_pair"[String]
-    , surf.?{pair_in}((surf.?{i32_in}(88[I32]), surf.?{str_in}("99"[String])))
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { I32_in.get[P] })(88[I32])
+      , (surf.>select { Str_in.get[P] })("99"[String])
+      ))
     );
   match(echo_pair_result) {
     (
     , .(row: P) {
-        match(surf.?{pair_out}(row)) {
+        match((surf.>select { Pair_out.get[P] })(row)) {
           (
           , .(a: P, b: P) {
-              match(surf.?{i32_out}(a)) {
+              match((surf.>select { I32_out.get[P] })(a)) {
                 (
                 , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
                 , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
                 )
               };
-              match(surf.?{str_out}(b)) {
+              match((surf.>select { Str_out.get[P] })(b)) {
                 (
                 , .(s: String) { print(string_concat(s, "\n"[String])) }
                 , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
@@ -1208,7 +1242,8 @@ fn script_multilabel[P](surf: Surface[P]) {
     , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   };
-  let a_mk_result = call_export(surf, "testapi/main.A.mk"[String], surf.?{i32_in}(111[I32]));
+  let a_mk_result =
+    call_export(surf, "testapi/main.A.mk"[String], (surf.>select { I32_in.get[P] })(111[I32]));
   match(a_mk_result) {
     (
     , .(a: P) {
@@ -1233,24 +1268,27 @@ fn script_poly[P](surf: Surface[P]) {
   let poly_string =
     apply_result(
     , surf
-    , call_export(surf, "testapi.poly_echo"[String], surf.?{unit_in})
-    , surf.?{str_in}("poly-string"[String])
+    , call_export(surf, "testapi.poly_echo"[String], surf.>select { Unit_in.get[P] })
+    , (surf.>select { Str_in.get[P] })("poly-string"[String])
     );
   print(str_line(surf, poly_string));
   let poly_i32 =
     apply_result(
     , surf
-    , call_export(surf, "testapi.poly_echo"[String], surf.?{unit_in})
-    , surf.?{i32_in}(42[I32])
+    , call_export(surf, "testapi.poly_echo"[String], surf.>select { Unit_in.get[P] })
+    , (surf.>select { I32_in.get[P] })(42[I32])
     );
   print(i32_line(surf, poly_i32));
-  let keep_left_a = call_export(surf, "testapi.keep_left"[String], surf.?{unit_in});
-  let keep_left_b = apply_result(surf, keep_left_a, surf.?{unit_in});
+  let keep_left_a = call_export(surf, "testapi.keep_left"[String], surf.>select { Unit_in.get[P] });
+  let keep_left_b = apply_result(surf, keep_left_a, surf.>select { Unit_in.get[P] });
   let keep_left_result =
     apply_result(
     , surf
     , keep_left_b
-    , surf.?{pair_in}((surf.?{str_in}("left"[String]), surf.?{i32_in}(99[I32])))
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { Str_in.get[P] })("left"[String])
+      , (surf.>select { I32_in.get[P] })(99[I32])
+      ))
     );
   print(str_line(surf, keep_left_result))
 }
@@ -1262,33 +1300,36 @@ fn script_nested_product[P](surf: Surface[P]) {
     call_export(
     , surf
     , "testapi/main.make"[String]
-    , surf.?{pair_in}((
-      , surf.?{str_in}("nest"[String])
-      , surf.?{pair_in}((surf.?{i32_in}(7[I32]), surf.?{i32_in}(9[I32])))
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { Str_in.get[P] })("nest"[String])
+      , (surf.>select { Pair_in.get[P] })((
+        , (surf.>select { I32_in.get[P] })(7[I32])
+        , (surf.>select { I32_in.get[P] })(9[I32])
+        ))
       ))
     );
   match(nested_product_result) {
     (
     , .(out: P) {
-        match(surf.?{pair_out}(out)) {
+        match((surf.>select { Pair_out.get[P] })(out)) {
           (
           , .(head: P, rest: P) {
-              match(surf.?{str_out}(head)) {
+              match((surf.>select { Str_out.get[P] })(head)) {
                 (
                 , .(s: String) { print(string_concat(s, "\n"[String])) }
                 , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                 )
               };
-              match(surf.?{pair_out}(rest)) {
+              match((surf.>select { Pair_out.get[P] })(rest)) {
                 (
                 , .(x: P, y: P) {
-                    match(surf.?{i32_out}(x)) {
+                    match((surf.>select { I32_out.get[P] })(x)) {
                       (
                       , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
                       , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
                       )
                     };
-                    match(surf.?{i32_out}(y)) {
+                    match((surf.>select { I32_out.get[P] })(y)) {
                       (
                       , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
                       , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
@@ -1320,7 +1361,7 @@ fn compound_input_value[P](r: P | Diag, consume: P -> .) {
 }
 
 fn compound_input_pair[P](surf: Surface[P], value: P, consume: (P & P) -> .) {
-  match(surf.?{pair_out}(value)) {
+  match((surf.>select { Pair_out.get[P] })(value)) {
     (consume, .(d: Diag) { runner_failure(diag_line("compound pair — "[String], d)) })
   }
 }
@@ -1348,7 +1389,7 @@ fn compound_input_outer[P](surf: Surface[P], value: P) {
 }
 
 fn compound_input_arm[P](surf: Surface[P], value: P, expected_left: Bool, consume: P -> .) {
-  match(surf.?{sum_is_left}(value)) {
+  match((surf.>select { Sum_is_left.get[P] })(value)) {
     (
     , .(is_left: Bool) {
         if(is_left) {
@@ -1362,7 +1403,7 @@ fn compound_input_arm[P](surf: Surface[P], value: P, expected_left: Bool, consum
         } else {
           ()
         };
-        compound_input_value(surf.?{sum_payload}(value), consume)
+        compound_input_value((surf.>select { Sum_payload.get[P] })(value), consume)
       }
     , .(d: Diag) { runner_failure(diag_line("compound sum — "[String], d)) }
     )
@@ -1382,19 +1423,22 @@ fn script_compound_input_once[P](surf: Surface[P]) {
       )
     };
   compound_input_value(
-  , call_export(surf, "testapi/main.direct"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.direct"[String], surf.>select { Unit_in.get[P] })
   , print_pair
   );
   compound_input_value(
-  , surf.?{hostfn_in}(cb_pair_descriptor())
+  , (surf.>select { Hostfn_in.get[P] })(cb_pair_descriptor())
   , .(callback: P) {
       compound_input_value(call_export(surf, "testapi/main.callback"[String], callback), print_pair)
     }
   );
   let outer_args =
-    surf.?{pair_in}((
-    , surf.?{str_in}("nest"[String])
-    , surf.?{pair_in}((surf.?{i32_in}(11[I32]), surf.?{i32_in}(13[I32])))
+    (surf.>select { Pair_in.get[P] })((
+    , (surf.>select { Str_in.get[P] })("nest"[String])
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { I32_in.get[P] })(11[I32])
+      , (surf.>select { I32_in.get[P] })(13[I32])
+      ))
     ));
   compound_input_value(
   , call_export(surf, "testapi/main.make_outer"[String], outer_args)
@@ -1406,7 +1450,7 @@ fn script_compound_input_once[P](surf: Surface[P]) {
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.first"[String], surf.?{i32_in}(17[I32]))
+  , call_export(surf, "testapi/main.first"[String], (surf.>select { I32_in.get[P] })(17[I32]))
   , .(choice: P) {
       compound_input_value(
       , call_export(surf, "testapi/main.echo_choice"[String], choice)
@@ -1421,7 +1465,11 @@ fn script_compound_input_once[P](surf: Surface[P]) {
       )
     }
   );
-  let middle_args = surf.?{pair_in}((surf.?{i32_in}(19[I32]), surf.?{i32_in}(23[I32])));
+  let middle_args =
+    (surf.>select { Pair_in.get[P] })((
+    , (surf.>select { I32_in.get[P] })(19[I32])
+    , (surf.>select { I32_in.get[P] })(23[I32])
+    ));
   compound_input_value(
   , call_export(surf, "testapi/main.middle"[String], middle_args)
   , .(choice: P) {
@@ -1446,9 +1494,12 @@ fn script_compound_input_once[P](surf: Surface[P]) {
     }
   );
   let last_args =
-    surf.?{pair_in}((
-    , surf.?{str_in}("choice"[String])
-    , surf.?{pair_in}((surf.?{i32_in}(29[I32]), surf.?{i32_in}(31[I32])))
+    (surf.>select { Pair_in.get[P] })((
+    , (surf.>select { Str_in.get[P] })("choice"[String])
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { I32_in.get[P] })(29[I32])
+      , (surf.>select { I32_in.get[P] })(31[I32])
+      ))
     ));
   compound_input_value(
   , call_export(surf, "testapi/main.last"[String], last_args)
@@ -1475,14 +1526,21 @@ fn script_compound_input_once[P](surf: Surface[P]) {
   );
   print(str_line(
   , surf
-  , call_export(surf, "testapi/main.echo_text"[String], surf.?{str_in}("atomic"[String]))
+  , call_export(
+    , surf
+    , "testapi/main.echo_text"[String]
+    , (surf.>select { Str_in.get[P] })("atomic"[String])
+    )
   ))
 }
 
 // export-newtype-scalar-roundtrip: `bump(Wrap(7))` — the newtype erases,
 // so the payload rides as the i32.
 fn script_newtype_scalar[P](surf: Surface[P]) {
-  print(i32_line(surf, call_export(surf, "testapi/main.bump"[String], surf.?{i32_in}(7[I32]))))
+  print(i32_line(
+  , surf
+  , call_export(surf, "testapi/main.bump"[String], (surf.>select { I32_in.get[P] })(7[I32]))
+  ))
 }
 
 // export-newtype-sum-roundtrip: `first_or(0, pack(7, "hi"))`.
@@ -1491,7 +1549,10 @@ fn script_newtype_sum[P](surf: Surface[P]) {
     call_export(
     , surf
     , "testapi/main.pack"[String]
-    , surf.?{pair_in}((surf.?{i32_in}(7[I32]), surf.?{str_in}("hi"[String])))
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { I32_in.get[P] })(7[I32])
+      , (surf.>select { Str_in.get[P] })("hi"[String])
+      ))
     );
   match(pack_result) {
     (
@@ -1501,7 +1562,7 @@ fn script_newtype_sum[P](surf: Surface[P]) {
         , call_export(
           , surf
           , "testapi/main.first_or"[String]
-          , surf.?{pair_in}((surf.?{i32_in}(0[I32]), packed))
+          , (surf.>select { Pair_in.get[P] })(((surf.>select { I32_in.get[P] })(0[I32]), packed))
           )
         ))
       }
@@ -1513,20 +1574,33 @@ fn script_newtype_sum[P](surf: Surface[P]) {
 // export-curried-facade: `pick("ku")("rz")` then `last(1)(2, 3)` — one
 // application per value group.
 fn script_curried[P](surf: Surface[P]) {
-  let pick_result = call_export(surf, "testapi/main.pick"[String], surf.?{str_in}("ku"[String]));
+  let pick_result =
+    call_export(surf, "testapi/main.pick"[String], (surf.>select { Str_in.get[P] })("ku"[String]));
   match(pick_result) {
     (
-    , .(picked: P) { print(str_line(surf, surf.?{apply}((picked, surf.?{str_in}("rz"[String]))))) }
+    , .(picked: P) {
+        print(str_line(
+        , surf
+        , (surf.>select { Apply.get[P] })((picked, (surf.>select { Str_in.get[P] })("rz"[String])))
+        ))
+      }
     , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   };
-  let last_result = call_export(surf, "testapi/main.last"[String], surf.?{i32_in}(1[I32]));
+  let last_result =
+    call_export(surf, "testapi/main.last"[String], (surf.>select { I32_in.get[P] })(1[I32]));
   match(last_result) {
     (
     , .(lasted: P) {
         print(i32_line(
         , surf
-        , surf.?{apply}((lasted, surf.?{pair_in}((surf.?{i32_in}(2[I32]), surf.?{i32_in}(3[I32])))))
+        , (surf.>select { Apply.get[P] })((
+          , lasted
+          , (surf.>select { Pair_in.get[P] })((
+            , (surf.>select { I32_in.get[P] })(2[I32])
+            , (surf.>select { I32_in.get[P] })(3[I32])
+            ))
+          ))
         ))
       }
     , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
@@ -1535,34 +1609,34 @@ fn script_curried[P](surf: Surface[P]) {
 }
 
 // export-type-roundtrip: the exported newtype's members —
-// `Pair.mk_pair(("export-type-left", "export-type-right"))` then
-// `Pair.un_pair` back to the two components.
+// `Pair.mk(("export-type-left", "export-type-right"))` then
+// `Pair.get` back to the two components.
 fn script_type_roundtrip[P](surf: Surface[P]) {
   let pair_mk_result =
     call_export(
     , surf
-    , "testapi/types.Pair.mk_pair"[String]
-    , surf.?{pair_in}((
-      , surf.?{str_in}("export-type-left"[String])
-      , surf.?{str_in}("export-type-right"[String])
+    , "testapi/types.Pair.mk"[String]
+    , (surf.>select { Pair_in.get[P] })((
+      , (surf.>select { Str_in.get[P] })("export-type-left"[String])
+      , (surf.>select { Str_in.get[P] })("export-type-right"[String])
       ))
     );
   match(pair_mk_result) {
     (
     , .(boxed: P) {
-        match(call_export(surf, "testapi/types.Pair.un_pair"[String], boxed)) {
+        match(call_export(surf, "testapi/types.Pair.get"[String], boxed)) {
           (
           , .(payload: P) {
-              match(surf.?{pair_out}(payload)) {
+              match((surf.>select { Pair_out.get[P] })(payload)) {
                 (
                 , .(l: P, r: P) {
-                    match(surf.?{str_out}(l)) {
+                    match((surf.>select { Str_out.get[P] })(l)) {
                       (
                       , .(a: String) { print(string_concat(a, "\n"[String])) }
                       , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                       )
                     };
-                    match(surf.?{str_out}(r)) {
+                    match((surf.>select { Str_out.get[P] })(r)) {
                       (
                       , .(b: String) { print(string_concat(b, "\n"[String])) }
                       , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
@@ -1594,10 +1668,10 @@ fn opaque_print_pair[P](surf: Surface[P], result: P | Diag) {
       , surf
       , value
       , .(left: P, right: P) {
-          match(surf.?{i32_out}(left)) {
+          match((surf.>select { I32_out.get[P] })(left)) {
             (
             , .(a: I32) {
-                match(surf.?{i32_out}(right)) {
+                match((surf.>select { I32_out.get[P] })(right)) {
                   (
                   , .(b: I32) {
                       print(string_concat(
@@ -1622,11 +1696,15 @@ fn opaque_print_pair[P](surf: Surface[P], result: P | Diag) {
 // and box_get above are its explicit storage operations. Surface constructors
 // below therefore build the host-origin payload before it enters the guest.
 fn script_opaque_product[P](surf: Surface[P]) {
-  let host = surf.?{pair_in}((surf.?{i32_in}(11[I32]), surf.?{i32_in}(17[I32])));
+  let host =
+    (surf.>select { Pair_in.get[P] })((
+    , (surf.>select { I32_in.get[P] })(11[I32])
+    , (surf.>select { I32_in.get[P] })(17[I32])
+    ));
   opaque_print_pair(surf, call_export(surf, "testapi/main.direct"[String], host));
   opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"[String], host));
   compound_input_value(
-  , call_export(surf, "testapi/main.make"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.make"[String], surf.>select { Unit_in.get[P] })
   , .(kio: P) {
       opaque_print_pair(surf, call_export(surf, "testapi/main.direct"[String], kio));
       opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"[String], kio))
@@ -1636,11 +1714,11 @@ fn script_opaque_product[P](surf: Surface[P]) {
 
 fn script_generic_nominal_opaque[P](surf: Surface[P]) {
   compound_input_value(
-  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"[String], surf.?{i32_in}(37[I32]))
+  , call_export(surf, "testapi/main.Wrapped.mk"[String], (surf.>select { I32_in.get[P] })(37[I32]))
   , .(nominal: P) { print(i32_line(surf, call_export(surf, "testapi/main.read"[String], nominal))) }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make"[String], surf.?{i32_in}(61[I32]))
+  , call_export(surf, "testapi/main.make"[String], (surf.>select { I32_in.get[P] })(61[I32]))
   , .(kio: P) {
       print(i32_line(surf, call_export(surf, "testapi/main.read"[String], kio)));
       print(i32_line(surf, call_export(surf, "testapi/main.unwrap"[String], kio)))
@@ -1651,29 +1729,37 @@ fn script_generic_nominal_opaque[P](surf: Surface[P]) {
 fn script_opaque_compound[P](surf: Surface[P]) {
   print(i32_line(
   , surf
-  , call_export(surf, "testapi/main.read_sum"[String], surf.?{left_in}(surf.?{i32_in}(19[I32])))
+  , call_export(
+    , surf
+    , "testapi/main.read_sum"[String]
+    , (surf.>select { Left_in.get[P] })((surf.>select { I32_in.get[P] })(19[I32]))
+    )
   ));
   print(i32_line(
   , surf
-  , call_export(surf, "testapi/main.read_sum"[String], surf.?{right_in}(surf.?{unit_in}))
+  , call_export(
+    , surf
+    , "testapi/main.read_sum"[String]
+    , (surf.>select { Right_in.get[P] })(surf.>select { Unit_in.get[P] })
+    )
   ));
   compound_input_value(
-  , call_export(surf, "testapi/main.make_sum"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_sum"[String], surf.>select { Unit_in.get[P] })
   , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"[String], value))) }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_empty"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_empty"[String], surf.>select { Unit_in.get[P] })
   , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"[String], value))) }
   );
   compound_input_value(
-  , surf.?{hostfn_in}(opaque_step_descriptor())
+  , (surf.>select { Hostfn_in.get[P] })(opaque_step_descriptor())
   , .(host: P) {
       print(i32_line(
       , surf
       , call_export(
         , surf
         , "testapi/main.call"[String]
-        , surf.?{pair_in}((host, surf.?{i32_in}(31[I32])))
+        , (surf.>select { Pair_in.get[P] })((host, (surf.>select { I32_in.get[P] })(31[I32])))
         )
       ));
       print(i32_line(
@@ -1681,33 +1767,37 @@ fn script_opaque_compound[P](surf: Surface[P]) {
       , call_export(
         , surf
         , "testapi/main.call"[String]
-        , surf.?{pair_in}((host, surf.?{i32_in}(43[I32])))
+        , (surf.>select { Pair_in.get[P] })((host, (surf.>select { I32_in.get[P] })(43[I32])))
         )
       ))
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_callable"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_callable"[String], surf.>select { Unit_in.get[P] })
   , .(value: P) {
       print(i32_line(
       , surf
       , call_export(
         , surf
         , "testapi/main.call"[String]
-        , surf.?{pair_in}((value, surf.?{i32_in}(47[I32])))
+        , (surf.>select { Pair_in.get[P] })((value, (surf.>select { I32_in.get[P] })(47[I32])))
         )
       ))
     }
   );
-  let payload = surf.?{pair_in}((surf.?{i32_in}(41[I32]), surf.?{i32_in}(43[I32])));
+  let payload =
+    (surf.>select { Pair_in.get[P] })((
+    , (surf.>select { I32_in.get[P] })(41[I32])
+    , (surf.>select { I32_in.get[P] })(43[I32])
+    ));
   compound_input_value(
-  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"[String], payload)
+  , call_export(surf, "testapi/main.Wrapped.mk"[String], payload)
   , .(nominal: P) {
       opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"[String], nominal))
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_nominal"[String], surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_nominal"[String], surf.>select { Unit_in.get[P] })
   , .(value: P) {
       opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"[String], value))
     }
@@ -1781,7 +1871,7 @@ fn run_protocol_main(im: Image) {
             call_export(
             , surf
             , string_concat(protocol_entry_module(), ".main"[String])
-            , surf.?{unit_in}
+            , surf.>select { Unit_in.get[P] }
             );
           match(main_result) {
             (

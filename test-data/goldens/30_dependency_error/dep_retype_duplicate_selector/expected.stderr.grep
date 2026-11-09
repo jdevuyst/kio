@@ -1,1 +1,4 @@
-source newtype `widget/store.Token` is selected more than once
+^widget\.dep\.kio:8:1: error:
+source newtype `widget/store\.Token` is selected more than once
+^7[[:space:]]*\| retype widget/store\.Token to core/store\.Token;
+`widget/store\.Token` was first selected here

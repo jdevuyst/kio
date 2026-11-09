@@ -10,7 +10,7 @@ This case study is the reference-grade walkthrough: it covers the *whole*
 public surface of the library, explains the structural glue each optic is
 built from, and works through every `equiv` law that pins the library's
 behavior. For the structural building blocks it leans on, the topic guides
-[Structural products and row types](../guides/products.md),
+[Row-typed records with ordinary products](../guides/products.md),
 [Structural sums and pattern matching](../guides/sums.md), and
 [Operators](../guides/operators.md) are the gentler
 companions — read those first if products, sums, or `op` bindings are new to
@@ -569,36 +569,35 @@ tour's `((I32 & String) & I32)` sample value.
 
 ### The row-update operator
 
-The tour also binds a per-label row-update setter to a `%%` operator. This is
+The tour also binds a field setter to a `%%` operator. This is
 the concrete bridge between optics and **row types**: a row-typed field setter
 is exactly the "set" half of a lens, specialized to a named field. It builds
-on an anonymous `labels` block and the `narrow_prod` spine form:
+on nominal field types and the `narrow_prod` spine form:
 
 ```kio {@optics}
-labels { hed: I32, mid: String, tal: I32 };
+type { Hed: I32; Mid: String; Tal: I32 }
 
-fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x)[R]) }
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { (Hed.mk(n), narrow_prod(x)[R]) }
 
 op __ %% _ { impl set_hed }
 ```
 
-The `labels` block generates three nominal types — `Hed`, `Mid`, `Tal`
-(label spelling, first letter capitalized) — each a thin newtype over its
-payload (`Hed` over `I32`, `Mid` over `String`, `Tal` over `I32`). A value
-crosses *into* the type with the brace constructor `{hed = n}` and crosses
-*out* with the generated `.get` projector (used in `show_hmt` below).
+The declaration introduces three nominal types — `Hed`, `Mid`, `Tal` —
+with payloads `I32`, `String`, and `I32`. The `Hed.mk` constructor wraps a
+payload, and `Hed.get` projects it (as used in `show_hmt` below).
 
 `set_hed` takes a row whose head is a `Hed` and whose tail is anything (`R`),
-and rebuilds it with a fresh `Hed`: it constructs `{hed = n}` for the new
+and rebuilds it with a fresh `Hed`: it constructs `Hed.mk(n)` for the new
 head and uses `narrow_prod(x)[R]` to drop the old `Hed` head off `x`,
 keeping the rest of the row. `r %% n` replaces the `hed` field; the `[R]`
 binder is inferred from the receiver's value type, so the call site writes no
 type argument. The `__` left slot makes `%%` left-associative, so
 `r %% a %% b` chains as `set_hed(set_hed(r, a), b)` — last write wins.
 
-> The `labels` machinery, brace construction, `.get` projection, and the
-> `narrow_prod` row-tail drop are covered in
-> [Structural products and row types](../guides/products.md).
+> Nominal construction and projection are covered in
+> [Row-typed records with ordinary products](../guides/products.md).
+> The [macro case study's `narrow_prod` section](macros.md#narrow_prod--truncation)
+> explains the explicit product truncation used here.
 
 ## The demonstrative tour
 
@@ -638,7 +637,7 @@ local adapter; this tour does not need that extra boundary.
 ### Reading a row back out
 
 The `%%` operator writes the `hed` field; `show_hmt` reads all three fields
-back to render the row. It `match`-destructures the three-label product and
+back to render the row. It `match`-destructures the three-field product and
 projects each field with the generated `.get` (written UFCS-style as
 `h.>Hed.get`, i.e. `Hed.get(h)`):
 
@@ -657,8 +656,8 @@ fn show_hmt(x: Hed & Mid & Tal) {
 }
 ```
 
-The single `match` clause binds the three labels positionally; each `.get`
-crosses the label boundary to recover the `I32` or `String` payload. This is
+The single `match` clause binds the three nominal fields positionally; each `.get`
+crosses the nominal boundary to recover the `I32` or `String` payload. This is
 the read half of the optics-and-row-types bridge: `set_hed` is the lens "set"
 specialized to `hed`, and `Hed.get` is the lens "view" for the same field.
 
@@ -937,9 +936,8 @@ explains that choice.
   rest of the macro vocabulary per form, with their `equiv` laws.
 - [Operators](../guides/operators.md) — the `op` mechanics
   behind the `^` / `**` / `^?` / `##` / `%%` DSL.
-- [Structural products and row types](../guides/products.md) — the
-  `labels` machinery and the per-label setter that becomes the `%%`
-  row-update operator.
+- [Row-typed records with ordinary products](../guides/products.md) —
+  nominal field products, construction and updates, and row-polymorphic helpers.
 - [Structural sums and pattern matching](../guides/sums.md) —
   the sum machinery prisms are built on, and `match` in depth.
 - [Using libraries](../guides/using-libraries.md) — the

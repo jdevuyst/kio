@@ -1,3 +1,5 @@
 module decoy;
 
-pub labels Card = { flag: . };
+pub type { Flag: . { pub mk; pub get } }
+
+pub type Card = Flag;

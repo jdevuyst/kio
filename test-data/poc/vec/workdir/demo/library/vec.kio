@@ -70,7 +70,7 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
 // The bookkeeping fields (`count`, `depth`) are the host `I32`, so `Vec`
 // lives here rather than in the root module `core`.
 /// Full-vector payload: count, trie depth, and root tree.
-pub labels { vecbody[A]: I32 & I32 & Tree[A] };
+pub type { Vecbody[A]: I32 & I32 & Tree[A] }
 
 /// Persistent vector backed by a fanout-2 trie.
 pub type Vec[A] = Vecbody[A] | .;
@@ -78,7 +78,7 @@ pub type Vec[A] = Vecbody[A] | .;
 fn vempty[A] -> Vec[A] { widen_sum(())[Vecbody[A] | .] }
 
 fn vfull[A](count: I32, depth: I32, root: Tree[A]) -> Vec[A] {
-  widen_sum({vecbody = (count, depth, root)})[Vecbody[A] | .]
+  widen_sum(Vecbody.mk((count, depth, root)))[Vecbody[A] | .]
 }
 
 // =====================================================================

@@ -53,8 +53,8 @@ fn host_source_order_prime_rejects_later_host_signature_type() {
 fn host_source_order_prime_rejects_later_type_in_payloads_and_annotations() {
     for source in [
         "module x; type Earlier = Later; host type Later;",
-        "module x; newtype Earlier : Later { constructor mk; projector get; }; host type Later;",
-        "module x; rec newtype Node : . | (Node & Later) { constructor mk; projector get; }; host type Later;",
+        "module x; type { Earlier: Later { mk; get; }; }; host type Later;",
+        "module x; rec type { Node: . | (Node & Later) { mk; get; }; }; host type Later;",
         "module x; fn before() -> . { let value = .(x: Later) -> Later { x }; () } host type Later;",
     ] {
         assert_later_host_error(source, "Later");
@@ -66,8 +66,8 @@ fn host_source_order_prime_preserves_prior_hosts_and_written_recursion() {
     for source in [
         "module x; host fn earlier() -> .; fn after() -> . { earlier() }",
         "module x; host type Earlier; host fn identity(value: Earlier) -> Earlier; fn after(value: Earlier) -> Earlier { identity(value) }",
-        "module x; host type Earlier; rec newtype Node : . | (Node & Earlier) { constructor mk; projector get; };",
-        "module x; host type Earlier; rec { newtype Node : Payload { constructor mk; projector get; }; type Payload = . | (Node & Earlier); }",
+        "module x; host type Earlier; rec type { Node: . | (Node & Earlier) { mk; get; }; };",
+        "module x; host type Earlier; rec { type { Node: Payload { mk; get; }; }; type Payload = . | (Node & Earlier); }",
     ] {
         Resolver::check_module(&prime_module(source)).expect("preceding hosts remain in scope");
     }

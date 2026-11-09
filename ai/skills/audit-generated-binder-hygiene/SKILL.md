@@ -28,7 +28,7 @@ each identity backward to determine whether it came from source or was
 synthesized:
 
 - Kio AST/IR `let` binders, value parameters, lambda parameters, symbolic
-  case payloads, pattern/row-let temporaries, continuation parameters, and
+  case payloads, pattern temporaries, continuation parameters, and
   wrapper parameters;
 - Kio AST/IR `forall` binders and other type parameters, generated aliases or
   nominal owners, recursive-type wrapper names, and generated import aliases

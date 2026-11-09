@@ -687,7 +687,7 @@ onBeforeUnmount(() => {
           @mousedown.prevent="acceptCompletion(index)"
         >
           <span class="repl-completion-label">{{ item.label }}</span>
-          <span class="repl-completion-kind">{{ item.kind }}</span>
+          <span class="repl-completion-kind">{{ item.kind === 'newtype' ? 'type' : item.kind }}</span>
         </li>
       </ul>
     </div>

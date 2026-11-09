@@ -40,6 +40,8 @@ pub mod capabilities;
 #[doc(hidden)]
 pub mod contract;
 pub mod lexer;
+#[cfg(any(feature = "surface", feature = "prime"))]
+pub(crate) mod nominal_declarations;
 pub mod optimize;
 pub mod parser;
 pub(crate) mod placeholder;

@@ -22,41 +22,106 @@ impl FoldItems {
     }
 }
 
+pub(super) struct TypeFold {
+    pub items: Vec<Value>,
+    pub remainder: Option<Value>,
+}
+
 pub(super) fn type_fold_items(
     builtin: ComptimeBuiltin,
     typ: &Value,
     ctx: &EvalCtx<'_>,
-) -> Option<Vec<Value>> {
-    let typ = canonical_refl_type(typ, ctx)?;
-    let items = match builtin {
-        ComptimeBuiltin::TypeProductSpineFold => product_spine(&typ, ctx),
-        ComptimeBuiltin::TypeSumSpineFold => sum_spine(&typ, ctx),
-        ComptimeBuiltin::TypeArgsFold => type_args(&typ, ctx),
-        ComptimeBuiltin::TypeFunctionParamsFold => function_param_types(&typ, ctx),
-        _ => unreachable!("compiled type fold carries its extractor"),
-    };
-    Some(items.into_iter().map(refl_type_value).collect())
+) -> Option<TypeFold> {
+    use reflection_bindings::TypeChild;
+    let mut cursor = reflected_type_carrier(typ)?.clone();
+    if !neutral_type_observation_is_known(builtin, &cursor, ctx) {
+        return None;
+    }
+    let mut items = Vec::new();
+    loop {
+        cursor = unfold_reflected_carrier(&cursor, ctx);
+        match (builtin, cursor.as_type()) {
+            (ComptimeBuiltin::TypeForallPrefixFold, Type::Forall { .. }) => {
+                let (variable, body) = cursor.open_forall().expect("known forall head");
+                items.push(Value::ReflTypeVar(variable));
+                cursor = body;
+            }
+            (ComptimeBuiltin::TypeForallPrefixFold, Type::Infer { .. }) => return None,
+            (ComptimeBuiltin::TypeForallPrefixFold, _) => {
+                return Some(TypeFold {
+                    items,
+                    remainder: Some(Value::ReflType(cursor)),
+                });
+            }
+            (ComptimeBuiltin::TypeProductSpineFold, Type::Product { .. })
+            | (ComptimeBuiltin::TypeSumSpineFold, Type::Sum { .. }) => {
+                items.push(Value::ReflType(cursor.child(TypeChild::Left)));
+                cursor = cursor.child(TypeChild::Right);
+            }
+            (ComptimeBuiltin::TypeProductSpineFold | ComptimeBuiltin::TypeSumSpineFold, _) => {
+                items.push(Value::ReflType(cursor));
+                return Some(TypeFold {
+                    items,
+                    remainder: None,
+                });
+            }
+            (ComptimeBuiltin::TypeArgsFold, Type::Path { args, .. }) => {
+                items.extend(
+                    (0..args.len())
+                        .map(|index| Value::ReflType(cursor.child(TypeChild::Argument(index)))),
+                );
+                return Some(TypeFold {
+                    items,
+                    remainder: None,
+                });
+            }
+            (ComptimeBuiltin::TypeArgsFold, _) => {
+                return Some(TypeFold {
+                    items,
+                    remainder: None,
+                });
+            }
+            _ => unreachable!("compiled type fold carries its extractor"),
+        }
+    }
 }
 
 pub(super) fn primitive_type_fold_items(
     builtin: ComptimeBuiltin,
     args: &[Value],
     ctx: &EvalCtx<'_>,
-) -> Option<Vec<Value>> {
+) -> Option<TypeFold> {
     let [typ, _, _] = reflection_runtime_args(builtin, args) else {
         return None;
     };
     #[cfg(feature = "surface")]
-    if args.iter().any(|arg| matches!(arg, Value::Projected(_))) {
+    if let Value::Projected(typ) = typ {
         let proof = marked_comptime_proof_from_value(args.first()?)?;
-        let typ = projected_value_from_value(typ)?;
+        if builtin == ComptimeBuiltin::TypeForallPrefixFold {
+            use crate::pass::typecheck_core::apply::fills::{
+                ProjectedTypeView, projected_type_view,
+            };
+            let mut cursor = typ.as_ref().clone();
+            let mut items = Vec::new();
+            loop {
+                match projected_type_view(proof, &cursor).ok()? {
+                    ProjectedTypeView::Forall { variable, body, .. } => {
+                        items.push(Value::ReflTypeVar(variable));
+                        cursor = body;
+                    }
+                    _ => {
+                        return Some(TypeFold {
+                            items,
+                            remainder: Some(projected_value(cursor)),
+                        });
+                    }
+                }
+            }
+        }
         let items = match builtin {
             ComptimeBuiltin::TypeProductSpineFold | ComptimeBuiltin::TypeSumSpineFold => {
                 projected_spine(proof, typ, builtin == ComptimeBuiltin::TypeProductSpineFold)
                     .ok()?
-            }
-            ComptimeBuiltin::TypeFunctionParamsFold => {
-                projected_function_params(proof, typ).ok()?
             }
             ComptimeBuiltin::TypeArgsFold => {
                 crate::pass::typecheck_core::apply::fills::projected_type_arguments(proof, typ)
@@ -64,7 +129,10 @@ pub(super) fn primitive_type_fold_items(
             }
             _ => unreachable!("projected type fold carries its extractor"),
         };
-        return Some(items.into_iter().map(projected_value).collect());
+        return Some(TypeFold {
+            items: items.into_iter().map(projected_value).collect(),
+            remainder: None,
+        });
     }
     type_fold_items(builtin, typ, ctx)
 }
@@ -158,6 +226,20 @@ pub(super) fn child(expr: &EvalExpr, index: usize) -> Option<&EvalRef<EvalExpr>>
 }
 
 pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) -> Value {
+    let observer = match expr {
+        EvalExpr::ReflTypeView { .. } => Some(ComptimeBuiltin::TypeView),
+        EvalExpr::ReflTypeInstantiate { .. } => Some(ComptimeBuiltin::TypeInstantiate),
+        EvalExpr::ReflTypeRootPredicate { name, .. } => ComptimeBuiltin::from_public_name(name),
+        _ => None,
+    };
+    if let Some(builtin) = observer
+        && neutral_reflection_is_pending(builtin, args.as_slice(), ctx)
+    {
+        return Value::Stuck(
+            EvalRef::new(Value::Primitive(builtin)),
+            args.into_vec().into(),
+        );
+    }
     let mut values = args.into_vec().into_iter();
     match expr {
         EvalExpr::ReflTypeUnit => {
@@ -176,34 +258,14 @@ pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) ->
             let left = values.next().expect("direct reflection operand");
             let right = values.next().expect("direct reflection operand");
             let start = direct_reflection_start(ctx);
-            let result = match (
-                canonical_refl_type(&left, ctx),
-                canonical_refl_type(&right, ctx),
-            ) {
-                (Some(left_ty), Some(right_ty)) => Some(refl_type_value(Type::Product {
-                    left: Box::new(left_ty),
-                    right: Box::new(right_ty),
-                    meta: zero_meta(),
-                })),
-                _ => None,
-            };
+            let result = reflection_binary_type_value(ComptimeBuiltin::TypeProduct, &left, &right);
             finish_direct_reflection("__type_product__", result, vec![left, right], ctx, start)
         }
         EvalExpr::ReflTypeSum { left: _, right: _ } => {
             let left = values.next().expect("direct reflection operand");
             let right = values.next().expect("direct reflection operand");
             let start = direct_reflection_start(ctx);
-            let result = match (
-                canonical_refl_type(&left, ctx),
-                canonical_refl_type(&right, ctx),
-            ) {
-                (Some(left_ty), Some(right_ty)) => Some(refl_type_value(Type::Sum {
-                    left: Box::new(left_ty),
-                    right: Box::new(right_ty),
-                    meta: zero_meta(),
-                })),
-                _ => None,
-            };
+            let result = reflection_binary_type_value(ComptimeBuiltin::TypeSum, &left, &right);
             finish_direct_reflection("__type_sum__", result, vec![left, right], ctx, start)
         }
         EvalExpr::ReflTypeView { typ: _ } => {
@@ -211,7 +273,7 @@ pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) ->
             let start = direct_reflection_start(ctx);
             finish_direct_reflection(
                 "__type_view__",
-                canonical_refl_type(&typ, ctx).and_then(|typ| type_view_value(&typ, ctx)),
+                reflected_type_carrier(&typ).and_then(|typ| reflected_type_view_value(typ, ctx)),
                 vec![typ],
                 ctx,
                 start,
@@ -221,15 +283,7 @@ pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) ->
             let left = values.next().expect("direct reflection operand");
             let right = values.next().expect("direct reflection operand");
             let start = direct_reflection_start(ctx);
-            let result = match (
-                canonical_refl_type(&left, ctx),
-                canonical_refl_type(&right, ctx),
-            ) {
-                (Some(left_ty), Some(right_ty)) => Some(predicate_value(
-                    canonical_refl_type_equiv(&left_ty, &right_ty, ctx),
-                )),
-                _ => None,
-            };
+            let result = reflection_type_equal_value(&left, &right, ctx);
             finish_direct_reflection("__type_equal__", result, vec![left, right], ctx, start)
         }
         EvalExpr::ReflTypeNameEqual { left: _, right: _ } => {
@@ -257,21 +311,7 @@ pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) ->
             let left = values.next().expect("direct reflection operand");
             let right = values.next().expect("direct reflection operand");
             let start = direct_reflection_start(ctx);
-            let result = match (&left, &right) {
-                (
-                    Value::ReflTypeVar {
-                        name: left_name,
-                        arity: left_arity,
-                    },
-                    Value::ReflTypeVar {
-                        name: right_name,
-                        arity: right_arity,
-                    },
-                ) => Some(predicate_value(
-                    left_name == right_name && left_arity == right_arity,
-                )),
-                _ => None,
-            };
+            let result = reflection_type_var_equal_value(&left, &right, ctx);
             finish_direct_reflection("__type_var_equal__", result, vec![left, right], ctx, start)
         }
         EvalExpr::ReflTypeArityEqual { left: _, right: _ } => {
@@ -295,8 +335,8 @@ pub(super) fn reduce_leaf(expr: &EvalExpr, args: EvalArgs, ctx: &EvalCtx<'_>) ->
             let arg = values.next().expect("direct reflection operand");
             let start = direct_reflection_start(ctx);
             let result = match (
-                canonical_refl_type(&scheme, ctx),
-                canonical_refl_type(&arg, ctx),
+                reflected_type_carrier(&scheme),
+                reflected_type_carrier(&arg),
             ) {
                 (Some(scheme_ty), Some(arg_ty)) => {
                     Some(type_instantiate_value(scheme_ty, arg_ty, ctx))

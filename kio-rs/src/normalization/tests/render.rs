@@ -1,5 +1,5 @@
 use super::{
-    Env, EvalCtx, Expr, PathSegment, Value, apply, data_value, eval, find_module_fn,
+    Env, EvalCtx, EvalRef, Expr, PathSegment, Value, apply, data_value, eval, find_module_fn,
     lowered_package, resolve_module_newtype_member, value_to_repl_string, value_to_string,
     zero_span,
 };
@@ -9,11 +9,11 @@ fn repl_rendering_requalifies_distinct_newtype_owners_without_alias_collisions()
     let pkg = lowered_package(&[
         (
             "a/one.kio",
-            "module a/one; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
+            "module a/one; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
         (
             "b/two.kio",
-            "module b/two; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
+            "module b/two; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
         (
             "left.kio",
@@ -73,7 +73,7 @@ fn repl_rendering_avoids_residual_atom_heads_when_allocating_imports() {
     let pkg = lowered_package(&[
         (
             "inner/a.kio",
-            "module inner/a; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
+            "module inner/a; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
         ("consumer.kio", "module consumer; fn keep() -> . { () }"),
     ]);
@@ -158,7 +158,7 @@ fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
         (
             "secret.kio",
             "module secret; \
-             newtype Hidden[A][ B][ C] : A & B & C { constructor mk; projector get; };",
+             type { Hidden[A][ B][ C]: A & B & C { mk; get; }; };",
         ),
         ("consumer.kio", "module consumer; fn keep() -> . { () }"),
     ]);
@@ -213,4 +213,138 @@ fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
         "import secret as _q0;\n\n\
          __pair__(_q0.Hidden.mk(__pair__(left, __pair__(middle, right))), __pair__(_q0.Hidden.mk(partial_left, partial_right), _q0.Hidden.get(opaque)))"
     );
+}
+
+fn diagnostic_handler_closures() -> (Value, Value) {
+    let pkg = lowered_package(&[(
+        "handlers.kio",
+        "module handlers; \
+         host fn foo() -> .; \
+         host fn bar() -> .; \
+         pure fn make(handler: . -> .) -> . -> . { .() { handler(()) } } \
+         fn left() -> . -> . { make(foo) } \
+         fn right() -> . -> . { make(bar) }",
+    )]);
+    let module = &pkg.module("handlers").expect("handlers module").module;
+    let ctx = EvalCtx::for_module(&pkg, module, "handlers").expect("handlers context");
+    let closure = |name| {
+        let function = find_module_fn(module, name).expect("handler function");
+        eval(&function.body, &Env::new(), &ctx)
+    };
+    (closure("left"), closure("right"))
+}
+
+#[test]
+fn diagnostic_closures_expose_distinct_captured_handlers_without_forcing() {
+    let (left, right) = diagnostic_handler_closures();
+    let (
+        Value::EvalClosure {
+            function: left_function,
+            captured: left_captured,
+        },
+        Value::EvalClosure {
+            function: right_function,
+            captured: right_captured,
+        },
+    ) = (&left, &right)
+    else {
+        panic!("the handler bodies remain suspended closures")
+    };
+    assert_eq!(
+        left_function.diagnostic_body,
+        right_function.diagnostic_body
+    );
+    assert!(matches!(left_captured.as_slice(), [Value::Atom(name)] if name.ends_with("foo")));
+    assert!(matches!(right_captured.as_slice(), [Value::Atom(name)] if name.ends_with("bar")));
+    let left = value_to_string(&left);
+    let right = value_to_string(&right);
+    assert_ne!(left, right, "captured handlers distinguish these residuals");
+    assert!(left.contains("foo"), "{left}");
+    assert!(right.contains("bar"), "{right}");
+    assert!(left.contains("captured values"), "{left}");
+}
+
+#[test]
+fn diagnostic_closure_capture_expansion_has_a_depth_bound() {
+    let (closure, _) = diagnostic_handler_closures();
+    let Value::EvalClosure { function, .. } = closure else {
+        panic!("expected the suspended handler")
+    };
+    let mut nested = Value::Atom("leaf".to_owned());
+    for _ in 0..64 {
+        nested = Value::EvalClosure {
+            function: function.clone(),
+            captured: vec![nested].into(),
+        };
+    }
+    let rendered = value_to_string(&nested);
+    assert!(rendered.contains("captured value omitted: depth limit"));
+    assert!(!rendered.contains("leaf"));
+}
+
+#[test]
+fn diagnostic_captured_data_depth_is_bounded() {
+    let (closure, _) = diagnostic_handler_closures();
+    let Value::EvalClosure { function, .. } = closure else {
+        panic!("expected the suspended handler")
+    };
+    let mut nested = Value::Atom("leaf".to_owned());
+    for _ in 0..512 {
+        nested = data_value("__pair__", vec![Value::Unit, nested]);
+    }
+    let captured = Value::EvalClosure {
+        function,
+        captured: vec![nested].into(),
+    };
+    let rendered = value_to_string(&captured);
+    assert!(rendered.contains("captured value omitted: depth limit"));
+    assert!(!rendered.contains("leaf"));
+}
+
+#[test]
+fn diagnostic_captured_residual_depth_is_bounded() {
+    let (closure, _) = diagnostic_handler_closures();
+    let Value::EvalClosure { function, .. } = closure else {
+        panic!("expected the suspended handler")
+    };
+    for kind in 0..3 {
+        let mut nested = Value::Atom("leaf".to_owned());
+        for _ in 0..512 {
+            nested = match kind {
+                0 => Value::Seq {
+                    value: EvalRef::new(Value::Atom("effect".to_owned())),
+                    body: EvalRef::new(nested),
+                },
+                1 => Value::Stuck(
+                    EvalRef::new(Value::Atom("call".to_owned())),
+                    vec![nested].into(),
+                ),
+                _ => Value::CaseSplit {
+                    scrutinee: EvalRef::new(Value::Atom("subject".to_owned())),
+                    left_payload: "left".to_owned(),
+                    left: EvalRef::new(nested),
+                    right_payload: "right".to_owned(),
+                    right: EvalRef::new(Value::Unit),
+                },
+            };
+        }
+        let captured = Value::EvalClosure {
+            function: function.clone(),
+            captured: vec![nested].into(),
+        };
+        let rendered = value_to_string(&captured);
+        assert!(rendered.contains("captured value omitted: depth limit"));
+        assert!(!rendered.contains("leaf"));
+    }
+}
+
+#[test]
+fn diagnostic_capture_depth_limit_leaves_ordinary_values_unchanged() {
+    let mut nested = Value::Atom("leaf".to_owned());
+    for _ in 0..32 {
+        nested = data_value("__pair__", vec![Value::Unit, nested]);
+    }
+    let rendered = value_to_string(&nested);
+    assert!(rendered.contains("leaf"));
+    assert!(!rendered.contains("depth limit"));
 }

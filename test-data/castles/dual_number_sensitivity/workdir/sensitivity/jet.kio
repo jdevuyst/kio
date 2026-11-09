@@ -1,69 +1,78 @@
 module sensitivity/jet;
 
+import macros/row_macros(macro record, macro select, macro with);
 import testapi(F64);
 import testapi/arith as arith;
 
-pub labels Jet = { value: F64, dx: F64, dy: F64, dxx: F64, dxy: F64, dyy: F64 };
+pub type Jet = { Value: F64; Dx: F64; Dy: F64; Dxx: F64; Dxy: F64; Dyy: F64 };
 
-pub fn constant(value: F64) -> Jet { {value, dx = 0.0, dy = 0.0, dxx = 0.0, dxy = 0.0, dyy = 0.0} }
+pub fn constant(value: F64) -> Jet {
+  record { Value.mk(value); Dx.mk(0.0); Dy.mk(0.0); Dxx.mk(0.0); Dxy.mk(0.0); Dyy.mk(0.0) }
+}
 
-fn variable_x(value: F64) -> Jet { constant(value).!{dx = 1.0} }
+fn variable_x(value: F64) -> Jet {
+  constant(value).>with { Dx.mk(1.0) }
+}
 
-fn variable_y(value: F64) -> Jet { constant(value).!{dy = 1.0} }
+fn variable_y(value: F64) -> Jet {
+  constant(value).>with { Dy.mk(1.0) }
+}
 
 pub fn add(a: Jet, b: Jet) -> Jet {
-  {
-  , value = arith.add_f64(a.?{value}, b.?{value})
-  , dx = arith.add_f64(a.?{dx}, b.?{dx})
-  , dy = arith.add_f64(a.?{dy}, b.?{dy})
-  , dxx = arith.add_f64(a.?{dxx}, b.?{dxx})
-  , dxy = arith.add_f64(a.?{dxy}, b.?{dxy})
-  , dyy = arith.add_f64(a.?{dyy}, b.?{dyy})
+  record {
+    Value.mk(arith.add_f64(a.>select { Value.get }, b.>select { Value.get }));
+    Dx.mk(arith.add_f64(a.>select { Dx.get }, b.>select { Dx.get }));
+    Dy.mk(arith.add_f64(a.>select { Dy.get }, b.>select { Dy.get }));
+    Dxx.mk(arith.add_f64(a.>select { Dxx.get }, b.>select { Dxx.get }));
+    Dxy.mk(arith.add_f64(a.>select { Dxy.get }, b.>select { Dxy.get }));
+    Dyy.mk(arith.add_f64(a.>select { Dyy.get }, b.>select { Dyy.get }))
   }
 }
 
 pub fn sub(a: Jet, b: Jet) -> Jet {
-  {
-  , value = arith.sub_f64(a.?{value}, b.?{value})
-  , dx = arith.sub_f64(a.?{dx}, b.?{dx})
-  , dy = arith.sub_f64(a.?{dy}, b.?{dy})
-  , dxx = arith.sub_f64(a.?{dxx}, b.?{dxx})
-  , dxy = arith.sub_f64(a.?{dxy}, b.?{dxy})
-  , dyy = arith.sub_f64(a.?{dyy}, b.?{dyy})
+  record {
+    Value.mk(arith.sub_f64(a.>select { Value.get }, b.>select { Value.get }));
+    Dx.mk(arith.sub_f64(a.>select { Dx.get }, b.>select { Dx.get }));
+    Dy.mk(arith.sub_f64(a.>select { Dy.get }, b.>select { Dy.get }));
+    Dxx.mk(arith.sub_f64(a.>select { Dxx.get }, b.>select { Dxx.get }));
+    Dxy.mk(arith.sub_f64(a.>select { Dxy.get }, b.>select { Dxy.get }));
+    Dyy.mk(arith.sub_f64(a.>select { Dyy.get }, b.>select { Dyy.get }))
   }
 }
 
 pub fn scale(factor: F64, a: Jet) -> Jet {
-  {
-  , value = arith.mul_f64(factor, a.?{value})
-  , dx = arith.mul_f64(factor, a.?{dx})
-  , dy = arith.mul_f64(factor, a.?{dy})
-  , dxx = arith.mul_f64(factor, a.?{dxx})
-  , dxy = arith.mul_f64(factor, a.?{dxy})
-  , dyy = arith.mul_f64(factor, a.?{dyy})
+  record {
+    Value.mk(arith.mul_f64(factor, a.>select { Value.get }));
+    Dx.mk(arith.mul_f64(factor, a.>select { Dx.get }));
+    Dy.mk(arith.mul_f64(factor, a.>select { Dy.get }));
+    Dxx.mk(arith.mul_f64(factor, a.>select { Dxx.get }));
+    Dxy.mk(arith.mul_f64(factor, a.>select { Dxy.get }));
+    Dyy.mk(arith.mul_f64(factor, a.>select { Dyy.get }))
   }
 }
 
 // Hessian entries store derivatives themselves, not Taylor coefficients.
 pub fn mul(a: Jet, b: Jet) -> Jet {
-  let .({value as av, dx as ax, dy as ay, dxx as axx, dxy as axy, dyy as ayy}) = a;
-  let .({value as bv, dx as bx, dy as by, dxx as bxx, dxy as bxy, dyy as byy}) = b;
-  {
-  , value = arith.mul_f64(av, bv)
-  , dx = arith.add_f64(arith.mul_f64(ax, bv), arith.mul_f64(av, bx))
-  , dy = arith.add_f64(arith.mul_f64(ay, bv), arith.mul_f64(av, by))
-  , dxx = arith.add_f64(
+  let .(av, ax, ay, axx, axy, ayy) =
+    a.>select { Value.get; Dx.get; Dy.get; Dxx.get; Dxy.get; Dyy.get };
+  let .(bv, bx, by, bxx, bxy, byy) =
+    b.>select { Value.get; Dx.get; Dy.get; Dxx.get; Dxy.get; Dyy.get };
+  record {
+    Value.mk(arith.mul_f64(av, bv));
+    Dx.mk(arith.add_f64(arith.mul_f64(ax, bv), arith.mul_f64(av, bx)));
+    Dy.mk(arith.add_f64(arith.mul_f64(ay, bv), arith.mul_f64(av, by)));
+    Dxx.mk(arith.add_f64(
     , arith.add_f64(arith.mul_f64(axx, bv), arith.mul_f64(2.0, arith.mul_f64(ax, bx)))
     , arith.mul_f64(av, bxx)
-    )
-  , dxy = arith.add_f64(
+    ));
+    Dxy.mk(arith.add_f64(
     , arith.add_f64(arith.mul_f64(axy, bv), arith.mul_f64(ax, by))
     , arith.add_f64(arith.mul_f64(ay, bx), arith.mul_f64(av, bxy))
-    )
-  , dyy = arith.add_f64(
+    ));
+    Dyy.mk(arith.add_f64(
     , arith.add_f64(arith.mul_f64(ayy, bv), arith.mul_f64(2.0, arith.mul_f64(ay, by)))
     , arith.mul_f64(av, byy)
-    )
+    ))
   }
 }
 
@@ -74,9 +83,13 @@ pub fn evaluate(model: (Jet & Jet) -> Jet, x: F64, y: F64) -> Jet {
 }
 
 pub fn directional(result: Jet, vx: F64, vy: F64) -> F64 & F64 {
-  let slope = arith.add_f64(arith.mul_f64(result.?{dx}, vx), arith.mul_f64(result.?{dy}, vy));
-  let hxx = arith.mul_f64(result.?{dxx}, arith.mul_f64(vx, vx));
-  let hxy = arith.mul_f64(result.?{dxy}, arith.mul_f64(2.0, arith.mul_f64(vx, vy)));
-  let hyy = arith.mul_f64(result.?{dyy}, arith.mul_f64(vy, vy));
+  let slope =
+    arith.add_f64(
+    , arith.mul_f64(result.>select { Dx.get }, vx)
+    , arith.mul_f64(result.>select { Dy.get }, vy)
+    );
+  let hxx = arith.mul_f64(result.>select { Dxx.get }, arith.mul_f64(vx, vx));
+  let hxy = arith.mul_f64(result.>select { Dxy.get }, arith.mul_f64(2.0, arith.mul_f64(vx, vy)));
+  let hyy = arith.mul_f64(result.>select { Dyy.get }, arith.mul_f64(vy, vy));
   (slope, arith.add_f64(arith.add_f64(hxx, hxy), hyy))
 }

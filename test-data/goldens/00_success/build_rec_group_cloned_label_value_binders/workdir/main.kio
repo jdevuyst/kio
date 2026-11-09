@@ -2,12 +2,18 @@ module main;
 
 import build_rec_group_cloned_label_value_binders(Bool, I32, String, done, empty, loop);
 import macros/control(macro if);
+import macros/row_macros(macro record_);
 
-labels { text: String };
+type { Text: String { mk; get } }
 
 rec(loop) {
   pub fn spaces(n: I32) -> String { recur pad(n, empty()) };
   fn pad(n: I32, acc: String) -> String {
-    if(done(n)) { let wrapped = {text = acc}; wrapped.?{text} } else { recur pad(n, acc) }
+    if(done(n)) {
+      let wrapped = record_ { Text.mk(acc) };
+      Text.get(wrapped)
+    } else {
+      recur pad(n, acc)
+    }
   }
 }

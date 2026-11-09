@@ -143,8 +143,8 @@ cells; fixed support declarations supply their explicitly described helpers:
 
 - Tuple literals `(a, b, ...)`.
 - `if`/`else` conditionals.
-- Label declarations (`labels`) and label-value sugar `{label = e}`.
-- Field updates and row lets use a seeded three-field record probe: source
+- Compact nominal groups and mixed nominal/type declarations.
+- Record construction, updates and selection use a seeded three-field probe: source
   field order, replacement subsets and values, selected bindings and aliases
   vary independently. The oracle checks receiver evaluation, replacement
   order, updated and untouched payloads, and named binding results through
@@ -215,9 +215,11 @@ cells; fixed support declarations supply their explicitly described helpers:
   identity-style `pub macro` declarations plus one capture-free
   `impl(fills)` identity. Ordinary implementation bodies are randomized
   over a bounded reflected-ABI template catalog
-  (`__either__` target requests, `__term_let__`, reflected product /
-  sum round-trips, type guards, and optional captures), and generated
-  bodies occasionally call the sampled ordinary names as `name!(expr, _)`.
+  (natural-result and required-target identities, `__term_let__`, reflected
+  product / sum round-trips, source/target and checked-term/target guards,
+  and optional captures). Natural-result implementations receive `.` for
+  the result slot; required-target identities and guards receive `__Type__`.
+  Generated bodies occasionally call the sampled ordinary names as `name(expr)[_]`.
   A fixed root-module function calls the marked identity, whose private ABI
   returns the checked term paired with `__fill__(ct, fills, target, source)`.
   Every generated implementation is a `pure fn`, matching the compile-time

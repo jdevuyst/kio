@@ -9,7 +9,7 @@ import testapi/io(print);
 // (and its Clone / PartialEq impls) must keyword-escape the label, or
 // the emitted `pub enum Sum_<hash> { box(..), _1(..) }` is a Rust
 // syntax error and the whole crate fails to build.
-pub newtype Box : String { pub constructor mk_box; pub projector un_box }
+pub type { Box: String { pub mk; pub get } }
 
 pub fn describe(x: Box | String) { let _ = x; () }
 

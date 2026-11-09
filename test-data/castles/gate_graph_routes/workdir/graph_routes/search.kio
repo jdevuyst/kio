@@ -1,45 +1,102 @@
 module graph_routes/search;
 
 import graph_routes/model(
+, Blocked
+, Cursor
+, Da
+, Db
+, Dc
+, Dd
+, De
+, Df
+, Dg
+, Relaxed
+, Round
 , Search_state
+, Visited
 , inf
 , initial
 , rebuild
-, {blocked}
-, {cursor}
-, {da}
-, {db}
-, {dc}
-, {dd}
-, {de}
-, {df}
-, {dg}
-, {relaxed}
-, {round}
-, {visited}
 );
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
 import testapi/iter(loop);
 
 fn seen(s: Search_state) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   rebuild(round, cursor, da, db, dc, dd, de, df, dg, add_i32(visited, 1), relaxed, blocked)
 }
 
 fn blocked_edge(s: Search_state) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   rebuild(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, add_i32(blocked, 1))
 }
 
 fn advance(s: Search_state) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   rebuild(round, add_i32(cursor, 1), da, db, dc, dd, de, df, dg, visited, relaxed, blocked)
 }
 
 fn next_round(s: Search_state) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   rebuild(add_i32(round, 1), 0, da, db, dc, dd, de, df, dg, visited, relaxed, blocked)
 }
 
@@ -48,7 +105,21 @@ fn can_relax(from_cost: I32, old_cost: I32, edge_cost: I32) -> Bool {
 }
 
 fn relax_b(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   if(can_relax(from_cost, db, edge_cost)) {
     rebuild(
     , round
@@ -70,7 +141,21 @@ fn relax_b(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 }
 
 fn relax_c(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   if(can_relax(from_cost, dc, edge_cost)) {
     rebuild(
     , round
@@ -92,7 +177,21 @@ fn relax_c(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 }
 
 fn relax_d(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   if(can_relax(from_cost, dd, edge_cost)) {
     rebuild(
     , round
@@ -114,7 +213,21 @@ fn relax_d(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 }
 
 fn relax_e(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   if(can_relax(from_cost, de, edge_cost)) {
     rebuild(
     , round
@@ -136,7 +249,21 @@ fn relax_e(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 }
 
 fn relax_f(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
-  let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
+  let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =
+    s.>select {
+      Round.get;
+      Cursor.get;
+      Da.get;
+      Db.get;
+      Dc.get;
+      Dd.get;
+      De.get;
+      Df.get;
+      Dg.get;
+      Visited.get;
+      Relaxed.get;
+      Blocked.get
+    };
   if(can_relax(from_cost, df, edge_cost)) {
     rebuild(
     , round
@@ -159,33 +286,33 @@ fn relax_f(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_candidate(s: Search_state) -> Search_state {
   let current = seen(s);
-  if(eq_i32(current.?{cursor}, 0)) {
-    relax_b(current, current.?{da}, 4)
-  } else if(eq_i32(current.?{cursor}, 1)) {
-    relax_c(current, current.?{da}, 2)
-  } else if(eq_i32(current.?{cursor}, 2)) {
-    relax_d(current, current.?{db}, 5)
-  } else if(eq_i32(current.?{cursor}, 3)) {
-    relax_b(current, current.?{dc}, 1)
-  } else if(eq_i32(current.?{cursor}, 4)) {
+  if(eq_i32(current.>select { Cursor.get }, 0)) {
+    relax_b(current, current.>select { Da.get }, 4)
+  } else if(eq_i32(current.>select { Cursor.get }, 1)) {
+    relax_c(current, current.>select { Da.get }, 2)
+  } else if(eq_i32(current.>select { Cursor.get }, 2)) {
+    relax_d(current, current.>select { Db.get }, 5)
+  } else if(eq_i32(current.>select { Cursor.get }, 3)) {
+    relax_b(current, current.>select { Dc.get }, 1)
+  } else if(eq_i32(current.>select { Cursor.get }, 4)) {
     blocked_edge(current)
-  } else if(eq_i32(current.?{cursor}, 5)) {
-    relax_e(current, current.?{dc}, 4)
-  } else if(eq_i32(current.?{cursor}, 6)) {
-    relax_d(current, current.?{de}, 1)
-  } else if(eq_i32(current.?{cursor}, 7)) {
-    relax_f(current, current.?{dd}, 3)
-  } else if(eq_i32(current.?{cursor}, 8)) {
-    relax_f(current, current.?{de}, 6)
+  } else if(eq_i32(current.>select { Cursor.get }, 5)) {
+    relax_e(current, current.>select { Dc.get }, 4)
+  } else if(eq_i32(current.>select { Cursor.get }, 6)) {
+    relax_d(current, current.>select { De.get }, 1)
+  } else if(eq_i32(current.>select { Cursor.get }, 7)) {
+    relax_f(current, current.>select { Dd.get }, 3)
+  } else if(eq_i32(current.>select { Cursor.get }, 8)) {
+    relax_f(current, current.>select { De.get }, 6)
   } else {
-    relax_f(current, current.?{db}, 15)
+    relax_f(current, current.>select { Db.get }, 15)
   }
 }
 
 pub rec(loop) fn walk(s: Search_state) -> Search_state {
-  if(leq_i32(3, s.?{round})) {
+  if(leq_i32(3, s.>select { Round.get })) {
     s
-  } else if(leq_i32(10, s.?{cursor})) {
+  } else if(leq_i32(10, s.>select { Cursor.get })) {
     recur walk(next_round(s))
   } else {
     recur walk(advance(relax_candidate(s)))

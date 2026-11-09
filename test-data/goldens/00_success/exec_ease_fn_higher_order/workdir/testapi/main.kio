@@ -5,9 +5,9 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 // Higher-order: function returns a function. The inner function's
 // parameter type was widened in the provider.
@@ -20,12 +20,12 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 fn make_consumer() -> (A | B) -> . {
   .(x: A | B) -> . {
     print(match(x) {
-      (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+      (.(a: A) { A.get(a) }, .(b: B) { B.get(b) })
     })
   }
 }
 
 pub fn main() {
   let narrow_inner = ease(make_consumer)[. -> A -> .];
-  narrow_inner()(A.mk_a("ease! higher order ok\n"))
+  narrow_inner()(A.mk("ease! higher order ok\n"))
 }

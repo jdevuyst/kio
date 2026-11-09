@@ -128,8 +128,8 @@ impl ImportedVarianceCache {
 /// not just a newtype's direct self-references.
 ///
 /// Strict positivity is a property of the recursive group, not of one
-/// declaration: `rec { newtype Na : . | (Nb -> .); newtype Nb : . |
-/// (Na -> .); }` and `rec { newtype P : . | (Q -> .); newtype Q : P; }` each
+/// declaration: `rec type { Na: . | (Nb -> .); Nb: . |
+/// (Na -> .) }` and `rec type { P: . | (Q -> .); Q: P }` each
 /// unfold to a self-reference under an arrow LHS, yet a per-newtype
 /// check that treats sibling nominals as opaque admits both and breaks
 /// strong normalization (an `Ω` is constructible). Enforcing strict
@@ -235,7 +235,6 @@ fn collect_newtype_refs_state<P>(
             inner.insert(param.name.clone());
             collect_newtype_refs_state(body, descendants_are_canonical, &inner, ctx, out);
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         crate::ast::Type::Infer { .. } => unreachable!(
             "Type::Infer should be resolved by the typer's substitution pass; check_well_formed_type catches it at the boundary"
         ),
@@ -595,7 +594,6 @@ where
                 )
             }
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         crate::ast::Type::Infer { .. } => unreachable!(
             "Type::Infer should be resolved by the typer's substitution pass; check_well_formed_type catches it at the boundary"
         ),
@@ -640,8 +638,8 @@ struct RecursiveGroup<'a> {
 ///   check.
 ///
 /// The fixpoint variance environment composes through chains of
-/// newtypes, so `newtype Neg[A] : A -> A; newtype Wrapped[A] : Neg(A);
-/// rec newtype Loop : Wrapped(Loop);` is rejected (transitive contravariance
+/// newtypes, so `type { Neg[A]: A -> A; Wrapped[A]: Neg[A] };
+/// rec type { Loop: Wrapped[Loop] }` is rejected (transitive contravariance
 /// via two indirections), where the original one-step check would
 /// have admitted it.
 ///
@@ -650,7 +648,6 @@ struct RecursiveGroup<'a> {
 /// A `Forall` binder that shadows an SCC member's name takes that
 /// name out of the recursive group for the binder's body.
 ///
-/// Phase-polymorphic with `P::TypeLabelSugar = Never`.
 pub fn check_newtype_payload<P>(
     ty: &crate::ast::Type<P>,
     pos: Variance,
@@ -851,7 +848,6 @@ where
                 descendants_are_canonical,
             )
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         crate::ast::Type::Infer { .. } => unreachable!(
             "Type::Infer should be resolved by the typer's substitution pass; check_well_formed_type catches it at the boundary"
         ),
@@ -891,12 +887,8 @@ mod tests {
             (
                 "consumer.kio",
                 "module consumer; import dep as dep; \
-                 newtype Link : dep.Contra[Loop] { \
-                   pub constructor mk_link; pub projector un_link; \
-                 }; \
-                 newtype Loop : Link { \
-                   pub constructor mk_loop; pub projector un_loop; \
-                 };",
+                 type { Link: dep.Contra[Loop] { pub mk; pub get; }; }; \
+                 type { Loop: Link { pub mk; pub get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;
@@ -938,10 +930,8 @@ mod tests {
         let package = package(&[(
             "consumer.kio",
             "module consumer; \
-             newtype F[A] : A { pub constructor mk_f; pub projector un_f; }; \
-             newtype Wrapper[*F][A] : F[A] { \
-               pub constructor mk_wrapper; pub projector un_wrapper; \
-             };",
+             type { F[A]: A { pub mk; pub get; }; }; \
+             type { Wrapper[*F][A]: F[A] { pub mk; pub get; }; };",
         )]);
         let consumer = &package.module("consumer").expect("consumer").module;
         let env = super::super::ModuleEnv::build(consumer, None, None, Some(&package))
@@ -961,26 +951,20 @@ mod tests {
             (
                 "positive.kio",
                 "module positive; \
-                 pub newtype Wrap[A] : A { constructor mk_wrap; projector un_wrap; };",
+                 pub type { Wrap[A]: A { mk; get; }; };",
             ),
             (
                 "nonpositive.kio",
                 "module nonpositive; \
-                 pub newtype Wrap[A] : A -> . { constructor mk_wrap; projector un_wrap; }; \
-                 pub newtype Invariant[A] : A & (A -> .) { \
-                   constructor mk_invariant; projector un_invariant; \
-                 };",
+                 pub type { Wrap[A]: A -> . { mk; get; }; }; \
+                 pub type { Invariant[A]: A & (A -> .) { mk; get; }; };",
             ),
             (
                 "consumer.kio",
                 "module consumer; import positive as positive; import nonpositive as nonpositive; \
-                 newtype Good : positive.Wrap[Good] { constructor mk_good; projector un_good; }; \
-                 newtype Bad_contra : nonpositive.Wrap[Bad_contra] { \
-                   constructor mk_bad_contra; projector un_bad_contra; \
-                 }; \
-                 newtype Bad_invariant : nonpositive.Invariant[Bad_invariant] { \
-                   constructor mk_bad_invariant; projector un_bad_invariant; \
-                 };",
+                 type { Good: positive.Wrap[Good] { mk; get; }; }; \
+                 type { Bad_contra: nonpositive.Wrap[Bad_contra] { mk; get; }; }; \
+                 type { Bad_invariant: nonpositive.Invariant[Bad_invariant] { mk; get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;
@@ -1020,42 +1004,32 @@ mod tests {
             (
                 "p0.kio",
                 "module p0; \
-                 pub newtype Wrap[A] : A -> . { constructor mk_wrap; projector un_wrap; };",
+                 pub type { Wrap[A]: A -> . { mk; get; }; };",
             ),
             (
                 "p1.kio",
                 "module p1; import p0 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
-                   constructor mk_wrap; projector un_wrap; \
-                 };",
+                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p2.kio",
                 "module p2; import p1 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
-                   constructor mk_wrap; projector un_wrap; \
-                 };",
+                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p3.kio",
                 "module p3; import p2 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
-                   constructor mk_wrap; projector un_wrap; \
-                 };",
+                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p4.kio",
                 "module p4; import p3 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
-                   constructor mk_wrap; projector un_wrap; \
-                 };",
+                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "consumer.kio",
                 "module consumer; import p4 as outer; \
-                 newtype Good : outer.Wrap[outer.Wrap[Good]] { \
-                   constructor mk_good; projector un_good; \
-                 };",
+                 type { Good: outer.Wrap[outer.Wrap[Good]] { mk; get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;

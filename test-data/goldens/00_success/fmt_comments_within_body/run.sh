@@ -2,20 +2,20 @@
 # Pin trivia preservation for the within-body positions added in
 # the comment-dropping fix:
 # - Between `=` and the value of a `let` binding.
-# - Between `in` and the body of a `let` binding (when the body
+# - Before the continuation of a `let` binding (when the body
 #   isn't itself a `let` with its own leading-trivia slot).
 # - Inside a call's argument list — for both value-args and
 #   type-args. Forces multi-line leading-comma layout when any arg
 #   carries a leading comment.
-# - Inside a `match!` clause body (between `{` and the body).
+# - Inside a `match` clause body (between `{` and the body).
 # - Inside a tuple literal `(a, b)` — comments above any element.
-# - Inside a label-value `{f = e, g = e'}` — comments above any
-#   label.
+# - Inside a row-construction macro block — comments above each
+#   nominal constructor call.
 # - Inside singleton type-application groups `Foo[A][B]` — comments
-#   above each type argument, including on a polymorphic newtype member
+#   above each type argument, including on a polymorphic nominal member
 #   with multiple type stages before its value packet.
-# - Inside a `labels { f: X, g: Y }` block — comments above any
-#   label entry.
+# - Inside an ordinary type alias product — comments above each
+#   referenced nominal type.
 #
 # This case lives in the corpus as a regression guard: every comment
 # in the source must round-trip through `kio fmt` at the right

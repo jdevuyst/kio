@@ -12,12 +12,12 @@ import testapi/io(print);
 // Companion negative case at `16_totality_error/loop_via_arrow_lhs`
 // exercises the same shape with a contravariant parameter — the
 // check flips the under-arrow-LHS flag for that arg and rejects.
-newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
+type { Wrap[A]: A { pub mk; pub get } }
 
-rec newtype Reclist : . | (String & Reclist) { pub constructor mk_rl; pub projector un_rl }
+rec type { Reclist: . | (String & Reclist) { pub mk; pub get } }
 
 // `Wrap(Reclist)` puts `Reclist` in `Wrap`'s `[A]` slot.
 // `[A]` is covariant in `Wrap`, so this is strictly positive.
-newtype Boxed : Wrap[Reclist] { pub constructor mk_boxed; pub projector un_boxed }
+type { Boxed: Wrap[Reclist] { pub mk; pub get } }
 
 pub fn main() { print("variance ok\n"[String]) }

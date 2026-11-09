@@ -14,15 +14,15 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Frame = {
-, name: String
-, dimension: I32
-, message: p.Polynomial
-, coordinates: c.List[I32]
-, received: s.Word
+pub type Frame = {
+  Name: String;
+  Dimension: I32;
+  Message: p.Polynomial;
+  Coordinates: c.List[I32];
+  Received: s.Word
 };
 
-pub labels Read_result = { loaded: Frame } | { error: String } | { done: . };
+pub type Read_result = { Loaded: Frame } | { Error: String } | { Done: . };
 
 fn integer() -> I32 | String {
   match(io.read_ascii_line()) {
@@ -67,7 +67,10 @@ rec(loop) fn samples(count: I32, reversed: s.Word) -> s.Word | String {
     .(coordinate: I32) {
       match(integer()) {
         .(value: I32) {
-          recur samples(a.sub_i32(count, 1), c.cons({s.coordinate, s.value}, reversed))
+          recur samples(
+          , a.sub_i32(count, 1)
+          , c.cons((s.Coordinate.mk(coordinate), s.Value.mk(value)), reversed)
+          )
         };
         .(error: String) { error.>widen_sum }
       }
@@ -81,12 +84,19 @@ fn receive(name: String, dimension: I32, message: p.Polynomial, coordinates: c.L
     .(count: I32) {
       match(samples(count, c.nil[_])) {
         .(received: s.Word) {
-          {loaded = {name, dimension, message, coordinates, received}}.>widen_sum
+          Loaded.mk((
+          , Name.mk(name)
+          , Dimension.mk(dimension)
+          , Message.mk(message)
+          , Coordinates.mk(coordinates)
+          , Received.mk(received)
+          ))
+            .>widen_sum
         };
-        .(message: String) { {error = message}.>widen_sum }
+        .(message: String) { Error.mk(message).>widen_sum }
       }
     };
-    .(message: String) { {error = message}.>widen_sum }
+    .(message: String) { Error.mk(message).>widen_sum }
   }
 }
 
@@ -95,10 +105,10 @@ fn contents(name: String, dimension: I32, length: I32) -> Read_result {
     .(message: p.Polynomial) {
       match(integers(length, c.nil[_])) {
         .(coordinates: c.List[I32]) { receive(name, dimension, message, coordinates) };
-        .(message: String) { {error = message}.>widen_sum }
+        .(message: String) { Error.mk(message).>widen_sum }
       }
     };
-    .(message: String) { {error = message}.>widen_sum }
+    .(message: String) { Error.mk(message).>widen_sum }
   }
 }
 
@@ -107,18 +117,18 @@ fn header(name: String) -> Read_result {
     .(dimension: I32) {
       match(bounded(1, 8)) {
         .(length: I32) { contents(name, dimension, length) };
-        .(message: String) { {error = message}.>widen_sum }
+        .(message: String) { Error.mk(message).>widen_sum }
       }
     };
-    .(message: String) { {error = message}.>widen_sum }
+    .(message: String) { Error.mk(message).>widen_sum }
   }
 }
 
 pub fn next() -> Read_result {
   match(io.read_ascii_line()) {
     .(name: String) {
-      if(text.string_eq(name, "END")) { {done=}.>widen_sum } else { header(name) }
+      if(text.string_eq(name, "END")) { Done.mk(()).>widen_sum } else { header(name) }
     };
-    .() { {error = "missing END marker"}.>widen_sum }
+    .() { Error.mk("missing END marker").>widen_sum }
   }
 }

@@ -11,21 +11,21 @@ import testapi/text(string_concat);
 // does not equal the bare type-parameter, so the brand-crossing is
 // not a runtime identity. `List` is a kind-`*→*` brand, so a
 // `Functor[*F]` instance can be instantiated for it; the instance
-// below crosses the brand through `List.cons` / `List.un_list`,
+// below crosses the brand through `List.mk` / `List.get`,
 // walking the recursive payload with `loop`.
-pub rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
 // Convenience constructors over the underlying sum.
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // In-order reverse via `loop`. Used twice by `list_functor` so the
 // mapped output ends up in input order.
 fn reverse_step[A](state: List[A] & List[A]) -> (List[A] & List[A]) | List[A] {
   match(state) {
     .(remaining: List[A], output: List[A]) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(x: A, rest: List[A]) {
             widen_sum((rest, push(x, output)))[(List[A] & List[A]) | List[A]]
@@ -44,25 +44,22 @@ fn reverse[A](xs: List[A]) -> List[A] {
 // `Functor[*F]` instance with the polymorphic-function payload —
 // same shape as in `exec_functor_maybe` / `exec_functor_identity`,
 // instantiated here at `List`.
-pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
-  pub constructor mk_functor;
-  pub projector fmap
-  }
+pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { pub mk; pub get } }
 
 // `List`'s functor instance. The body walks `xs : List(A)` with
 // `loop`, applying the user's step function `s` to each element
 // and accumulating a reversed `List(B)`. A second `loop` then
 // restores input order. The brand crossings — `xs` arriving as
 // `F(A) = List(A)` and the result leaving as `F(B) = List(B)` —
-// go through `List`'s own `cons` / `un_list` members.
+// go through `List`'s own `mk` / `get` members.
 fn list_functor() -> Functor[List] {
-  Functor.mk_functor[List](.[A][B](s, xs) {
+  Functor.mk[List](.[A][B](s, xs) {
     let reversed =
       loop(
       , .(state: List[A] & List[B]) {
           match(state) {
             .(remaining: List[A], output: List[B]) {
-              match(remaining.>List.un_list) {
+              match(remaining.>List.get) {
                 (
                 , .(x: A, rest: List[A]) {
                     widen_sum((rest, push(s(x), output)))[(List[A] & List[B]) | List[B]]
@@ -85,11 +82,11 @@ fn list_functor() -> Functor[List] {
 fn join_step(state: List[String] & String) -> (List[String] & String) | String {
   match(state) {
     .(remaining: List[String], acc: String) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(x: String, rest: List[String]) {
             let .(sep: String) =
-              match(rest.>List.un_list) {
+              match(rest.>List.get) {
                 (.(_hd: String, _tl: List[String]) { "," }, .(_empty: .) { "\n" })
               };
             widen_sum((rest, string_concat(acc, string_concat(x, sep))))[| (List[String] & String)
@@ -111,7 +108,7 @@ fn join_list(xs: List[String]) -> String {
 fn use_instance() -> String {
   let inst = list_functor();
   let xs = push("hello", push("world", nil[String](())));
-  let mapped = Functor.fmap(inst)[String][String](.(s) { string_concat(s, "!") }, xs);
+  let mapped = Functor.get(inst)[String][String](.(s) { string_concat(s, "!") }, xs);
   join_list(mapped)
 }
 

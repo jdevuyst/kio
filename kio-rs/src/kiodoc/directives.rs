@@ -352,8 +352,8 @@ pub struct UnresolvedDirectiveError {
 }
 
 /// A `` [`@type term`] `` directive whose `term` resolves to a
-/// type-level name (`type` / `labels` / `newtype` / host type /
-/// exported type). A type-level name binds no value, so `@type`
+/// type-level name (a type alias, nominal type, or host type).
+/// A type-level name binds no value, so `@type`
 /// against one is a Kiodoc contract error.
 #[derive(Debug, Clone)]
 pub struct TypeLevelDirectiveError {
@@ -586,9 +586,9 @@ mod tests {
         assert!(msg.contains("`Cnf`"));
         assert!(msg.contains("type alias"));
         assert!(msg.contains("value binding"));
-        // The `labels` kind names itself distinctly.
-        let labels_msg = format_type_level_directive_message("Color", TypeLevelKind::Labels);
-        assert!(labels_msg.contains("`labels`"));
+        // A compact named declaration introduces an ordinary type alias.
+        let compact_msg = format_type_level_directive_message("Color", TypeLevelKind::Labels);
+        assert!(compact_msg.contains("type alias"));
     }
 
     #[test]
@@ -622,14 +622,12 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_directives_select_the_declaration_without_a_value_type() {
-        let module = crate::pass::parser::parse(
-            "module api; fn field() -> . { () } type {field} = {original};",
-        )
-        .unwrap();
+    fn alias_directives_select_the_declaration_without_a_value_type() {
+        let module =
+            crate::pass::parser::parse("module api; fn field() -> . { () } type Field = Original;")
+                .unwrap();
         let scope = super::super::refs::module_scope_from_surface(&module);
-        let text =
-            "[`@signature {field}`]. [`@source {field}`]. [`@type {field}`]. [`@type field`].";
+        let text = "[`@signature Field`]. [`@source Field`]. [`@type Field`]. [`@type field`].";
         let (directives, unknown) = scan_directives(text);
         assert_eq!(directives.len(), 4);
         assert!(unknown.is_empty());
@@ -638,10 +636,10 @@ mod tests {
         assert!(unknown.is_empty());
         assert!(unresolved.is_empty());
         assert_eq!(nonvalue.len(), 1);
-        assert_eq!(nonvalue[0].term, "{field}");
+        assert_eq!(nonvalue[0].term, "Field");
         assert_eq!(
             format_type_level_directive_message(&nonvalue[0].term, nonvalue[0].kind),
-            "`{field}` is a label declaration; `@type` expects a value binding (fn, host fn, exported fn)"
+            "`Field` is a type alias; `@type` expects a value binding (fn, host fn, exported fn)"
         );
     }
 

@@ -17,19 +17,13 @@ pub pure fn apply_pair_impl(
 , _string_type: __Type__
 , _source: __Type__
 , _value: __Checked_term__
-, _target: __Type__ | .
+, _target: .
 ) -> __Checked_term__ {
   let string_type = __reflect_type__(ct)[String];
   let concat_type = __reflect_type__(ct)[(String & String) -> String];
   let strings_type = __reflect_type__(ct)[String & String];
   let packet_type = __type_product__(ct, concat_type, strings_type);
-  let fn_type =
-    __type_arrow__(
-    , ct
-    , packet_type
-    , __type_arity_succ__(ct, __type_arity_succ__(ct, __type_arity_zero__(ct)))
-    , string_type
-    );
+  let fn_type = __type_arrow__(ct, packet_type, string_type);
   __term_fn__(
   , ct
   , fn_type

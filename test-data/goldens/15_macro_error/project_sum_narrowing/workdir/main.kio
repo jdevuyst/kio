@@ -8,8 +8,8 @@ import macros/spine_macros(macro narrow_prod);
 // own constraints) or, more typically, to `match`. `narrow_prod`
 // therefore rejects this coercion, which is bucketed as a macro error
 // (exit 15), not a type error.
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
 fn narrow(x: A | B) -> A { narrow_prod(x) }

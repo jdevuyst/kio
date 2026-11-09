@@ -2,8 +2,8 @@ module testapi;
 
 host type String role(str);
 
-pub newtype Red : . { pub constructor red; pub projector un_red }
+pub type { Red: . { pub mk; pub get } }
 
-pub newtype Black : . { pub constructor black; pub projector un_black }
+pub type { Black: . { pub mk; pub get } }
 
-pub newtype Nested : . | ((Red | Black) & String) { pub constructor nest; pub projector un_nest }
+pub type { Nested: . | ((Red | Black) & String) { pub mk; pub get } }

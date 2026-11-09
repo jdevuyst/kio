@@ -2,9 +2,9 @@ module main;
 
 import macros/spine_macros(macro widen_prod);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
 // Pure diagonal — R-Diag-Prod. Source `[A]`, target `[A, A]`: both
 // target slots read source slot 0. The form is the spine palette's

@@ -52,6 +52,7 @@ import forge/program(
 );
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32);
@@ -67,9 +68,11 @@ rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
     , .(f: Flat, rest: Flats) {
         match(f) {
           (
-          , .(x: Instr) { recur place(rest, add_i32(at, 1), l.cons(x.?{p.instr}, code), syms) }
+          , .(x: Instr) {
+              recur place(rest, add_i32(at, 1), l.cons(x.>select { p.Instr.get }, code), syms)
+            }
           , .(x: Mark) {
-              let name = x.?{p.mark};
+              let name = x.>select { p.Mark.get };
               if(p.is_placed(syms, name)) {
                 widen_sum(p.duplicate_label(name))
               } else {
@@ -111,12 +114,12 @@ fn fix(i: Src, syms: Symbols) -> Fix {
   match(i) {
     (
     , .(x: Jmp) {
-        match(addr_of(syms, x.?{isa.jmp})) {
+        match(addr_of(syms, x.>select { isa.Jmp.get })) {
           (.(at: I32) { carried(isa.jmp_at(at)) }, .(err: Undefined_label) { widen_sum(err) })
         }
       }
     , .(x: Jmpz) {
-        let .(r: Reg, name: String) = x.?{isa.jmpz};
+        let .(r: Reg, name: String) = x.>select { isa.Jmpz.get };
         match(addr_of(syms, name)) {
           (.(at: I32) { carried(isa.jmpz_at(r, at)) }, .(err: Undefined_label) { widen_sum(err) })
         }
@@ -142,7 +145,9 @@ rec(loop) fn resolve(code: Srcs, syms: Symbols, acc: Prog) -> Resolved {
     , .(i: Src, rest: Srcs) {
         match(fix(i, syms)) {
           (
-          , .(f: Fixed) { recur resolve(rest, syms, l.cons(f.?{p.fixed}, acc)) }
+          , .(f: Fixed) {
+              recur resolve(rest, syms, l.cons(f.>select { p.Fixed.get }, acc))
+            }
           , .(err: Undefined_label) { widen_sum(err) }
           )
         }

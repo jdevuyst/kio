@@ -7,7 +7,7 @@ from rich_typed_host import (
     create_richTypedHost,
     KioHostType_api__Crate,
     KioViewHost_api__applyPoly_Arg0Source as PolySource,
-    KioViewProj_api__Pack__openPack_Result_Stage1Source as OpenSource,
+    KioViewProj_api__Pack__get_Result_Stage1Source as OpenSource,
     kio_lift,
     kio_lift_stage,
 )
@@ -18,12 +18,12 @@ if TYPE_CHECKING:
         KioFn,
         KioHostMk_api__Crate,
         KioViewHost_api__applyPoly_Arg0 as Poly,
-        KioViewProj_api__Pack__openPack_Result_Stage1 as Open,
+        KioViewProj_api__Pack__get_Result_Stage1 as Open,
         KioNewtype_api__Box,
         KioNewtype_api__Shadow,
         KioNewtype_api__Functor,
         KioNewtypeMk_api__Box,
-        KioViewCtor_api__Shadow__makeShadow_Arg0,
+        KioViewCtor_api__Shadow__mk_Arg0,
         RichTypedHostHost,
     )
 
@@ -98,24 +98,24 @@ pkg = create_richTypedHost(host)
 
 assert pkg.api.poly() == "rank-N"
 
-boxed = pkg.api.KioType_Box.makeBox("hkt")
+boxed = pkg.api.KioType_Box.mk("hkt")
 hkt_boxed = pkg.api.hkt(boxed)
-assert pkg.api.KioType_Box.readBox(hkt_boxed) == "hkt"
+assert pkg.api.KioType_Box.get(hkt_boxed) == "hkt"
 box_functor = pkg.api.functor(pkg.api.boxFunctor(boxed))
 applied_box: KioApply1[
     KioNewtypeMk_api__Box[str], str
-] = pkg.api.KioType_Functor.readFunctor(box_functor)
-assert pkg.api.KioType_Box.readBox(applied_box) == "hkt"
-reconstructed_functor: BoxFunctor = pkg.api.KioType_Functor.makeFunctor(applied_box)
-assert pkg.api.KioType_Box.readBox(
-    pkg.api.KioType_Functor.readFunctor(pkg.api.functor(reconstructed_functor))
+] = pkg.api.KioType_Functor.get(box_functor)
+assert pkg.api.KioType_Box.get(applied_box) == "hkt"
+reconstructed_functor: BoxFunctor = pkg.api.KioType_Functor.mk(applied_box)
+assert pkg.api.KioType_Box.get(
+    pkg.api.KioType_Functor.get(pkg.api.functor(reconstructed_functor))
 ) == "hkt"
-shadow_input: KioViewCtor_api__Shadow__makeShadow_Arg0[
+shadow_input: KioViewCtor_api__Shadow__mk_Arg0[
     BoxString
 ] = {"left": boxed, "right": kio_lift_stage(Identity())}
-shadow = pkg.api.KioType_Shadow.makeShadow(shadow_input)
-shadow_payload = pkg.api.KioType_Shadow.readShadow(pkg.api.shadow(shadow))
-assert pkg.api.KioType_Box.readBox(shadow_payload["left"]) == "hkt"
+shadow = pkg.api.KioType_Shadow.mk(shadow_input)
+shadow_payload = pkg.api.KioType_Shadow.get(pkg.api.shadow(shadow))
+assert pkg.api.KioType_Box.get(shadow_payload["left"]) == "hkt"
 assert stage_events == []
 selected_int: KioFn[int, int] = shadow_payload["right"].advance()
 assert stage_events == ["identity-stage"]
@@ -127,27 +127,27 @@ assert stage_events == [
 ]
 
 packed = pkg.api.pack({"witness": "existential"})
-open_string: KioFn[Open[str], str] = pkg.api.KioType_Pack.openPack(packed).advance()
+open_string: KioFn[Open[str], str] = pkg.api.KioType_Pack.get(packed).advance()
 hidden = open_string(kio_lift_stage(OpenString()))
 assert hidden == "opened"
 assert stage_events[-2:] == ["opener-stage", "opener-value"]
 
-recursive_base = pkg.api.KioType_Recursive.makeRecursive({"tag": "left", "value": None})
-recursive = pkg.api.KioType_Recursive.makeRecursive({"tag": "right", "value": recursive_base})
-recursive_view = pkg.api.KioType_Recursive.readRecursive(recursive)
+recursive_base = pkg.api.KioType_Recursive.mk({"tag": "left", "value": None})
+recursive = pkg.api.KioType_Recursive.mk({"tag": "right", "value": recursive_base})
+recursive_view = pkg.api.KioType_Recursive.get(recursive)
 assert recursive_view["tag"] == "right"
-assert pkg.api.KioType_Recursive.readRecursive(recursive_view["value"]) == {"tag": "left", "value": None}
+assert pkg.api.KioType_Recursive.get(recursive_view["value"]) == {"tag": "left", "value": None}
 
 deep_recursive = recursive_base
 for _ in range(1200):
-    deep_recursive = pkg.api.KioType_Recursive.makeRecursive(
+    deep_recursive = pkg.api.KioType_Recursive.mk(
         {"tag": "right", "value": deep_recursive}
     )
 for _ in range(1200):
-    deep_view = pkg.api.KioType_Recursive.readRecursive(deep_recursive)
+    deep_view = pkg.api.KioType_Recursive.get(deep_recursive)
     assert deep_view["tag"] == "right"
     deep_recursive = deep_view["value"]
-assert pkg.api.KioType_Recursive.readRecursive(deep_recursive) == {
+assert pkg.api.KioType_Recursive.get(deep_recursive) == {
     "tag": "left", "value": None
 }
 

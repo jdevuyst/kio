@@ -10,6 +10,7 @@ module tree/insert;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, lt_i32);
@@ -27,26 +28,26 @@ import tree/node(
 , size_of
 , three_node
 , two_node
-, {three}
-, {two}
 );
 import tree/tally(Tally, tally_add, tally_root_grow, tally_split, tally_zero);
 
-labels Ins = { fitted: Node } | { split: Node & I32 & String & Node };
+type Ins = { Fitted: Node } | { Split: Node & I32 & String & Node };
 
 type Ins_out = Ins & Tally;
 
-fn fitted(n: Node) -> Ins { ({fitted = n}.>widen_sum)[Ins] }
+fn fitted(n: Node) -> Ins { (Fitted.mk(n).>widen_sum)[Ins] }
 
-fn promoted(l: Node, k: I32, v: String, r: Node) -> Ins { ({split = (l, k, v, r)}.>widen_sum)[Ins] }
+fn promoted(l: Node, k: I32, v: String, r: Node) -> Ins { (Split.mk((l, k, v, r)).>widen_sum)[Ins] }
 
 /// A 2-node has room for a promotion: it becomes a 3-node and nothing climbs.
 fn absorb_two_left(i: Ins, k1: I32, v1: String, r: Node) -> Ins {
   match(i) {
     (
-    , .(f: Fitted) { fitted(two_node(f.?{fitted}, k1, v1, r)) }
+    , .(f: Fitted) {
+        fitted(two_node(f.>select { Fitted.get }, k1, v1, r))
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         fitted(three_node(a, pk, pv, b, k1, v1, r))
       }
     )
@@ -56,9 +57,11 @@ fn absorb_two_left(i: Ins, k1: I32, v1: String, r: Node) -> Ins {
 fn absorb_two_right(l: Node, k1: I32, v1: String, i: Ins) -> Ins {
   match(i) {
     (
-    , .(f: Fitted) { fitted(two_node(l, k1, v1, f.?{fitted})) }
+    , .(f: Fitted) {
+        fitted(two_node(l, k1, v1, f.>select { Fitted.get }))
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         fitted(three_node(l, k1, v1, a, pk, pv, b))
       }
     )
@@ -71,9 +74,11 @@ fn absorb_two_right(l: Node, k1: I32, v1: String, i: Ins) -> Ins {
 fn overflow_left(i: Ins, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node, acc: Tally) -> Ins_out {
   match(i) {
     (
-    , .(f: Fitted) { (fitted(three_node(f.?{fitted}, k1, v1, m, k2, v2, r)), acc) }
+    , .(f: Fitted) {
+        (fitted(three_node(f.>select { Fitted.get }, k1, v1, m, k2, v2, r)), acc)
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         (
         , promoted(two_node(a, pk, pv, b), k1, v1, two_node(m, k2, v2, r))
         , tally_add(acc, tally_split())
@@ -86,9 +91,11 @@ fn overflow_left(i: Ins, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: N
 fn overflow_mid(l: Node, k1: I32, v1: String, i: Ins, k2: I32, v2: String, r: Node, acc: Tally) -> Ins_out {
   match(i) {
     (
-    , .(f: Fitted) { (fitted(three_node(l, k1, v1, f.?{fitted}, k2, v2, r)), acc) }
+    , .(f: Fitted) {
+        (fitted(three_node(l, k1, v1, f.>select { Fitted.get }, k2, v2, r)), acc)
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         (
         , promoted(two_node(l, k1, v1, a), pk, pv, two_node(b, k2, v2, r))
         , tally_add(acc, tally_split())
@@ -101,9 +108,11 @@ fn overflow_mid(l: Node, k1: I32, v1: String, i: Ins, k2: I32, v2: String, r: No
 fn overflow_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, i: Ins, acc: Tally) -> Ins_out {
   match(i) {
     (
-    , .(f: Fitted) { (fitted(three_node(l, k1, v1, m, k2, v2, f.?{fitted})), acc) }
+    , .(f: Fitted) {
+        (fitted(three_node(l, k1, v1, m, k2, v2, f.>select { Fitted.get })), acc)
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         (
         , promoted(two_node(l, k1, v1, m), k2, v2, two_node(a, pk, pv, b))
         , tally_add(acc, tally_split())
@@ -118,11 +127,11 @@ fn overflow_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, i:
 /// work left to do once its child answers, which is exactly what `rec(cont)`
 /// marks.
 rec(loop) fn ins(t: Node, k: I32, v: String) -> Ins_out {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { (promoted(leaf_node(), k, v, leaf_node()), tally_zero()) }
     , .(n: Two) {
-        let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
+        let .(l: Node, k1: I32, v1: String, r: Node) = n.>select { Two.get };
         if(eq_i32(k, k1)) {
           (fitted(two_node(l, k, v, r)), tally_zero())
         } else if(lt_i32(k, k1)) {
@@ -134,7 +143,8 @@ rec(loop) fn ins(t: Node, k: I32, v: String) -> Ins_out {
         }
       }
     , .(n: Three) {
-        let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+        let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) =
+          n.>select { Three.get };
         if(eq_i32(k, k1)) {
           (fitted(three_node(l, k, v, m, k2, v2, r)), tally_zero())
         } else if(eq_i32(k, k2)) {
@@ -164,9 +174,11 @@ pub fn insert(t: Tree, k: I32, v: String) -> Tree & Tally {
   let .(i: Ins, acc: Tally) = ins(root, k, v);
   match(i) {
     (
-    , .(f: Fitted) { (make_tree(f.?{fitted}, size), acc) }
+    , .(f: Fitted) {
+        (make_tree(f.>select { Fitted.get }, size), acc)
+      }
     , .(s: Split) {
-        let .(a: Node, pk: I32, pv: String, b: Node) = s.?{split};
+        let .(a: Node, pk: I32, pv: String, b: Node) = s.>select { Split.get };
         (make_tree(two_node(a, pk, pv, b), size), tally_add(acc, tally_root_grow()))
       }
     )

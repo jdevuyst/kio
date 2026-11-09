@@ -4,7 +4,6 @@ module queue/macros/show;
 import __intrinsics__;
 
 import __comptime__;
-import queue/macros/macro_util(Optional_type);
 import queue/macros/testapi(String);
 
 /// Renders the unit value.
@@ -27,7 +26,7 @@ pub fn show_right_prefix() -> String { "right("[String] }
 
 type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -495,7 +494,7 @@ pure fn render_value(
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn show_checked(
+pure fn show_checked(
 , ct: __Comptime__
 , unit_text_fn: __Checked_term__
 , open_paren_fn: __Checked_term__
@@ -505,19 +504,14 @@ pub pure fn show_checked(
 , right_prefix_fn: __Checked_term__
 , source: __Type__
 , value: __Checked_term__
-, _target: Optional_type
+, _target: .
 ) -> __Checked_term__ {
   let string_type = __reflect_type__(ct)[String];
   let concat_type = __reflect_type__(ct)[(String & String) -> String];
   let text_fn_type = __reflect_type__(ct)[. -> String];
   let converters_type = __type_host_converters__(ct, string_type, source);
   let show_fn_type =
-    __type_arrow__(
-    , ct
-    , __type_product__(ct, concat_type, converters_type)
-    , __type_arity_succ__(ct, __type_arity_succ__(ct, __type_arity_zero__(ct)))
-    , string_type
-    );
+    __type_arrow__(ct, __type_product__(ct, concat_type, converters_type), string_type);
   __term_fn__(
   , ct
   , show_fn_type

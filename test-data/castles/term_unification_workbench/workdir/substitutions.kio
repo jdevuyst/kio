@@ -3,6 +3,7 @@ module substitutions;
 import list/core as lists;
 import list/list as traversal;
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import terms as term;
 import testapi(I32, String);
@@ -11,24 +12,31 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-pub labels Binding = { key: I32, replacement: term.Term };
+pub type Binding = { Key: I32; Replacement: term.Term };
 
 pub type Substitution = lists.List[Binding];
 
 pub fn empty() -> Substitution { lists.nil[_] }
 
 pub fn lookup(bindings: Substitution, id: I32) -> term.Term | . {
-  match(traversal.find(.(binding) { arith.eq_i32(binding.?{key}, id) }, bindings)) {
-    .(binding: Binding) { binding.?{replacement}.>widen_sum };
+  match(traversal.find(
+  , .(binding) {
+      arith.eq_i32(binding.>select { Key.get }, id)
+    }
+  , bindings
+  )) {
+    .(binding: Binding) {
+      binding.>select { Replacement.get }.>widen_sum
+    };
     .(_missing: .) { ().>widen_sum }
   }
 }
 
-labels Frame = { symbol: I32, completed: lists.List[term.Term], remaining: lists.List[term.Term] };
+type Frame = { Symbol: I32; Completed: lists.List[term.Term]; Remaining: lists.List[term.Term] };
 
 rec(loop) {
   fn descend(bindings: Substitution, original: term.Term, parents: lists.List[Frame]) -> term.Term {
-    match(original.>term.Term.unwrap) {
+    match(original.>term.Term.get) {
       .(v: term.Variable) {
         match(lookup(bindings, v.>term.Variable.get)) {
           .(replacement: term.Term) { recur ascend(bindings, replacement, parents) };
@@ -41,7 +49,10 @@ rec(loop) {
             recur descend(
             , bindings
             , first
-            , lists.cons({symbol, completed = lists.nil[_], remaining = rest}, parents)
+            , lists.cons(
+              , (Symbol.mk(symbol), Completed.mk(lists.nil[_]), Remaining.mk(rest))
+              , parents
+              )
             )
           };
           .(_empty: .) { recur ascend(bindings, original, parents) }
@@ -52,17 +63,28 @@ rec(loop) {
   fn ascend(bindings: Substitution, value: term.Term, parents: lists.List[Frame]) -> term.Term {
     match(lists.uncons(parents)) {
       .(frame: Frame, outer: lists.List[Frame]) {
-        let completed = lists.cons(value, frame.?{completed});
-        match(lists.uncons(frame.?{remaining})) {
+        let completed = lists.cons(value, frame.>select { Completed.get });
+        match(lists.uncons(frame.>select { Remaining.get })) {
           .(first: term.Term, rest: lists.List[term.Term]) {
             recur descend(
             , bindings
             , first
-            , lists.cons({symbol = frame.?{symbol}, completed, remaining = rest}, outer)
+            , lists.cons(
+              , (
+                , Symbol.mk(frame.>select { Symbol.get })
+                , Completed.mk(completed)
+                , Remaining.mk(rest)
+                )
+              , outer
+              )
             )
           };
           .(_empty: .) {
-            recur ascend(bindings, term.node(frame.?{symbol}, traversal.reverse(completed)), outer)
+            recur ascend(
+            , bindings
+            , term.node(frame.>select { Symbol.get }, traversal.reverse(completed))
+            , outer
+            )
           }
         }
       };
@@ -76,11 +98,16 @@ pub fn apply(bindings: Substitution, original: term.Term) -> term.Term {
 }
 
 pub fn extend(bindings: Substitution, id: I32, value: term.Term) -> Substitution {
-  let binding = {key = id, replacement = value};
+  let binding = (Key.mk(id), Replacement.mk(value));
   let singleton = lists.singleton(binding);
   let composed =
     traversal.map(
-    , .(old) { {key = old.?{key}, replacement = apply(singleton, old.?{replacement})} }
+    , .(old) {
+        (
+        , Key.mk(old.>select { Key.get })
+        , Replacement.mk(apply(singleton, old.>select { Replacement.get }))
+        )
+      }
     , bindings
     );
   lists.cons(binding, composed)
@@ -90,8 +117,8 @@ fn show_binding(binding: Binding) -> String {
   string_concat(
   , "v"
   , string_concat(
-    , fmt.int_to_string(binding.?{key})
-    , string_concat("=", term.render(binding.?{replacement}))
+    , fmt.int_to_string(binding.>select { Key.get })
+    , string_concat("=", term.render(binding.>select { Replacement.get }))
     )
   )
 }

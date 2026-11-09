@@ -134,7 +134,7 @@ impl SymbolIndex {
 }
 
 /// Build the per-item documentation sections for a module's items.
-/// Source-order preserved; anonymous items (anonymous `labels`,
+/// Source-order preserved; anonymous items (unnamed compact groups,
 /// `equiv`, anonymous `op` with no resolvable function name) are
 /// skipped — they have no name to anchor or link.
 fn module_item_sections(module: &Module) -> Vec<ItemSection> {
@@ -432,13 +432,13 @@ mod tests {
     fn item_section_for_newtype_carries_doc() {
         let module = crate::pass::parser::parse(
             "module pkg/main;\n/// Wraps a unit.\n\
-             pub newtype Wrapped : . { constructor mk_w; projector un_w; };\n",
+             pub type { Wrapped: . { mk; get; }; };\n",
         )
         .unwrap();
         let sections = module_item_sections(&module);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].name, "Wrapped");
-        assert_eq!(sections[0].kind, "newtype");
+        assert_eq!(sections[0].kind, "type");
         assert_eq!(sections[0].doc.as_deref(), Some("Wraps a unit."));
     }
 
@@ -460,11 +460,11 @@ mod tests {
         for (path, body) in [
             (
                 "api/left",
-                "pub newtype Box : . { constructor wrap; projector unwrap; }; pub fn make() -> . { () } fn hidden() -> . { () } pub op - __ { impl negate; }; pub op _ - __ { impl subtract; };",
+                "pub type { Box: . { mk; get; }; }; pub fn make() -> . { () } fn hidden() -> . { () } pub op - __ { impl negate; }; pub op _ - __ { impl subtract; };",
             ),
             (
                 "api/right",
-                "pub newtype Box : . { constructor wrap; projector unwrap; }; pub fn make() -> . { () }",
+                "pub type { Box: . { mk; get; }; }; pub fn make() -> . { () }",
             ),
             ("outside", "pub fn skipped() -> . { () }"),
         ] {

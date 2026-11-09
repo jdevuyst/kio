@@ -1,6 +1,7 @@
 module planner/scheduler;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import planner/deps(is_blocked, is_ready);
 import planner/state(Plan_state, completed, empty, mark_done);
 import planner/tasks(total);
@@ -8,16 +9,16 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
-pub labels Scan_result = { selected_task: I32, ready_seen: I32, blocked_seen: I32 };
+pub type Scan_result = { Selected_task: I32; Ready_seen: I32; Blocked_seen: I32 };
 
-pub labels Plan_result = {
-, final_state: Plan_state
-, rounds: I32
-, stop_ready: I32
-, stop_blocked: I32
-, peak_ready: I32
-, peak_blocked: I32
-, cycle_risk: Bool
+pub type Plan_result = {
+  Final_state: Plan_state;
+  Rounds: I32;
+  Stop_ready: I32;
+  Stop_blocked: I32;
+  Peak_ready: I32;
+  Peak_blocked: I32;
+  Cycle_risk: Bool
 };
 
 fn none() -> I32 { sub_i32(0, 1) }
@@ -39,7 +40,7 @@ fn max_i32(left: I32, right: I32) -> I32 {
 }
 
 fn scan_result(selected_task: I32, ready_seen: I32, blocked_seen: I32) -> Scan_result {
-  {selected_task, ready_seen, blocked_seen}
+  (Selected_task.mk(selected_task), Ready_seen.mk(ready_seen), Blocked_seen.mk(blocked_seen))
 }
 
 rec(loop) fn scan(
@@ -72,7 +73,15 @@ fn plan_result(
 , peak_blocked: I32
 , cycle_risk: Bool
 ) -> Plan_result {
-  {final_state, rounds, stop_ready, stop_blocked, peak_ready, peak_blocked, cycle_risk}
+  (
+  , Final_state.mk(final_state)
+  , Rounds.mk(rounds)
+  , Stop_ready.mk(stop_ready)
+  , Stop_blocked.mk(stop_blocked)
+  , Peak_ready.mk(peak_ready)
+  , Peak_blocked.mk(peak_blocked)
+  , Cycle_risk.mk(cycle_risk)
+  )
 }
 
 rec(loop) fn plan_from(plan: Plan_state, rounds: I32, peak_ready: I32, peak_blocked: I32) -> Plan_result {
@@ -80,9 +89,9 @@ rec(loop) fn plan_from(plan: Plan_state, rounds: I32, peak_ready: I32, peak_bloc
     plan_result(plan, rounds, 0, 0, peak_ready, peak_blocked, .f)
   } else {
     let scan_report = scan(plan, 0, none(), 0, 0);
-    let ready_seen = scan_report.?{ready_seen};
-    let blocked_seen = scan_report.?{blocked_seen};
-    let selected_task = scan_report.?{selected_task};
+    let ready_seen = scan_report.>select { Ready_seen.get };
+    let blocked_seen = scan_report.>select { Blocked_seen.get };
+    let selected_task = scan_report.>select { Selected_task.get };
     if(eq_i32(selected_task, none())) {
       plan_result(plan, rounds, ready_seen, blocked_seen, peak_ready, peak_blocked, .t)
     } else {
@@ -98,16 +107,30 @@ rec(loop) fn plan_from(plan: Plan_state, rounds: I32, peak_ready: I32, peak_bloc
 
 pub fn plan() -> Plan_result { plan_from(empty(), 0, 0, 0) }
 
-pub fn result_state(result: Plan_result) -> Plan_state { result.?{final_state} }
+pub fn result_state(result: Plan_result) -> Plan_state {
+  result.>select { Final_state.get }
+}
 
-pub fn result_rounds(result: Plan_result) -> I32 { result.?{rounds} }
+pub fn result_rounds(result: Plan_result) -> I32 {
+  result.>select { Rounds.get }
+}
 
-pub fn result_stop_ready(result: Plan_result) -> I32 { result.?{stop_ready} }
+pub fn result_stop_ready(result: Plan_result) -> I32 {
+  result.>select { Stop_ready.get }
+}
 
-pub fn result_stop_blocked(result: Plan_result) -> I32 { result.?{stop_blocked} }
+pub fn result_stop_blocked(result: Plan_result) -> I32 {
+  result.>select { Stop_blocked.get }
+}
 
-pub fn result_peak_ready(result: Plan_result) -> I32 { result.?{peak_ready} }
+pub fn result_peak_ready(result: Plan_result) -> I32 {
+  result.>select { Peak_ready.get }
+}
 
-pub fn result_peak_blocked(result: Plan_result) -> I32 { result.?{peak_blocked} }
+pub fn result_peak_blocked(result: Plan_result) -> I32 {
+  result.>select { Peak_blocked.get }
+}
 
-pub fn result_cycle_risk(result: Plan_result) -> Bool { result.?{cycle_risk} }
+pub fn result_cycle_risk(result: Plan_result) -> Bool {
+  result.>select { Cycle_risk.get }
+}

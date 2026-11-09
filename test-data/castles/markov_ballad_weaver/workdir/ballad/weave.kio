@@ -14,36 +14,37 @@
 module ballad/weave;
 
 import ballad/list(List, cons, nil, of1, reverse);
-import ballad/model(Model, Tally, is_end, starts_of, succs_of, total_weight, {count}, {word});
+import ballad/model(Count, Model, Tally, Word, is_end, starts_of, succs_of, total_weight);
 import ballad/prng(next, roll, seed_state);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
 /// Why a line stopped.
-pub labels Stop = { by_end_word: . } | { by_word_cap: . } | { by_no_successor: . };
+pub type Stop = { By_end_word: . } | { By_word_cap: . } | { By_no_successor: . };
 
-fn stopped_at_end() -> Stop { ({by_end_word=}.>widen_sum)[Stop] }
+fn stopped_at_end() -> Stop { (By_end_word.mk(()).>widen_sum)[Stop] }
 
-fn stopped_at_cap() -> Stop { ({by_word_cap=}.>widen_sum)[Stop] }
+fn stopped_at_cap() -> Stop { (By_word_cap.mk(()).>widen_sum)[Stop] }
 
-fn stopped_dry() -> Stop { ({by_no_successor=}.>widen_sum)[Stop] }
+fn stopped_dry() -> Stop { (By_no_successor.mk(()).>widen_sum)[Stop] }
 
 /// One recorded draw.
-pub labels Step = {
-, step_state: I32
-, step_from: String
-, step_succs: List[Tally]
-, step_roll: I32
-, step_to: String
+pub type Step = {
+  Step_state: I32;
+  Step_from: String;
+  Step_succs: List[Tally];
+  Step_roll: I32;
+  Step_to: String
 };
 
-pub labels Line = { line_words: List[String], line_stop: Stop, line_draws: List[Step] };
+pub type Line = { Line_words: List[String]; Line_stop: Stop; Line_draws: List[Step] };
 
-labels Drawn = { drawn_line: Line, drawn_state: I32 };
+type Drawn = { Drawn_line: Line; Drawn_state: I32 };
 
 /// The word a start draw is charged to in the trace. It is not a corpus word:
 /// the first draw of a line rolls against the model's start weights, so the
@@ -55,11 +56,16 @@ fn start_label() -> String { "<start>" }
 /// caller guarantees `r < total`, which is why the last entry always matches;
 /// returning it on exhaustion keeps the walk total without inventing a word.
 rec(loop) fn land(head: Tally, rest: List[Tally], r: I32, acc: I32) -> String {
-  let upto = add_i32(acc, head.?{count});
+  let upto = add_i32(acc, head.>select { Count.get });
   if(lt_i32(r, upto)) {
-    head.?{word}
-  } else match(rest.>List.un_list) {
-    (.(t: Tally, more: List[Tally]) { recur land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
+    head.>select { Word.get }
+  } else match(rest.>List.get) {
+    (
+    , .(t: Tally, more: List[Tally]) { recur land(t, more, r, upto) }
+    , .(_empty: .) {
+        head.>select { Word.get }
+      }
+    )
   }
 }
 
@@ -70,20 +76,20 @@ fn draw(state: I32, from: String, head: Tally, rest: List[Tally]) -> Step {
   let succs = cons(head, rest);
   let stepped = next(state);
   let r = roll(stepped, total_weight(succs));
-  {
-  , step_state = stepped
-  , step_from = from
-  , step_succs = succs
-  , step_roll = r
-  , step_to = land(head, rest, r, 0)
-  }
+  (
+  , Step_state.mk(stepped)
+  , Step_from.mk(from)
+  , Step_succs.mk(succs)
+  , Step_roll.mk(r)
+  , Step_to.mk(land(head, rest, r, 0))
+  )
 }
 
 fn finish(state: I32, stop: Stop, words: List[String], draws: List[Step]) -> Drawn {
-  {
-  , drawn_line = {line_words = reverse(words), line_stop = stop, line_draws = reverse(draws)}
-  , drawn_state = state
-  }
+  (
+  , Drawn_line.mk((Line_words.mk(reverse(words)), Line_stop.mk(stop), Line_draws.mk(reverse(draws))))
+  , Drawn_state.mk(state)
+  )
 }
 
 /// Extend a line one word at a time. An end word closes the line even when the
@@ -107,17 +113,17 @@ rec(loop) fn extend(
     finish(state, stopped_at_end(), words, draws)
   } else if(leq_i32(cap, n)) {
     finish(state, stopped_at_cap(), words, draws)
-  } else match(succs_of(m, cur).>List.un_list) {
+  } else match(succs_of(m, cur).>List.get) {
     (
     , .(head: Tally, rest: List[Tally]) {
         let d = draw(state, cur, head, rest);
         recur extend(
         , m
         , cap
-        , d.?{step_state}
-        , d.?{step_to}
+        , d.>select { Step_state.get }
+        , d.>select { Step_to.get }
         , add_i32(n, 1)
-        , cons(d.?{step_to}, words)
+        , cons(d.>select { Step_to.get }, words)
         , cons(d, draws)
         )
       }
@@ -129,11 +135,19 @@ rec(loop) fn extend(
 /// Open a line with a weighted draw from the corpus's start words, then let it
 /// run. A corpus with no phrases has no start words and weaves an empty line.
 fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
-  match(starts_of(m).>List.un_list) {
+  match(starts_of(m).>List.get) {
     (
     , .(head: Tally, rest: List[Tally]) {
         let d = draw(state, start_label(), head, rest);
-        extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
+        extend(
+        , m
+        , cap
+        , d.>select { Step_state.get }
+        , d.>select { Step_to.get }
+        , 1
+        , of1(d.>select { Step_to.get })
+        , of1(d)
+        )
       }
     , .(_empty: .) { finish(state, stopped_dry(), nil[String], nil[Step]) }
     )
@@ -145,7 +159,13 @@ rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: Lis
     reverse(acc)
   } else {
     let d = open_line(m, cap, state);
-    recur weave_onto(m, cap, sub_i32(remaining, 1), d.?{drawn_state}, cons(d.?{drawn_line}, acc))
+    recur weave_onto(
+    , m
+    , cap
+    , sub_i32(remaining, 1)
+    , d.>select { Drawn_state.get }
+    , cons(d.>select { Drawn_line.get }, acc)
+    )
   }
 }
 

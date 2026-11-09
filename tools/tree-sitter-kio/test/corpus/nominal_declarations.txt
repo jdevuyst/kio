@@ -1,0 +1,321 @@
+================================================================================
+nominal declaration anonymous group and member visibility
+================================================================================
+module example;
+pub type { Name: .; Box[A] <U>: A & U { mk; pub(example) get; }; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (nominal_decl_head
+    (keyword_pub)
+    (keyword_type)
+    (nominal_group
+      (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot))
+      (separator_semicolon)
+      (nominal_entry
+        (entity_name_type)
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (operator_builtin)
+        (type_product
+          (type_path
+            (entity_name_type))
+          (operator_builtin)
+          (type_path
+            (entity_name_type)))
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (nominal_member
+            (keyword_pub)
+            (bracket_lparen)
+            (module_path
+              (entity_name_module))
+            (bracket_rparen)
+            (entity_name_function))
+          (separator_semicolon)
+          (bracket_rbrace)))
+      (separator_semicolon)
+      (bracket_rbrace))))
+
+================================================================================
+nominal declaration algebraic RHS grouping
+================================================================================
+module example;
+type Result = ({ Success: .; } & Existing) | { Failure: .; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (nominal_type_product
+      (nominal_type_group
+        (bracket_lparen)
+        (nominal_type_product
+          (nominal_group
+            (bracket_lbrace)
+            (nominal_entry
+              (entity_name_type)
+              (operator_builtin)
+              (separator_dot))
+            (separator_semicolon)
+            (bracket_rbrace))
+          (operator_builtin)
+          (type_path
+            (entity_name_type)))
+        (bracket_rparen))
+      (operator_builtin)
+      (nominal_group
+        (bracket_lbrace)
+        (nominal_entry
+          (entity_name_type)
+          (operator_builtin)
+          (separator_dot))
+        (separator_semicolon)
+        (bracket_rbrace)))
+    (separator_semicolon)))
+
+================================================================================
+nominal declaration recursive forms
+================================================================================
+module example;
+rec type { List[A]: . | (A & List[A]); }
+rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (nominal_decl_head
+    (keyword_rec)
+    (keyword_type)
+    (nominal_group
+      (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (operator_builtin)
+        (type_product
+          (separator_dot)
+          (operator_builtin)
+          (type_group
+            (bracket_lparen)
+            (type_product
+              (type_path
+                (entity_name_type))
+              (operator_builtin)
+              (type_path
+                (entity_name_type)
+                (type_arguments
+                  (bracket_lbracket)
+                  (type_path
+                    (entity_name_type))
+                  (bracket_rbracket))))
+            (bracket_rparen))))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (type_alias_decl_head
+    (keyword_rec)
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (nominal_type_product
+      (nominal_group
+        (bracket_lbrace)
+        (nominal_entry
+          (entity_name_type)
+          (operator_builtin)
+          (separator_dot))
+        (separator_semicolon)
+        (bracket_rbrace))
+      (operator_builtin)
+      (nominal_group
+        (bracket_lbrace)
+        (nominal_entry
+          (entity_name_type)
+          (operator_builtin)
+          (type_product
+            (type_path
+              (entity_name_type))
+            (operator_builtin)
+            (type_path
+              (entity_name_type))))
+        (separator_semicolon)
+        (bracket_rbrace)))
+    (separator_semicolon)))
+
+================================================================================
+nominal declaration blocks stay outside type arguments
+================================================================================
+module example;
+type Invalid = List[{ Item: .; }];
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (identifier)
+  (ERROR
+    (uppercase_identifier)
+    (uppercase_identifier)
+    (bracket_lbracket)
+    (ERROR
+      (bracket_lbrace))
+    (uppercase_identifier))
+  (operator_builtin)
+  (separator_dot)
+  (separator_semicolon)
+  (bracket_rbrace)
+  (bracket_rbracket)
+  (separator_semicolon))
+
+================================================================================
+nominal signature declarations
+================================================================================
+signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (signature_file
+    (keyword_signature)
+    (identifier)
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (separator_semicolon)
+    (signature_version_block
+      (signature_version
+        (keyword_declaration)
+        (bracket_lparen)
+        (number_literal)
+        (bracket_rparen))
+      (bracket_lbrace)
+      (signature_with_block
+        (keyword_with)
+        (bracket_lbrace)
+        (signature_module_section
+          (keyword_module)
+          (module_path
+            (entity_name_module))
+          (variant_block
+            (bracket_lbrace)
+            (nominal_decl_head
+              (keyword_pub)
+              (keyword_rec)
+              (keyword_type)
+              (nominal_group
+                (bracket_lbrace)
+                (nominal_entry
+                  (entity_name_type)
+                  (operator_builtin)
+                  (type_product
+                    (separator_dot)
+                    (operator_builtin)
+                    (type_path
+                      (entity_name_type)))
+                  (nominal_members
+                    (bracket_lbrace)
+                    (nominal_member
+                      (keyword_pub)
+                      (entity_name_function))
+                    (separator_semicolon)
+                    (nominal_member
+                      (keyword_pub)
+                      (entity_name_function))
+                    (separator_semicolon)
+                    (bracket_rbrace)))
+                (separator_semicolon)
+                (bracket_rbrace)))
+            (separator_semicolon)
+            (type_rec_group
+              (keyword_rec)
+              (bracket_lbrace)
+              (type_alias_decl_head
+                (keyword_type)
+                (entity_name_type)
+                (operator_builtin)
+                (type_path
+                  (entity_name_type)))
+              (separator_semicolon)
+              (nominal_decl_head
+                (keyword_pub)
+                (keyword_type)
+                (nominal_group
+                  (bracket_lbrace)
+                  (nominal_entry
+                    (entity_name_type)
+                    (operator_builtin)
+                    (type_path
+                      (entity_name_type))
+                    (nominal_members
+                      (bracket_lbrace)
+                      (nominal_member
+                        (keyword_pub)
+                        (entity_name_function))
+                      (separator_semicolon)
+                      (nominal_member
+                        (keyword_pub)
+                        (entity_name_function))
+                      (separator_semicolon)
+                      (bracket_rbrace)))
+                  (separator_semicolon)
+                  (bracket_rbrace)))
+              (separator_semicolon)
+              (bracket_rbrace))
+            (bracket_rbrace)))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (signature_breaking_block
+        (keyword_breaking)
+        (bracket_lbrace)
+        (signature_remove_block
+          (keyword_remove)
+          (bracket_lbrace)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (bracket_rbrace))
+        (bracket_rbrace))
+      (bracket_rbrace))))

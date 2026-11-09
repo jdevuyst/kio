@@ -34,7 +34,7 @@ fn three() -> Int { 1 + 2 }
 
 Each `_` is an operand slot: `1 + 2` calls `add_int(1, 2)`. Slots supply the
 function's arguments in written order. The body contains one `impl` target:
-a function name, an imported path such as `math.add`, or a newtype member such
+a function name, an imported path such as `math.add`, or a nominal member such
 as `List.cons`. Put any argument reordering or other adaptation in a named
 helper; calls and inline lambdas cannot be `impl` targets.
 Parentheses around the whole target are transparent: `impl ((math.add))`
@@ -149,7 +149,7 @@ is rejected. Whitespace cannot split a word into interchangeable pieces.
 
 Use `pub op` to export an operator and make its directly named target public
 too. For example, `pub op _ + __ { impl add_int }` requires `pub fn add_int`.
-For `pub(path)`, the target must be visible throughout that path. A newtype
+For `pub(path)`, the target must be visible throughout that path. A nominal type
 member target requires both its type or identity alias and the member to meet
 the same visibility requirement.
 

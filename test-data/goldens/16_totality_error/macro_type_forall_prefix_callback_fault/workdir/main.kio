@@ -1,0 +1,31 @@
+module main;
+
+import __comptime__;
+
+pure fn inspect_impl(ct: __Comptime__, _source_type: __Type__, _source: __Checked_term__) -> __Checked_term__ {
+  let prefix =
+    __type_forall__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(_binder: __Type_var__) -> __Type__ { __type_unit__(ct) }
+    );
+  let ignored =
+    __type_forall_prefix_fold__(ct)[__Checked_term__](
+    , prefix
+    , __term_unit__(ct)
+    , .(_state: __Checked_term__, _binder: __Type_var__) -> __Checked_term__ {
+        __structural_recur__(ct)[.][.][__Checked_term__](
+        , ()
+        , ()
+        , .(again: (. & .) -> __Checked_term__, _fuel: ., _input: .) -> __Checked_term__ {
+            again((), ())
+          }
+        )
+      }
+    );
+  __term_unit__(ct)
+}
+
+macro inspect : [Source] Source -> . { impl inspect_impl }
+
+fn run() { inspect(()) }

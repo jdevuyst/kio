@@ -107,15 +107,10 @@ const TS_KIND_MAP = {
   keyword_pub: "keyword.declaration",
   keyword_pure: "keyword.declaration",
   keyword_fn: "keyword.declaration",
-  keyword_newtype: "keyword.declaration",
-  keyword_labels: "keyword.declaration",
   keyword_equiv: "keyword.declaration",
   // Case-restricted IDENT tokens used in declaration-name slots.
   uppercase_identifier: "identifier",
   lowercase_identifier: "identifier",
-  // Newtype member keywords are authenticated by their body owner.
-  keyword_constructor: "keyword.declaration",
-  keyword_projector: "keyword.declaration",
   bool_literal: "literal.bool",
   number_literal: "literal.number",
   string_literal: "literal.string",
@@ -155,16 +150,12 @@ const TS_KIND_MAP = {
   // Module-path segments — emitted by `module_decl` and `import_decl`
   // around slash-separated provider paths.
   entity_name_module: "entity.name.module",
-  // Type definition names — emitted by `newtype_decl_head` and the
-  // named form of `labels_decl_head`.
+  // Type definition names — nominal entries and named type aliases.
   entity_name_type: "entity.name.type",
   // Function definitions and callees share the same role.
   entity_name_function: "entity.name.function",
   // Parameter binders inside function, lambda and forall signatures.
   variable_parameter: "variable.parameter",
-  // Label entry names inside `labels { … }` blocks — emitted by
-  // `label_entry`.
-  entity_name_label: "entity.name.label",
 };
 
 const TREE_SITTER_NODE_KIND = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -199,6 +190,11 @@ function treeSitterLeaves(root, source, embedded = false) {
     const { node, parentType } = stack.pop();
     if (node.isMissing || node.startIndex === node.endIndex) continue;
     if (node.type === "head_whitespace") continue;
+    // Recovery can expose an anonymous keyword literal without its named owner.
+    if (parentType === "ERROR" && !node.isNamed && /^[A-Za-z_][A-Za-z0-9_]*$/.test(node.type)) {
+      leaves.push({ node, kind: "identifier" });
+      continue;
+    }
     if (TS_KIND_MAP[node.type] !== undefined) {
       const rawCallType =
         node.type === "identifier" &&
@@ -297,8 +293,7 @@ function treeSitterKind(node) {
     return "keyword.declaration";
   }
   if (
-    (parent.type === "newtype_decl_head" && next?.type === "keyword_newtype") ||
-    (parent.type === "labels_decl_head" && next?.type === "keyword_labels")
+    (["nominal_decl_head", "type_alias_decl_head"].includes(parent.type) && next?.type === "keyword_type")
   ) {
     return "keyword.declaration";
   }
@@ -361,7 +356,6 @@ const TM_SCOPE_MAP = [
   ["keyword.operator", "operator.builtin"],
   ["punctuation.bracket", "punctuation.bracket"],
   ["punctuation.separator", "punctuation.separator"],
-  ["entity.name.label", "entity.name.label"],
   ["variable.parameter.slot", "slot"],
   ["variable.parameter", "variable.parameter"],
   ["variable.other", "identifier"],
@@ -431,41 +425,16 @@ function textmateScopesAt(grammar, source, offset) {
   return [];
 }
 
-function checkTextMateLabelSpelling(grammar) {
-  const source = "import labels({itemName});";
-  const labels = textmateTokens(grammar, source).filter(
-    (token) => token.kind === "entity.name.label",
-  );
-  if (labels.length > 0) {
-    throw new Error(
-      "TextMate must not classify a non-lowercase label spelling as label syntax",
-    );
-  }
-}
-
-function checkTextMateLabelFixture(grammar, name, source, tokens) {
+function checkTextMateContextualImportFixture(grammar, name, source, tokens) {
   if (name !== "30_import_label_item") return [];
-  const checks = [
-    ["selected_label", source.indexOf("selected_label"), "entity.name.label"],
-    [
-      "expression shorthand",
-      source.lastIndexOf("shorthand_label"),
-      "entity.name.label",
-    ],
-    ["ordinary block", source.lastIndexOf("ordinary_value"), "identifier"],
-    [
-      "contextual import label argument",
-      source.lastIndexOf("{value}") + "{".length,
-      "entity.name.label",
-    ],
-  ];
   const failures = [];
-  for (const [description, offset, expected] of checks) {
+  for (const [description, offset] of [
+    ["nominal selector", source.indexOf("Selected")],
+    ["ordinary value", source.indexOf("ordinary_value", source.indexOf("ordinary_value") + 1)],
+  ]) {
     const token = tokens.find((token) => token.start <= offset && offset < token.end);
-    if (token?.kind !== expected) {
-      failures.push(
-        `${description} at byte ${offset}: expected \`${expected}\`, got \`${token?.kind ?? "silence"}\``,
-      );
+    if (token?.kind !== "identifier") {
+      failures.push(`${description} at byte ${offset}: expected identifier, got ${token?.kind ?? "silence"}`);
     }
   }
   for (const [description, offset] of [
@@ -474,19 +443,13 @@ function checkTextMateLabelFixture(grammar, name, source, tokens) {
   ]) {
     const scopes = textmateScopesAt(grammar, source, offset);
     const isFunction = scopes.some(
-      (scope) =>
-        scope === "entity.name.function.kio" ||
-        scope.startsWith("entity.name.function.kio."),
+      (scope) => scope === "entity.name.function.kio" || scope.startsWith("entity.name.function.kio."),
     );
     const isDeclarationKeyword = scopes.some(
-      (scope) =>
-        scope === "keyword.declaration.kio" ||
-        scope.startsWith("keyword.declaration.kio."),
+      (scope) => scope === "keyword.declaration.kio" || scope.startsWith("keyword.declaration.kio."),
     );
     if (!isFunction || isDeclarationKeyword) {
-      failures.push(
-        `${description} at byte ${offset}: expected function scope without declaration-keyword scope, got ${JSON.stringify(scopes)}`,
-      );
+      failures.push(`${description} at byte ${offset}: expected function scope without declaration-keyword scope, got ${JSON.stringify(scopes)}`);
     }
   }
   return failures;
@@ -506,7 +469,6 @@ const TEXTMATE_NORMALIZATION = new Set([
   "entity.name.function",
   "entity.name.macro",
   "entity.name.type",
-  "entity.name.label",
   "variable.parameter",
 ]);
 
@@ -728,11 +690,10 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
 
   // (3) TextMate — silence-allowed agreement at the lexical layer.
   // Bilateral normalization here too — TextMate today emits only
-  // `identifier` for most refined positions and a structural label scope
-  // for selective-import items. Applying the rewrite to both sides keeps that
-  // partial refinement symmetric.
+  // `identifier` for most refined positions. Applying the rewrite to both
+  // sides keeps that partial refinement symmetric.
   const tmTokens = textmateTokens(tmGrammar, source).filter((token) => !malformedDocContext || !token.embeddedDoc);
-  const tmFixtureFailures = checkTextMateLabelFixture(
+  const tmFixtureFailures = checkTextMateContextualImportFixture(
     tmGrammar,
     name,
     source,
@@ -743,22 +704,8 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
       name,
       kind: "textmate",
       message:
-        `textmate label fixture expectations failed:\n` +
+        `textmate contextual import fixture expectations failed:\n` +
         tmFixtureFailures.map((failure) => `  ${failure}`).join("\n"),
-    };
-  }
-  const tmLabelFailures = checkTextMateAgreement(
-    refTokens,
-    tmTokens.filter((token) => token.kind === "entity.name.label" && token.start >= malformedEnd),
-    source,
-  );
-  if (tmLabelFailures.length > 0) {
-    return {
-      name,
-      kind: "textmate",
-      message:
-        `textmate labels disagree with parsed label positions at:\n` +
-        tmLabelFailures.map((f) => `  ${f}`).join("\n"),
     };
   }
   const tmTokensNormalized = normalizeFor(tmTokens, TEXTMATE_NORMALIZATION);
@@ -825,7 +772,6 @@ async function main() {
     fs.rmdirSync(missingSourceDir);
   }
   checkMacroHighlighting(treeSitterParser, tmGrammar, fs.readFileSync(new URL("../../../tools/tree-sitter-kio/queries/highlights.scm", import.meta.url), "utf8"));
-  checkTextMateLabelSpelling(tmGrammar);
   checkTextMateHighlighting(tmGrammar);
   checkDocHighlighting(treeSitterParser);
   checkDocScannerCosts(treeSitterParser);

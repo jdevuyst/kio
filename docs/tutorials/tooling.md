@@ -187,8 +187,8 @@ removing anything; prefix an intentionally unused name with `_`.
 
 The [editor setup guide](../guides/install-from-source.md#pointing-the-extension-at-your-binary)
 explains how to connect VS Code to the compiler. The [recursion guide](../guides/recursion.md)
-and [declarations guide](../guides/declarations.md#migrating-implicit-recursive-declarations)
-explain repairs for recursive code. Exact diagnostic and code-action behavior
+and [declarations guide](../guides/declarations.md#recursive-nominal-types)
+explain recursive declarations. Exact diagnostic and code-action behavior
 is in the [language-server reference](../../specs/cli.md#kio-lsp).
 
 ## Chapter 5 — Test with `kio test`

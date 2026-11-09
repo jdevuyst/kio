@@ -1434,7 +1434,7 @@ v(1) {
       module api {
         host type Box[A];
         host type Unused[A];
-        newtype Token[A] : A { pub constructor make_token; projector read_token; };
+        type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
@@ -1463,7 +1463,7 @@ v(1) {
     add {
       module api {
         host type Str role(str);
-        newtype Token[A] : A { pub constructor make_token; pub projector read_token; };
+        type { Token[A]: A { pub mk; pub get; }; };
         host fn old(value: Token[Str]) -> Token[Str];
       }
     }
@@ -1490,8 +1490,8 @@ v(1) {
     add {
       module api {
         host type Str role(str);
-        newtype Wrap[A] : A { pub constructor make_wrap; pub projector read_wrap; };
-        newtype Lift[*F] : F[Str] { pub constructor make_lift; pub projector read_lift; };
+        type { Wrap[A]: A { pub mk; pub get; }; };
+        type { Lift[*F]: F[Str] { pub mk; pub get; }; };
         host fn old(value: Lift[Wrap]) -> Lift[Wrap];
       }
     }
@@ -1941,12 +1941,12 @@ v(2) {
                host type I32 role(i32); \
                host type Comptime_host role(i32); \
                pub type Comptime_alias = I32; \
-               pub newtype Comptime_bool : I32 { \
-                 pub constructor make_bool; pub projector read_bool; \
-               }; \
-               pub newtype Wrapped : Comptime_host { \
-                 pub constructor make_wrapped; pub projector read_wrapped; \
-               }; \
+               pub type { Comptime_bool: I32 { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Wrapped: Comptime_host { \
+                 pub mk; pub get; \
+               }; }; \
                pub fn round_nominal(value: Comptime_bool) -> Comptime_bool { value } \
                pub fn round_host(value: Comptime_host) -> Comptime_host { value } \
                pub fn round_wrapped(value: Wrapped) -> Wrapped { value } \
@@ -1998,15 +1998,15 @@ v(2) {
         let pkg = build_package(
             &[
                 "module aaa; \
-                 pub newtype Nested : . { constructor make_nested; projector read_nested; };",
+                 pub type { Nested: . { mk; get; }; };",
                 "module zed; \
                  host type I32 role(i32); \
-                 pub newtype Nested : I32 { \
-                   pub constructor make_nested; pub projector read_nested; \
-                 }; \
-                 pub newtype Outer : Nested { \
-                   pub constructor make_outer; pub projector read_outer; \
-                 }; \
+                 pub type { Nested: I32 { \
+                   pub mk; pub get; \
+                 }; }; \
+                 pub type { Outer: Nested { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round(value: Outer) -> Outer { value }",
             ],
             "bridge { zed; }",
@@ -2170,10 +2170,10 @@ v(2) {
         let pkg = build_package(
             &["module main; \
                host type Str role(str); \
-               pub newtype T : Str { pub constructor make_t; pub projector un_t; }; \
-               pub newtype Box[A] : A { pub constructor make_box; pub projector un_box; }; \
-               pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector un_shadow; }; \
-               pub newtype Pack <T> : T { pub constructor make_pack; pub projector un_pack; }; \
+               pub type { T: Str { pub mk; pub get; }; }; \
+               pub type { Box[A]: A { pub mk; pub get; }; }; \
+               pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get; }; }; \
+               pub type { Pack <T>: T { pub mk; pub get; }; }; \
                host fn apply_poly(f: [T] T -> T) -> Str; \
                host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; \
                host fn round_pack(value: Pack) -> Pack; \
@@ -2199,7 +2199,7 @@ v(2) {
         // while the nested forall receives its own collision-free TS binder.
         assert!(
             dts.contains(
-                "makeShadow: <T>(p0: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> }) => { Shadow: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> } };"
+                "mk: <T>(p0: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> }) => { Shadow: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> } };"
             ),
             "{dts}"
         );
@@ -2296,12 +2296,12 @@ v(2) {
         let pkg = build_package(
             &["module main; \
                host type I32 role(i32); \
-               pub newtype Opaque : I32 { constructor hide; projector reveal; }; \
-               pub fn make_opaque(value: I32) -> Opaque { Opaque.hide(value) } \
-               pub fn read_opaque(value: Opaque) -> I32 { Opaque.reveal(value) } \
-               pub newtype Constructor_only : I32 { pub constructor make_only; projector read_only; }; \
-               pub newtype Projector_only : I32 { constructor make_hidden; pub projector read_public; }; \
-               pub newtype Counter : I32 { pub constructor fresh; pub projector current; };"],
+               pub type { Opaque: I32 { mk; get; }; }; \
+               pub fn make_opaque(value: I32) -> Opaque { Opaque.mk(value) } \
+               pub fn read_opaque(value: Opaque) -> I32 { Opaque.get(value) } \
+               pub type { Constructor_only: I32 { pub mk; get; }; }; \
+               pub type { Projector_only: I32 { mk; pub get; }; }; \
+               pub type { Counter: I32 { pub mk; pub get; }; };"],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -2318,27 +2318,37 @@ v(2) {
             dts.contains("readOpaque: (p0: __KioOpaque_H6d61696e004f7061717565<B>) => number;"),
             "{dts}"
         );
-        assert!(dts.contains("Counter: {"), "{dts}");
+        let namespace = |name: &str| {
+            dts.split_once(&format!("{name}: {{\n"))
+                .unwrap_or_else(|| panic!("missing {name} namespace"))
+                .1
+                .split_once("\n    };")
+                .expect("namespace end")
+                .0
+        };
+        let counter = namespace("KioType_Counter");
         assert!(
-            dts.contains("fresh: (p0: number) => { Counter: number };"),
+            counter.contains("mk: (p0: number) => { Counter: number };"),
             "{dts}"
         );
         assert!(
-            dts.contains("current: (p0: { Counter: number }) => number;"),
+            counter.contains("get: (p0: { Counter: number }) => number;"),
             "{dts}"
         );
         let constructor_only = "__KioOpaque_H6d61696e00436f6e7374727563746f725f6f6e6c79";
         let projector_only = "__KioOpaque_H6d61696e0050726f6a6563746f725f6f6e6c79";
+        let constructor = namespace("KioType_ConstructorOnly");
         assert!(
-            dts.contains(&format!("makeOnly: (p0: number) => {constructor_only}<B>;")),
+            constructor.contains(&format!("mk: (p0: number) => {constructor_only}<B>;")),
             "{dts}"
         );
-        assert!(!dts.contains("readOnly:"), "{dts}");
+        assert!(!constructor.contains("get:"), "{dts}");
+        let projector = namespace("KioType_ProjectorOnly");
         assert!(
-            dts.contains(&format!("readPublic: (p0: {projector_only}<B>) => number;")),
+            projector.contains(&format!("get: (p0: {projector_only}<B>) => number;")),
             "{dts}"
         );
-        assert!(!dts.contains("makeHidden:"), "{dts}");
+        assert!(!projector.contains("mk:"), "{dts}");
         assert!(
             dts.contains(&format!("declare class {constructor_only}")),
             "{dts}"
@@ -2353,19 +2363,19 @@ v(2) {
     fn transparent_public_wrapper_keys_case_words_in_every_declaration_surface() {
         let pkg = build_package(
             &["module main; \
-               pub newtype _Word_box__[Item_type] : Item_type { \
-                 pub constructor wrap_word; pub projector unwrap_word; \
-               }; \
-               pub newtype Hidden[Item_type] : . { constructor hide; projector reveal; }; \
-               pub rec newtype _Root_word_ : Hidden[_Root_word_] { \
-                 pub constructor make_root; pub projector read_root; \
-               }; \
+               pub type { _Word_box__[Item_type]: Item_type { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Hidden[Item_type]: . { mk; get; }; }; \
+               pub rec type { _Root_word_: Hidden[_Root_word_] { \
+                 pub mk; pub get; \
+               }; }; \
                pub fn keep_word(value: _Root_word_) -> _Root_word_ { value }"],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
         assert!(
-            dts.contains("wrapWord: <ItemType>(p0: ItemType) => { _WordBox__: ItemType };"),
+            dts.contains("mk: <ItemType>(p0: ItemType) => { _WordBox__: ItemType };"),
             "{dts}"
         );
         assert!(dts.contains("readonly _WordBox__:"), "{dts}");
@@ -2380,39 +2390,39 @@ v(2) {
         let pkg = build_package(
             &["module shapes; \
                host type I32 role(i32); \
-               pub newtype Nested : I32 & (I32 | I32) { \
-                 pub constructor make_nested; pub projector read_nested; \
-               }; \
-               pub newtype Box[A] : A { \
-                 pub constructor make_box; pub projector read_box; \
-               }; \
-               pub newtype Packed <A> : A { \
-                 pub constructor make_packed; pub projector read_packed; \
-               }; \
-               pub labels { field: I32 }; \
-               pub rec newtype Recursive : . | (I32 & Recursive) { \
-                 pub constructor make_recursive; pub projector read_recursive; \
-               };"],
+               pub type { Nested: I32 & (I32 | I32) { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Box[A]: A { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Packed <A>: A { \
+                 pub mk; pub get; \
+               }; }; \
+               pub type { Field: I32; }; \
+               pub rec type { Recursive: . | (I32 & Recursive) { \
+                 pub mk; pub get; \
+               }; };"],
             "bridge { shapes; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
 
         assert!(
             dts.contains(
-                "makeNested: (p0: { _0: number; _1: ({ _0: number } | { _1: number }) }) => { Nested: { _0: number; _1: ({ _0: number } | { _1: number }) } };"
+                "mk: (p0: { _0: number; _1: ({ _0: number } | { _1: number }) }) => { Nested: { _0: number; _1: ({ _0: number } | { _1: number }) } };"
             ),
             "{dts}"
         );
-        assert!(dts.contains("makeBox: <A>(p0: A) => { Box: A };"), "{dts}");
-        assert!(dts.contains("readBox: <A>(p0: { Box: A }) => A;"), "{dts}");
+        assert!(dts.contains("mk: <A>(p0: A) => { Box: A };"), "{dts}");
+        assert!(dts.contains("get: <A>(p0: { Box: A }) => A;"), "{dts}");
         let packed = "__KioOpaque_H736861706573005061636b6564<B>";
         assert!(
-            dts.contains(&format!("makePacked: <A>(p0: A) => {packed};")),
+            dts.contains(&format!("mk: <A>(p0: A) => {packed};")),
             "{dts}"
         );
         assert!(
             dts.contains(&format!(
-                "readPacked: (p0: {packed}) => FacadePoly<<__KioType0>() => FacadeCallable<FacadePoly<<A>() => FacadeCallable<A, __KioType0>>, __KioType0>>;"
+                "get: (p0: {packed}) => FacadePoly<<__KioType0>() => FacadeCallable<FacadePoly<<A>() => FacadeCallable<A, __KioType0>>, __KioType0>>;"
             )),
             "{dts}"
         );
@@ -2427,13 +2437,13 @@ v(2) {
         let recursive = "__KioOpaque_H73686170657300526563757273697665<B>";
         assert!(
             dts.contains(&format!(
-                "makeRecursive: (p0: ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }})) => {recursive};"
+                "mk: (p0: ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }})) => {recursive};"
             )),
             "{dts}"
         );
         assert!(
             dts.contains(&format!(
-                "readRecursive: (p0: {recursive}) => ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }});"
+                "get: (p0: {recursive}) => ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }});"
             )),
             "{dts}"
         );
@@ -2444,12 +2454,12 @@ v(2) {
         let pkg = build_package(
             &[
                 "module left; \
-                 newtype Secret : . { constructor make_secret; projector read_secret; }; \
-                 pub newtype Token : Secret { constructor make_token; projector read_token; }; \
+                 type { Secret: . { mk; get; }; }; \
+                 pub type { Token: Secret { mk; get; }; }; \
                  pub fn echo_token(value: Token) -> Token { value } \
                  pub fn echo_pair(value: Token & .) -> Token & . { value }",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  pub fn echo_token(value: Token) -> Token { value }",
             ],
             "bridge { left; right; }",
@@ -2487,10 +2497,10 @@ v(2) {
     fn hidden_generic_argument_keeps_enclosing_newtype_structural() {
         let pkg = build_package(
             &["module main; \
-               pub newtype Hidden[A] : . { constructor make_hidden; projector read_hidden; }; \
-               pub rec newtype Root : Hidden[Root] { \
-                 pub constructor make_root; pub projector read_root; \
-               }; \
+               pub type { Hidden[A]: . { mk; get; }; }; \
+               pub rec type { Root: Hidden[Root] { \
+                 pub mk; pub get; \
+               }; }; \
                pub fn keep(value: Root) -> Root { value }"],
             "bridge { main; }",
         );

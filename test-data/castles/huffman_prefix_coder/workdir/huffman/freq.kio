@@ -9,13 +9,14 @@ import huffman/list(List, cons, keep, nil, reverse);
 import huffman/message(alphabet_size);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
-pub labels Count = { count_symbol: I32, count_freq: I32 };
+pub type Count = { Count_symbol: I32; Count_freq: I32 };
 
-pub fn count(symbol: I32, freq: I32) -> Count { {count_symbol = symbol, count_freq = freq} }
+pub fn count(symbol: I32, freq: I32) -> Count { (Count_symbol.mk(symbol), Count_freq.mk(freq)) }
 
 rec(loop) fn zero_counts_onto(symbol: I32, acc: List[Count]) -> List[Count] {
   if(lt_i32(symbol, 0)) {
@@ -29,12 +30,12 @@ rec(loop) fn zero_counts_onto(symbol: I32, acc: List[Count]) -> List[Count] {
 pub fn zero_counts() -> List[Count] { zero_counts_onto(sub_i32(alphabet_size(), 1), nil[Count]) }
 
 rec(loop) fn bump_onto(counts: List[Count], symbol: I32, acc: List[Count]) -> List[Count] {
-  match(counts.>List.un_list) {
+  match(counts.>List.get) {
     (
     , .(row: Count, rest: List[Count]) {
         let bumped =
-          if(eq_i32(row.?{count_symbol}, symbol)) {
-            count(symbol, add_i32(row.?{count_freq}, 1))
+          if(eq_i32(row.>select { Count_symbol.get }, symbol)) {
+            count(symbol, add_i32(row.>select { Count_freq.get }, 1))
           } else {
             row
           };
@@ -48,7 +49,7 @@ rec(loop) fn bump_onto(counts: List[Count], symbol: I32, acc: List[Count]) -> Li
 fn bump(counts: List[Count], symbol: I32) -> List[Count] { bump_onto(counts, symbol, nil[Count]) }
 
 pub rec(loop) fn tally(symbols: List[I32], counts: List[Count]) -> List[Count] {
-  match(symbols.>List.un_list) {
+  match(symbols.>List.get) {
     (
     , .(symbol: I32, rest: List[I32]) { recur tally(rest, bump(counts, symbol)) }
     , .(_empty: .) { counts }
@@ -56,7 +57,9 @@ pub rec(loop) fn tally(symbols: List[I32], counts: List[Count]) -> List[Count] {
   }
 }
 
-fn occurs(row: Count) -> Bool { lt_i32(0, row.?{count_freq}) }
+fn occurs(row: Count) -> Bool {
+  lt_i32(0, row.>select { Count_freq.get })
+}
 
 /// A symbol the message never uses gets no leaf: only observed symbols
 /// participate in the tree construction and the encoded-message cost.

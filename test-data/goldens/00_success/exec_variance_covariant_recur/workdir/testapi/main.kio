@@ -8,10 +8,10 @@ import testapi/io(print);
 // positive position and strict positivity accepts it. This is the
 // accepting twin of 16_totality_error/loop_via_arrow_lhs, where `Rec`
 // under a negative (arrow-LHS) position is rejected.
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A { pub mk; pub get } }
 
-rec newtype Rec : Box[Rec] { pub constructor mk_rec; pub projector un_rec }
+rec type { Rec: Box[Rec] { pub mk; pub get } }
 
-fn unwrap(b: Box[String]) -> String { Box.un_box(b) }
+fn unwrap(b: Box[String]) -> String { Box.get(b) }
 
-pub fn main() { print(unwrap(Box.mk_box("covariant recursion accepted\n"))) }
+pub fn main() { print(unwrap(Box.mk("covariant recursion accepted\n"))) }

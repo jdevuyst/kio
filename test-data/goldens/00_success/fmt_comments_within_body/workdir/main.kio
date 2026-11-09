@@ -1,6 +1,7 @@
 module main;
 
 import macros/match(macro match);
+import macros/row_macros(macro record_);
 
 fn f(x: I32) -> I32 {
   // before let
@@ -39,7 +40,7 @@ fn h() -> I32 {
     )
 }
 
-labels Show = { f: I32, g: I32 };
+type Show = { F: I32; G: I32 };
 
 fn k() -> I32 & I32 {
   let pair =
@@ -50,20 +51,20 @@ fn k() -> I32 & I32 {
       , 2
       );
   let _tagged =
-    {
+    record_ {
       // before label f
-      , f = 1
+      F.mk(1);
       // before label g
-      , g = 2
+      G.mk(2)
       };
   pair
 }
 
-newtype Box[A][B] : A & B { constructor mk_box; projector get_box }
+type { Box[A][B]: A & B { mk; get } }
 
 fn type_arg_comments() -> . {
   let _ =
-    mk_box[
+    Box.mk[
       // type arg a
       I32
     ][
@@ -76,9 +77,8 @@ fn type_arg_comments() -> . {
   ()
 }
 
-labels Sigil = {
+type Sigil =
   // label f
-  , f: _
+  F &
   // label g
-  , g: _
-  };
+  G;

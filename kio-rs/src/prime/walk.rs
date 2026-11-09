@@ -5,20 +5,19 @@
 //! for variants that are inhabited at Prime (`Path`, `Call`, `FnExpr`,
 //! literals, …) have default implementations that clone-and-recurse
 //! via `self.walk_*`. Methods for variants that are uninhabited at
-//! Prime (tuple, conditional, macro, UFCS, placeholder, label, recursive,
-//! operator, and `do` extensions on expressions; `LabelSugar` / `Infer` on
+//! Prime (tuple, conditional, macro, UFCS, placeholder, recursive,
+//! operator, and `do` extensions on expressions; `Infer` on
 //! types; `Labels`, `Equiv`, `Op`, `Fold`, term-level `RecGroup`, macro
 //! declarations, and `LiteralAlias` on items; surface-only import entries)
 //! have **no default** — the implementer must provide one (typically
-//! rejecting the variant with `Error::Parse`). `RowLet` is rejected directly by
-//! the dispatcher, while `RecOrder` is discharged there as statically
-//! uninhabited; neither has a visitor hook. Type-recursive declaration groups
+//! rejecting the variant with `Error::Parse`). `RecOrder` is discharged there
+//! as statically uninhabited; it has no visitor hook. Type-recursive declaration groups
 //! are Kio' and use the ordinary surviving-item path.
 //!
 //! The trait's `walk_module` / `walk_package_file` / `walk_item` /
 //! `walk_expr` / `walk_type` dispatchers do the per-variant `match`
 //! and route surviving and hook-backed variants to their `lower_*` or
-//! `rewrite_*` methods, with the two direct cases handled in place.
+//! `rewrite_*` methods, with the direct case handled in place.
 //!
 //! [`crate::prime::lower`] implements this trait; the kio-prime binary's
 //! Surface → Prime entry points
@@ -28,10 +27,10 @@
 //! instance.
 
 use crate::ast::{
-    CallArg, Equiv, Expr, FnDef, HostFn, HostFnParam, HostFnValueParam, HostType, Item,
-    LabelSugarLabel, LabelValueLabel, Labels, LiteralAlias, Meta, Module, Newtype, Op, PackageFile,
-    Param, PathSegment, PlaceholderState, Prime, RecGroup, Signature, SignatureParam, Surface,
-    Type, TypeAlias, VariadicOperator, convert_type_member,
+    CallArg, Equiv, Expr, FnDef, HostFn, HostFnParam, HostFnValueParam, HostType, Item, Labels,
+    LiteralAlias, Meta, Module, Newtype, Op, PackageFile, Param, PathSegment, PlaceholderState,
+    Prime, RecGroup, Signature, SignatureParam, Surface, Type, TypeAlias, VariadicOperator,
+    convert_type_member,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -86,19 +85,6 @@ pub trait SurfaceToPrime {
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error>;
 
-    fn rewrite_expr_label_value(
-        &mut self,
-        labels: Vec<LabelValueLabel<Surface>>,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Prime>, Error>;
-
-    fn rewrite_expr_elaborator(
-        &mut self,
-        kind: crate::ast::ElaboratorKind,
-        call: crate::ast::ElaboratorCall<Surface>,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Prime>, Error>;
-
     fn rewrite_expr_user_macro(
         &mut self,
         name: String,
@@ -108,20 +94,9 @@ pub trait SurfaceToPrime {
 
     fn rewrite_expr_ufcs(&mut self, ufcs: SurfaceUfcs) -> Result<Expr<Prime>, Error>;
 
-    fn rewrite_type_label_sugar(
-        &mut self,
-        labels: Vec<LabelSugarLabel<Surface>>,
-        meta: Meta<Surface>,
-    ) -> Result<Type<Prime>, Error>;
-
     fn rewrite_type_infer(&mut self, meta: Meta<Surface>) -> Result<Type<Prime>, Error>;
 
     fn rewrite_item_labels(&mut self, d: Labels<Surface>) -> Result<Item<Prime>, Error>;
-
-    fn rewrite_item_label_forward(
-        &mut self,
-        forward: crate::ast::LabelForward<Surface>,
-    ) -> Result<Item<Prime>, Error>;
 
     fn rewrite_type_rec_member_labels(
         &mut self,
@@ -152,10 +127,6 @@ pub trait SurfaceToPrime {
     /// rejected by [`Self::rewrite_item_op`], so importing one
     /// must be rejected here for symmetry).
     fn rewrite_import_op_pattern(&mut self, span: Span) -> Result<(), Error>;
-
-    /// Reject a braced label import. Label imports are surface-only and the
-    /// label elaborator must consume them before Kio'.
-    fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error>;
 
     /// Reject an explicitly selected source macro at the Kio' boundary.
     fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error>;
@@ -220,9 +191,6 @@ pub trait SurfaceToPrime {
             if let crate::ast::ImportKind::Selective { items, .. } = &u.kind {
                 for it in items {
                     match it {
-                        crate::ast::ImportItem::Label { span, .. } => {
-                            self.rewrite_import_label(*span)?;
-                        }
                         crate::ast::ImportItem::OperatorPattern { span, .. } => {
                             self.rewrite_import_op_pattern(*span)?;
                         }
@@ -249,7 +217,7 @@ pub trait SurfaceToPrime {
             Item::LiteralAlias(a, _) => self.rewrite_item_literal_alias(a),
             Item::Newtype(d) => Ok(Item::Newtype(self.walk_newtype(d)?)),
             Item::Labels(d, _) => self.rewrite_item_labels(d),
-            Item::LabelForward(d, _) => self.rewrite_item_label_forward(d),
+
             Item::Equiv(e, _) => self.rewrite_item_equiv(e),
             Item::Op(d, _) => self.rewrite_item_op(*d),
             Item::VariadicOperator(d, _) => self.rewrite_item_fold(*d),
@@ -673,15 +641,6 @@ pub trait SurfaceToPrime {
                 meta,
                 ..
             } => self.rewrite_expr_rec_call(callee, stages, meta),
-            Expr::LabelValue { labels, meta, .. } => self.rewrite_expr_label_value(labels, meta),
-            Expr::RowLet { meta, .. } => Err(crate::error::Error::parse(
-                meta.span,
-                "row-let syntax is not part of Kio'. The `kio-prime` binary only accepts Kio'; \
-                 use the `kio` binary to compile this program as full Kio.",
-            )),
-            Expr::Elaborator {
-                kind, call, meta, ..
-            } => self.rewrite_expr_elaborator(kind, call, meta),
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
             Expr::UserMacro {
                 name, stages, meta, ..
@@ -779,7 +738,6 @@ pub trait SurfaceToPrime {
                 body: Box::new(self.walk_type(*body)?),
                 meta: Meta::new(span),
             }),
-            Type::LabelSugar { labels, meta, .. } => self.rewrite_type_label_sugar(labels, meta),
             Type::Infer { meta, .. } => self.rewrite_type_infer(meta),
         }
     }

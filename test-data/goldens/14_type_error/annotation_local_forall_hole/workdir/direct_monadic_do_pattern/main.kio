@@ -2,11 +2,11 @@ module main;
 
 import macros/sequence(macro do);
 
-pub newtype Box[A] : A { constructor mk_box; projector un_box }
+pub type { Box[A]: A { mk; get } }
 
-fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+fn box_pure[A](value: A) -> Box[A] { Box.mk(value) }
 
-fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.un_box(value)) }
+fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 host fn boxed_polymorphic(_token: .) -> Box[[Poly] Poly -> Poly];
 

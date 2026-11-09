@@ -5,7 +5,7 @@
 # `split_current_sym(1)` at the existential-binder close site,
 # and the residual (`:` after `<U>`, `<` after the first `<U>`
 # in chained `<U><V>`) flows on as the next token. Pinned in
-# both `labels` entries and `newtype` headers.
+# both individual and grouped nominal entries.
 set -u
 cd workdir || exit
 "$KIO_BIN" check

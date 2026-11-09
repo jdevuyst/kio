@@ -2,6 +2,7 @@ module main;
 
 import macros(macro inspect_apply);
 
-fn erased[A]() { () }
-
-fn witness() { let _inspected = inspect_apply(erased); () }
+fn witness() {
+  let _inspected = inspect_apply(.() { () });
+  ()
+}

@@ -1324,8 +1324,8 @@ mod tests {
     fn package_inputs_include_recursive_group_newtype_members() {
         let package = prime_package(
             "module main; rec { \
-               newtype Left : Right { constructor make_left; projector read_left; }; \
-               newtype Right : Left { constructor make_right; projector read_right; }; \
+               type { Left: Right { mk; get; }; }; \
+               type { Right: Left { mk; get; }; }; \
              }",
         );
         let inputs = PackageKeyInputs::from_package(package.package());
@@ -1343,24 +1343,18 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn package_inputs_keep_same_named_newtypes_scoped_per_consumer() {
         let package = prime_package_many(&[
-            (
-                "a.kio",
-                "module a; newtype Foo : . { constructor make_a; projector un_a; };",
-            ),
-            (
-                "b.kio",
-                "module b; newtype Foo : . { constructor make_b; projector un_b; };",
-            ),
+            ("a.kio", "module a; type { Foo: . { mk; get; }; };"),
+            ("b.kio", "module b; type { Foo: . { mk; get; }; };"),
         ]);
         let inputs = PackageKeyInputs::from_package(package.package());
 
         assert_eq!(
             inputs.newtype_members.get(&nt("a", "Foo")),
-            Some(&member_for("a", "Foo", "make_a", "un_a"))
+            Some(&member_for("a", "Foo", "mk", "get"))
         );
         assert_eq!(
             inputs.newtype_members.get(&nt("b", "Foo")),
-            Some(&member_for("b", "Foo", "make_b", "un_b"))
+            Some(&member_for("b", "Foo", "mk", "get"))
         );
     }
 
@@ -1371,12 +1365,12 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; \
-                 pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                 pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
                 "module decoy; \
-                 pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                 pub type { Box: . { pub mk; pub get; }; };",
             ),
             ("consumer.kio", "module consumer; import provider as p;"),
             ("unrelated.kio", "module unrelated;"),
@@ -1385,7 +1379,7 @@ mod tests {
 
         assert_eq!(
             inputs.newtype_members.get(&ntq("consumer", "p", "Box")),
-            Some(&member_for("provider", "Box", "wrap", "unwrap"))
+            Some(&member_for("provider", "Box", "mk", "get"))
         );
         assert!(
             !inputs
@@ -1403,21 +1397,19 @@ mod tests {
         let first = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                "module provider; pub type { Box: . { pub mk; pub get; }; };",
             ),
             consumer,
         ]);
         let second = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; pub newtype Box : . { pub constructor make; pub projector read; };",
+                "module provider; pub type { Box: . { pub mk; pub get; }; }; pub type { Extra: . { pub mk; pub get; }; };",
             ),
             consumer,
         ]);
         let mut keys = Vec::new();
-        for (package, constructor, projector) in
-            [(&first, "wrap", "unwrap"), (&second, "make", "read")]
-        {
+        for (package, has_extra) in [(&first, false), (&second, true)] {
             let prepared = RecoveryPreparation::new(package);
             let (_, input) = prepared
                 .modules()
@@ -1433,7 +1425,17 @@ mod tests {
                     .inputs()
                     .newtype_members()
                     .get(&ntq("consumer", "p", "Box")),
-                Some(&member_for("provider", "Box", constructor, projector)),
+                Some(&member_for("provider", "Box", "mk", "get")),
+            );
+            assert_eq!(
+                input
+                    .inputs()
+                    .newtype_members()
+                    .get(&ntq("consumer", "p", "Extra")),
+                has_extra
+                    .then(|| member_for("provider", "Extra", "mk", "get"))
+                    .as_ref(),
+                "the written qualified import retains the current provider catalog",
             );
             keys.push(EnrichedCacheKey::from_module(
                 input.module(),
@@ -1452,15 +1454,13 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     #[should_panic(expected = "enriched package inputs select one exact nominal per lexical head")]
     fn recovery_rejects_inconsistent_nominal_inputs() {
-        let package = prime_package_many(&[(
-            "main.kio",
-            "module main; newtype Box : . { constructor wrap; projector unwrap; };",
-        )]);
+        let package =
+            prime_package_many(&[("main.kio", "module main; type { Box: . { mk; get; }; };")]);
         let mut prepared = RecoveryPreparation::new(&package);
-        prepared.inputs.newtype_members.insert(
-            nt("main", "Box"),
-            member_for("other", "Box", "wrap", "unwrap"),
-        );
+        prepared
+            .inputs
+            .newtype_members
+            .insert(nt("main", "Box"), member_for("other", "Box", "mk", "get"));
         crate::pass::structural_recovery::recover_module_with_package_inputs(
             prepared
                 .modules()
@@ -1539,13 +1539,13 @@ mod tests {
         let package = prime_package(
             "module main; import __intrinsics__; \
              rec { \
-               labels Node = { head: ., next: Link }; \
-               newtype Link : Node { \
-                 pub constructor mk_link; pub projector un_link; \
-               }; \
+               type Node = { Head: .; Next: Link; }; \
+               type { Link: Node { \
+                 pub mk; pub get; \
+               }; }; \
              } \
              fn read(r: (Head & Next)) -> Link { Next.get(__snd__(r)) } \
-             fn round(x: Node) -> Node { Link.un_link(Link.mk_link(x)) }",
+             fn round(x: Node) -> Node { Link.get(Link.mk(x)) }",
         );
 
         let direct = crate::pass::optimize::optimize_package(
@@ -1590,15 +1590,15 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; \
-                 pub newtype Hed : . { pub constructor put; pub projector get; }; \
-                 pub newtype Tal : . { pub constructor put_tal; pub projector get_tal; }; \
-                 pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                 pub type { Hed: . { pub mk; pub get; }; }; \
+                 pub type { Tal: . { pub mk; pub get; }; }; \
+                 pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
                 "module consumer; import __intrinsics__; import provider as p; \
                  fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
-                 fn round(value: .) -> . { p.Box.unwrap(p.Box.wrap(value)) }",
+                 fn round(value: .) -> . { p.Box.get(p.Box.mk(value)) }",
             ),
         ]);
 

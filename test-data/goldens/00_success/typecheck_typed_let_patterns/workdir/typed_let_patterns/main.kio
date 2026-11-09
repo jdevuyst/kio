@@ -3,11 +3,11 @@ module typed_let_patterns/main;
 import macros/sequence(macro do);
 import typed_let_patterns(I32);
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get(m)) }
 
 fn make_id[A]() -> A -> A {
   .(x: A) { x }

@@ -225,7 +225,7 @@ pub(crate) fn qualified_candidates(
             name,
             ..
         } => {
-            nominal = crate::pass::label_elab::label_nominal_declaration(
+            nominal = crate::pass::nominal_declarations::label_nominal_declaration(
                 labels,
                 entry,
                 name.clone(),
@@ -267,7 +267,7 @@ fn ordinary_candidate(
         | DocEntry::HostType(_)
         | DocEntry::Labels(..)
         | DocEntry::LabelNominal { .. } => (entry.name().to_owned(), CandidateKind::Type),
-        DocEntry::LabelForward(..) | DocEntry::Op(..) | DocEntry::VariadicOperator(..) => {
+        DocEntry::Op(..) | DocEntry::VariadicOperator(..) => {
             return None;
         }
     };

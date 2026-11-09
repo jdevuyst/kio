@@ -2,16 +2,17 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/control(macro scope);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(leq_i32);
 import testapi/io(print);
 import testapi/iter(loop);
 
-pub labels Fields = { first: I32, second: I32 };
+pub type Fields = { First: I32; Second: I32 };
 
 pub type Row = First & Second;
 
-pub labels Fn_fields = { transform: I32 -> I32, value: I32 };
+pub type Fn_fields = { Transform: I32 -> I32; Value: I32 };
 
 pub type Fn_row = Transform & Value;
 
@@ -32,9 +33,13 @@ fn pair_second((first: I32, second: I32)) -> I32 { second }
 
 fn fn_pair_second((transform: I32 -> I32, value: I32)) -> I32 { value }
 
-fn row_second(value: Row) -> I32 { value.?{second} }
+fn row_second(value: Row) -> I32 {
+  value.>select { Second.get }
+}
 
-fn fn_row_value(row: Fn_row) -> I32 { row.?{value} }
+fn fn_row_value(row: Fn_row) -> I32 {
+  row.>select { Value.get }
+}
 
 fn apply_i32(f: I32 -> I32, value: I32) -> I32 { f(value) }
 
@@ -60,7 +65,7 @@ rec(loop) fn label_order(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     mark("f", 6)
   } else {
-    row_second({first = mark("e", 5), second = recur(cont) label_order(0)})
+    row_second((First.mk(mark("e", 5)), Second.mk(recur(cont) label_order(0))))
   }
 }
 
@@ -124,7 +129,10 @@ rec(loop) fn expected_label_order(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     mark("v", 22)
   } else {
-    fn_row_value({transform = effectful_identity("u"), value = recur(cont) expected_label_order(0)})
+    fn_row_value((
+    , Transform.mk(effectful_identity("u"))
+    , Value.mk(recur(cont) expected_label_order(0))
+    ))
   }
 }
 

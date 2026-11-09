@@ -78,11 +78,11 @@ if (partial !== pair || partial.Wrap[0] !== "partial") {
   throw new Error("partial constructor lost its relation");
 }
 
-const nested = pkg.api.KioType_Nested.makeNested({
+const nested = pkg.api.KioType_Nested.mk({
   _0: token,
   _1: { advance: <A>() => (_value: A) => token },
 });
-const payload = pkg.api.KioType_Nested.readNested(pkg.api.round(nested));
+const payload = pkg.api.KioType_Nested.get(pkg.api.round(nested));
 if (payload._0 !== token || payload._1.advance<number>()(17) !== token) {
   throw new Error("newtype substitution captured a free outer binder");
 }

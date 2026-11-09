@@ -188,7 +188,7 @@ host entries even though both leaf names are `main`; there is no export rename.
 A module that no glob matches is internal to the package and never reaches the
 host.
 
-A plain-public `newtype` publishes its nominal identity, while its constructor
+A plain-public nominal type publishes its nominal identity, while its constructor
 and projector are independent capabilities. For a bridged module, the four
 possible member states are:
 
@@ -510,29 +510,18 @@ source — a chain `retype A to B; retype B to C;` — the remap reconciles to t
 chain's origin (`A`'s `newtype` rebinds to `C`'s, the module that still declares
 it), so chained remaps collapse a multi-hop diamond onto one shared type.
 
-#### Retyping labels
+#### Retyping nominal entries
 
-Explicit `labels` entries also declare selectable nominal types. Retyping
-their generated names requires corresponding explicit label-generated types,
-not ordinary newtypes with coincidentally matching payloads and member names.
-An ordinary positional identity alias may lead to that explicit counterpart;
-the selected module need not separately export its lowercase label spelling.
-Materialized source preserves each selected label spelling with a nonminting
-`type {label} = {provider.label};` declaration referring to the exact terminal
-label family, alongside the ordinary uppercase alias or private import.
-Both the selected uppercase head and the terminal forwarding edge retain
-their ordinary access obligations.
-
-An affected named `labels` owner becomes an ordinary product/sum alias. This
-includes later named owners whose written `_` markers reused one of the
-selected earlier explicit labels. Each affected owner is decomposed once at
-its original position: unselected explicit entries remain declarations there,
-and references to selected entries use the shared nominal. Remaining recursive
-members use the ordinary minimal recursive partition; standalone forwards
-stay outside those groups. Other declarations and value bodies are not
-rewritten for this decomposition. The `_` rule itself is unchanged: a forward
-is not an explicit minting origin. Fresh materialized source derives identity
-from these declarations and imports, without a record of removed declarations.
+Entries in compact type declarations and separately written nominal entries
+are selectable by the same exact nominal identity. A selected entry may map
+to a same-named counterpart regardless of which of those declaration forms
+introduced either entry. The counterpart must meet the ordinary shape and
+visibility requirements below. For an affected named compact declaration,
+materialization preserves its product or sum alias at the original position;
+selected entries refer to the shared nominal and unselected entries retain
+their own identities. Remaining recursive members use the ordinary minimal
+recursive partition. Other declarations and function bodies are not rewritten
+for this decomposition.
 
 #### Disjoint selectors and visibility
 
@@ -579,7 +568,7 @@ congruent** — the outer nominal
 boundary is unwrapped and the payloads are compared modulo module paths. A
 **host-type** leaf matches its same-named counterpart by name (a host primitive
 is the same however it is re-exported / rehosted); any other **nominal** leaf —
-itself a `newtype` / `labels` type / `type` alias — must match by **identity**
+a nominal type or a `type` alias — must match by **identity**
 (its declaring `(module, name)`, following transparent aliases and re-imports to
 the type it resolves to), unless this same `retype` is also collapsing it (then
 the two sides' same-named copies match by redirect). The structural constructors

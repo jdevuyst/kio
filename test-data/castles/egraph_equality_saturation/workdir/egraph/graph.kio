@@ -3,29 +3,28 @@ module egraph/graph;
 import egraph/numbers as n;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32);
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/iter(loop);
 
-pub labels Node =
-  { constant: I32 }
-  | { variable: I32 }
-  | { addition: I32 & I32 }
-  | { product: I32 & I32 };
+pub type Node =
+  { Constant: I32 } | { Variable: I32 } | { Addition: I32 & I32 } | { Product: I32 & I32 }
+  ;
 
-pub newtype Graph : Array[Node] & Array[I32] & Array[I32] { constructor graph; projector fields }
+pub type { Graph: Array[Node] & Array[I32] & Array[I32] { mk; get } }
 
 pub fn create() -> Graph {
-  Graph.graph(arr.array_make_empty(), arr.array_make_empty(), arr.array_make_filled(1, 0))
+  Graph.mk((arr.array_make_empty(), arr.array_make_empty(), arr.array_make_filled(1, 0)))
 }
 
-fn nodes(g: Graph) -> Array[Node] { let .(items, _, _) = Graph.fields(g); items }
+fn nodes(g: Graph) -> Array[Node] { let .(items, _, _) = Graph.get(g); items }
 
-fn parents(g: Graph) -> Array[I32] { let .(_, links, _) = Graph.fields(g); links }
+fn parents(g: Graph) -> Array[I32] { let .(_, links, _) = Graph.get(g); links }
 
-fn revisions(g: Graph) -> Array[I32] { let .(_, _, counter) = Graph.fields(g); counter }
+fn revisions(g: Graph) -> Array[I32] { let .(_, _, counter) = Graph.get(g); counter }
 
 pub fn size(g: Graph) -> I32 { arr.array_len(nodes(g)) }
 
@@ -68,25 +67,33 @@ fn same_key(g: Graph, a: Node, b: Node) -> Bool {
   match(a) {
     .(a: Constant) {
       match(b) {
-        .(b: Constant) { n.equal(a.?{constant}, b.?{constant}) };
+        .(b: Constant) {
+          n.equal(a.>select { Constant.get }, b.>select { Constant.get })
+        };
         .() { .f }
       }
     };
     .(a: Variable) {
       match(b) {
-        .(b: Variable) { n.equal(a.?{variable}, b.?{variable}) };
+        .(b: Variable) {
+          n.equal(a.>select { Variable.get }, b.>select { Variable.get })
+        };
         .() { .f }
       }
     };
     .(a: Addition) {
       match(b) {
-        .(b: Addition) { same_children(g, a.?{addition}, b.?{addition}) };
+        .(b: Addition) {
+          same_children(g, a.>select { Addition.get }, b.>select { Addition.get })
+        };
         .() { .f }
       }
     };
     .(a: Product) {
       match(b) {
-        .(b: Product) { same_children(g, a.?{product}, b.?{product}) };
+        .(b: Product) {
+          same_children(g, a.>select { Product.get }, b.>select { Product.get })
+        };
         .() { .f }
       }
     }
@@ -107,19 +114,19 @@ rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
 }
 
 pub fn constant_node(g: Graph, value: I32) -> I32 {
-  intern_walk(g, ({constant = value}.>widen_sum)[Node], 0)
+  intern_walk(g, (Constant.mk(value).>widen_sum)[Node], 0)
 }
 
 pub fn variable_node(g: Graph, symbol: I32) -> I32 {
-  intern_walk(g, ({variable = symbol}.>widen_sum)[Node], 0)
+  intern_walk(g, (Variable.mk(symbol).>widen_sum)[Node], 0)
 }
 
 pub fn add(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, ({addition = (a, b)}.>widen_sum)[Node], 0)
+  intern_walk(g, (Addition.mk((a, b)).>widen_sum)[Node], 0)
 }
 
 pub fn multiply(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, ({product = (a, b)}.>widen_sum)[Node], 0)
+  intern_walk(g, (Product.mk((a, b)).>widen_sum)[Node], 0)
 }
 
 rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {

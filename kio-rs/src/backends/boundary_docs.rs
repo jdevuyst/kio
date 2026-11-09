@@ -211,7 +211,7 @@ mod tests {
         let package = package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// Host constructor prose.\nhost type Box[A];\n/// Host method prose.\nhost fn supply() -> .;\n/// Public function prose.\npub fn same() -> . { supply() }\n/// Nominal prose.\npub newtype Token : . { pub constructor make; pub projector read; };\n",
+                "module a;\n/// Host constructor prose.\nhost type Box[A];\n/// Host method prose.\nhost fn supply() -> .;\n/// Public function prose.\npub fn same() -> . { supply() }\n/// Nominal prose.\npub type { Token: . { pub mk; pub get; }; };\n",
             ),
             ("b.kio", "module b;"),
         ]);
@@ -265,8 +265,8 @@ mod tests {
         let markers = "__kioOpaqueOut( __kioOpaqueIn( __kioProductSlots( __kioProductSlot( __kioSumPayload( __kioSumInject(";
         let benign = "Documentation about this declaration.";
         for source in [
-            "module a;\npub fn unit() -> . { () }\npub newtype Token : . { pub constructor make; pub projector read; };\n",
-            "module a;\npub newtype Opaque : . { pub constructor make; projector read; };\npub fn pair(value: . & .) -> . & . { value }\n",
+            "module a;\npub fn unit() -> . { () }\npub type { Token: . { pub mk; pub get; }; };\n",
+            "module a;\npub type { Opaque: . { pub mk; get; }; };\npub fn pair(value: . & .) -> . & . { value }\n",
         ] {
             let emit = |prose| {
                 let source = source.replace("\npub ", &format!("\n/// {prose}\npub "));
@@ -286,7 +286,7 @@ mod tests {
         let package = package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// Opaque nominal prose.\npub newtype Opaque : . { pub constructor make; projector read; };\n/// Recursive nominal prose.\npub rec newtype Recursive : . | Recursive { pub constructor make_rec; pub projector read_rec; };\n",
+                "module a;\n/// Opaque nominal prose.\npub type { Opaque: . { pub mk; get; }; };\n/// Recursive nominal prose.\npub rec type { Recursive: . | Recursive { pub mk; pub get; }; };\n",
             ),
             ("b.kio", "module b;"),
         ]);

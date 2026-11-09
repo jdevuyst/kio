@@ -1,6 +1,6 @@
 module core/store;
 
 rec {
-  pub newtype Even : . | Odd { pub constructor mk_even; pub projector un_even };
-  pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
+  pub type { Even: . | Odd { pub mk; pub get } };
+  pub type { Odd: . | Even { pub mk; pub get } }
 }

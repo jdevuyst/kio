@@ -6,9 +6,9 @@ module fmt_block_prefix_comments;
 fn call() { let result = choose (factory // call boundary
 (())) { () }; result }
 fn field() { choose (record // field boundary
-.?{field}) { () } }
+.>select) { () } }
 fn update() { choose (record // update boundary
-.!{field = value}) { () } }
+.>with(value)) { () } }
 fn chained_call() { choose (factory // chained call boundary
 (()).>select) { () } }
 fn leading_receiver() { choose ((// leading receiver

@@ -37,7 +37,7 @@ loader split across focused modules:
   host surface.
 - [`testapi/main.kio`](../../test-data/poc/dyn_load_prime/workdir/testapi/main.kio)
   — the worked example: it builds the image of a guest package with
-  thirteen fn exports and one member-exporting `pub newtype` (guest
+  thirteen fn exports and one public nominal type with exported members (guest
   module, host module, and manifest), loads it with `load_package`,
   calls every export shape through the loaded surface — the newtype's
   constructor and projector included — enumerates the export surface, and
@@ -150,7 +150,7 @@ The public `Import` record stores `(local-name, original-name, provider-module)`
 `mk_import_as(local, original, provider)` constructs a renamed one.
 `un_import(entry)` returns `(local-name, provider-module)`, and
 `import_source(entry)` reads the original declaration name. Raw `Import.get`
-and the `{import = ...}` constructor expose all three fields. The loader uses
+and the `Import.mk` constructor expose all three fields. The loader uses
 the local name for scope and duplicate checks and the original name for exact
 provider lookup and visibility validation. Distinct local aliases are allowed;
 repeated local introductions are errors.
@@ -293,26 +293,26 @@ and the shapes involved.
 ## Type exports: a newtype's members on the surface
 
 A bridge-matched module's `pub` surface is not only its fns. A
-`pub newtype` whose members are `pub` puts its constructor and projector
+public nominal type whose members are `pub` puts its constructor and projector
 on the loaded surface as callable exports, matching the compiled facades'
 treatment of the same declarations. The guest declares:
 
 ```text
-pub newtype Tag[A] : A { pub constructor mk_tag; pub projector un_tag }
+pub type { Tag[A] : A { pub mk; pub get; }; };
 ```
 
 and the surface gains two entries named module, type, and member —
-`guest.Tag.mk_tag` and `guest.Tag.un_tag` — driven through the same
+`guest.Tag.mk` and `guest.Tag.get` — driven through the same
 `lookup` / `apply` ceremony as any fn export. `lookup` accepts both the
-qualified spelling and the bare `Tag.mk_tag`, under the same ambiguity
+qualified spelling and the bare `Tag.mk`, under the same ambiguity
 rule as fn names: a bare spelling matching entries in more than one
 module answers with a `Diag` that lists every qualified candidate.
 Visibility gates members like everything else on the surface — a member
 that is not plain `pub` (private, or `pub(path)`-scoped) is not an
 export, and neither member of a newtype in a module the bridge does not
 match is. At runtime the newtype erases: both loaded members are the
-identity, so `un_tag(mk_tag(11))` rides the i32 through unchanged — the
-`un_tag(mk_tag(11)) = 11` line of the report.
+identity, so `get(mk(11))` rides the i32 through unchanged — the
+`get(mk(11)) = 11` line of the report.
 
 ## Host callbacks: capabilities as first-class guest values
 
@@ -406,8 +406,8 @@ stated like any other entry — the worked example's matching contract
 includes the newtype's constructor bare and its projector qualified:
 
 ```text
-mk_expect("Tag.mk_tag"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
-mk_expect("guest.Tag.un_tag"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
+mk_expect("Tag.mk"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
+mk_expect("guest.Tag.get"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
 ```
 
 `instantiate_checked` / `instantiate_checked_default` fold the check into
@@ -425,29 +425,29 @@ signature — the pattern a real host follows. Its `greet` wrapper:
 
 ```text
 fn run_greet[P](surf: Surface[P], who: String) -> String {
-  match(surf.?{lookup}("greet"[String])) {
+  match((surf.>select { Lookup.get[P] })("greet"[String])) {
     (
-      , .(g: P) {
-          match(surf.?{apply}((g, surf.?{str_in}(who)))) {
-            (
-              , .(r: P) {
-                  match(surf.?{str_out}(r)) {
-                    (.(s: String) { s }, .(d: Diag) { diag_message(d) })
-                  }
-                }
-              , .(d: Diag) { diag_message(d) }
-              )
-          }
+    , .(g: P) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { Str_in.get[P] })(who)))) {
+          (
+          , .(r: P) {
+              match((surf.>select { Str_out.get[P] })(r)) {
+                (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
         }
-      , .(d: Diag) { diag_message(d) }
-      )
+      }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 ```
 
 The wrapper is generic in `P` — it can never learn the representation —
 and everything it touches is the surface record, accessed with row-record
-field reads (`surf.?{lookup}`). Sibling wrappers in the worked example
+selectors (`surf.>select { Lookup.get[P] }`). Sibling wrappers in the worked example
 swap the marshalling pair per export shape (`i32_in` / `i32_out`,
 `pair_in` for the product-domain `add3`, `pair_out` for `divmod`,
 `sum_is_left` / `sum_payload` for `classify`) around the same skeleton.
@@ -462,12 +462,12 @@ runtime-value laws — every `un_value . v<arm>` recovers the arm it built:
 ```text
 equiv un_closure(e: Env, t: Term) {
   un_value(vclosure(e, t));
-  widen_sum({v_closure = (e, t)})[Value_shape]
+  widen_sum(V_closure.mk(  (e, t)))[Value_shape]
 }
 
 equiv un_product(a: Value, b: Value) {
   un_value(vproduct(a, b));
-  widen_sum({v_product = (a, b)})[Value_shape]
+  widen_sum(V_product.mk(  (a, b)))[Value_shape]
 }
 ```
 
@@ -510,7 +510,7 @@ classify(4) = small
 classify(42) = 42
 greet(3) = dyn_load_prime: the call got stuck — host fn `string_concat` expected two string arguments
 apply_cb(host_double, 21) = 42
-un_tag(mk_tag(11)) = 11
+get(mk(11)) = 11
 exports:
   guest.greet : (h{hostapi.String}) -> h{hostapi.String}
   guest.double : (h{hostapi.I32}) -> h{hostapi.I32}
@@ -525,8 +525,8 @@ exports:
   guest.divmod : (h{hostapi.I32} & h{hostapi.I32}) -> (h{hostapi.I32} & h{hostapi.I32})
   guest.classify : (h{hostapi.I32}) -> (h{hostapi.String} | h{hostapi.I32})
   guest.apply_cb : ((h{hostapi.I32} -> h{hostapi.I32}) & h{hostapi.I32}) -> h{hostapi.I32}
-  guest.Tag.mk_tag : [#0] (#0) -> n{guest.Tag}(#0)
-  guest.Tag.un_tag : [#0] (n{guest.Tag}(#0)) -> #0
+  guest.Tag.mk : [#0] (#0) -> n{guest.Tag}(#0)
+  guest.Tag.get : [#0] (n{guest.Tag}(#0)) -> #0
 contract (match) = ok
 contract (missing export) = dyn_load_prime: the image's surface declares no exported `triple`
 contract (signature) = dyn_load_prime: contract mismatch — export `guest.add3` declares `(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}` but the host expects `(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}`

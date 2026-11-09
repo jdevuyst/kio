@@ -7,41 +7,45 @@ module sheet/eval;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr);
 import sheet/cells(Sheet, Value, Values, content_at, cycle_value, fold_content);
 import sheet/cells(fold_value, num_value, value_at, void_value);
 import sheet/formula(Add_l, Add_r, Expr, If_c, If_e, If_t, Lit, Max_hi, Max_lo);
 import sheet/formula(Mul_l, Mul_r, Ref_at, Sub_l, Sub_r, Sum_hi, Sum_lo, range_cells);
-import sheet/formula({add_l}, {add_r}, {if_c}, {if_e}, {if_t}, {lit}, {max_hi}, {max_lo});
-import sheet/formula({mul_l}, {mul_r}, {ref_at}, {sub_l}, {sub_r}, {sum_hi}, {sum_lo});
 import sheet/list(List);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 
 /// What an expression is worth: a number, or the cycle error.
-labels Ev = { ok: I32 } | { bad: . };
+type Ev = { Ok: I32 } | { Bad: . };
 
 /// What one cell contributes to an aggregate.
-labels Slot = { got: I32 } | { none: . } | { err: . };
+type Slot = { Got: I32 } | { None: . } | { Err: . };
 
-fn ok(n: I32) -> Ev { ({ok = n}.>widen_sum)[Ev] }
+fn ok(n: I32) -> Ev { (Ok.mk(n).>widen_sum)[Ev] }
 
-fn bad() -> Ev { ({bad=}.>widen_sum)[Ev] }
+fn bad() -> Ev { (Bad.mk(()).>widen_sum)[Ev] }
 
 fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
   match(e) {
-    (.(n: Ok) { on_ok(n.?{ok}) }, .(_b: Bad) { on_bad })
+    (
+    , .(n: Ok) {
+        on_ok(n.>select { Ok.get })
+      }
+    , .(_b: Bad) { on_bad }
+    )
   }
 }
 
 fn slot_at(vals: Values, a: Addr) -> Slot {
   fold_value(
   , value_at(vals, a)
-  , .(n: I32) { ({got = n}.>widen_sum)[Slot] }
-  , ({none=}.>widen_sum)[Slot]
-  , ({err=}.>widen_sum)[Slot]
+  , .(n: I32) { (Got.mk(n).>widen_sum)[Slot] }
+  , (None.mk(()).>widen_sum)[Slot]
+  , (Err.mk(()).>widen_sum)[Slot]
   )
 }
 
@@ -63,12 +67,14 @@ fn bin(left: Ev, right: Ev, op: (I32 & I32) -> I32) -> Ev {
 
 /// `SUM`: blanks contribute nothing, one error poisons the total.
 rec(loop) fn sum_onto(vals: Values, cells: List[Addr], acc: I32) -> Ev {
-  match(cells.>List.unpack) {
+  match(cells.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         match(slot_at(vals, a)) {
           (
-          , .(g: Got) { recur sum_onto(vals, rest, add_i32(acc, g.?{got})) }
+          , .(g: Got) {
+              recur sum_onto(vals, rest, add_i32(acc, g.>select { Got.get }))
+            }
           , .(_n: None) { recur sum_onto(vals, rest, acc) }
           , .(_e: Err) { bad() }
           )
@@ -81,20 +87,20 @@ rec(loop) fn sum_onto(vals: Values, cells: List[Addr], acc: I32) -> Ev {
 
 /// `MAX`: blanks are not candidates, and a range with no number is zero.
 rec(loop) fn max_onto(vals: Values, cells: List[Addr], best: I32, seen: Bool) -> Ev {
-  match(cells.>List.unpack) {
+  match(cells.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         match(slot_at(vals, a)) {
           (
           , .(g: Got) {
               if(seen) {
-                if(lt_i32(best, g.?{got})) {
-                  recur max_onto(vals, rest, g.?{got}, .t)
+                if(lt_i32(best, g.>select { Got.get })) {
+                  recur max_onto(vals, rest, g.>select { Got.get }, .t)
                 } else {
                   recur max_onto(vals, rest, best, .t)
                 }
               } else {
-                recur max_onto(vals, rest, g.?{got}, .t)
+                recur max_onto(vals, rest, g.>select { Got.get }, .t)
               }
             }
           , .(_n: None) { recur max_onto(vals, rest, best, seen) }
@@ -110,36 +116,44 @@ rec(loop) fn max_onto(vals: Values, cells: List[Addr], best: I32, seen: Bool) ->
 }
 
 rec(loop) fn eval_expr(vals: Values, e: Expr) -> Ev {
-  match(e.>Expr.un_expr) {
+  match(e.>Expr.get) {
     (
-    , .(r: Ref_at) { ev_at(vals, r.?{ref_at}) }
-    , .(n: Lit) { ok(n.?{lit}) }
+    , .(r: Ref_at) {
+        ev_at(vals, r.>select { Ref_at.get })
+      }
+    , .(n: Lit) {
+        ok(n.>select { Lit.get })
+      }
     , .(left: Add_l, right: Add_r) {
-        let a = recur(cont) eval_expr(vals, left.?{add_l});
-        let b = recur(cont) eval_expr(vals, right.?{add_r});
+        let a = recur(cont) eval_expr(vals, left.>select { Add_l.get });
+        let b = recur(cont) eval_expr(vals, right.>select { Add_r.get });
         bin(a, b, add_i32)
       }
     , .(left: Sub_l, right: Sub_r) {
-        let a = recur(cont) eval_expr(vals, left.?{sub_l});
-        let b = recur(cont) eval_expr(vals, right.?{sub_r});
+        let a = recur(cont) eval_expr(vals, left.>select { Sub_l.get });
+        let b = recur(cont) eval_expr(vals, right.>select { Sub_r.get });
         bin(a, b, sub_i32)
       }
     , .(left: Mul_l, right: Mul_r) {
-        let a = recur(cont) eval_expr(vals, left.?{mul_l});
-        let b = recur(cont) eval_expr(vals, right.?{mul_r});
+        let a = recur(cont) eval_expr(vals, left.>select { Mul_l.get });
+        let b = recur(cont) eval_expr(vals, right.>select { Mul_r.get });
         bin(a, b, mul_i32)
       }
-    , .(lo: Sum_lo, hi: Sum_hi) { sum_onto(vals, range_cells(lo.?{sum_lo}, hi.?{sum_hi}), 0) }
-    , .(lo: Max_lo, hi: Max_hi) { max_onto(vals, range_cells(lo.?{max_lo}, hi.?{max_hi}), 0, .f) }
+    , .(lo: Sum_lo, hi: Sum_hi) {
+        sum_onto(vals, range_cells(lo.>select { Sum_lo.get }, hi.>select { Sum_hi.get }), 0)
+      }
+    , .(lo: Max_lo, hi: Max_hi) {
+        max_onto(vals, range_cells(lo.>select { Max_lo.get }, hi.>select { Max_hi.get }), 0, .f)
+      }
     , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
-        let test = recur(cont) eval_expr(vals, cond.?{if_c});
+        let test = recur(cont) eval_expr(vals, cond.>select { If_c.get });
         match(test) {
           (
           , .(n: Ok) {
-              if(eq_i32(n.?{ok}, 0)) {
-                recur eval_expr(vals, else_arm.?{if_e})
+              if(eq_i32(n.>select { Ok.get }, 0)) {
+                recur eval_expr(vals, else_arm.>select { If_e.get })
               } else {
-                recur eval_expr(vals, then_arm.?{if_t})
+                recur eval_expr(vals, then_arm.>select { If_t.get })
               }
             }
           , .(_b: Bad) { bad() }

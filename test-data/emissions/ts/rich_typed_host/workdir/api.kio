@@ -2,16 +2,13 @@ module api;
 
 host type String role(str);
 
-pub newtype Box[A] : A { pub constructor make_box; pub projector read_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector read_shadow }
+pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get } }
 
-pub newtype Pack <T> : T { pub constructor make_pack; pub projector open_pack }
+pub type { Pack <T>: T { pub mk; pub get } }
 
-pub rec newtype Recursive : . | Recursive {
-  pub constructor make_recursive;
-  pub projector read_recursive
-  }
+pub rec type { Recursive: . | Recursive { pub mk; pub get } }
 
 host fn apply_poly(f: [T] T -> T) -> String;
 
@@ -27,4 +24,4 @@ pub fn shadow(value: Shadow[Box[String]]) -> Shadow[Box[String]] { round_shadow(
 
 pub fn hkt(value: Box[String]) -> Box[String] { round_hkt[Box](value) }
 
-pub fn pack[T](value: T) -> Pack { Pack.make_pack[T](value) }
+pub fn pack[T](value: T) -> Pack { Pack.mk[T](value) }

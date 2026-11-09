@@ -1,29 +1,30 @@
 module priority_dispatch/scoring;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import priority_dispatch/model(
 , Choice
+, Choice_cpu
+, Choice_deadline
+, Choice_duration
+, Choice_eligible
+, Choice_id
+, Choice_io
+, Choice_name
+, Choice_priority
+, Choice_rank
 , Job
+, Job_cpu
+, Job_deadline
+, Job_duration
+, Job_id
+, Job_io
+, Job_name
+, Job_priority
 , Slot
+, Slot_cpu
+, Slot_io
 , choice
-, {choice_cpu}
-, {choice_deadline}
-, {choice_duration}
-, {choice_eligible}
-, {choice_id}
-, {choice_io}
-, {choice_name}
-, {choice_priority}
-, {choice_rank}
-, {job_cpu}
-, {job_deadline}
-, {job_duration}
-, {job_id}
-, {job_io}
-, {job_name}
-, {job_priority}
-, {slot_cpu}
-, {slot_io}
 );
 import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
@@ -50,13 +51,19 @@ pub fn all_done(
 }
 
 fn fits(job: Job, slot: Slot) -> Bool {
-  and_bool(leq_i32(job.?{job_cpu}, slot.?{slot_cpu}), leq_i32(job.?{job_io}, slot.?{slot_io}))
+  and_bool(
+  , leq_i32(job.>select { Job_cpu.get }, slot.>select { Slot_cpu.get })
+  , leq_i32(job.>select { Job_io.get }, slot.>select { Slot_io.get })
+  )
 }
 
 pub fn rank_job(job: Job) -> I32 {
   sub_i32(
-  , add_i32(mul_i32(job.?{job_priority}, 100), mul_i32(sub_i32(20, job.?{job_deadline}), 5))
-  , job.?{job_duration}
+  , add_i32(
+    , mul_i32(job.>select { Job_priority.get }, 100)
+    , mul_i32(sub_i32(20, job.>select { Job_deadline.get }), 5)
+    )
+  , job.>select { Job_duration.get }
   )
 }
 
@@ -64,21 +71,21 @@ pub fn choose_job(job: Job, slot: Slot, done: Bool) -> Choice {
   let eligible = and_bool(not_bool(done), fits(job, slot));
   let rank = if(eligible) { rank_job(job) } else { 0 };
   choice(
-  , job.?{job_id}
-  , job.?{job_name}
+  , job.>select { Job_id.get }
+  , job.>select { Job_name.get }
   , rank
-  , job.?{job_priority}
-  , job.?{job_deadline}
-  , job.?{job_cpu}
-  , job.?{job_io}
-  , job.?{job_duration}
+  , job.>select { Job_priority.get }
+  , job.>select { Job_deadline.get }
+  , job.>select { Job_cpu.get }
+  , job.>select { Job_io.get }
+  , job.>select { Job_duration.get }
   , eligible
   )
 }
 
 pub fn better(left: Choice, right: Choice) -> Choice {
-  let .({choice_eligible as left_ok, choice_rank as left_rank}) = left;
-  let .({choice_eligible as right_ok, choice_rank as right_rank}) = right;
+  let .(left_ok, left_rank) = left.>select { Choice_eligible.get; Choice_rank.get };
+  let .(right_ok, right_rank) = right.>select { Choice_eligible.get; Choice_rank.get };
   if(left_ok) {
     if(right_ok) {
       if(lt_i32(right_rank, left_rank)) { left } else { right }

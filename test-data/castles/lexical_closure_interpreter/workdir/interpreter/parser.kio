@@ -4,18 +4,19 @@ import interpreter/syntax as ast;
 import list/core as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-labels { parsed: ast.Expr & lists.List[String] };
+type { Parsed: ast.Expr & lists.List[String] }
 
 type Result = Parsed | String;
 
 fn success(expr: ast.Expr, rest: lists.List[String]) -> Result {
-  ({parsed = (expr, rest)}.>widen_sum)[Result]
+  (Parsed.mk((expr, rest)).>widen_sum)[Result]
 }
 
 fn failure(message: String) -> Result { (message.>widen_sum)[Result] }
@@ -34,7 +35,7 @@ rec(loop) {
               let body = recur(cont) expression(body_tokens);
               match(body) {
                 .(parsed_body: Parsed) {
-                  let .(expr, remaining) = parsed_body.?{parsed};
+                  let .(expr, remaining) = parsed_body.>select { Parsed.get };
                   success(ast.function(name, expr), remaining)
                 };
                 .(error: String) { failure(error) }
@@ -71,11 +72,11 @@ rec(loop) {
     let first = recur(cont) expression(tokens);
     match(first) {
       .(left: Parsed) {
-        let .(left_expr, rest) = left.?{parsed};
+        let .(left_expr, rest) = left.>select { Parsed.get };
         let second = recur(cont) expression(rest);
         match(second) {
           .(right: Parsed) {
-            let .(right_expr, remaining) = right.?{parsed};
+            let .(right_expr, remaining) = right.>select { Parsed.get };
             success(construct(left_expr, right_expr), remaining)
           };
           .(error: String) { failure(error) }
@@ -89,7 +90,7 @@ rec(loop) {
 pub fn parse(tokens: lists.List[String]) -> String | ast.Expr {
   match(expression(tokens)) {
     .(result: Parsed) {
-      let .(expr, rest) = result.?{parsed};
+      let .(expr, rest) = result.>select { Parsed.get };
       match(lists.uncons(rest)) {
         .(extra: String, _tail: lists.List[String]) {
           (text.string_concat("trailing token: ", extra).>widen_sum)[String | ast.Expr]

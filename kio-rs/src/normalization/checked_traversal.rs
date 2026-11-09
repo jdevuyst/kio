@@ -159,7 +159,7 @@ fn expr_head<'a>(
                 .iter()
                 .map(|arg| match arg {
                     CallArg::Value(value) => CallArg::Value(child(value)),
-                    CallArg::Type(ty) => CallArg::Type(ty.clone()),
+                    CallArg::Type(ty) => CallArg::Type(type_traversal::clone_type(ty)),
                 })
                 .collect(),
             meta: meta.clone(),
@@ -174,8 +174,31 @@ fn expr_head<'a>(
             caps,
         } => Expr::FnExpr {
             occurrence: Default::default(),
-            sig: sig.clone(),
-            ret_ty: ret_ty.clone(),
+            sig: Signature::from_parts(
+                sig.params
+                    .iter()
+                    .map(|param| match param {
+                        SignatureParam::Type(param) => SignatureParam::Type(TypeParam {
+                            name: param.name.clone(),
+                            presentation: param.presentation.clone(),
+                            kind: param
+                                .kind
+                                .as_deref()
+                                .map(type_traversal::clone_kind)
+                                .map(Box::new),
+                            span: param.span,
+                        }),
+                        SignatureParam::Value(param) => SignatureParam::Value(Param {
+                            name: param.name.clone(),
+                            ty: param.ty.as_ref().map(type_traversal::clone_type),
+                            pattern: param.pattern,
+                            meta: param.meta.clone(),
+                        }),
+                    })
+                    .collect(),
+                sig.groups.clone(),
+            ),
+            ret_ty: ret_ty.as_ref().map(type_traversal::clone_type),
             body: Box::new(child(body)),
             meta: meta.clone(),
             caps: *caps,
@@ -193,7 +216,7 @@ fn expr_head<'a>(
             occurrence: Default::default(),
             name: name.clone(),
             name_span: *name_span,
-            ty: ty.clone(),
+            ty: ty.as_ref().map(type_traversal::clone_type),
             pattern: *pattern,
             value: Box::new(child(value)),
             body: Box::new(child(body)),
@@ -210,18 +233,56 @@ fn expr_head<'a>(
             body: Box::new(child(body)),
             meta: meta.clone(),
         },
-        Expr::Path { .. }
-        | Expr::Unit { .. }
-        | Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. } => expr.clone(),
+        Expr::StrLit {
+            value,
+            annotation,
+            meta,
+            ..
+        } => Expr::StrLit {
+            occurrence: Default::default(),
+            value: value.clone(),
+            annotation: annotation.as_ref().map(type_traversal::clone_type),
+            meta: meta.clone(),
+        },
+        Expr::IntLit {
+            digits,
+            annotation,
+            meta,
+            diagnostic,
+            ..
+        } => Expr::IntLit {
+            occurrence: Default::default(),
+            diagnostic: diagnostic.clone(),
+            digits: digits.clone(),
+            annotation: annotation.as_ref().map(type_traversal::clone_type),
+            meta: meta.clone(),
+        },
+        Expr::FloatLit {
+            digits,
+            annotation,
+            meta,
+            ..
+        } => Expr::FloatLit {
+            occurrence: Default::default(),
+            digits: digits.clone(),
+            annotation: annotation.as_ref().map(type_traversal::clone_type),
+            meta: meta.clone(),
+        },
+        Expr::BoolLit {
+            value,
+            annotation,
+            meta,
+            ..
+        } => Expr::BoolLit {
+            occurrence: Default::default(),
+            value: *value,
+            annotation: annotation.as_ref().map(type_traversal::clone_type),
+            meta: meta.clone(),
+        },
+        Expr::Path { .. } | Expr::Unit { .. } => expr.clone(),
         Expr::RecCall { ext, .. }
-        | Expr::RowLet { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
@@ -316,7 +377,7 @@ pub(super) fn clone_expr(root: &EvalAstExpr) -> EvalAstExpr {
         .expect("the cloned source root is uniquely owned")
 }
 
-fn expr_equal(left: &EvalAstExpr, right: &EvalAstExpr) -> bool {
+pub(super) fn expr_equal(left: &EvalAstExpr, right: &EvalAstExpr) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         let mut left_children = Vec::new();
@@ -351,28 +412,64 @@ fn expr_equal(left: &EvalAstExpr, right: &EvalAstExpr) -> bool {
 }
 
 pub(super) fn equal(left: &CheckedTerm, right: &CheckedTerm) -> bool {
-    let mut pending = vec![(left, right)];
+    let left = checked_bindings::align_for_materialization(left);
+    let right = checked_bindings::align_for_materialization(right);
+    let mut left_scopes = checked_bindings::TypeScopes::new();
+    let mut right_scopes = checked_bindings::TypeScopes::new();
+    let mut pending = vec![(&left, 0, &right, 0)];
     let mut templates = HashMap::new();
-    while let Some((left, right)) = pending.pop() {
-        if left.ty != right.ty {
+    while let Some((left_term, left_scope, right_term, right_scope)) = pending.pop() {
+        if left_term.ty != right_term.ty {
             return false;
         }
-        if template_arity(&left.node, &mut templates) == 0
-            && template_arity(&right.node, &mut templates) == 0
+        if template_arity(&left_term.node, &mut templates) == 0
+            && template_arity(&right_term.node, &mut templates) == 0
         {
-            let left = EvalRef::new(materialize(&left.node));
-            let right = EvalRef::new(materialize(&right.node));
-            if !expr_equal(&left, &right) {
+            let left_expr = EvalRef::new(materialize(&left_term.node));
+            let right_expr = EvalRef::new(materialize(&right_term.node));
+            if !expr_equal(&left_expr, &right_expr)
+                || checked_bindings::reference_occurrences(
+                    left_term,
+                    &left_scopes,
+                    left_scope,
+                    Some((&left_expr, &left.ty.environment)),
+                ) != checked_bindings::reference_occurrences(
+                    right_term,
+                    &right_scopes,
+                    right_scope,
+                    Some((&right_expr, &right.ty.environment)),
+                )
+            {
                 return false;
             }
-        } else if !node_equal(&left.node, &right.node, &mut pending) {
-            return false;
+        } else {
+            if checked_bindings::reference_occurrences(left_term, &left_scopes, left_scope, None)
+                != checked_bindings::reference_occurrences(
+                    right_term,
+                    &right_scopes,
+                    right_scope,
+                    None,
+                )
+            {
+                return false;
+            }
+            let mut children = Vec::new();
+            if !node_equal(&left_term.node, &right_term.node, &mut children) {
+                return false;
+            }
+            let left_scope = left_scopes.child(left_scope, &left_term.node);
+            let right_scope = right_scopes.child(right_scope, &right_term.node);
+            pending.extend(
+                children
+                    .into_iter()
+                    .map(|(left, right)| (left, left_scope, right, right_scope)),
+            );
         }
     }
     true
 }
 
-fn node_equal<'a>(
+pub(super) fn node_equal<'a>(
     left: &'a CheckedTermNode,
     right: &'a CheckedTermNode,
     pending: &mut Vec<(&'a CheckedTerm, &'a CheckedTerm)>,
@@ -384,7 +481,7 @@ fn node_equal<'a>(
         (Local { name: left }, Local { name: right }) => left == right,
         (TermLet { name: left, .. }, TermLet { name: right, .. }) => left == right,
         (TermFn { sig: left, .. }, TermFn { sig: right, .. }) => left == right,
-        (TermCall { params: left, .. }, TermCall { params: right, .. }) => left == right,
+        (TermCall { .. }, TermCall { .. }) => true,
         (TermTypeApp { arg: left, .. }, TermTypeApp { arg: right, .. }) => left == right,
         (IntrinsicPair { .. }, IntrinsicPair { .. }) => true,
         (
@@ -489,7 +586,7 @@ impl<'a> CanonicalFrame<'a> {
         let mut types = Vec::new();
         let mut values = Vec::new();
         let node = match term.node.as_ref() {
-            CheckedTermNode::Raw(expr) => CheckedTermNode::Raw(clone_expr(expr)),
+            CheckedTermNode::Raw(expr) => CheckedTermNode::Raw(names.raw_expr(expr)),
             CheckedTermNode::Local { name } => CheckedTermNode::Local {
                 name: names.value_name(name),
             },
@@ -511,7 +608,6 @@ impl<'a> CanonicalFrame<'a> {
                 ..
             } => CheckedTermNode::TermCall {
                 fn_value: fn_value.clone(),
-                params: Vec::new(),
                 arg_packet: arg_packet.clone(),
             },
             CheckedTermNode::TermTypeApp { fn_value, .. } => CheckedTermNode::TermTypeApp {
@@ -677,13 +773,6 @@ impl<'a> CanonicalFrame<'a> {
                     self.values.push(binding);
                 }
             }
-            TermCall { params, .. } if self.next == 1 => {
-                let CheckedTermNode::TermCall { params: source, .. } = self.term.node.as_ref()
-                else {
-                    unreachable!("canonical call retains its source node")
-                };
-                *params = source.iter().map(|ty| names.ty(ty)).collect();
-            }
             TermTypeApp { arg, .. } => {
                 let CheckedTermNode::TermTypeApp { arg: source, .. } = self.term.node.as_ref()
                 else {
@@ -719,7 +808,7 @@ impl<'a> CanonicalFrame<'a> {
         names.pop_type_bindings(self.types);
         EvalRef::new(CheckedTerm {
             node: self.node,
-            ty: ReflectedType::new_trusted(ty),
+            ty: ReflectedType::from_parts(EvalRef::new(ty), None, self.term.ty.environment.clone()),
         })
     }
 }

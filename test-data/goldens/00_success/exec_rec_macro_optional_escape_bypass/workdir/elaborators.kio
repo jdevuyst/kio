@@ -11,9 +11,8 @@ pure fn run_callbacks_impl(
 , callbacks: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
   let unit_type = __reflect_type__(ct)[.];
-  let zero = __type_arity_zero__(ct);
-  let required_type = __type_arrow__(ct, unit_type, zero, result_type);
-  let optional_type = __type_arrow__(ct, unit_type, zero, unit_type);
+  let required_type = __type_arrow__(ct, unit_type, result_type);
+  let optional_type = __type_arrow__(ct, unit_type, unit_type);
   let callbacks_type = __type_product__(ct, required_type, optional_type);
   let required = __intrinsic_fst__(ct, callbacks_type, callbacks);
   let optional = __intrinsic_snd__(ct, callbacks_type, callbacks);

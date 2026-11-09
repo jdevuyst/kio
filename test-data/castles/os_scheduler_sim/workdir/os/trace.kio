@@ -8,6 +8,7 @@ module os/trace;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import os/config as config;
 import os/num as num;
@@ -21,40 +22,35 @@ import testapi/io(print);
 /// `ran` carries the ticks still owed to the compute phase; `hit` the page read
 /// and the frame it was found in; `fault` the page read, the frame it was
 /// loaded into, and the process and page that frame gave up.
-pub labels Event =
-  { stalled: . }
-  | { ran: I32 }
-  | { hit: I32 & I32 }
-  | { fault: I32 & I32 & I32 & I32 };
+pub type Event =
+  { Stalled: . } | { Ran: I32 } | { Hit: I32 & I32 } | { Fault: I32 & I32 & I32 & I32 }
+  ;
 
 /// What the scheduler did next. `blocked` carries the tick the process is due
 /// back.
-pub labels Outcome =
-  { nobody: . }
-  | { holds: . }
-  | { preempted: . }
-  | { blocked: I32 }
-  | { retired: . };
+pub type Outcome =
+  { Nobody: . } | { Holds: . } | { Preempted: . } | { Blocked: I32 } | { Retired: . }
+  ;
 
-pub fn stalled_event() -> Event { ({stalled=}.>widen_sum)[Event] }
+pub fn stalled_event() -> Event { (Stalled.mk(()).>widen_sum)[Event] }
 
-pub fn ran_event(left: I32) -> Event { ({ran = left}.>widen_sum)[Event] }
+pub fn ran_event(left: I32) -> Event { (Ran.mk(left).>widen_sum)[Event] }
 
-pub fn hit_event(vp: I32, frame: I32) -> Event { ({hit = (vp, frame)}.>widen_sum)[Event] }
+pub fn hit_event(vp: I32, frame: I32) -> Event { (Hit.mk((vp, frame)).>widen_sum)[Event] }
 
 pub fn fault_event(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) -> Event {
-  ({fault = (vp, frame, victim_pid, victim_vp)}.>widen_sum)[Event]
+  (Fault.mk((vp, frame, victim_pid, victim_vp)).>widen_sum)[Event]
 }
 
-pub fn nobody() -> Outcome { ({nobody=}.>widen_sum)[Outcome] }
+pub fn nobody() -> Outcome { (Nobody.mk(()).>widen_sum)[Outcome] }
 
-pub fn holds() -> Outcome { ({holds=}.>widen_sum)[Outcome] }
+pub fn holds() -> Outcome { (Holds.mk(()).>widen_sum)[Outcome] }
 
-pub fn preempted() -> Outcome { ({preempted=}.>widen_sum)[Outcome] }
+pub fn preempted() -> Outcome { (Preempted.mk(()).>widen_sum)[Outcome] }
 
-pub fn blocked(wake_at: I32) -> Outcome { ({blocked = wake_at}.>widen_sum)[Outcome] }
+pub fn blocked(wake_at: I32) -> Outcome { (Blocked.mk(wake_at).>widen_sum)[Outcome] }
 
-pub fn retired() -> Outcome { ({retired=}.>widen_sum)[Outcome] }
+pub fn retired() -> Outcome { (Retired.mk(()).>widen_sum)[Outcome] }
 
 fn victim_text(victim_pid: I32, victim_vp: I32) -> String {
   if(num.lt(victim_pid, 0)) {
@@ -73,13 +69,15 @@ fn event_text(e: Event) -> String {
   match(e) {
     (
     , .(_s: Stalled) { "(nothing runnable)" }
-    , .(r: Ran) { text.cat3("compute, ", text.num_text(r.?{ran}), " tick(s) left in phase") }
+    , .(r: Ran) {
+        text.cat3("compute, ", text.num_text(r.>select { Ran.get }), " tick(s) left in phase")
+      }
     , .(h: Hit) {
-        let .(vp: I32, frame: I32) = h.?{hit};
+        let .(vp: I32, frame: I32) = h.>select { Hit.get };
         text.cat4("read vp", text.num_text(vp), " -> hit in frame ", text.num_text(frame))
       }
     , .(f: Fault) {
-        let .(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) = f.?{fault};
+        let .(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) = f.>select { Fault.get };
         text.cat(
         , text.cat4(
           , "read vp"
@@ -114,7 +112,9 @@ fn outcome_note(o: Outcome) -> String {
     , .(_n: Nobody) { "" }
     , .(_h: Holds) { "" }
     , .(_p: Preempted) { "; quantum spent, requeued" }
-    , .(b: Blocked) { text.cat("; blocked until t=", text.num_text(b.?{blocked})) }
+    , .(b: Blocked) {
+        text.cat("; blocked until t=", text.num_text(b.>select { Blocked.get }))
+      }
     , .(_r: Retired) { "; program complete" }
     )
   }

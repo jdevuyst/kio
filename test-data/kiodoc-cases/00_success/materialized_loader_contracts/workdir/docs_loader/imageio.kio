@@ -15,7 +15,7 @@ import docs_loader/testapi/text(string_concat);
 // images as files pipes one in and reads it here; the newline-joined
 // result is the concatenated emitted tree `load_package` consumes.
 /// Wraps the accumulated text so the read loop's exit arm is nominal.
-labels { image_text: String };
+type { Image_text: String }
 
 /// Reads the whole standard input (newline-joined) — the image text a
 /// host pipes in.
@@ -35,7 +35,7 @@ pub fn read_image_stdin() -> String {
                   };
                 widen_sum((0[I32], acc1))[(I32 & String) | Image_text]
               }
-            , .(_eof: .) { widen_sum({image_text = acc})[(I32 & String) | Image_text] }
+            , .(_eof: .) { widen_sum(Image_text.mk(acc))[(I32 & String) | Image_text] }
             )
           }
         }

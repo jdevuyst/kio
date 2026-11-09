@@ -4,18 +4,16 @@ import __intrinsics__;
 
 host type I32 role(i32);
 
-pub newtype Unit_rep : . { pub constructor mk_unit_rep; pub projector un_unit_rep }
+pub type { Unit_rep: . { pub mk; pub get } }
 
-pub newtype Id[A] : A { pub constructor mk_id; pub projector un_id }
+pub type { Id[A]: A { pub mk; pub get } }
 
 rec {
   pub type Root_tail = Id[.] & Id[Root];
-  pub newtype Root : Unit_rep | Root_tail { pub constructor make_root; pub projector read_root }
+  pub type { Root: Unit_rep | Root_tail { pub mk; pub get } }
 }
 
-pub fn base_payload() -> Unit_rep | Root_tail {
-  __left__[Unit_rep][Root_tail](Unit_rep.mk_unit_rep(()))
-}
+pub fn base_payload() -> Unit_rep | Root_tail { __left__[Unit_rep][Root_tail](Unit_rep.mk(())) }
 
 pub fn keep(root: Root) -> Root { root }
 

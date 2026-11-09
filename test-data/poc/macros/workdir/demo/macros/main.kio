@@ -25,7 +25,7 @@ import library/algebraic_macros(
 import library/derive(macro derive);
 import library/lookup(Lookup_bool, macro contains, macro lookup);
 import library/match(macro match);
-import library/row_macros(macro get, macro mk, macro set, op _ * __);
+import library/row_macros(macro record, macro record_, macro select, macro with, macro with_);
 import library/show(macro show);
 import library/spine_macros(
 , macro fit
@@ -33,8 +33,11 @@ import library/spine_macros(
 , macro flatten_sum
 , macro narrow_prod
 , macro narrow_sum
+, macro narrow_sum_
 , macro one_prod
+, macro one_prod_
 , macro one_sum
+, macro one_sum_
 , macro reorder_prod
 , macro reorder_sum
 , macro spine_identity
@@ -70,23 +73,23 @@ import testapi/fmt(bool_to_string, i32_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-newtype Witness[A] : . { constructor mk_witness; projector un_witness }
+type { Witness[A]: . { mk; get } }
 
-newtype Derived_base : . { constructor mk_derived_base; projector un_derived_base }
+type { Derived_base: . { mk; get } }
 
-newtype Derived_wrap[A] : . { constructor mk_derived_wrap; projector un_derived_wrap }
+type { Derived_wrap[A]: . { mk; get } }
 
-newtype Derived_poly[A] : . { constructor mk_derived_poly; projector un_derived_poly }
+type { Derived_poly[A]: . { mk; get } }
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
-newtype Identity[A] : A { constructor mk_id; projector un_id }
+type { Identity[A]: A { mk; get } }
 
-newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { constructor mk_functor; projector fmap }
+type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { mk; get } }
 
 type Show_host_converters = (String -> String) & (I32 -> String) & (Bool -> String);
 
-labels { foo: I32, bar: String, flag: Bool };
+type { Foo: I32; Bar: String; Flag: Bool }
 
 fn derive_string_rule() -> String { "derive explicit: ok\n" }
 
@@ -96,24 +99,36 @@ fn derive_unit_rule() { () }
 
 fn derive_unit_parameter_rule(_unit: .) -> String { "derive unit parameter: ok\n" }
 
-fn derive_witness_rule[A]() -> Witness[A] { Witness.mk_witness[A](()) }
+fn derive_witness_rule[A]() -> Witness[A] { Witness.mk[A](()) }
 
-fn derive_base_rule() -> Derived_base { Derived_base.mk_derived_base(()) }
+fn derive_base_rule() -> Derived_base { Derived_base.mk(()) }
+
+fn derive_split_domain_rule(_left: Derived_base, _right: Derived_base) -> Derived_wrap[Derived_base] {
+  Derived_wrap.mk[Derived_base](())
+}
+
+fn derive_tuple_domain_rule(_pair: Derived_base & Derived_base) -> Derived_wrap[Derived_base] {
+  Derived_wrap.mk[Derived_base](())
+}
+
+fn derive_tail_domain_rule(_first: Derived_base, _tail: Derived_base & Derived_base) -> Derived_wrap[Derived_base] {
+  Derived_wrap.mk[Derived_base](())
+}
 
 fn derive_wrap_rule(_base: Derived_base) -> Derived_wrap[Derived_base] {
-  Derived_wrap.mk_derived_wrap[Derived_base](())
+  Derived_wrap.mk[Derived_base](())
 }
 
 fn derive_poly_rule[A](_witness: Witness[A]) -> Derived_poly[Witness[A]] {
-  Derived_poly.mk_derived_poly[Witness[A]](())
+  Derived_poly.mk[Witness[A]](())
 }
 
 fn box_functor() -> Functor[Box] {
-  Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
+  Functor.mk(.[A][B](step, value) { Box.mk(step(Box.get(value))) })
 }
 
 fn identity_functor() -> Functor[Identity] {
-  Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
+  Functor.mk(.[A][B](step, value) { Identity.mk(step(Identity.get(value))) })
 }
 
 fn witness_message(_witness: Witness[String]) -> String { "derive polymorphic: ok\n" }
@@ -144,9 +159,9 @@ fn derived_identity_functor() -> Functor[Identity] { derive((box_functor, identi
 
 fn derive_functor_case() -> String {
   let functor = derived_identity_functor();
-  let branded = Identity.mk_id("derive functor: ok\n"[String]);
-  let mapped = Functor.fmap(functor)[String][String]((.(value) { value }, branded));
-  Identity.un_id(mapped)
+  let branded = Identity.mk("derive functor: ok\n"[String]);
+  let mapped = Functor.get(functor)[String][String]((.(value) { value }, branded));
+  Identity.get(mapped)
 }
 
 fn keep_spine(s: String) -> String { spine_identity(s)[String] }
@@ -161,7 +176,7 @@ fn widen_prod_case(s: String) -> String {
 
 fn one_prod_case(s: String) -> String { one_prod(((), s))[String] }
 
-fn one_prod_default_case(s: String) -> String { one_prod((s, ())) }
+fn one_prod_default_case(s: String) -> String { one_prod_((s, ())) }
 
 fn flatten_prod_case(s: String) -> String {
   __fst__[String][. & .](flatten_prod(((s, ()), ()))[String & . & .])
@@ -187,7 +202,7 @@ fn narrow_sum_case(s: String) -> String { narrow_sum(__right__[String][String](s
 
 fn one_sum_case(s: String) -> String { one_sum(__left__[String][String](s))[String] }
 
-fn one_sum_default_case(s: String) -> String { one_sum(__right__[String][String](s)) }
+fn one_sum_default_case(s: String) -> String { one_sum_(__right__[String][String](s)) }
 
 fn flatten_sum_case(s: String) -> String {
   __either__[String][. | .][String](
@@ -284,7 +299,7 @@ fn contains_elaborator_case() -> String {
 
 fn type_of_case() -> String {
   __either__[Rep_unit][Type_rep_tail1][String](
-  , Type_rep.un_type_rep(type_of[.](()))
+  , Type_rep.get(type_of[.](()))
   , .(_unit: Rep_unit) -> String { "type reflection: ok\n" }
   , .(_tail: Type_rep_tail1) -> String { "type reflection failed\n" }
   )
@@ -292,10 +307,22 @@ fn type_of_case() -> String {
 
 fn tuple_macros_case() -> String { concat((((), "tuple macros: ok\n"[String]), ()))[_] }
 
+fn record_in_target_order(a: I32, b: String) -> Foo & Bar {
+  record { Bar.mk(b); Foo.mk(a) }
+}
+
+fn update_in_target_order(a: I32, b: String) -> Foo & Bar {
+  Foo.mk(a).>with { Bar.mk(b) }
+}
+
+fn select_in_target_order(a: I32, b: String) -> String & I32 {
+  (Foo.mk(a), Bar.mk(b)).>select { Bar.get; Foo.get }
+}
+
 fn row_elaborators_case() -> String {
-  let row = mk((Bar.mk("row macros: ok\n"), (Flag.mk(.t), Foo.mk(41))))[Foo & Bar & Flag];
-  let updated = (row.>set)((Foo.mk, 42[I32]))[Foo & Bar & Flag];
-  (updated.>get)(Bar.get)
+  let .(row: Foo & Bar & Flag) = record { Bar.mk("row macros: ok\n"); Flag.mk(.t); Foo.mk(41) };
+  let .(updated: Foo & Bar & Flag) = row.>with { Foo.mk(42) };
+  updated.>select { Bar.get }
 }
 
 fn string_to_string(value: String) -> String { value }
@@ -331,8 +358,8 @@ equiv narrow_prod_law[A][B](a: A, b: B) {
   a
 }
 
-equiv narrow_prod_default_law[A][B](a: A, b: B) {
-  narrow_prod((a, b));
+equiv narrow_prod_identity_target_law[A][B](a: A, b: B) {
+  narrow_prod((a, b))[A & B];
   (a, b)
 }
 
@@ -347,7 +374,7 @@ equiv narrow_sum_right_law[A](a: A) {
 }
 
 equiv narrow_sum_default_law[A][B](a: A) {
-  narrow_sum(__left__[A][B](a));
+  narrow_sum_(__left__[A][B](a));
   __left__[A][B](a)
 }
 
@@ -366,8 +393,8 @@ equiv widen_sum_law[A][B](a: A) {
   __right__[B][A](a)
 }
 
-equiv widen_sum_default_law[A](a: A) {
-  widen_sum(a);
+equiv widen_sum_identity_target_law[A](a: A) {
+  widen_sum(a)[A];
   a
 }
 
@@ -397,8 +424,18 @@ equiv one_prod_law[A][B](a: A, b: B) {
 }
 
 equiv one_prod_default_law[A][B](a: A, b: B) {
-  one_prod((a, b));
+  one_prod_((a, b));
   a
+}
+
+equiv one_prod_natural_compound_slot_law[A][B][C](a: A, b: B, c: C) {
+  one_prod_(((a, b), c))[A & B];
+  (a, b)
+}
+
+equiv one_prod_natural_unit_law() {
+  one_prod_(())[.];
+  ()
 }
 
 equiv one_sum_left_law[A](a: A) {
@@ -412,12 +449,27 @@ equiv one_sum_right_law[A](a: A) {
 }
 
 equiv one_sum_default_law[A](a: A) {
-  one_sum(__left__[A][A](a));
+  one_sum_(__left__[A][A](a));
   a
 }
 
 equiv one_sum_ignores_bottom_law[A](a: A) {
   one_sum(__left__[A][!](a))[A];
+  a
+}
+
+equiv one_sum_natural_leading_bottom_law[A](a: A) {
+  one_sum_(__right__[!][A](a));
+  a
+}
+
+equiv one_sum_natural_trailing_bottom_law[A](a: A) {
+  one_sum_(__left__[A][!](a));
+  a
+}
+
+equiv one_sum_natural_repeated_after_bottom_law[A](a: A) {
+  one_sum_(__right__[!][A | A](__right__[A][A](a)));
   a
 }
 
@@ -611,54 +663,85 @@ equiv tuple_distinct_law[A][B](first: A, b: B, second: A) {
   (first, b)
 }
 
-equiv row_mk_identity_default_law(a: I32, b: String) {
-  mk((Foo.mk(a), Bar.mk(b)));
+equiv row_record_identity_default_law(a: I32, b: String) {
+  record_ { Foo.mk(a); Bar.mk(b) };
   (Foo.mk(a), Bar.mk(b))
 }
 
-equiv row_mk_target_reorder_law(a: I32, b: String) {
-  mk((Bar.mk(b), Foo.mk(a)))[Foo & Bar];
+equiv row_record_target_reorder_law(a: I32, b: String) {
+  record_in_target_order(a, b);
   (Foo.mk(a), Bar.mk(b))
 }
 
-equiv row_set_single_update_law(old: I32, new: I32, b: String) {
-  ((Foo.mk(old), Bar.mk(b)).>set)((Foo.mk, new));
+equiv row_with_single_update_law(old: I32, new: I32, b: String) {
+  (Foo.mk(old), Bar.mk(b)).>with_ { Foo.mk(new) };
   (Foo.mk(new), Bar.mk(b))
 }
 
-equiv row_set_multi_update_law(a: I32, old_b: String, new_b: String, old_flag: Bool, new_flag: Bool) {
-  ((Foo.mk(a), (Bar.mk(old_b), Flag.mk(old_flag))).>set)((Bar.mk, new_b) * (Flag.mk, new_flag));
-  (Foo.mk(a), (Bar.mk(new_b), Flag.mk(new_flag)))
+equiv row_with_multi_update_law(
+, a: I32
+, old_b: String
+, new_b: String
+, old_flag: Bool
+, new_flag: Bool
+) {
+  (Foo.mk(a), Bar.mk(old_b), Flag.mk(old_flag)).>with_ { Bar.mk(new_b); Flag.mk(new_flag) };
+  (Bar.mk(new_b), Flag.mk(new_flag), Foo.mk(a))
 }
 
-equiv row_set_upsert_law(a: I32, b: String) {
-  (Foo.mk(a).>set)((Bar.mk, b));
+equiv row_with_upsert_law(a: I32, b: String) {
+  Foo.mk(a).>with_ { Bar.mk(b) };
   (Bar.mk(b), Foo.mk(a))
 }
 
-equiv row_set_target_reorder_law(a: I32, b: String) {
-  (Foo.mk(a).>set)((Bar.mk, b))[Foo & Bar];
+equiv row_with_target_reorder_law(a: I32, b: String) {
+  update_in_target_order(a, b);
   (Foo.mk(a), Bar.mk(b))
 }
 
-equiv row_get_single_law(a: I32, b: String) {
-  ((Foo.mk(a), Bar.mk(b)).>get)(Foo.get);
+equiv row_select_single_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>select { Foo.get };
   a
 }
 
-equiv row_get_multi_law(a: I32, b: String) {
-  ((Foo.mk(a), Bar.mk(b)).>get)(Foo.get * Bar.get);
+equiv row_select_multi_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>select { Foo.get; Bar.get };
   (a, b)
 }
 
-equiv row_get_selector_order_law(a: I32, b: String) {
-  ((Foo.mk(a), Bar.mk(b)).>get)(Bar.get * Foo.get);
+equiv row_select_selector_order_law(a: I32, b: String) {
+  (Foo.mk(a), Bar.mk(b)).>select { Bar.get; Foo.get };
   (b, a)
 }
 
-equiv row_get_exact_target_law(a: I32, b: String) {
-  ((Foo.mk(a), Bar.mk(b)).>get)(Bar.get * Foo.get)[String & I32];
+equiv row_select_exact_target_law(a: I32, b: String) {
+  select_in_target_order(a, b);
   (b, a)
+}
+
+equiv row_record_empty_law() {
+  record_ {};
+  ()
+}
+
+equiv row_with_empty_law[A](a: A) {
+  a.>with_ {};
+  a
+}
+
+equiv row_select_empty_law[A](a: A) {
+  a.>select {};
+  ()
+}
+
+equiv row_select_repeated_law(first: I32, second: I32) {
+  (Foo.mk(first), Foo.mk(second)).>select { Foo.get; Foo.get };
+  (first, first)
+}
+
+equiv row_with_repeated_receiver_law(first: I32, second: I32, replacement: I32) {
+  (Foo.mk(first), Foo.mk(second)).>with_ { Foo.mk(replacement) };
+  (Foo.mk(replacement), Foo.mk(second))
 }
 
 equiv derive_explicit_law() {
@@ -681,25 +764,36 @@ equiv derive_unit_parameter_law() {
   derive_unit_parameter_rule(())
 }
 
+equiv derive_product_domain_law() {
+  derive((derive_split_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive((derive_tuple_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive_split_domain_rule(derive_base_rule(), derive_base_rule())
+}
+
+equiv derive_grouped_tail_law() {
+  derive((derive_tail_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive_tail_domain_rule(derive_base_rule(), (derive_base_rule(), derive_base_rule()))
+}
+
 equiv derive_polymorphic_law() {
-  Witness.un_witness[String](derive((derive_unit_rule, derive_witness_rule))[Witness[String]]);
+  Witness.get[String](derive((derive_unit_rule, derive_witness_rule))[Witness[String]]);
   ()
 }
 
 equiv derive_recursive_law() {
-  Derived_wrap.un_derived_wrap[Derived_base](derive((derive_wrap_rule, derive_base_rule))[Derived_wrap[Derived_base]]);
+  Derived_wrap.get[Derived_base](derive((derive_wrap_rule, derive_base_rule))[Derived_wrap[Derived_base]]);
   ()
 }
 
 equiv derive_polymorphic_recursive_law() {
-  Derived_poly.un_derived_poly[Witness[String]](derive((derive_poly_rule, derive_witness_rule))[Derived_poly[Witness[String]]]);
+  Derived_poly.get[Witness[String]](derive((derive_poly_rule, derive_witness_rule))[Derived_poly[Witness[String]]]);
   ()
 }
 
 equiv derive_functor_law() {
-  Identity.un_id[String](Functor.fmap(derive((box_functor, identity_functor))[Functor[Identity]])[String][String]((
+  Identity.get[String](Functor.get(derive((box_functor, identity_functor))[Functor[Identity]])[String][String]((
   , .(value) { value }
-  , Identity.mk_id("derive functor: ok\n")
+  , Identity.mk("derive functor: ok\n")
   )));
   "derive functor: ok\n"[String]
 }

@@ -2,6 +2,6 @@ module main;
 
 import macro(macro hkt_identity);
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
 fn run(value: Box[.]) -> Box[.] { hkt_identity[Box][.](value) }

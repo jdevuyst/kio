@@ -5,12 +5,12 @@ import __intrinsics__;
 import testapi(String);
 import testapi/io(print);
 
-labels { label: String };
+type { Label: String }
 
 // Direct `__snd__` keeps the label projector applied to an immediate
 // positional product access.
 fn projected() -> String {
-  Label.get(__snd__[Label][Label](({label = "left\n"}, {label = "right\n"})))
+  Label.get(__snd__[Label][Label]((Label.mk("left\n"), Label.mk("right\n"))))
 }
 
 pub fn main() { print(projected()) }

@@ -456,11 +456,13 @@ fn declaration_selectors_repl() -> Repl {
                  pub varop [] { foldr choose empty }\n",
             );
         } else if path == "demo/main.kio" {
+            let import = "varop [* *]";
+            assert_eq!(source.matches(import).count(), 1, "selector fixture import changed");
             source = source.replace(
-                "varop [* *], {field}",
-                "varop [* *], varop [* *] as [% %], {field}",
+                import,
+                "varop [* *], varop [* *] as [% %]",
             );
-            source.push_str("\npub fn alias_use() { [% () %] }\n");
+            source.push_str("\npub fn browser_alias_use() { [% () %] }\n");
         } else if path == "demo/other.kio" {
             source.push_str(
                 "\npub fn empty() { () }\n\
@@ -735,7 +737,7 @@ mod tests {
                     .run_command(Command::Normalize(source.to_owned()))
                     .output,
             );
-            assert_eq!(output.trim(), "Box.box(())", "{source}: {output}");
+            assert_eq!(output.trim(), "Box.mk(())", "{source}: {output}");
         }
     }
 

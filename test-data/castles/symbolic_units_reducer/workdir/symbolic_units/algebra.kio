@@ -2,39 +2,40 @@ module symbolic_units/algebra;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import symbolic_units/model as model;
 import symbolic_units/model(
 , Expr
 , Kilogram
+, Kilogram_exp
 , Meter
+, Meter_exp
 , Pow
 , Product
 , Quotient
 , Score
 , Second
+, Second_exp
 , Summary
-, {kilogram_exp}
-, {meter_exp}
-, {second_exp}
 );
 import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
 fn add_summary(left: Summary, right: Summary) -> Summary {
-  let .({meter_exp as lm, second_exp as ls, kilogram_exp as lk}) = left;
-  let .({meter_exp as rm, second_exp as rs, kilogram_exp as rk}) = right;
+  let .(lm, ls, lk) = left.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
+  let .(rm, rs, rk) = right.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
   model.summary(arith.add_i32(lm, rm), arith.add_i32(ls, rs), arith.add_i32(lk, rk))
 }
 
 fn subtract_summary(left: Summary, right: Summary) -> Summary {
-  let .({meter_exp as lm, second_exp as ls, kilogram_exp as lk}) = left;
-  let .({meter_exp as rm, second_exp as rs, kilogram_exp as rk}) = right;
+  let .(lm, ls, lk) = left.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
+  let .(rm, rs, rk) = right.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
   model.summary(arith.sub_i32(lm, rm), arith.sub_i32(ls, rs), arith.sub_i32(lk, rk))
 }
 
 fn scale_summary(value: Summary, factor: I32) -> Summary {
-  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  let .(m, s, k) = value.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
   model.summary(arith.mul_i32(m, factor), arith.mul_i32(s, factor), arith.mul_i32(k, factor))
 }
 
@@ -82,15 +83,12 @@ rec(loop) fn weighted_count(count: I32, weight: I32, acc: I32) -> I32 {
 fn weighted_abs(value: I32, weight: I32) -> I32 { weighted_count(abs_i32(value), weight, 0) }
 
 pub fn score(value: Summary) -> Score {
-  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
-  Score.mk_score(arith.add_i32(
-  , arith.add_i32(weighted_abs(m, 7), weighted_abs(s, 5))
-  , weighted_abs(k, 11)
-  ))
+  let .(m, s, k) = value.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
+  Score.mk(arith.add_i32(arith.add_i32(weighted_abs(m, 7), weighted_abs(s, 5)), weighted_abs(k, 11)))
 }
 
 pub fn balanced(value: Summary) -> Bool {
-  let .({meter_exp as m, second_exp as s, kilogram_exp as k}) = value;
+  let .(m, s, k) = value.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };
   if(arith.eq_i32(m, 0)) {
     if(arith.eq_i32(s, 0)) { arith.eq_i32(k, 0) } else { .f }
   } else {

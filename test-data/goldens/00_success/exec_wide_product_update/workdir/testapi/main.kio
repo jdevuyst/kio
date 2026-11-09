@@ -1,24 +1,25 @@
 module testapi/main;
 
+import macros/row_macros(macro select, macro with);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-labels {
-, a: I32
-, b: I32
-, c: I32
-, d: I32
-, e: I32
-, f: I32
-, g: I32
-, h: I32
-, i: I32
-, j: I32
-, k: I32
-, l: I32
-};
+type {
+  A: I32 { mk; get };
+  B: I32 { mk; get };
+  C: I32 { mk; get };
+  D: I32 { mk; get };
+  E: I32 { mk; get };
+  F: I32 { mk; get };
+  G: I32 { mk; get };
+  H: I32 { mk; get };
+  I: I32 { mk; get };
+  J: I32 { mk; get };
+  K: I32 { mk; get };
+  L: I32 { mk; get }
+}
 
 type Wide = A & B & C & D & E & F & G & H & I & J & K & L;
 
@@ -26,26 +27,29 @@ fn comma(left: String, right: String) -> String { string_concat(left, string_con
 
 fn show(row: Wide) -> String {
   comma(
-  , int_to_string(row.?{a})
+  , int_to_string(row.>select { A.get })
   , comma(
-    , int_to_string(row.?{b})
+    , int_to_string(row.>select { B.get })
     , comma(
-      , int_to_string(row.?{c})
+      , int_to_string(row.>select { C.get })
       , comma(
-        , int_to_string(row.?{d})
+        , int_to_string(row.>select { D.get })
         , comma(
-          , int_to_string(row.?{e})
+          , int_to_string(row.>select { E.get })
           , comma(
-            , int_to_string(row.?{f})
+            , int_to_string(row.>select { F.get })
             , comma(
-              , int_to_string(row.?{g})
+              , int_to_string(row.>select { G.get })
               , comma(
-                , int_to_string(row.?{h})
+                , int_to_string(row.>select { H.get })
                 , comma(
-                  , int_to_string(row.?{i})
+                  , int_to_string(row.>select { I.get })
                   , comma(
-                    , int_to_string(row.?{j})
-                    , comma(int_to_string(row.?{k}), int_to_string(row.?{l}))
+                    , int_to_string(row.>select { J.get })
+                    , comma(
+                      , int_to_string(row.>select { K.get })
+                      , int_to_string(row.>select { L.get })
+                      )
                     )
                   )
                 )
@@ -58,10 +62,26 @@ fn show(row: Wide) -> String {
   )
 }
 
-fn revise(row: Wide) -> Wide { row.!{k = 120} }
+fn revise(row: Wide) -> Wide {
+  row.>with { K.mk(120) }
+}
 
 pub fn main() {
-  let row = {a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9, j = 10, k = 11, l = 12};
+  let row =
+    (
+    , A.mk(1)
+    , B.mk(2)
+    , C.mk(3)
+    , D.mk(4)
+    , E.mk(5)
+    , F.mk(6)
+    , G.mk(7)
+    , H.mk(8)
+    , I.mk(9)
+    , J.mk(10)
+    , K.mk(11)
+    , L.mk(12)
+    );
   print(show(revise(row)));
   print("\n")
 }

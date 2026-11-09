@@ -12,17 +12,17 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 // Cons-list of `A`. Same shape as `exec_operators_cons_list`.
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Convert a `List(A)` into a freshly-allocated `Array(A)` by
 // walking the list head-to-tail and pushing each element. State
 // is the remaining list; `arr` is captured. Exit value is `()`.
 fn list_to_array_step[A](arr: Array[A], xs: List[A]) -> List[A] | . {
-  match(xs.>List.un_list) {
+  match(xs.>List.get) {
     (
     , .(x: A, rest: List[A]) { array_push(arr, x); widen_sum(rest)[List[A] | .] }
     , .(_empty: .) { widen_sum(())[List[A] | .] }

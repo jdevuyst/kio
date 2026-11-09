@@ -1,19 +1,20 @@
 module testapi/main;
 
+import macros/row_macros(macro select);
 import macros/sequence(macro do);
 import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
-labels { left: String, right: String };
+type { Left: String { mk; get }; Right: String { mk; get } }
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-newtype Pack <U> : (U -> String) & U { constructor pack; projector unpack }
+type { Pack <U>: (U -> String) & U { mk; get } }
 
-fn pure[A](value: A) -> Box[A] { Box.box(value) }
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 
-fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 fn ordinary() -> String {
   let _ = "discard"[String];
@@ -27,12 +28,12 @@ fn ordinary() -> String {
 }
 
 fn rows() -> String {
-  let .({left as payload, right}) = {left = "row", right = "!"};
+  let .(payload, right) = (Left.mk("row"), Right.mk("!")).>select { Left.get; Right.get };
   text.string_concat(payload, right)
 }
 
 fn existential() -> String {
-  let .(<Hidden> payload) = Pack.unpack(Pack.pack(.(value: String) { value }, "packed"));
+  let .(<Hidden> payload) = Pack.get(Pack.mk(.(value: String) { value }, "packed"));
   let .(show, value) = payload;
   show(value)
 }
@@ -48,7 +49,7 @@ fn monadic() -> String {
       , text.string_concat(middle, text.string_concat(suffix, text.string_concat(again, last)))
       ))
     };
-  Box.unbox(result)
+  Box.get(result)
 }
 
 pub fn main() {

@@ -1152,8 +1152,8 @@ fn build_driver_for_protocol(
                 }
                 ExportDriver::FunctorDictRoundtrip => format!(
                     r#"    use {crate_name}::shapes::{{KioNative, KioFn1, KioTypeConstructor1, Product}};
-    use {crate_name}::ffi::exp::testapi_types__Functor::fmap_ret_impl as _;
-    use {crate_name}::ffi::exp::testapi_types__Functor::fmap_ret_type_ret_impl as _;
+    use {crate_name}::ffi::exp::testapi_types__Functor::get_ret_impl as _;
+    use {crate_name}::ffi::exp::testapi_types__Functor::get_ret_type_ret_impl as _;
     type BoxHead = {crate_name}::shapes::KioNewtypeConstructor_testapi_stypes__Box_P0<StubHost>;
     type IntegerBox = {crate_name}::shapes::nominal::testapi::types::Box<StubHost, KioNative<i32>>;
     type TextBox = {crate_name}::shapes::nominal::testapi::types::Box<StubHost, KioNative<String>>;
@@ -1165,15 +1165,15 @@ fn build_driver_for_protocol(
     let events = texts.clone();
     let to_integer = KioFn1::<KioNative<String>, KioNative<i32>>::new(move |value| {{ events.borrow_mut().push(value.clone()); value.len() as i32 }});
     let dict = pkg.testapi.main.echoFunctor(pkg.testapi.main.boxFunctor());
-    let first = pkg.testapi.main.applyFunctor::<KioNative<i32>, KioNative<String>>(dict.clone(), to_text.clone(), IntegerBox::mkBox(Product {{ _0: 42, _1: () }}));
-    assert_eq!(TextBox::unBox(first)._0, "v:42");
-    let second = pkg.testapi.main.applyFunctor::<KioNative<String>, KioNative<i32>>(dict.clone(), to_integer.clone(), TextBox::mkBox(Product {{ _0: "apple".to_owned(), _1: () }}));
-    assert_eq!(IntegerBox::unBox(second)._0, 5);
-    let map = Functor::fmap(dict);
-    let third = map.specialize::<KioNative<i32>>().specialize::<KioNative<String>>().call(Product {{ _0: to_text, _1: BoxHead::lift::<KioNative<i32>>(IntegerBox::mkBox(Product {{ _0: 7, _1: () }})) }});
-    assert_eq!(TextBox::unBox(BoxHead::project::<KioNative<String>>(third))._0, "v:7");
-    let fourth = map.specialize::<KioNative<String>>().specialize::<KioNative<i32>>().call(Product {{ _0: to_integer, _1: BoxHead::lift::<KioNative<String>>(TextBox::mkBox(Product {{ _0: "pear".to_owned(), _1: () }})) }});
-    assert_eq!(IntegerBox::unBox(BoxHead::project::<KioNative<i32>>(fourth))._0, 4);
+    let first = pkg.testapi.main.applyFunctor::<KioNative<i32>, KioNative<String>>(dict.clone(), to_text.clone(), IntegerBox::mk(Product {{ _0: 42, _1: () }}));
+    assert_eq!(TextBox::get(first)._0, "v:42");
+    let second = pkg.testapi.main.applyFunctor::<KioNative<String>, KioNative<i32>>(dict.clone(), to_integer.clone(), TextBox::mk(Product {{ _0: "apple".to_owned(), _1: () }}));
+    assert_eq!(IntegerBox::get(second)._0, 5);
+    let map = Functor::get(dict);
+    let third = map.specialize::<KioNative<i32>>().specialize::<KioNative<String>>().call(Product {{ _0: to_text, _1: BoxHead::lift::<KioNative<i32>>(IntegerBox::mk(Product {{ _0: 7, _1: () }})) }});
+    assert_eq!(TextBox::get(BoxHead::project::<KioNative<String>>(third))._0, "v:7");
+    let fourth = map.specialize::<KioNative<String>>().specialize::<KioNative<i32>>().call(Product {{ _0: to_integer, _1: BoxHead::lift::<KioNative<String>>(TextBox::mk(Product {{ _0: "pear".to_owned(), _1: () }})) }});
+    assert_eq!(IntegerBox::get(BoxHead::project::<KioNative<i32>>(fourth))._0, 4);
     assert_eq!(*integers.borrow(), [42, 7]);
     assert_eq!(*texts.borrow(), ["apple", "pear"]);
     println!("functor dictionary ok");
@@ -1192,11 +1192,11 @@ fn build_driver_for_protocol(
     use accept::ret_impl as _;
     use callback::ret_cbret_impl as _;
     struct Open(::std::rc::Rc<::std::cell::Cell<usize>>);
-    impl packed::open_continuation_impl<StubHost, KioNative<i32>> for Open {{
-        fn specialize<U: KioType>(&self) -> packed::open_continuation_type_ret<StubHost, KioNative<i32>, U> {{
+    impl packed::get_continuation_impl<StubHost, KioNative<i32>> for Open {{
+        fn specialize<U: KioType>(&self) -> packed::get_continuation_type_ret<StubHost, KioNative<i32>, U> {{
             let count = self.0.clone();
-            packed::open_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |value| {{
-            fn accepts_payload<U: KioType, V: packed::open_continuation_type_ret_cbarg_impl<StubHost, KioNative<i32>, U>>(_value: &V) {{}}
+            packed::get_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |value| {{
+            fn accepts_payload<U: KioType, V: packed::get_continuation_type_ret_cbarg_impl<StubHost, KioNative<i32>, U>>(_value: &V) {{}}
             accepts_payload::<U, _>(&value);
             count.set(count.get() + 1);
             91
@@ -1204,8 +1204,8 @@ fn build_driver_for_protocol(
         }}
     }}
     let opens = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-    let continuation = packed::open_continuation::<StubHost, KioNative<i32>>::new(Open(opens.clone()));
-    let opened = {crate_name}::shapes::nominal::testapi::main::Packed::<StubHost>::open(pkg.testapi.main.makePacked(), continuation);
+    let continuation = packed::get_continuation::<StubHost, KioNative<i32>>::new(Open(opens.clone()));
+    let opened = {crate_name}::shapes::nominal::testapi::main::Packed::<StubHost>::get(pkg.testapi.main.makePacked(), continuation);
     assert_eq!(opened, 91);
     assert_eq!(opens.get(), 1);
     struct Identity;
@@ -1382,7 +1382,7 @@ fn build_driver_for_protocol(
     type Number = {shapes}::KioHostTypeMarker_testapi__I32<StubHost>;
     type Wrapped = {shapes}::nominal::testapi::main::Wrapped<StubHost, Number>;
     type WrappedMarker = {shapes}::KioNewtypeMarker_testapi_smain__Wrapped<StubHost, Number>;
-    let nominal = Wrapped::mkWrapped(SelectedI32(37));
+    let nominal = Wrapped::mk(SelectedI32(37));
     let host = {shapes}::KioHostType_testapi__Box::<StubHost, WrappedMarker>::from_storage(__BoxStorage(::std::rc::Rc::new(KioValue::<WrappedMarker>::pack(nominal).into_stored())));
     let main = &pkg.testapi.main;
     println!("{{}}", main.read(host));
@@ -1425,7 +1425,7 @@ fn build_driver_for_protocol(
     println!("{{}}", main.call(host, SelectedI32(43)));
     assert_eq!(calls.get(), 2);
     println!("{{}}", main.call(main.makeCallable(), SelectedI32(47)));
-    let nominal = {shapes}::nominal::testapi::main::Wrapped::<StubHost>::mkWrapped(Product {{ _0: SelectedI32(41), _1: SelectedI32(43) }});
+    let nominal = {shapes}::nominal::testapi::main::Wrapped::<StubHost>::mk(Product {{ _0: SelectedI32(41), _1: SelectedI32(43) }});
     let host = boxed::<{shapes}::KioNewtypeMarker_testapi_smain__Wrapped<StubHost>>(nominal);
     for value in [main.readNominal(host), main.readNominal(main.makeNominal())] {{ println!("{{}} {{}}", value._0, value._1); }}
 "#)
@@ -1673,8 +1673,8 @@ fn build_driver_for_protocol(
                              println!(\"api.child function\");\n\
                              {api}.child.value();\n\
                              println!(\"api/child module\");\n\
-                             let child = {crate_name}::shapes::nominal::testapi::api::Child::<StubHost>::makeChild(30);\n\
-                             {crate_name}::shapes::nominal::testapi::api::Child::<StubHost>::readChild(child);\n\
+                             let child = {crate_name}::shapes::nominal::testapi::api::Child::<StubHost>::mk(30);\n\
+                             {crate_name}::shapes::nominal::testapi::api::Child::<StubHost>::get(child);\n\
                              println!(\"api.Child type\");\n"
                     )
                 }
@@ -1699,8 +1699,8 @@ fn build_driver_for_protocol(
                 }
                 ExportDriver::NewtypeScalarRoundtrip => {
                     // `bump(Wrap) -> Wrap` exported in `testapi/main`, where
-                    // `Wrap` is a bare scalar-payload newtype (`newtype Wrap :
-                    // I32`). Build a `Wrap` through its public ctor, round-trip it
+                    // `Wrap` is a bare scalar-payload newtype (`type { Wrap:
+                    // I32 }`). Build a `Wrap` through its public ctor, round-trip it
                     // through the export, and read the payload back through its
                     // public projector — the value survives both the In (param)
                     // and Out (return) newtype conversions across the FFI.
@@ -1709,9 +1709,9 @@ fn build_driver_for_protocol(
                         None => "pkg.main".to_owned(),
                     };
                     format!(
-                        "    let w = {crate_name}::shapes::nominal::testapi::main::Wrap::<StubHost>::mkWrap(7);\n\
+                        "    let w = {crate_name}::shapes::nominal::testapi::main::Wrap::<StubHost>::mk(7);\n\
                  \x20   let out = {main_ns}.bump(w);\n\
-                 \x20   println!(\"{{}}\", {crate_name}::shapes::nominal::testapi::main::Wrap::<StubHost>::unWrap(out));\n"
+                 \x20   println!(\"{{}}\", {crate_name}::shapes::nominal::testapi::main::Wrap::<StubHost>::get(out));\n"
                     )
                 }
                 ExportDriver::NewtypeIgnoredArgumentRoundtrip => {
@@ -1729,9 +1729,9 @@ fn build_driver_for_protocol(
                     let root = format!("{crate_name}::shapes::nominal::main::Root::<StubHost>");
                     format!(
                         "    let payload = {main_ns}.basePayload();\n\
-                         \x20   let root = {root}::makeRoot(payload);\n\
+                         \x20   let root = {root}::mk(payload);\n\
                          \x20   let kept = {main_ns}.keep(root);\n\
-                         \x20   let projected = {root}::readRoot(kept);\n\
+                         \x20   let projected = {root}::get(kept);\n\
                          \x20   println!(\"{{}}\", {main_ns}.acceptPayload(projected));\n"
                     )
                 }
@@ -1745,103 +1745,103 @@ fn build_driver_for_protocol(
              let b: {crate_name}::shapes::nominal::testapi::types::OpaqueB<StubHost> = pkg.testapi.types.makeB(input_b);\n    \
              let out_b: SelectedI32 = pkg.testapi.types.readB(b);\n    \
              println!(\"{{}}\", out_b.0);\n    \
-             let c: {crate_name}::shapes::nominal::testapi::types::ConstructorOnly<StubHost> = {crate_name}::shapes::nominal::testapi::types::ConstructorOnly::<StubHost>::makeConstructorOnly(SelectedI32(33));\n    \
+             let c: {crate_name}::shapes::nominal::testapi::types::ConstructorOnly<StubHost> = {crate_name}::shapes::nominal::testapi::types::ConstructorOnly::<StubHost>::mk(SelectedI32(33));\n    \
              let out_c: SelectedI32 = pkg.testapi.types.readConstructorOnlyValue(c);\n    \
              println!(\"{{}}\", out_c.0);\n    \
              let p: {crate_name}::shapes::nominal::testapi::types::ProjectorOnly<StubHost> = pkg.testapi.types.makeProjectorOnlyValue(SelectedI32(44));\n    \
-             let out_p: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::ProjectorOnly::<StubHost>::readProjectorOnly(p);\n    \
+             let out_p: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::ProjectorOnly::<StubHost>::get(p);\n    \
              println!(\"{{}}\", out_p.0);\n    \
-             let both: {crate_name}::shapes::nominal::testapi::types::BothPublic<StubHost> = {crate_name}::shapes::nominal::testapi::types::BothPublic::<StubHost>::makeBothPublic(SelectedI32(55));\n    \
-             let out_both: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::BothPublic::<StubHost>::readBothPublic(both);\n    \
+             let both: {crate_name}::shapes::nominal::testapi::types::BothPublic<StubHost> = {crate_name}::shapes::nominal::testapi::types::BothPublic::<StubHost>::mk(SelectedI32(55));\n    \
+             let out_both: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::BothPublic::<StubHost>::get(both);\n    \
              println!(\"{{}}\", out_both.0);\n    \
              let left = pkg.testapi.left.make(SelectedI32(66));\n    \
              let left_payload: SelectedI32 = pkg.testapi.left.read(left);\n    \
-             let left_reboxed = {crate_name}::shapes::nominal::testapi::left::Shared::<StubHost>::makeShared(left_payload);\n    \
-             let out_left: SelectedI32 = {crate_name}::shapes::nominal::testapi::left::Shared::<StubHost>::readShared(left_reboxed);\n    \
+             let left_reboxed = {crate_name}::shapes::nominal::testapi::left::Shared::<StubHost>::mk(left_payload);\n    \
+             let out_left: SelectedI32 = {crate_name}::shapes::nominal::testapi::left::Shared::<StubHost>::get(left_reboxed);\n    \
              println!(\"{{}}\", out_left.0);\n    \
              let right = pkg.testapi.right.make(SelectedI32(77));\n    \
              let right_payload: SelectedI32 = pkg.testapi.right.read(right);\n    \
-             let right_reboxed = {crate_name}::shapes::nominal::testapi::right::Shared::<StubHost>::makeShared(right_payload);\n    \
-             let out_right: SelectedI32 = {crate_name}::shapes::nominal::testapi::right::Shared::<StubHost>::readShared(right_reboxed);\n    \
+             let right_reboxed = {crate_name}::shapes::nominal::testapi::right::Shared::<StubHost>::mk(right_payload);\n    \
+             let out_right: SelectedI32 = {crate_name}::shapes::nominal::testapi::right::Shared::<StubHost>::get(right_reboxed);\n    \
              println!(\"{{}}\", out_right.0);\n    \
-             let constructor_pair = {crate_name}::shapes::nominal::testapi::types::ConstructorPair::<StubHost>::makeConstructorPair({crate_name}::shapes::Product {{ _0: SelectedI32(81), _1: SelectedI32(82) }});\n    \
+             let constructor_pair = {crate_name}::shapes::nominal::testapi::types::ConstructorPair::<StubHost>::mk({crate_name}::shapes::Product {{ _0: SelectedI32(81), _1: SelectedI32(82) }});\n    \
              let constructor_pair_out = pkg.testapi.types.readConstructorPairValue(constructor_pair);\n    \
              println!(\"{{}} {{}}\", constructor_pair_out._0.0, constructor_pair_out._1.0);\n    \
              let projector_pair = pkg.testapi.types.makeProjectorPairValue({crate_name}::shapes::Product {{ _0: constructor_pair_out._0.clone(), _1: constructor_pair_out._1.clone() }});\n    \
-             let projector_pair_out = {crate_name}::shapes::nominal::testapi::types::ProjectorPair::<StubHost>::readProjectorPair(projector_pair);\n    \
+             let projector_pair_out = {crate_name}::shapes::nominal::testapi::types::ProjectorPair::<StubHost>::get(projector_pair);\n    \
              println!(\"{{}} {{}}\", projector_pair_out._0.0, projector_pair_out._1.0);\n    \
-             let constructor_generic = {crate_name}::shapes::nominal::testapi::types::ConstructorGeneric::<StubHost, {crate_name}::shapes::KioNative<SelectedI32>>::makeConstructorGeneric(SelectedI32(85));\n    \
+             let constructor_generic = {crate_name}::shapes::nominal::testapi::types::ConstructorGeneric::<StubHost, {crate_name}::shapes::KioNative<SelectedI32>>::mk(SelectedI32(85));\n    \
              let constructor_generic_out: SelectedI32 = pkg.testapi.types.readConstructorGenericValue(constructor_generic);\n    \
              println!(\"{{}}\", constructor_generic_out.0);\n    \
              let projector_generic = pkg.testapi.types.makeProjectorGenericValue(SelectedI32(86));\n    \
-             let projector_generic_out: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::ProjectorGeneric::<StubHost, {crate_name}::shapes::KioNative<SelectedI32>>::readProjectorGeneric(projector_generic);\n    \
+             let projector_generic_out: SelectedI32 = {crate_name}::shapes::nominal::testapi::types::ProjectorGeneric::<StubHost, {crate_name}::shapes::KioNative<SelectedI32>>::get(projector_generic);\n    \
              println!(\"{{}}\", projector_generic_out.0);\n    \
-             let packed_fn = {crate_name}::ffi::exp::testapi_types__PackedFunction::makePackedFunction_arg0::<StubHost>::new(|args| SelectedI32(args._0.0 + args._1.0));\n    \
-             let packed = {crate_name}::shapes::nominal::testapi::types::PackedFunction::<StubHost>::makePackedFunction(packed_fn);\n    \
-             let unpacked = {crate_name}::shapes::nominal::testapi::types::PackedFunction::<StubHost>::readPackedFunction(packed);\n    \
+             let packed_fn = {crate_name}::ffi::exp::testapi_types__PackedFunction::mk_arg0::<StubHost>::new(|args| SelectedI32(args._0.0 + args._1.0));\n    \
+             let packed = {crate_name}::shapes::nominal::testapi::types::PackedFunction::<StubHost>::mk(packed_fn);\n    \
+             let unpacked = {crate_name}::shapes::nominal::testapi::types::PackedFunction::<StubHost>::get(packed);\n    \
              println!(\"{{}}\", unpacked.call({crate_name}::shapes::Product {{ _0: constructor_pair_out._0, _1: constructor_pair_out._1 }}).0);\n    \
              struct Select89;\n    \
-             impl {crate_name}::ffi::exp::testapi_types__ExistentialUnit::readExistentialUnit_continuation_impl<StubHost, {crate_name}::shapes::KioNative<i32>> for Select89 {{\n    \
+             impl {crate_name}::ffi::exp::testapi_types__ExistentialUnit::get_continuation_impl<StubHost, {crate_name}::shapes::KioNative<i32>> for Select89 {{\n    \
                  fn specialize<__KioHidden: {crate_name}::shapes::KioType>(&self) -> {crate_name}::shapes::KioFn1<__KioHidden, {crate_name}::shapes::KioNative<i32>> {{ {crate_name}::shapes::KioFn1::new(|_value| 89) }}\n    \
              }}\n    \
              let existential = pkg.testapi.types.makeExistentialUnitValue();\n    \
-             let select89 = {crate_name}::ffi::exp::testapi_types__ExistentialUnit::readExistentialUnit_continuation::<StubHost, {crate_name}::shapes::KioNative<i32>>::new(Select89);\n    \
-             let existential_out: i32 = {crate_name}::shapes::nominal::testapi::types::ExistentialUnit::<StubHost>::readExistentialUnit(existential, select89);\n    \
+             let select89 = {crate_name}::ffi::exp::testapi_types__ExistentialUnit::get_continuation::<StubHost, {crate_name}::shapes::KioNative<i32>>::new(Select89);\n    \
+             let existential_out: i32 = {crate_name}::shapes::nominal::testapi::types::ExistentialUnit::<StubHost>::get(existential, select89);\n    \
              println!(\"{{}}\", existential_out);\n    \
              struct Select90;\n    \
-             impl {crate_name}::ffi::exp::testapi_types__ExistentialEmpty::readExistentialEmpty_continuation_impl<StubHost, {crate_name}::shapes::KioNative<i32>> for Select90 {{\n    \
+             impl {crate_name}::ffi::exp::testapi_types__ExistentialEmpty::get_continuation_impl<StubHost, {crate_name}::shapes::KioNative<i32>> for Select90 {{\n    \
                  fn specialize<__KioHidden: {crate_name}::shapes::KioType>(&self) -> {crate_name}::shapes::KioFn0<{crate_name}::shapes::KioNative<i32>> {{ {crate_name}::shapes::KioFn0::new(|| 90) }}\n    \
              }}\n    \
              let existential_empty = pkg.testapi.types.makeExistentialEmptyValue();\n    \
-             let select90 = {crate_name}::ffi::exp::testapi_types__ExistentialEmpty::readExistentialEmpty_continuation::<StubHost, {crate_name}::shapes::KioNative<i32>>::new(Select90);\n    \
-             let existential_empty_out: i32 = {crate_name}::shapes::nominal::testapi::types::ExistentialEmpty::<StubHost>::readExistentialEmpty(existential_empty, select90);\n    \
+             let select90 = {crate_name}::ffi::exp::testapi_types__ExistentialEmpty::get_continuation::<StubHost, {crate_name}::shapes::KioNative<i32>>::new(Select90);\n    \
+             let existential_empty_out: i32 = {crate_name}::shapes::nominal::testapi::types::ExistentialEmpty::<StubHost>::get(existential_empty, select90);\n    \
              println!(\"{{}}\", existential_empty_out);\n    \
-             let recursive_both = {crate_name}::shapes::nominal::testapi::types::RecursiveBoth::<StubHost>::makeRecursiveBoth(pkg.testapi.types.recursiveBothBasePayload());\n    \
-             println!(\"{{}}\", pkg.testapi.types.recursiveBothPayloadIsBase({crate_name}::shapes::nominal::testapi::types::RecursiveBoth::<StubHost>::readRecursiveBoth(recursive_both)).0);\n    \
-             let recursive_constructor = {crate_name}::shapes::nominal::testapi::types::RecursiveConstructor::<StubHost>::makeRecursiveConstructor(pkg.testapi.types.recursiveConstructorBasePayload());\n    \
+             let recursive_both = {crate_name}::shapes::nominal::testapi::types::RecursiveBoth::<StubHost>::mk(pkg.testapi.types.recursiveBothBasePayload());\n    \
+             println!(\"{{}}\", pkg.testapi.types.recursiveBothPayloadIsBase({crate_name}::shapes::nominal::testapi::types::RecursiveBoth::<StubHost>::get(recursive_both)).0);\n    \
+             let recursive_constructor = {crate_name}::shapes::nominal::testapi::types::RecursiveConstructor::<StubHost>::mk(pkg.testapi.types.recursiveConstructorBasePayload());\n    \
              println!(\"{{}}\", pkg.testapi.types.recursiveConstructorPayloadIsBase(pkg.testapi.types.readRecursiveConstructorValue(recursive_constructor)).0);\n    \
              let recursive_projector = pkg.testapi.types.makeRecursiveProjectorBase();\n    \
-             println!(\"{{}}\", pkg.testapi.types.recursiveProjectorPayloadIsBase({crate_name}::shapes::nominal::testapi::types::RecursiveProjector::<StubHost>::readRecursiveProjector(recursive_projector)).0);\n"
+             println!(\"{{}}\", pkg.testapi.types.recursiveProjectorPayloadIsBase({crate_name}::shapes::nominal::testapi::types::RecursiveProjector::<StubHost>::get(recursive_projector)).0);\n"
                     );
                     body.push_str(&format!(
                         r#"    use {crate_name}::shapes::{{KioNative, KioType, KioUnit, Product}};
-    use {crate_name}::ffi::exp::testapi_types__ProjectorSpread::readProjectorSpread_ret_impl as _;
+    use {crate_name}::ffi::exp::testapi_types__ProjectorSpread::get_ret_impl as _;
     struct Spread(::std::rc::Rc<::std::cell::RefCell<Vec<i32>>>);
-    impl {crate_name}::ffi::exp::testapi_types__ConstructorSpread::makeConstructorSpread_arg0_impl<StubHost> for Spread {{
-        fn specialize<A: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__ConstructorSpread::makeConstructorSpread_arg0_type_ret<StubHost, A> {{
+    impl {crate_name}::ffi::exp::testapi_types__ConstructorSpread::mk_arg0_impl<StubHost> for Spread {{
+        fn specialize<A: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__ConstructorSpread::mk_arg0_type_ret<StubHost, A> {{
             let values = self.0.clone();
-            {crate_name}::ffi::exp::testapi_types__ConstructorSpread::makeConstructorSpread_arg0_type_ret::<StubHost, A>::new(move |value| {{ values.borrow_mut().push(value._0.0); SelectedI32(value._0.0 + 3) }})
+            {crate_name}::ffi::exp::testapi_types__ConstructorSpread::mk_arg0_type_ret::<StubHost, A>::new(move |value| {{ values.borrow_mut().push(value._0.0); SelectedI32(value._0.0 + 3) }})
         }}
     }}
     let inputs = ::std::rc::Rc::new(::std::cell::RefCell::new(Vec::new()));
-    let callback = {crate_name}::ffi::exp::testapi_types__ConstructorSpread::makeConstructorSpread_arg0::<StubHost>::new(Spread(inputs.clone()));
-    let constructed = {crate_name}::shapes::nominal::testapi::types::ConstructorSpread::<StubHost>::makeConstructorSpread(callback);
+    let callback = {crate_name}::ffi::exp::testapi_types__ConstructorSpread::mk_arg0::<StubHost>::new(Spread(inputs.clone()));
+    let constructed = {crate_name}::shapes::nominal::testapi::types::ConstructorSpread::<StubHost>::mk(callback);
     assert_eq!(pkg.testapi.types.invokeConstructorSpreadI32(constructed.clone(), SelectedI32(101)).0, 104);
     assert_eq!(pkg.testapi.types.invokeConstructorSpreadUnit(constructed, SelectedI32(102)).0, 105);
     assert_eq!(*inputs.borrow(), [101, 102]);
-    let projected = {crate_name}::shapes::nominal::testapi::types::ProjectorSpread::<StubHost>::readProjectorSpread(pkg.testapi.types.makeProjectorSpreadValue());
+    let projected = {crate_name}::shapes::nominal::testapi::types::ProjectorSpread::<StubHost>::get(pkg.testapi.types.makeProjectorSpreadValue());
     assert_eq!(projected.specialize::<KioNative<SelectedI32>>().call(Product {{ _0: SelectedI32(111), _1: SelectedI32(1) }}).0, 111);
     assert_eq!(projected.specialize::<KioUnit>().call(Product {{ _0: SelectedI32(112), _1: () }}).0, 112);
     struct OpenSpread(::std::rc::Rc<::std::cell::Cell<usize>>);
-    impl {crate_name}::ffi::exp::testapi_types__ExistentialSpread::readExistentialSpread_continuation_impl<StubHost, KioNative<i32>> for OpenSpread {{
-        fn specialize<U: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__ExistentialSpread::readExistentialSpread_continuation_type_ret<StubHost, KioNative<i32>, U> {{
+    impl {crate_name}::ffi::exp::testapi_types__ExistentialSpread::get_continuation_impl<StubHost, KioNative<i32>> for OpenSpread {{
+        fn specialize<U: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__ExistentialSpread::get_continuation_type_ret<StubHost, KioNative<i32>, U> {{
             let count = self.0.clone();
-            {crate_name}::ffi::exp::testapi_types__ExistentialSpread::readExistentialSpread_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |_value| {{ count.set(count.get() + 1); 91 }})
+            {crate_name}::ffi::exp::testapi_types__ExistentialSpread::get_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |_value| {{ count.set(count.get() + 1); 91 }})
         }}
     }}
     struct OpenRecursive(::std::rc::Rc<::std::cell::Cell<usize>>);
-    impl {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_impl<StubHost, KioNative<i32>> for OpenRecursive {{
-        fn specialize<U: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_type_ret<StubHost, KioNative<i32>, U> {{
+    impl {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::get_continuation_impl<StubHost, KioNative<i32>> for OpenRecursive {{
+        fn specialize<U: KioType>(&self) -> {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::get_continuation_type_ret<StubHost, KioNative<i32>, U> {{
             let count = self.0.clone();
-            {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |_value| {{ count.set(count.get() + 1); 92 }})
+            {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::get_continuation_type_ret::<StubHost, KioNative<i32>, U>::new(move |_value| {{ count.set(count.get() + 1); 92 }})
         }}
     }}
     let spread_opens = ::std::rc::Rc::new(::std::cell::Cell::new(0));
     let recursive_opens = ::std::rc::Rc::new(::std::cell::Cell::new(0));
-    let spread_continuation = {crate_name}::ffi::exp::testapi_types__ExistentialSpread::readExistentialSpread_continuation::<StubHost, KioNative<i32>>::new(OpenSpread(spread_opens.clone()));
-    let recursive_continuation = {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation::<StubHost, KioNative<i32>>::new(OpenRecursive(recursive_opens.clone()));
-    assert_eq!({crate_name}::shapes::nominal::testapi::types::ExistentialSpread::<StubHost>::readExistentialSpread(pkg.testapi.types.makeExistentialSpreadValue(), spread_continuation), 91);
-    assert_eq!({crate_name}::shapes::nominal::testapi::types::RecursiveExistentialFunction::<StubHost>::readRecursiveExistentialFunction(pkg.testapi.types.makeRecursiveExistentialFunctionValue(), recursive_continuation), 92);
+    let spread_continuation = {crate_name}::ffi::exp::testapi_types__ExistentialSpread::get_continuation::<StubHost, KioNative<i32>>::new(OpenSpread(spread_opens.clone()));
+    let recursive_continuation = {crate_name}::ffi::exp::testapi_types__RecursiveExistentialFunction::get_continuation::<StubHost, KioNative<i32>>::new(OpenRecursive(recursive_opens.clone()));
+    assert_eq!({crate_name}::shapes::nominal::testapi::types::ExistentialSpread::<StubHost>::get(pkg.testapi.types.makeExistentialSpreadValue(), spread_continuation), 91);
+    assert_eq!({crate_name}::shapes::nominal::testapi::types::RecursiveExistentialFunction::<StubHost>::get(pkg.testapi.types.makeRecursiveExistentialFunctionValue(), recursive_continuation), 92);
     assert_eq!(spread_opens.get(), 1);
     assert_eq!(recursive_opens.get(), 1);
 "#
@@ -1857,13 +1857,13 @@ fn build_driver_for_protocol(
              println!(\"{{}}\", pkg.wordApi.readWord_());\n    \
              println!(\"{{}}\", pkg.wordApi._readWord_());\n    \
              println!(\"{{}}\", pkg.wordApi.readWord__());\n    \
-             let boxed = {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, {crate_name}::shapes::KioNative<i32>>::wrapWord(55);\n    \
-             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, {crate_name}::shapes::KioNative<i32>>::unwrapWord(boxed));\n    \
+             let boxed = {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, {crate_name}::shapes::KioNative<i32>>::mk(55);\n    \
+             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, {crate_name}::shapes::KioNative<i32>>::get(boxed));\n    \
              println!(\"{{}}\", pkg.wordApi.wordNodes.keepWord::<{crate_name}::shapes::KioNative<i32>>(66));\n    \
              type CountValue = {crate_name}::shapes::KioHostTypeMarker_wordApi__CountValue<StubHost>;\n    \
-             let pair = pkg.wordApi.keepPair({crate_name}::shapes::Product {{ _0: {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, CountValue>::wrapWord(77), _1: {crate_name}::shapes::nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::wrapWord(88) }});\n    \
-             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, CountValue>::unwrapWord(pair._0));\n    \
-             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::unwrapWord(pair._1));\n"
+             let pair = pkg.wordApi.keepPair({crate_name}::shapes::Product {{ _0: {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, CountValue>::mk(77), _1: {crate_name}::shapes::nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::mk(88) }});\n    \
+             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::wordNodes::_WordBox__::<StubHost, CountValue>::get(pair._0));\n    \
+             println!(\"{{}}\", {crate_name}::shapes::nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::get(pair._1));\n"
                 ),
                 ExportDriver::CompoundInputOnce => format!(
                     r#"    let direct = pkg.testapi.main.direct();
@@ -1875,20 +1875,20 @@ fn build_driver_for_protocol(
     let result = pkg.testapi.main.callback(callback);
     println!("{{}}\n{{}}", result._0, result._1);
     let outer = pkg.testapi.main.echoOuter(pkg.testapi.main.makeOuter("nest".to_string(), 11, 13));
-    let outer = {crate_name}::shapes::nominal::testapi::main::Outer::<StubHost>::unOuter(outer);
-    let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::unInner(outer._1);
+    let outer = {crate_name}::shapes::nominal::testapi::main::Outer::<StubHost>::get(outer);
+    let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::get(outer._1);
     println!("{{}}\n{{}}\n{{}}", outer._0, inner._0, inner._1);
     for choice in [pkg.testapi.main.first(17), pkg.testapi.main.middle(19, 23), pkg.testapi.main.last("choice".to_string(), 29, 31)] {{
-        let choice = {crate_name}::shapes::nominal::testapi::main::Choice::<StubHost>::unChoice(pkg.testapi.main.echoChoice(choice));
+        let choice = {crate_name}::shapes::nominal::testapi::main::Choice::<StubHost>::get(pkg.testapi.main.echoChoice(choice));
         match choice {{
             {crate_name}::shapes::Sum::Left(value) => println!("{{}}", value),
             {crate_name}::shapes::Sum::Right({crate_name}::shapes::Sum::Left(value)) => {{
-                let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::unInner(value);
+                let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::get(value);
                 println!("{{}}\n{{}}", inner._0, inner._1);
             }}
             {crate_name}::shapes::Sum::Right({crate_name}::shapes::Sum::Right(value)) => {{
-                let outer = {crate_name}::shapes::nominal::testapi::main::Outer::<StubHost>::unOuter(value);
-                let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::unInner(outer._1);
+                let outer = {crate_name}::shapes::nominal::testapi::main::Outer::<StubHost>::get(value);
+                let inner = {crate_name}::shapes::nominal::testapi::main::Inner::<StubHost>::get(outer._1);
                 println!("{{}}\n{{}}\n{{}}", outer._0, inner._0, inner._1);
             }}
         }}
@@ -1928,8 +1928,8 @@ fn build_driver_for_protocol(
                     // lives in `testapi/types`.
                     format!(
                         "    type Pair = {crate_name}::shapes::nominal::testapi::types::Pair<StubHost, {crate_name}::shapes::KioNative<String>, {crate_name}::shapes::KioNative<String>>;\n\
-                 \x20   let boxed = Pair::mkPair({crate_name}::ffi::exp::testapi_types__Pair::mkPair_arg0::<{crate_name}::shapes::KioNative<String>, {crate_name}::shapes::KioNative<String>> {{ _0: \"export-type-left\".to_string(), _1: \"export-type-right\".to_string() }});\n\
-                 \x20   let out = Pair::unPair(boxed);\n\
+                 \x20   let boxed = Pair::mk({crate_name}::ffi::exp::testapi_types__Pair::mk_arg0::<{crate_name}::shapes::KioNative<String>, {crate_name}::shapes::KioNative<String>> {{ _0: \"export-type-left\".to_string(), _1: \"export-type-right\".to_string() }});\n\
+                 \x20   let out = Pair::get(boxed);\n\
                  \x20   println!(\"{{}}\", out._0);\n\
                  \x20   println!(\"{{}}\", out._1);\n"
                     )
@@ -2575,16 +2575,16 @@ fn render_rust_body_for_binding(binding: &HostFnBinding, m: &TraitMethod) -> Str
         HostFnBodyKind::ObservePacked { .. } => return "{
             EXISTENTIAL_COUNTS.with(|counts| { let (observations, openings) = counts.get(); counts.set((observations + 1, openings)); });
             struct Open;
-            impl crate::ffi::exp::testapi_types__Packed::readPacked_continuation_impl<StubHost, crate::shapes::KioNative<i32>> for Open {
-                fn specialize<U: crate::shapes::KioType>(&self) -> crate::ffi::exp::testapi_types__Packed::readPacked_continuation_type_ret<StubHost, crate::shapes::KioNative<i32>, U> {
-                    crate::ffi::exp::testapi_types__Packed::readPacked_continuation_type_ret::<StubHost, crate::shapes::KioNative<i32>, U>::new(|payload| {
+            impl crate::ffi::exp::testapi_types__Packed::get_continuation_impl<StubHost, crate::shapes::KioNative<i32>> for Open {
+                fn specialize<U: crate::shapes::KioType>(&self) -> crate::ffi::exp::testapi_types__Packed::get_continuation_type_ret<StubHost, crate::shapes::KioNative<i32>, U> {
+                    crate::ffi::exp::testapi_types__Packed::get_continuation_type_ret::<StubHost, crate::shapes::KioNative<i32>, U>::new(|payload| {
                     EXISTENTIAL_COUNTS.with(|counts| { let (observations, openings) = counts.get(); counts.set((observations, openings + 1)); });
                     payload._1.call(payload._0)
                     })
                 }
             }
-            let continuation = crate::ffi::exp::testapi_types__Packed::readPacked_continuation::<StubHost, crate::shapes::KioNative<i32>>::new(Open);
-            crate::shapes::nominal::testapi::types::Packed::<StubHost>::readPacked(arg0, continuation)
+            let continuation = crate::ffi::exp::testapi_types__Packed::get_continuation::<StubHost, crate::shapes::KioNative<i32>>::new(Open);
+            crate::shapes::nominal::testapi::types::Packed::<StubHost>::get(arg0, continuation)
         }".to_owned(),
         HostFnBodyKind::RoundFunctor
         | HostFnBodyKind::RoundPicker
@@ -3305,12 +3305,12 @@ mod tests {
             .expect("type-roundtrip protocol has an invocable Rust driver");
         assert!(
             driver.contains(
-                "Pair::mkPair(test_pkg::ffi::exp::testapi_types__Pair::mkPair_arg0::<test_pkg::shapes::KioNative<String>, test_pkg::shapes::KioNative<String>> { _0: \"export-type-left\".to_string(), _1: \"export-type-right\".to_string() })"
+                "Pair::mk(test_pkg::ffi::exp::testapi_types__Pair::mk_arg0::<test_pkg::shapes::KioNative<String>, test_pkg::shapes::KioNative<String>> { _0: \"export-type-left\".to_string(), _1: \"export-type-right\".to_string() })"
             ),
             "{driver}"
         );
         assert!(
-            !driver.contains("Pair::mkPair(\"export-type-left\""),
+            !driver.contains("Pair::mk(\"export-type-left\""),
             "{driver}"
         );
 
@@ -3320,7 +3320,7 @@ mod tests {
             .expect("newtype-visibility protocol has an invocable Rust driver");
         assert!(
             driver.contains(
-                "makeConstructorPair(test_pkg::shapes::Product { _0: SelectedI32(81), _1: SelectedI32(82) })"
+                "mk(test_pkg::shapes::Product { _0: SelectedI32(81), _1: SelectedI32(82) })"
             ),
             "{driver}"
         );
@@ -3331,7 +3331,7 @@ mod tests {
             "{driver}"
         );
         assert!(
-            !driver.contains("makeConstructorPair(SelectedI32(81), SelectedI32(82))"),
+            !driver.contains("mk(SelectedI32(81), SelectedI32(82))"),
             "{driver}"
         );
         assert!(
@@ -3402,11 +3402,11 @@ mod tests {
             .expect("NewtypeVisibilityFacade has an executable Rust driver");
         assert!(driver.contains("struct SelectedI32(i32);"));
         assert!(driver.contains("type testapi__I32 = SelectedI32;"));
-        assert!(driver.contains("readExistentialUnit_continuation_impl<"));
-        assert!(driver.contains("readExistentialUnit_continuation::<"));
+        assert!(driver.contains("get_continuation_impl<"));
+        assert!(driver.contains("get_continuation::<"));
         assert!(driver.contains("::new(Select89)"));
-        assert!(driver.contains("readExistentialEmpty_continuation_impl<"));
-        assert!(driver.contains("readExistentialEmpty_continuation::<"));
+        assert!(driver.contains("get_continuation_impl<"));
+        assert!(driver.contains("get_continuation::<"));
         assert!(driver.contains("::new(Select90)"));
 
         let protocol = RunnerProtocol::HostTypeRoundtrip;
@@ -3668,12 +3668,12 @@ mod tests {
             "pkg.wordApi.readWord_()",
             "pkg.wordApi._readWord_()",
             "pkg.wordApi.readWord__()",
-            "nominal::wordApi::wordNodes::_WordBox__::<StubHost, test_pkg::shapes::KioNative<i32>>::wrapWord(55)",
-            "nominal::wordApi::wordNodes::_WordBox__::<StubHost, test_pkg::shapes::KioNative<i32>>::unwrapWord(boxed)",
+            "nominal::wordApi::wordNodes::_WordBox__::<StubHost, test_pkg::shapes::KioNative<i32>>::mk(55)",
+            "nominal::wordApi::wordNodes::_WordBox__::<StubHost, test_pkg::shapes::KioNative<i32>>::get(boxed)",
             "pkg.wordApi.wordNodes.keepWord::<test_pkg::shapes::KioNative<i32>>(66)",
             "pkg.wordApi.keepPair(test_pkg::shapes::Product { _0:",
             "type CountValue = test_pkg::shapes::KioHostTypeMarker_wordApi__CountValue<StubHost>;",
-            "nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::unwrapWord(pair._1)",
+            "nominal::wordApi::otherNodes::_WordBox__::<StubHost, CountValue>::get(pair._1)",
         ] {
             assert!(driver.contains(literal), "{driver}");
         }

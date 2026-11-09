@@ -6,7 +6,7 @@ import __intrinsics__;
 
 import __comptime__;
 
-pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep }
+pub type { Rep: . { pub mk; pub get } }
 
 pure fn call_ctor(ct: __Comptime__, ctor: __Checked_term__, payload: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, __term_type__(ct, ctor), ctor, payload)
@@ -19,4 +19,4 @@ pub pure fn repmod_impl(
 , _value: __Checked_term__
 ) -> __Checked_term__ { call_ctor(ct, rep_ctor, __term_unit__(ct)) }
 
-pub macro repmod : [Source] Source -> Rep { captures Rep.mk_rep; impl repmod_impl }
+pub macro repmod : [Source] Source -> Rep { captures Rep.mk; impl repmod_impl }

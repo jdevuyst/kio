@@ -6,208 +6,46 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Dead elaborator-machinery audit
 
-The compiler carries an internal enum pair for elaborator positions:
-[`ElaboratorKind`] (the kind tag) and [`ElaboratorCall`] (the per-kind
-payload), both in `kio-rs/src/ast.rs`. Each variant is meant to back a
-real surface elaborator. A variant can rot into dead scaffolding —
-constructed only by `#[cfg(test)]` fixtures and traversed only by
-read-only walks (resolve, desugar clone-walks, pretty, tokens, LSP,
-equiv-cache) — while still **compiling clean**: the read-only walks and
-test constructors keep `dead_code` quiet, so no mechanical lint fires.
-
-This is the gap that let a built-in `match` apparatus (`ElaboratorKind`
-/ `ElaboratorCall` `Match` variants plus `synth_match_elaborator`)
-survive after the surface `match` migrated to a Kio-authored user
-elaborator (`match.kio`, imported via `use match from match;`). A
-spelling/keyword/grammar sweep is structurally blind to it: the residue
-is internal Rust enum identifiers, not user-facing syntax, and a
-name-based sweep cannot tell "variant backing a removed built-in" from
-"variant backing a surviving feature" — both read `::Match`. The
-deadness is only provable by reachability-from-real-input plus empirical
-firing coverage. This skill standardizes those two checks.
+Audit the compiler for obsolete compiler-private elaboration paths and for
+privilege granted to Kio-authored macros by name or library identity. The
+current surface uses ordinary resolved `Expr::UserMacro` declarations;
+native field elaboration has no producer or compiler-private enum. Ordinary
+nominal declarations and post-typecheck `Expr::Enriched*` recovery are live
+and are not native field elaboration.
 
 Read AGENTS.md § Universal rules — No partial implementations, Bugs surface;
 never hide them, and User declarations never become compiler primitives by
-name before starting. Dead scaffolding reachable only through test constructors
-and read-only walks is a no-partial-implementations breach; semantic dispatch on
-a Kio-authored macro's name is a user-declaration-privilege breach.
+name before starting.
 
-## What this catches vs. does not
+## 1. Trace obsolete elaboration paths
 
-The built-in `match` apparatus was Apparatus A. Do **not** confuse it
-with [`Expr::EnrichedMatch`] (Apparatus B) — the live post-typecheck
-sum-dispatch IR produced by `structural_recovery`, carried by
-`route`, optimized by `optimize.rs`, and emitted by the Rust /
-JS backends. `EnrichedMatch` is a different node, has firing coverage
-through every sum elimination, and is not in this audit's scope. A
-finding here is an `ElaboratorKind` / `ElaboratorCall` variant, never an
-`Expr::Enriched*` variant.
+Search `kio-rs/src` for `ElaboratorKind`, `ElaboratorCall`,
+`Expr::Elaborator`, former field-access/update preparation and scheduling
+helpers, and any replacement scaffolding. Check both construction sites and
+read-only traversal or test sites. A surviving implementation path without
+spec-current syntax is a finding even if tests or clone walks keep it used.
+Trace exclusive helpers, cache/serialization handling and tooling to the last
+consumer; preserve ordinary user-macro scheduling, compact nominal lowering,
+and structural recovery for ordinary projector calls.
 
-## 1. Enumerate the variants
+For an authorized builtin-reflection removal, also trace public-name tables,
+schemes, evaluator dispatch, projected-value fields, traversal helpers and test
+constructors to remaining real consumers. Flag compatibility wrappers or
+reflection-only metadata kept alive by tests. Distinguish these from live
+body-binding, host-interface and kind-arity metadata using
+[the reflection boundary](../../topics/macros.md#semantic-function-reflection).
+Lack of a current library caller alone does not authorize deleting a public API.
 
-List every variant of both enums:
+## 2. Verify live macro reachability
 
-```sh
-grep -n 'enum ElaboratorKind\|enum ElaboratorCall' kio-rs/src/ast.rs
-```
+Trace a real imported macro call through parser, lexical resolution,
+projection, typing, substitution and Prime validation. Use existing focused
+behavioral tests and confirm that the intended operation executes; a synthetic
+constructor or read-only walk does not establish a live source route. If
+instrumentation is needed, use the local CI and compiler-cache guidance, and
+remove the probe after use. Bounded zero firing alone does not prove deadness.
 
-Read the two `enum` bodies. For each variant, record its name.
-
-## 2. Surface → IR mapping table
-
-Maintain (in this section, updated as the surface evolves) the mapping
-from each variant to the **spec-current** surface form that produces it.
-Any variant with no spec mapping is a finding.
-
-| Variant | Surface form (spec-current) | Notes |
-| --- | --- | --- |
-| `ElaboratorKind::Access` / `ElaboratorCall::FieldAccess` | `x.?{foo}` postfix field access | Compiler-private; parser-produced |
-| `ElaboratorKind::Filtered` / `ElaboratorCall::FieldUpdate` | `x.!{foo = y}` postfix field update | Compiler-private; parser-produced |
-
-There is deliberately **no** `Match` row: the surface `match` is the
-imported Kio-authored user macro, carried by `Expr::UserMacro`
-(name `"match"`), typed through `synth_user_macro`. It does not back
-any `ElaboratorKind` / `ElaboratorCall` variant. If a `Match` variant
-reappears in either enum, that is the regression this skill exists to
-catch.
-
-There is likewise deliberately **no** `Iso` / `Into` / `Onto` / `Align` /
-`Ease` / `Atom` / `Fit` / `Derive` row: the spine/algebraic macro
-palette (`iso` / `into` / `onto` / `align` / `ease` / `atom` /
-`reorder_*` / `narrow_*` / `widen_*` / `flatten_*` / `one_*` /
-`fit`) and `derive` are, same as `match`, imported Kio-authored user
-macros carried by `Expr::UserMacro` and typed through
-`synth_user_macro`. They do not back any `ElaboratorKind` /
-`ElaboratorCall` variant. If any of those variants reappear in either
-enum, that is the same class of regression.
-
-Cross-check the table against `specs/grammar.md` (macro calls are
-direct local calls selected through ordinary lexical ownership — there is
-no reserved macro-name terminal — and the relevant productions are `FieldAccess` /
-`FieldUpdate`). A variant in the enum with no row, or a row whose
-surface form is no longer in `specs/grammar.md`, is a finding.
-
-## 3. Reachability: originate vs. destructure-and-rebuild
-
-For each variant, list its construction sites:
-
-```sh
-grep -rn 'ElaboratorCall::<Variant>\|ElaboratorKind::<Variant>' kio-rs/src --include='*.rs'
-```
-
-Classify every site as one of:
-
-- **Originating** — a front-end pass that builds the node from a
-  *non-Elaborator* input (the parser, or a desugar that rewrites some
-  other surface form into this variant). At least one originating site
-  is required.
-- **Read-only walk / clone** — resolve, desugar clone-walks
-  (`walk.rs`), `op_fold`, `label_elab`, pretty, tokens, equiv-cache,
-  LSP. These traverse a pre-existing node; they originate nothing.
-- **Test-only** — `#[cfg(test)]` constructors and test helpers.
-- **Self-referential-dead** — a site whose constructor merely
-  *destructures an already-existing same-variant node and rebuilds it*
-  (the rec/CPS desugar pattern: match an input `Variant { .. }` and emit
-  a `Variant { .. }` with the fields copied through). Such a site
-  originates nothing — it only re-processes a node some other pass must
-  have produced.
-
-**Finding:** a variant whose construction sites are *exclusively*
-read-only / test-only / self-referential-dead. Such a variant cannot be
-reached from real input — the parser never originates it and no desugar
-turns another form into it — so its synth/elaborate entry point is dead.
-This is exactly the Apparatus-A shape: the only "producers" of
-`ElaboratorCall::Match` destructured an input `Match` node nothing
-originates, and the parser produced `Expr::Elaborator` only as
-`Access` / `Filtered`.
-
-A quick discriminator for the self-referential-dead case: if removing
-the variant turns a desugar arm into a compile error whose fix is pure
-deletion (the arm's only job was to copy the node through), the arm was
-self-referential-dead.
-
-## 4. Empirical firing gate
-
-The reachability analysis in § 3 is static. Confirm it empirically with
-the procedure that originally exposed Apparatus A: build kio with a
-hard abort in each elaborator synth entry point, run the corpus, and
-fail if any synth fn fires zero times.
-
-The synth entry points are the per-variant arms in
-`kio-rs/src/pass/typecheck_full.rs` `synth_expr` / `check_value_against`
-under `Expr::Elaborator { call, .. }` (the `ElaboratorCall::FieldAccess`
-→ `synth_field_access`, `ElaboratorCall::FieldUpdate` →
-`synth_field_update` dispatch), plus `Expr::UserMacro` →
-`synth_user_macro` for the path that backs `match` and other
-imported macros.
-
-Procedure (manual one-off; promote to a standing probe when convenient):
-
-1. In each synth entry point, insert an env-gated abort, e.g.:
-
-   ```rust
-   if std::env::var_os("KIO_DEBUG_ELAB_FIRE_ABORT").is_some() {
-       eprintln!("FIRED: synth_<variant>");
-       std::process::abort();
-   }
-   ```
-
-   Use a counter or a per-fn marker file instead of `abort()` when you
-   want the run to continue and tally firings across the whole corpus
-   rather than stopping at the first.
-
-2. Follow [`ai/topics/local-ci.md` § Local gate coverage](../../topics/local-ci.md#local-gate-coverage)
-   and the configured compiler cache in [`local-tools.md` § Compiler cache](../../topics/local-tools.md#compiler-cache).
-   Select existing exact surface cases that reach each instrumented entry and
-   relevant lib tests. Use anchored positional case filters with
-   `--impls=FULL_IMPL_MATRIX --all-cases` when cross-implementation evidence is
-   needed; the implementation selector does not scope cases. A compile-time
-   firing claim can instead use the focused compiler/lib path. Confirm the
-   selected assertion actually observes the probe, not an unrelated failure.
-   Broader corpus confirmation ordinarily uses `SAMPLE_IMPL`. Before any
-   effectively corpus-wide full matrix, explain why sampling plus bounded
-   witnesses is insufficient and obtain explicit user direction; this opt-in
-   probe is not standing authority for that cost.
-
-3. A selected witness that should reach an entry but records no firing is
-   missing that claimed coverage. Diagnose the witness and reachability;
-   zero firings in a bounded run do not prove that the whole corpus lacks
-   coverage or that the variant is dead. Reconcile the source-to-entry map
-   from §§ 1–3 and existing tests before classifying dead machinery versus
-   a live shape needing a regression. For example, an imported `match`
-   witness should reach `synth_user_macro`; its library spelling does
-   not prove a dedicated built-in match branch remains reachable.
-
-4. Revert the probe (it is a throwaway instrumentation build, not a
-   checked-in change; `KIO_DEBUG_*` naming follows AGENTS.md
-   Debug-only surfaces are internal if you ever keep a counter version).
-
-## 5. Mechanizable now vs. documented procedure
-
-- §§ 1–3 (enumerate, surface→IR mapping, reachability classification)
-  are mechanizable from `grep` over `kio-rs/src` plus the mapping table
-  here — run them every pass.
-- § 4 (empirical firing gate) is documented as a precise manual
-  procedure. It requires an instrumented build, so it is opt-in rather
-  than part of the default static sweep. Run it when § 3 flags a
-  suspect variant, or when an elaborator surface form is removed /
-  migrated (e.g. a built-in becoming a user macro) — that
-  migration is exactly when a variant goes dead while still compiling.
-
-## 6. Related dead-built-in paths
-
-When a surface elaborator migrates from a built-in to a Kio-authored
-user macro, the *whole* built-in apparatus for it goes dead at
-once: the `ElaboratorKind` / `ElaboratorCall` variants, the synth fn,
-the per-clause / decision-tree helpers it alone called, and any
-factor-list engine entry kept "for symmetry" with it. After deleting a
-variant, follow the compiler's `dead_code` cascade — deleting the synth
-fn surfaces its now-unused helpers, deleting those surfaces theirs.
-Delete to fixpoint; an `#[allow(dead_code)]` left behind to silence the
-cascade is itself a finding (it re-hides what this audit exists to
-surface).
-
-## 7. User-macro name and identity privilege
+## 3. User-macro name and identity privilege
 
 Kio-authored macros are ordinary imported declarations. Audit every
 semantic pass that handles `Expr::UserMacro` or macro UFCS calls, and every
@@ -215,7 +53,7 @@ hard-coded constant, string, or distinguished identity matching a shipped
 elaborator. Include the parser/desugarer, typer, substitution, recursive
 lowering, structural recovery (including `route`), capability
 annotation, evaluator, optimizer, and every backend; do not limit the sweep to
-`ElaboratorKind` or to files changed by the triggering commit.
+the old elaborator enums or to files changed by the triggering commit.
 
 Classify each use of a macro name or resolved declaration identity:
 
@@ -251,19 +89,11 @@ language admits (qualified/selective imports and prefix/UFCS where applicable).
 A corpus case that calls only the canonical shipped name is non-discriminating
 and does not clear the finding.
 
-## 8. Report
+## 4. Report
 
-For each enum variant: its surface mapping (or "no spec mapping —
-FINDING"), its construction-site classification (originating site
-present, or "exclusively read-only/test/self-referential — FINDING"),
-and — when § 4 was run — its firing count. Report every name/identity privilege
-site separately, including the behavior it grants and which negative-control
-case is missing. Cite file and line for every finding. Default is report-only;
-under a fix-it directive, follow
-[`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md) and
-delete dead variants to fixpoint plus add any missing golden for a live
-shape.
-
-[`ElaboratorKind`]: ../../../kio-rs/src/ast.rs
-[`ElaboratorCall`]: ../../../kio-rs/src/ast.rs
-[`Expr::EnrichedMatch`]: ../../../kio-rs/src/ast.rs
+Report obsolete producer, consumer and helper paths separately from live
+ordinary-macro and nominal paths. For every name/identity privilege finding,
+identify the behavior it grants and the missing negative-control case. Cite
+source evidence and distinguish static reachability from executed coverage.
+Default is report-only; under a fix-it directive, follow
+[`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md).

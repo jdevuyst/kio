@@ -18,39 +18,48 @@ import justify/list(List);
 import justify/word(Word, Words, word_width);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
-labels Cell = { score: I32, back: I32, fits: I32 };
+type Cell = { Score: I32; Back: I32; Fits: I32 };
 
-fn make_cell(score: I32, back: I32, fits: I32) -> Cell { {score, back, fits} }
+fn make_cell(score: I32, back: I32, fits: I32) -> Cell {
+  (Score.mk(score), Back.mk(back), Fits.mk(fits))
+}
 
-fn cell_score(c: Cell) -> I32 { c.?{score} }
+fn cell_score(c: Cell) -> I32 {
+  c.>select { Score.get }
+}
 
-fn cell_back(c: Cell) -> I32 { c.?{back} }
+fn cell_back(c: Cell) -> I32 {
+  c.>select { Back.get }
+}
 
-fn cell_fits(c: Cell) -> I32 { c.?{fits} }
+fn cell_fits(c: Cell) -> I32 {
+  c.>select { Fits.get }
+}
 
 /// The three columns, one entry per break point `0 .. n`.
-pub newtype Table : List[I32] & List[I32] & List[I32] { pub constructor pack; pub projector unpack }
+pub type { Table: List[I32] & List[I32] & List[I32] { pub mk; pub get } }
 
 fn make_table(best: List[I32], back: List[I32], fits: List[I32]) -> Table {
-  Table.pack((best, back, fits))
+  Table.mk((best, back, fits))
 }
 
 pub fn table_best(t: Table) -> List[I32] {
-  let .(best: List[I32], _back: List[I32], _fits: List[I32]) = t.>Table.unpack;
+  let .(best: List[I32], _back: List[I32], _fits: List[I32]) = t.>Table.get;
   best
 }
 
 pub fn table_back(t: Table) -> List[I32] {
-  let .(_best: List[I32], back: List[I32], _fits: List[I32]) = t.>Table.unpack;
+  let .(_best: List[I32], back: List[I32], _fits: List[I32]) = t.>Table.get;
   back
 }
 
 pub fn table_fits(t: Table) -> List[I32] {
-  let .(_best: List[I32], _back: List[I32], fits: List[I32]) = t.>Table.unpack;
+  let .(_best: List[I32], _back: List[I32], fits: List[I32]) = t.>Table.get;
   fits
 }
 
@@ -96,7 +105,7 @@ rec(loop) fn scan(
 , rev_best: List[I32]
 , acc: Cell
 ) -> Cell {
-  match(rev_words.>List.unpack) {
+  match(rev_words.>List.get) {
     (
     , .(w: Word, rest: Words) {
         let next_used = add_i32(add_i32(used, 1), word_width(w));

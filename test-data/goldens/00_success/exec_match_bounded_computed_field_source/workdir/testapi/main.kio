@@ -1,10 +1,11 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(String);
 import testapi/io(print);
 
-labels { combine: (String & String) -> String, text: . -> String };
+type { Combine: (String & String) -> String { mk; get }; Text: . -> String { mk; get } }
 
 type Surface = Combine & Text;
 
@@ -12,10 +13,10 @@ fn combine(_parts: String & String) -> String { "continued\n" }
 
 fn text(_unit: .) -> String { "nested" }
 
-fn surface() -> Surface { ({combine}, {text}) }
+fn surface() -> Surface { (Combine.mk(combine), Text.mk(text)) }
 
 fn render(value: Surface) -> String {
-  match(value.?{combine}(("argument", value.?{text}(())))) {
+  match((value.>select { Combine.get })(("argument", (value.>select { Text.get })(())))) {
     .(result: String) { result }
   }
 }

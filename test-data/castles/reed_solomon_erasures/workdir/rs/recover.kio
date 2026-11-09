@@ -4,6 +4,7 @@ import list/core as c;
 import list/list as l;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import rs/field as f;
 import rs/polynomial as p;
@@ -12,9 +13,9 @@ import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/iter(loop);
 
-pub labels Decoded = { coefficients: p.Polynomial, repaired: s.Word, erased: s.Word, verified: I32 };
+pub type Decoded = { Coefficients: p.Polynomial; Repaired: s.Word; Erased: s.Word; Verified: I32 };
 
-pub labels Result = { accepted: Decoded } | { rejected: String };
+pub type Result = { Accepted: Decoded } | { Rejected: String };
 
 rec(loop) fn valid_coordinates(rest: c.List[I32], seen: c.List[I32]) -> String | . {
   match(c.uncons(rest)) {
@@ -36,9 +37,9 @@ rec(loop) fn valid_coordinates(rest: c.List[I32], seen: c.List[I32]) -> String |
 rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List[I32], seen: c.List[I32]) -> String | . {
   match(c.uncons(rest)) {
     .(sample: s.Sample, tail: s.Word) {
-      let coordinate = sample.?{s.coordinate};
+      let coordinate = sample.>select { s.Coordinate.get };
       if(f.valid(coordinate)) {
-        if(f.valid(sample.?{s.value})) {
+        if(f.valid(sample.>select { s.Value.get })) {
           if(l.elem(f.equal, coordinate, coordinates)) {
             if(l.elem(f.equal, coordinate, seen)) {
               "repeated surviving coordinate"[String].>widen_sum
@@ -59,29 +60,30 @@ rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List[I32], seen: c.List[
   }
 }
 
-labels Basis = { factors: p.Polynomial, divisor: I32 };
+type Basis = { Factors: p.Polynomial; Divisor: I32 };
 
 fn term(sample: s.Sample, basis: s.Word) -> p.Polynomial | String {
-  let coordinate = sample.?{s.coordinate};
+  let coordinate = sample.>select { s.Coordinate.get };
   let product =
     l.foldl(
     , .(acc, other) {
-        let root = other.?{s.coordinate};
+        let root = other.>select { s.Coordinate.get };
         if(f.equal(coordinate, root)) {
           acc
         } else {
-          {
-          , factors = p.multiply_linear(acc.?{factors}, root)
-          , divisor = f.multiply(acc.?{divisor}, f.subtract(coordinate, root))
-          }
+          (
+          , Factors.mk(p.multiply_linear(acc.>select { Factors.get }, root))
+          , Divisor.mk(f.multiply(acc.>select { Divisor.get }, f.subtract(coordinate, root)))
+          )
         }
       }
-    , {factors = c.singleton(1), divisor = 1}
+    , (Factors.mk(c.singleton(1)), Divisor.mk(1))
     , basis
     );
-  match(f.inverse(product.?{divisor})) {
+  match(f.inverse(product.>select { Divisor.get })) {
     .(inverse: I32) {
-      p.scale(product.?{factors}, f.multiply(sample.?{s.value}, inverse)).>widen_sum
+      p.scale(product.>select { Factors.get }, f.multiply(sample.>select { s.Value.get }, inverse))
+        .>widen_sum
     };
     .() { "singular interpolation basis"[String].>widen_sum }
   }
@@ -102,7 +104,11 @@ rec(loop) fn interpolate(rest: s.Word, basis: s.Word, total: p.Polynomial) -> p.
 fn agrees(poly: p.Polynomial, samples: s.Word) -> Bool {
   l.foldl(
   , .(ok, sample) {
-      if(ok) { f.equal(p.direct(poly, sample.?{s.coordinate}), sample.?{s.value}) } else { .f }
+      if(ok) {
+        f.equal(p.direct(poly, sample.>select { s.Coordinate.get }), sample.>select { s.Value.get })
+      } else {
+        .f
+      }
     }
   , .t
   , samples
@@ -111,43 +117,54 @@ fn agrees(poly: p.Polynomial, samples: s.Word) -> Bool {
 
 fn reconstruct(poly: p.Polynomial, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(agrees(poly, samples)) {
-    let known = l.map(.(sample) { sample.?{s.coordinate} }, samples);
+    let known = l.map(
+    , .(sample) {
+        sample.>select { s.Coordinate.get }
+      }
+    , samples
+    );
     let repaired = l.map(
-    , .(coordinate) { {s.coordinate, s.value = p.direct(poly, coordinate)} }
+    , .(coordinate) { (s.Coordinate.mk(coordinate), s.Value.mk(p.direct(poly, coordinate))) }
     , coordinates
     );
     let erased = l.filter(
     , .(sample) {
-        if(l.elem(f.equal, sample.?{s.coordinate}, known)) { .f } else { .t }
+        if(l.elem(f.equal, sample.>select { s.Coordinate.get }, known)) { .f } else { .t }
       }
     , repaired
     );
-    {accepted = {coefficients = poly, repaired, erased, verified = l.length(samples)}}.>widen_sum
+    Accepted.mk((
+    , Coefficients.mk(poly)
+    , Repaired.mk(repaired)
+    , Erased.mk(erased)
+    , Verified.mk(l.length(samples))
+    ))
+      .>widen_sum
   } else {
-    {rejected = "surviving samples contradict degree bound"}.>widen_sum
+    Rejected.mk("surviving samples contradict degree bound").>widen_sum
   }
 }
 
 fn sufficient(dimension: I32, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(a.lt_i32(l.length(samples), dimension)) {
-    {rejected = "insufficient surviving symbols"}.>widen_sum
+    Rejected.mk("insufficient surviving symbols").>widen_sum
   } else {
     let basis = l.take(dimension, samples);
     match(interpolate(basis, basis, l.replicate(dimension, 0))) {
       .(poly: p.Polynomial) { reconstruct(poly, coordinates, samples) };
-      .(error: String) { {rejected = error}.>widen_sum }
+      .(error: String) { Rejected.mk(error).>widen_sum }
     }
   }
 }
 
 pub fn decode(dimension: I32, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(a.lt_i32(l.length(coordinates), dimension)) {
-    {rejected = "codeword shorter than message dimension"}.>widen_sum
+    Rejected.mk("codeword shorter than message dimension").>widen_sum
   } else match(valid_coordinates(coordinates, c.nil[_])) {
-    .(error: String) { {rejected = error}.>widen_sum };
+    .(error: String) { Rejected.mk(error).>widen_sum };
     .() {
       match(valid_samples(samples, coordinates, c.nil[_])) {
-        .(error: String) { {rejected = error}.>widen_sum };
+        .(error: String) { Rejected.mk(error).>widen_sum };
         .() { sufficient(dimension, coordinates, samples) }
       }
     }

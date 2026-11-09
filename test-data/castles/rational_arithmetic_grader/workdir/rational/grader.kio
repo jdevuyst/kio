@@ -3,6 +3,7 @@ module rational/grader;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import rational/core as core;
 import rational/core(Division_by_zero, Eval, Fraction, Rational);
@@ -16,48 +17,53 @@ import testapi/arith as arith;
 /// whether the student carried out the final reduction. `Undefined` belongs to
 /// the *question*, not to the student — it is the verdict when the exercise
 /// itself has no answer to give.
-pub labels { exact: . };
+pub type { Exact: . }
 
-pub labels { equivalent: . };
+pub type { Equivalent: . }
 
-pub labels { wrong: . };
+pub type { Wrong: . }
 
-pub labels { undefined: . };
+pub type { Undefined: . }
 
 pub type Verdict = Exact | Equivalent | Wrong | Undefined;
 
 /// One marked answer. The note is where an accepted-but-unreduced submission
 /// gets told, in so many words, that it was accepted.
-pub labels Report = { outcome: Verdict, note: String };
+pub type Report = { Outcome: Verdict; Note: String };
 
-pub labels Exercise = { question: Expr, submitted: Fraction };
+pub type Exercise = { Question: Expr; Submitted: Fraction };
 
 /// The exercise set as an ordinary cons list. The knot is tied at the newtype
 /// because an anonymous sum cannot mention itself.
-pub rec newtype Roster : . | (Exercise & Roster) { constructor of_body; pub projector body }
+pub rec type { Roster: . | (Exercise & Roster) { mk; pub get } }
 
-pub labels Tally = {
-, exact_count: I32
-, equivalent_count: I32
-, wrong_count: I32
-, undefined_count: I32
-};
+pub type Tally = { Exact_count: I32; Equivalent_count: I32; Wrong_count: I32; Undefined_count: I32 };
 
-pub fn exercise(question: Expr, submitted: Fraction) -> Exercise { {question, submitted} }
-
-pub fn no_exercises() -> Roster { Roster.of_body(widen_sum(())[. | (Exercise & Roster)]) }
-
-pub fn with_exercise(head: Exercise, rest: Roster) -> Roster {
-  Roster.of_body(widen_sum((head, rest))[. | (Exercise & Roster)])
+pub fn exercise(question: Expr, submitted: Fraction) -> Exercise {
+  (Question.mk(question), Submitted.mk(submitted))
 }
 
-fn exact_mark(note: String) -> Report { {outcome = widen_sum({exact=})[Verdict], note} }
+pub fn no_exercises() -> Roster { Roster.mk(widen_sum(())[. | (Exercise & Roster)]) }
 
-fn equivalent_mark(note: String) -> Report { {outcome = widen_sum({equivalent=})[Verdict], note} }
+pub fn with_exercise(head: Exercise, rest: Roster) -> Roster {
+  Roster.mk(widen_sum((head, rest))[. | (Exercise & Roster)])
+}
 
-fn wrong_mark(note: String) -> Report { {outcome = widen_sum({wrong=})[Verdict], note} }
+fn exact_mark(note: String) -> Report {
+  (Outcome.mk(widen_sum(Exact.mk(()))[Verdict]), Note.mk(note))
+}
 
-fn undefined_mark(note: String) -> Report { {outcome = widen_sum({undefined=})[Verdict], note} }
+fn equivalent_mark(note: String) -> Report {
+  (Outcome.mk(widen_sum(Equivalent.mk(()))[Verdict]), Note.mk(note))
+}
+
+fn wrong_mark(note: String) -> Report {
+  (Outcome.mk(widen_sum(Wrong.mk(()))[Verdict]), Note.mk(note))
+}
+
+fn undefined_mark(note: String) -> Report {
+  (Outcome.mk(widen_sum(Undefined.mk(()))[Verdict]), Note.mk(note))
+}
 
 /// Which way the student missed. Nothing else needs an ordering on rationals,
 /// but a grader that can only say "no" is less use than one that can say "high".
@@ -115,19 +121,31 @@ pub fn verdict_text(outcome: Verdict) -> String {
 }
 
 pub fn no_marks() -> Tally {
-  {exact_count = 0, equivalent_count = 0, wrong_count = 0, undefined_count = 0}
+  (Exact_count.mk(0), Equivalent_count.mk(0), Wrong_count.mk(0), Undefined_count.mk(0))
 }
 
-fn bump_exact(marks: Tally) -> Tally { marks.!{exact_count = arith.add(marks.?{exact_count}, 1)} }
+fn bump_exact(marks: Tally) -> Tally {
+  marks.>with {
+    Exact_count.mk(arith.add(marks.>select { Exact_count.get }, 1))
+  }
+}
 
 fn bump_equivalent(marks: Tally) -> Tally {
-  marks.!{equivalent_count = arith.add(marks.?{equivalent_count}, 1)}
+  marks.>with {
+    Equivalent_count.mk(arith.add(marks.>select { Equivalent_count.get }, 1))
+  }
 }
 
-fn bump_wrong(marks: Tally) -> Tally { marks.!{wrong_count = arith.add(marks.?{wrong_count}, 1)} }
+fn bump_wrong(marks: Tally) -> Tally {
+  marks.>with {
+    Wrong_count.mk(arith.add(marks.>select { Wrong_count.get }, 1))
+  }
+}
 
 fn bump_undefined(marks: Tally) -> Tally {
-  marks.!{undefined_count = arith.add(marks.?{undefined_count}, 1)}
+  marks.>with {
+    Undefined_count.mk(arith.add(marks.>select { Undefined_count.get }, 1))
+  }
 }
 
 pub fn record(marks: Tally, outcome: Verdict) -> Tally {
@@ -146,11 +164,12 @@ pub fn record(marks: Tally, outcome: Verdict) -> Tally {
 /// itself undefined leaves the denominator too — a broken question is not
 /// allowed to count against the class.
 pub fn earned(marks: Tally) -> I32 {
-  let .({exact_count, equivalent_count}) = marks;
+  let .(exact_count, equivalent_count) = marks.>select { Exact_count.get; Equivalent_count.get };
   arith.add(arith.mul(exact_count, 2), equivalent_count)
 }
 
 pub fn possible(marks: Tally) -> I32 {
-  let .({exact_count, equivalent_count, wrong_count}) = marks;
+  let .(exact_count, equivalent_count, wrong_count) =
+    marks.>select { Exact_count.get; Equivalent_count.get; Wrong_count.get };
   arith.mul(2, arith.add(exact_count, arith.add(equivalent_count, wrong_count)))
 }

@@ -255,15 +255,12 @@ impl Typer<Prime> for PrimeTyper {
             // Surface-only variants — uninhabited at Prime per the
             // ResolvePhase bound.
             crate::ast::Expr::Tuple { ext, .. } => match *ext {},
-            crate::ast::Expr::LabelValue { ext, .. } => match *ext {},
-            crate::ast::Expr::RowLet { ext, .. } => match *ext {},
             crate::ast::Expr::FnPlaceholder { ext, .. } => match *ext {},
             crate::ast::Expr::OpChain { ext, .. } => match *ext {},
             crate::ast::Expr::RecCall { ext, .. } => match *ext {},
             // Elaboration-bearing variants — uninhabited at Prime
             // per the Phase shape (Lowered → Prime substitution
             // rewrote them out).
-            crate::ast::Expr::Elaborator { ext, .. } => match *ext {},
             crate::ast::Expr::RecOrder { ext, .. } | crate::ast::Expr::RecQuote { ext, .. } => {
                 match *ext {}
             }
@@ -990,13 +987,10 @@ fn bake_expr(
         Expr::Path { .. } | Expr::Unit { .. } => {}
         // Surface-only variants — uninhabited at Prime.
         Expr::Tuple { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
         // Elaboration-bearing variants — uninhabited at Prime.
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -1289,12 +1283,12 @@ mod tests {
 
         let source = "module x;
             import __intrinsics__;
-            newtype Box[A] <B> : A & B { constructor make; projector open; }
+            type { Box[A] <B> : A & B { mk; get; }; }
             fn f() -> . -> . {
                 ();
                 let .(g: . -> .) = .(x) { (); let .(y: .) = x; y };
                 let .(pair: . & .) = __pair__[.][.]((), ());
-                let .(boxed: Box[.]) = Box.make[.](pair);
+                let .(boxed: Box[.]) = Box.mk[.](pair);
                 let .(first: [A][B] (A & B) -> A) = __fst__;
                 g
             }";
@@ -1887,8 +1881,8 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn existentials_threaded_to_prime_and_typecheck() {
         let pkg = build_package(
-            "module x; newtype Pack[A] <U> : A & U { \
-             pub constructor mk_pack; pub projector un_pack; };",
+            "module x; type { Pack[A] <U> : A & U { \
+             pub mk; pub get; }; };",
         );
         check_package(&pkg).expect("check_package");
         let entry = pkg.module("x").expect("module x present");
@@ -1928,8 +1922,8 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn self_ref_under_arrow_lhs_rejected_standalone() {
         let pkg = build_package(
-            "module x; rec newtype Bad : (Bad -> .) { \
-             pub constructor mk_bad; pub projector un_bad; };",
+            "module x; rec type { Bad : (Bad -> .) { \
+             pub mk; pub get; }; };",
         );
         let err = check_package(&pkg).expect_err("strict positivity rejects");
         match err.error {
@@ -2129,9 +2123,9 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn constructor_shaped_rank_n_alias_does_not_inherit_inference() {
         let message = prime_type_error(
             "module x; \
-             newtype Hidden <U> : U { \
-               pub constructor mk_hidden; pub projector un_hidden; \
-             }; \
+             type { Hidden <U> : U { \
+               pub mk; pub get; \
+             }; }; \
              fn bad[A](poly: [B] B -> Hidden, value: A) -> Hidden { poly(value) }",
         );
         assert!(
@@ -2156,18 +2150,18 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn existential_constructor_suffix_stays_inference_driven() {
         let package = build_package(
             "module x; import __intrinsics__; \
-             newtype Hidden <U> : U { \
-               pub constructor mk_hidden; pub projector un_hidden; \
-             }; \
-             newtype Pack[A] <U> : A & U { \
-               pub constructor mk_pack; pub projector un_pack; \
-             }; \
-             fn hidden[U](value: U) -> Hidden { Hidden.mk_hidden(value) } \
+             type { Hidden <U> : U { \
+               pub mk; pub get; \
+             }; }; \
+             type { Pack[A] <U> : A & U { \
+               pub mk; pub get; \
+             }; }; \
+             fn hidden[U](value: U) -> Hidden { Hidden.mk(value) } \
              fn direct[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk_pack[A](__pair__[A][U](a, u)) \
+               Pack.mk[A](__pair__[A][U](a, u)) \
              } \
              fn partial[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk_pack[A](__pair__[A][U](a, u)) \
+               Pack.mk[A](__pair__[A][U](a, u)) \
              }",
         );
         check_package(&package).expect("constructor existential suffix remains inferable");
@@ -2177,11 +2171,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn existential_constructor_does_not_hide_elided_universal_prefix() {
         let message = prime_type_error(
             "module x; import __intrinsics__; \
-             newtype Pack[A] <U> : A & U { \
-               pub constructor mk_pack; pub projector un_pack; \
-             }; \
+             type { Pack[A] <U> : A & U { \
+               pub mk; pub get; \
+             }; }; \
              fn bad[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk_pack(__pair__[A][U](a, u)) \
+               Pack.mk(__pair__[A][U](a, u)) \
              }",
         );
         assert!(
@@ -2447,11 +2441,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn nested_elided_universal_under_existential_inference_rejected() {
         let message = prime_type_error(
             "module x; import __intrinsics__; \
-             newtype Hidden <U> : U { \
-               pub constructor mk_hidden; pub projector un_hidden; \
-             }; \
+             type { Hidden <U> : U { \
+               pub mk; pub get; \
+             }; }; \
              fn from_bottom[A](never: !) -> A { __absurd__[A](never) } \
-             fn bad(never: !) -> Hidden { Hidden.mk_hidden(from_bottom(never)) }",
+             fn bad(never: !) -> Hidden { Hidden.mk(from_bottom(never)) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
@@ -2463,10 +2457,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn multi_layer_flat_call_rejected_standalone() {
         let pkg = build_package(
             "module x;\n\
-             newtype A : . { pub constructor mk_a; pub projector un_a; };\n\
-             newtype B : . { pub constructor mk_b; pub projector un_b; };\n\
+             type { A : . { pub mk; pub get; }; };\n\
+             type { B : . { pub mk; pub get; }; };\n\
              fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo[A](A.mk_a(()), B.mk_b(())) }\n",
+             fn main() -> . { foo[A](A.mk(()), B.mk(())) }\n",
         );
         let err = check_package(&pkg).expect_err("Kio' rejects multi-layer flat call");
         match err.error {
@@ -2482,10 +2476,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn multi_layer_curried_call_accepted_standalone() {
         let pkg = build_package(
             "module x;\n\
-             newtype A : . { pub constructor mk_a; pub projector un_a; };\n\
-             newtype B : . { pub constructor mk_b; pub projector un_b; };\n\
+             type { A : . { pub mk; pub get; }; };\n\
+             type { B : . { pub mk; pub get; }; };\n\
              fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo[A](A.mk_a(()))[B](B.mk_b(())) }\n",
+             fn main() -> . { foo[A](A.mk(()))[B](B.mk(())) }\n",
         );
         check_package(&pkg).expect("Kio' accepts curried call");
     }

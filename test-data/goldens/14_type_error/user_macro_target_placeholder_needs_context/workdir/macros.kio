@@ -1,0 +1,14 @@
+module macros;
+
+import __intrinsics__;
+
+import __comptime__;
+
+pub pure fn id_impl(
+, _ct: __Comptime__
+, _source: __Type__
+, value: __Checked_term__
+, _target: __Type__
+) -> __Checked_term__ { value }
+
+pub macro id_user : [Source] Source -> [Target] Target { impl id_impl }

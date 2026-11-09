@@ -2,17 +2,12 @@ module main;
 
 import macros/algebraic_macros(macro into);
 
-// `into` (and `onto`) never crosses a label boundary. A
-// `labels` declaration mints a `newtype` (`Wrap`); the label is
-// structurally opaque to the `into` macro, identical in kind to a
-// user-declared `newtype`. So even though the payload of `wrap` is
-// `A`, the `into` macro will not peel the wrapper to expose it — `wrap`
-// `Wrap` and `A` are simply different nominal types from its perspective.
-// To move between a payload type and `F` you write `{f = x}`
-// (sugar for the constructor-member call) or call `F.get`.
+// `into` (and `onto`) never crosses a nominal boundary. Even though
+// the payload of `Wrap` is `A`, the macro does not unwrap `Wrap` to
+// expose `A`. The projector `Wrap.get` crosses that boundary explicitly.
 // Exit code 15 (macro error).
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-labels { wrap: A };
+type { Wrap: A }
 
 fn strip(w: Wrap) -> A { into(w) }

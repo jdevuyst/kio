@@ -1,5 +1,0 @@
-module main;
-
-labels { foo: . };
-
-fn bad() -> Foo { {foo, foo} }

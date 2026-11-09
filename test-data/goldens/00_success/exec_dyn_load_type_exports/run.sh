@@ -1,13 +1,13 @@
 #!/bin/sh
 #
-# Dyn-load member exports: a bridge-matched module's `pub newtype` members
+# Dyn-load member exports: a bridge-matched module's public nominal-type members
 # are loadable entries. The host lists the export surface (fn rows then
 # member rows, canonical signatures — a payload spelled through a public
 # `type` alias renders as the alias's structural form), round-trips a
 # polymorphic newtype's constructor and projector through the bare and
 # qualified spellings, drives an existential projector CPS with
 # host-built continuations, and probes the sealed surface — a
-# `pub(...)`-scoped member and fn, a `pub(path)`-scoped newtype's
+# `pub(...)`-scoped member and fn, a `pub(path)`-scoped nominal type's
 # members, a member of a module outside the bridge, and a leaf that is
 # no member — each absent.
 #

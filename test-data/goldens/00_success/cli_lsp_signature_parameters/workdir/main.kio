@@ -12,7 +12,7 @@ type Pair = Twice[.];
 
 type Higher[*F] = F[.] & F[.];
 
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A { pub mk; pub get } }
 
 fn pair(packet: . & .) { () }
 
@@ -72,7 +72,7 @@ pub fn inferred_product() -> . & . { generic(((), ())) }
 
 pub fn alias_product() { aliased((), ()) }
 
-pub fn higher_product() { higher[Box](Box.mk_box(()), Box.mk_box(())) }
+pub fn higher_product() { higher[Box](Box.mk(()), Box.mk(())) }
 
 pub fn returned_stage() { returned(())(()) }
 

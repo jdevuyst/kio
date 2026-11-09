@@ -1,14 +1,19 @@
 module testapi/main;
 
-import fixture/model(Report, {first}, {second});
+import fixture/model(First, Report, Second);
 import fixture/search(descend, descend_pending);
+import macros/row_macros(macro select);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-fn first(report: Report) -> I32 { report.?{first} }
+fn first(report: Report) -> I32 {
+  report.>select { First.get }
+}
 
-fn second(report: Report) -> I32 { report.?{second} }
+fn second(report: Report) -> I32 {
+  report.>select { Second.get }
+}
 
 pub fn main() {
   let tail = descend(5000);

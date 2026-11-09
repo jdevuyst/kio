@@ -1,38 +1,39 @@
 module graph_routes/model;
 
+import macros/row_macros(macro record);
 import testapi(I32);
 
-pub labels Search_state = {
-, round: I32
-, cursor: I32
-, da: I32
-, db: I32
-, dc: I32
-, dd: I32
-, de: I32
-, df: I32
-, dg: I32
-, visited: I32
-, relaxed: I32
-, blocked: I32
+pub type Search_state = {
+  Round: I32;
+  Cursor: I32;
+  Da: I32;
+  Db: I32;
+  Dc: I32;
+  Dd: I32;
+  De: I32;
+  Df: I32;
+  Dg: I32;
+  Visited: I32;
+  Relaxed: I32;
+  Blocked: I32
 };
 
 pub fn inf() -> I32 { 999 }
 
 pub fn initial() -> Search_state {
-  {
-  , round = 0
-  , cursor = 0
-  , da = 0
-  , db = inf()
-  , dc = inf()
-  , dd = inf()
-  , de = inf()
-  , df = inf()
-  , dg = inf()
-  , visited = 0
-  , relaxed = 0
-  , blocked = 0
+  record {
+    Round.mk(0);
+    Cursor.mk(0);
+    Da.mk(0);
+    Db.mk(inf());
+    Dc.mk(inf());
+    Dd.mk(inf());
+    De.mk(inf());
+    Df.mk(inf());
+    Dg.mk(inf());
+    Visited.mk(0);
+    Relaxed.mk(0);
+    Blocked.mk(0)
   }
 }
 
@@ -50,18 +51,18 @@ pub fn rebuild(
 , relaxed_value: I32
 , blocked_value: I32
 ) -> Search_state {
-  {
-  , round = round_value
-  , cursor = cursor_value
-  , da = da_value
-  , db = db_value
-  , dc = dc_value
-  , dd = dd_value
-  , de = de_value
-  , df = df_value
-  , dg = dg_value
-  , visited = visited_value
-  , relaxed = relaxed_value
-  , blocked = blocked_value
+  record {
+    Round.mk(round_value);
+    Cursor.mk(cursor_value);
+    Da.mk(da_value);
+    Db.mk(db_value);
+    Dc.mk(dc_value);
+    Dd.mk(dd_value);
+    De.mk(de_value);
+    Df.mk(df_value);
+    Dg.mk(dg_value);
+    Visited.mk(visited_value);
+    Relaxed.mk(relaxed_value);
+    Blocked.mk(blocked_value)
   }
 }

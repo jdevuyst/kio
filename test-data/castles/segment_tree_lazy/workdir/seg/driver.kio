@@ -9,24 +9,13 @@ module seg/driver;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import seg/brute(Brute, brute_min, brute_point_set, brute_range_add, brute_sum, touches);
 import seg/num(and, int_eq);
 import seg/ops(point_set, query_min, query_sum, range_add);
 import seg/report(cat, cat3, cost, index2, line, num, range, signed, yes_no);
-import seg/script(
-, Add_range
-, Min_range
-, Op
-, Set_point
-, Sum_range
-, op_at
-, op_count
-, {add_range}
-, {min_range}
-, {set_point}
-, {sum_range}
-);
+import seg/script(Add_range, Min_range, Op, Set_point, Sum_range, op_at, op_count);
 import seg/tree(Tree, tag_pushes, visits);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
@@ -34,12 +23,12 @@ import testapi/iter(loop);
 
 /// What one operation produced: either nothing to compare (an update), or
 /// the two answers a query drew from the two structures.
-labels Outcome = { settled: String } | { answered: String & I32 & I32 };
+type Outcome = { Settled: String } | { Answered: String & I32 & I32 };
 
-fn settled(text: String) -> Outcome { ({settled = text}.>widen_sum)[Outcome] }
+fn settled(text: String) -> Outcome { (Settled.mk(text).>widen_sum)[Outcome] }
 
 fn answered(text: String, from_tree: I32, from_ref: I32) -> Outcome {
-  ({answered = (text, from_tree, from_ref)}.>widen_sum)[Outcome]
+  (Answered.mk((text, from_tree, from_ref)).>widen_sum)[Outcome]
 }
 
 /// Run one operation against both structures. The two calls are always
@@ -48,21 +37,21 @@ fn apply_op(t: Tree, base: Brute, op: Op) -> Outcome {
   match(op) {
     (
     , .(a: Add_range) {
-        let .(l: I32, r: I32, x: I32) = a.?{add_range};
+        let .(l: I32, r: I32, x: I32) = a.>select { Add_range.get };
         range_add(t, l, r, x);
         brute_range_add(base, l, r, x);
         settled(cat3("add ", range(l, r), cat(" ", signed(x))))
       }
     , .(q: Sum_range) {
-        let .(l: I32, r: I32) = q.?{sum_range};
+        let .(l: I32, r: I32) = q.>select { Sum_range.get };
         answered(cat("sum ", range(l, r)), query_sum(t, l, r), brute_sum(base, l, r))
       }
     , .(q: Min_range) {
-        let .(l: I32, r: I32) = q.?{min_range};
+        let .(l: I32, r: I32) = q.>select { Min_range.get };
         answered(cat("min ", range(l, r)), query_min(t, l, r), brute_min(base, l, r))
       }
     , .(s: Set_point) {
-        let .(i: I32, v: I32) = s.?{set_point};
+        let .(i: I32, v: I32) = s.>select { Set_point.get };
         point_set(t, i, v);
         brute_point_set(base, i, v);
         settled(cat(cat3("set [", num(i), "] := "), num(v)))
@@ -78,9 +67,12 @@ fn stamp(k: I32) -> String { cat3("op", index2(add_i32(k, 1)), "  ") }
 fn record(k: I32, outcome: Outcome, spent: String) -> Bool {
   match(outcome) {
     (
-    , .(s: Settled) { line(cat3(stamp(k), s.?{settled}, spent)); .t }
+    , .(s: Settled) {
+        line(cat3(stamp(k), s.>select { Settled.get }, spent));
+        .t
+      }
     , .(a: Answered) {
-        let .(text: String, from_tree: I32, from_ref: I32) = a.?{answered};
+        let .(text: String, from_tree: I32, from_ref: I32) = a.>select { Answered.get };
         let agreed = int_eq(from_tree, from_ref);
         let shown =
           cat3(

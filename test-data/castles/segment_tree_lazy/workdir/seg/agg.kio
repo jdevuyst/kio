@@ -8,6 +8,7 @@
 /// No leaf has to be touched.
 module seg/agg;
 
+import macros/row_macros(macro select);
 import seg/num(int_min);
 import testapi(I32);
 import testapi/arith(add_i32, mul_i32);
@@ -16,13 +17,17 @@ import testapi/arith(add_i32, mul_i32);
 /// `int_min` as the identity for the minimum.
 literal unreachable_high = 1000000;
 
-pub labels Agg = { sum: I32, min: I32 };
+pub type Agg = { Sum: I32; Min: I32 };
 
-pub fn agg(total: I32, low: I32) -> Agg { {sum = total, min = low} }
+pub fn agg(total: I32, low: I32) -> Agg { (Sum.mk(total), Min.mk(low)) }
 
-pub fn agg_sum(a: Agg) -> I32 { a.?{sum} }
+pub fn agg_sum(a: Agg) -> I32 {
+  a.>select { Sum.get }
+}
 
-pub fn agg_min(a: Agg) -> I32 { a.?{min} }
+pub fn agg_min(a: Agg) -> I32 {
+  a.>select { Min.get }
+}
 
 /// One cell's aggregate: it is its own sum and its own minimum.
 pub fn leaf_agg(value: I32) -> Agg { agg(value, value) }

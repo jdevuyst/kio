@@ -109,7 +109,7 @@ pub fn grid(vals: Values) -> String {
 }
 
 rec(loop) fn names_onto(xs: List[Addr], sep: String, acc: String) -> String {
-  match(xs.>List.unpack) {
+  match(xs.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) { recur names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
     , .(_empty: .) { acc }
@@ -122,7 +122,7 @@ pub fn addr_list(xs: List[Addr]) -> String {
 }
 
 rec(loop) fn listing_onto(s: Sheet, todo: List[Addr], acc: String) -> String {
-  match(todo.>List.unpack) {
+  match(todo.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         let line =

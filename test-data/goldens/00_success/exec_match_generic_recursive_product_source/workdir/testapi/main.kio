@@ -5,21 +5,21 @@ import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io(print);
 
-labels { light: ., dark: . };
+type { Light: .; Dark: . }
 
 type Shade = Light | Dark;
 
-rec labels { tree[A][B]: . | (Shade & A & B & Tree[A][B] & Tree[A][B]) };
+rec type { Tree[A][B]: . | (Shade & A & B & Tree[A][B] & Tree[A][B]) }
 
-fn light() -> Shade { widen_sum({light=})[Light | Dark] }
+fn light() -> Shade { widen_sum(Light.mk(()))[Light | Dark] }
 
 fn empty[A][B]() -> Tree[A][B] {
-  {tree = widen_sum(())[. | (Shade & A & B & Tree[A][B] & Tree[A][B])]}
+  Tree.mk(widen_sum(())[. | (Shade & A & B & Tree[A][B] & Tree[A][B])])
 }
 
 fn node[A][B](key: A, value: B, left: Tree[A][B], right: Tree[A][B]) -> Tree[A][B] {
-  {tree = widen_sum((light(), key, value, left, right))[| .
-  | (Shade & A & B & Tree[A][B] & Tree[A][B])]}
+  Tree.mk(widen_sum((light(), key, value, left, right))[| .
+  | (Shade & A & B & Tree[A][B] & Tree[A][B])])
 }
 
 fn un_tree[A][B](tree: Tree[A][B]) -> . | (Shade & A & B & Tree[A][B] & Tree[A][B]) {

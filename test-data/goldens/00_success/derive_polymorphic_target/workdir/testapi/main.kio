@@ -7,16 +7,16 @@ import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+pub type { Cell[A]: A { pub mk; pub get } }
 
-pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+pub type { Pair[A][B]: A & B { pub mk; pub get } }
 
-pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+pub type { Render[A]: A -> String { pub mk; pub get } }
 
 fn render_pair[A][B](ra: Render[A], rb: Render[B]) -> Render[Pair[A][B]] {
-  Render.mk_render[Pair[A][B]](.(p) {
-    let left = Render.render(ra)(__fst__[A][B](Pair.un_pair[A][B](p)));
-    let right = Render.render(rb)(__snd__[A][B](Pair.un_pair[A][B](p)));
+  Render.mk[Pair[A][B]](.(p) {
+    let left = Render.get(ra)(__fst__[A][B](Pair.get[A][B](p)));
+    let right = Render.get(rb)(__snd__[A][B](Pair.get[A][B](p)));
     string_concat(left, right)
   })
 }
@@ -32,18 +32,18 @@ fn paired_render[A](get_elem: . -> Render[A]) -> Render[Pair[A][A]] {
 }
 
 fn render_cell_string() -> Render[Cell[String]] {
-  Render.mk_render(.(c) { Cell.un_cell(c) })
+  Render.mk(.(c) { Cell.get(c) })
 }
 
 // Instantiate the combinator at `A = Cell(String)`.
 fn run() -> String {
   let inst = paired_render(render_cell_string);
   let value =
-    Pair.mk_pair[Cell[String]][Cell[String]](__pair__[Cell[String]][Cell[String]](
-    , Cell.mk_cell("derive! poly:"[String])
-    , Cell.mk_cell(" ok\n"[String])
+    Pair.mk[Cell[String]][Cell[String]](__pair__[Cell[String]][Cell[String]](
+    , Cell.mk("derive! poly:"[String])
+    , Cell.mk(" ok\n"[String])
     ));
-  Render.render(inst)(value)
+  Render.get(inst)(value)
 }
 
 pub fn main() { print(run()) }

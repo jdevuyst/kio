@@ -45,7 +45,6 @@ run_probe() {
 }
 
 run_probe mk
-run_probe seal_export_infos
-run_probe open_export_infos
+run_probe get
 
 exit 14

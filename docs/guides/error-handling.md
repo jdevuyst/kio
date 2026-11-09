@@ -47,11 +47,11 @@ Both moves fall out of the spine palette's general rules. `widen_sum`'s capacity
 For failure that *is* reachable, the error arm carries a real type — a message, a code, a structured error value:
 
 ```kio {@module}
-labels Diverror = { div_by_zero: . };
+type Diverror = { Div_by_zero: . };
 
 fn safe_div(a: Int, b: Int, is_zero: Bool) -> Int | Div_by_zero {
   if(is_zero) {
-    widen_sum({div_by_zero=})
+    widen_sum(Div_by_zero.mk(()))
   } else {
     widen_sum(add(a, b))
     // stand-in for the real division
@@ -83,7 +83,7 @@ When several fallible steps chain, each one's error arm has to flow through. Mac
 `widen_sum` extends a narrower error into a wider error sum, so a step that can only fail one way slots into a pipeline that can fail several:
 
 ```kio {@module}
-labels Overflowtag = { overflow: . };
+type Overflowtag = { Overflow: . };
 
 // step error: Div_by_zero
 // pipeline error: Div_by_zero | Overflow

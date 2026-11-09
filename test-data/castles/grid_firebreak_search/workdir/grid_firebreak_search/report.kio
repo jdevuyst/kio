@@ -1,16 +1,17 @@
 module grid_firebreak_search/report;
 
 import grid_firebreak_search/model(
+, Blocked
+, Candidate_count
+, Frontier_count
 , Plan
-, {blocked}
-, {candidate_count}
-, {frontier_count}
-, {score}
-, {selected}
-, {spend}
+, Score
+, Selected
+, Spend
 );
 import grid_firebreak_search/search as search;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -47,14 +48,14 @@ rec(iter.loop) fn print_cell_list(cursor: I32, cells: Array[I32]) {
 fn print_plan(plan: Plan) {
   io.print("grid_firebreak_search\n");
   io.print("grid: 6x5 cells=30\n");
-  line_i32("frontier sources: ", plan.?{frontier_count});
-  line_i32("candidate cells: ", plan.?{candidate_count});
+  line_i32("frontier sources: ", plan.>select { Frontier_count.get });
+  line_i32("candidate cells: ", plan.>select { Candidate_count.get });
   io.print("chosen firebreak cells: ");
-  print_cell_list(0, plan.?{selected});
-  line_i32("budget spent: ", plan.?{spend});
-  line_i32("risk blocked: ", plan.?{blocked});
-  line_i32("plan score: ", plan.?{score});
-  line_bool("budget ok: ", plan.?{spend})
+  print_cell_list(0, plan.>select { Selected.get });
+  line_i32("budget spent: ", plan.>select { Spend.get });
+  line_i32("risk blocked: ", plan.>select { Blocked.get });
+  line_i32("plan score: ", plan.>select { Score.get });
+  line_bool("budget ok: ", plan.>select { Spend.get })
 }
 
 pub fn run() { print_plan(search.make_plan()) }

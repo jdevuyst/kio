@@ -1,5 +1,0 @@
-module main;
-
-import support({hepler});
-
-pub fn main() { let _ = {helper=}; () }

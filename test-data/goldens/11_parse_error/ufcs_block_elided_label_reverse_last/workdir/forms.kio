@@ -3,27 +3,24 @@ module forms;
 import __comptime__;
 
 pure fn arrange_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _a: __Type__
 , _b: __Type__
 , _c: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-, tail: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, __intrinsic_pair__(ct, body, tail)) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { inputs }
 
-pub macro combine : [A][B][C] A -> B -> C -> (A & (B & C)) {
+pub macro combine : [A][B][C] (A & B & C) -> (A & (B & C)) {
   trailing product;
   trailing product after;
   impl arrange_impl
 }
 
 pure fn pair_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _a: __Type__
 , _b: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { inputs }
 
-pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+pub macro block_pair : [A][B] (A & B) -> (A & B) { trailing product; impl pair_impl }

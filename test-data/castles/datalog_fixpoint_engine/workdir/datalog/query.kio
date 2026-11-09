@@ -6,12 +6,12 @@
 module datalog/query;
 
 import datalog/atom(Args, Atom, Atoms, T_const, T_var, Term, args_of);
-import datalog/atom({t_var});
 import datalog/list as list;
 import datalog/subst as subst;
 import datalog/unify as unify;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
@@ -27,17 +27,17 @@ fn holds_code(codes: Codes, code: I32) -> Bool {
 }
 
 rec(loop) fn vars_from(args: Args, acc: Codes) -> Codes {
-  match(args.>list.List.un_list) {
+  match(args.>list.List.get) {
     (
     , .(t: Term, rest: Args) {
         match(t) {
           (
           , .(_k: T_const) { recur vars_from(rest, acc) }
           , .(v: T_var) {
-              if(holds_code(acc, v.?{t_var})) {
+              if(holds_code(acc, v.>select { T_var.get })) {
                 recur vars_from(rest, acc)
               } else {
-                recur vars_from(rest, list.snoc(acc, v.?{t_var}))
+                recur vars_from(rest, list.snoc(acc, v.>select { T_var.get }))
               }
             }
           )

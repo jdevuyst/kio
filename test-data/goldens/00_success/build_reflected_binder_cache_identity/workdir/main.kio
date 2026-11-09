@@ -6,7 +6,7 @@ import __comptime__;
 
 type Pair_view = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -30,7 +30,7 @@ pure fn skip[A][B](ct: __Comptime__, view: A | B, next: B -> __Checked_term__) -
   )
 }
 
-pure fn with_var(ct: __Comptime__, typ: __Type__, next: __Type_var__ -> __Checked_term__) -> __Checked_term__ {
+pure fn with_forall(ct: __Comptime__, typ: __Type__, next: Forall_view -> __Checked_term__) -> __Checked_term__ {
   skip(
   , ct
   , __type_view__(ct, typ)
@@ -53,7 +53,7 @@ pure fn with_var(ct: __Comptime__, typ: __Type__, next: __Type_var__ -> __Checke
                   , .(tail5: Tail5) -> __Checked_term__ {
                       __either__(
                       , tail5
-                      , .(view: Forall_view) -> __Checked_term__ { next(__fst__(view)) }
+                      , .(view: Forall_view) -> __Checked_term__ { next(view) }
                       , .(_unexpected: Tail6) -> __Checked_term__ {
                           __macro_error__(ct, "missing forall view")
                         }
@@ -70,13 +70,12 @@ pure fn with_var(ct: __Comptime__, typ: __Type__, next: __Type_var__ -> __Checke
   )
 }
 
+pure fn with_var(ct: __Comptime__, typ: __Type__, next: __Type_var__ -> __Checked_term__) -> __Checked_term__ {
+  with_forall(ct, typ, .(view: Forall_view) -> __Checked_term__ { next(__fst__(view)) })
+}
+
 pure fn identity_body(ct: __Comptime__, var: __Type_var__) -> __Type__ {
-  __type_arrow__(
-  , ct
-  , __type_var__(ct, var)
-  , __type_arity_succ__(ct, __type_arity_zero__(ct))
-  , __type_var__(ct, var)
-  )
+  __type_arrow__(ct, __type_var__(ct, var), __type_var__(ct, var))
 }
 
 pure fn cold_single(ct: __Comptime__) -> __Checked_term__ {
@@ -130,8 +129,18 @@ pure fn compare_projected(ct: __Comptime__, first: __Type__, second: __Type__) -
       , .(second_var: __Type_var__) -> __Checked_term__ {
           __if_then_else__(
           , __type_var_equal__(ct, first_var, second_var)
-          , .() -> __Checked_term__ { __macro_error__(ct, "independent fresh binders collapsed") }
-          , .() -> __Checked_term__ { __term_unit__(ct) }
+          , .() -> __Checked_term__ {
+              __if_then_else__(
+              , __type_equal__(ct, __type_var__(ct, first_var), __type_var__(ct, second_var))
+              , .() -> __Checked_term__ { __term_unit__(ct) }
+              , .() -> __Checked_term__ {
+                  __macro_error__(ct, "converted corresponding binders differed")
+                }
+              )
+            }
+          , .() -> __Checked_term__ {
+              __macro_error__(ct, "reconstructed corresponding binders differed")
+            }
           )
         }
       )
@@ -179,6 +188,89 @@ pure fn factory_pair(ct: __Comptime__) -> __Checked_term__ {
   compare_projected(ct, a, b)
 }
 
+pure fn shared_pair(ct: __Comptime__) -> __Checked_term__ {
+  let scheme = fresh_identity(ct);
+  compare_projected(ct, scheme, scheme)
+}
+
+pure fn written_pair(ct: __Comptime__) -> __Checked_term__ {
+  compare_projected(ct, __reflect_type__(ct)[[X] X -> X], __reflect_type__(ct)[[Y] Y -> Y])
+}
+
+pure fn distinct_vars(ct: __Comptime__, first: __Type_var__, second: __Type_var__) -> __Checked_term__ {
+  __if_then_else__(
+  , __type_var_equal__(ct, first, second)
+  , .() -> __Checked_term__ { __macro_error__(ct, "distinct variable handles collapsed") }
+  , .() -> __Checked_term__ {
+      __if_then_else__(
+      , __type_equal__(ct, __type_var__(ct, first), __type_var__(ct, second))
+      , .() -> __Checked_term__ { __macro_error__(ct, "distinct converted variables collapsed") }
+      , .() -> __Checked_term__ { __term_unit__(ct) }
+      )
+    }
+  )
+}
+
+pure fn distinct_schemes(ct: __Comptime__, first: __Type__, second: __Type__) -> __Checked_term__ {
+  with_var(
+  , ct
+  , first
+  , .(a: __Type_var__) -> __Checked_term__ {
+      with_var(ct, second, .(b: __Type_var__) -> __Checked_term__ { distinct_vars(ct, a, b) })
+    }
+  )
+}
+
+pure fn distinct_positions(ct: __Comptime__) -> __Checked_term__ {
+  with_forall(
+  , ct
+  , __reflect_type__(ct)[[A][B] A -> B]
+  , .(outer: Forall_view) -> __Checked_term__ {
+      with_var(
+      , ct
+      , __snd__(__snd__(outer))
+      , .(inner: __Type_var__) -> __Checked_term__ { distinct_vars(ct, __fst__(outer), inner) }
+      )
+    }
+  )
+}
+
+pure fn distinct_kinds(ct: __Comptime__) -> __Checked_term__ {
+  distinct_schemes(ct, __reflect_type__(ct)[[A] A -> A], __reflect_type__(ct)[[*A] A[.] -> A[.]])
+}
+
+pure fn distinct_live(ct: __Comptime__) -> __Checked_term__ {
+  let nested =
+    __type_forall__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(outer: __Type_var__) -> __Type__ {
+        __type_forall__(
+        , ct
+        , __type_arity_zero__(ct)
+        , .(inner: __Type_var__) -> __Type__ {
+            __if_then_else__(
+            , __type_var_equal__(ct, outer, inner)
+            , .() -> __Type__ { __type_unit__(ct) }
+            , .() -> __Type__ {
+                __if_then_else__(
+                , __type_equal__(ct, __type_var__(ct, outer), __type_var__(ct, inner))
+                , .() -> __Type__ { __type_unit__(ct) }
+                , .() -> __Type__ { identity_body(ct, inner) }
+                )
+              }
+            )
+          }
+        )
+      }
+    );
+  __if_then_else__(
+  , __type_equal__(ct, nested, __reflect_type__(ct)[[A][B] B -> B])
+  , .() -> __Checked_term__ { __term_unit__(ct) }
+  , .() -> __Checked_term__ { __macro_error__(ct, "live binder closure changed its type") }
+  )
+}
+
 pure fn probe_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, .f) }
 
 pure fn reverse_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, .t) }
@@ -201,4 +293,29 @@ fn cold() { cold_probe(()) }
 
 fn factory() { factory_probe(()) }
 
-pub fn main() { forward(); reverse(); cold(); factory() }
+macro live_probe : . -> . { impl distinct_live }
+
+macro shared_probe : . -> . { impl shared_pair }
+
+macro written_probe : . -> . { impl written_pair }
+
+macro position_probe : . -> . { impl distinct_positions }
+
+macro kind_probe : . -> . { impl distinct_kinds }
+
+macro free_probe : [Left][Right] . -> . { impl distinct_schemes }
+
+fn distinct_free[Left][Right]() { free_probe[[A] Left -> A][[A] Right -> A](()) }
+
+pub fn main() {
+  forward();
+  reverse();
+  cold();
+  factory();
+  shared_probe(());
+  written_probe(());
+  position_probe(());
+  kind_probe(());
+  live_probe(());
+  distinct_free[.][!](())
+}

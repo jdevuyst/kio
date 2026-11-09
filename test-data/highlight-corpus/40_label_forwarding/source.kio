@@ -1,22 +1,17 @@
 module forwarding;
 import origin as provider;
 
-labels { original: . };
-type {local} = {original};
-type {type} = {original};
-type {next} = {type};
-pub type {renamed} = {provider.original};
-pub(forwarding) type {scoped} = {provider.original};
+type { Original: .; };
+type Local = Original;
+type Type = Original;
+type Next = Type;
+pub type Renamed = provider.Original;
+pub(forwarding) type Scoped = provider.Original;
 
-/// A documented forwarding declaration.
-type {
-  /// Interior trivia is not declaration documentation.
-  documented
-} = {
-  provider.
+/// A documented identity alias.
+type Documented =
   // Keep the target leaf separate from its prefix.
-  original
-};
+  provider.Original;
 
 fn type() -> . { () }
 fn local() -> . { () }

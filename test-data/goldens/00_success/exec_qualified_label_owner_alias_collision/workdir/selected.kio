@@ -2,6 +2,8 @@ module selected;
 
 import testapi(Bool);
 
-pub labels Card = { flag: Bool };
+pub type { Flag: Bool { pub mk; pub get } }
 
-pub fn make(flag: Bool) -> Card { {flag} }
+pub type Card = Flag;
+
+pub fn make(flag: Bool) -> Card { Flag.mk(flag) }

@@ -1,0 +1,13 @@
+module main;
+
+import macros/row_macros(macro select);
+
+type { A: . { mk; get } }
+
+type { B: . { mk; get } }
+
+type { C: . { mk; get } }
+
+fn rejected() {
+  ((A.mk(()), B.mk(())), C.mk(())).>select { A.get }
+}

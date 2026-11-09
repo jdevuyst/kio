@@ -2,6 +2,6 @@ module labels;
 
 import testapi(String);
 
-pub labels { item: String };
+pub type { Item: String { pub mk; pub get } }
 
 pub fn item() -> String { "ordinary\n" }

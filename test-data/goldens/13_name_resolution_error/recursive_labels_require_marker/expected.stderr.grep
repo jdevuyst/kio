@@ -1,1 +1,2 @@
 recursive data declaration requires `rec`
+`rec`.*`type`|`rec type`

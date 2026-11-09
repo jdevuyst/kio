@@ -218,10 +218,6 @@ impl Palette {
             TokenKind::EntityNameType => Style::new().fg(Color::Cyan),
             // Module path segments — cyan.
             TokenKind::EntityNameModule => Style::new().fg(Color::Cyan),
-            // Label names — yellow.
-            TokenKind::EntityNameLabel
-            | TokenKind::EntityNameLabelReference
-            | TokenKind::EntityNameQualifiedLabelReference => Style::new().fg(Color::Yellow),
             // Parameter binders — red.
             TokenKind::VariableParameter => Style::new().fg(Color::Red),
             // Plain identifiers and the unclassified punctuation set
@@ -283,12 +279,6 @@ impl Palette {
             TokenKind::EntityNameType => Style::new().fg(Color::Rgb(86, 182, 194)),
             // Module path segments — foreground-grey, underline.
             TokenKind::EntityNameModule => Style::new().fg(Color::Rgb(171, 178, 191)).underline(),
-            // Label names — gold.
-            TokenKind::EntityNameLabel
-            | TokenKind::EntityNameLabelReference
-            | TokenKind::EntityNameQualifiedLabelReference => {
-                Style::new().fg(Color::Rgb(229, 192, 123))
-            }
             // Parameter binders — coral, italic.
             TokenKind::VariableParameter => Style::new().fg(Color::Rgb(224, 108, 117)).italic(),
             // Bracket / separator punctuation — de-emphasised comment-grey.
@@ -335,10 +325,6 @@ impl Palette {
             TokenKind::EntityNameType => "\x1b[36m",
             // Module path segments — cyan.
             TokenKind::EntityNameModule => "\x1b[36m",
-            // Label names — yellow.
-            TokenKind::EntityNameLabel
-            | TokenKind::EntityNameLabelReference
-            | TokenKind::EntityNameQualifiedLabelReference => "\x1b[33m",
             // Parameter binders — red.
             TokenKind::VariableParameter => "\x1b[31m",
             // Plain identifiers and the unclassified punctuation set
@@ -398,10 +384,6 @@ impl Palette {
             // dotted path reads as a path without competing with the
             // names around it.
             TokenKind::EntityNameModule => "\x1b[4m\x1b[38;2;171;178;191m",
-            // Label names — gold.
-            TokenKind::EntityNameLabel
-            | TokenKind::EntityNameLabelReference
-            | TokenKind::EntityNameQualifiedLabelReference => "\x1b[38;2;229;192;123m",
             // Parameter binders — coral, italic.
             TokenKind::VariableParameter => "\x1b[3m\x1b[38;2;224;108;117m",
             // Bracket / separator punctuation — de-emphasised in the
@@ -1147,9 +1129,6 @@ mod tests {
             EntityNameFunctionReference,
             EntityNameType,
             EntityNameModule,
-            EntityNameLabel,
-            EntityNameLabelReference,
-            EntityNameQualifiedLabelReference,
             VariableParameter,
             PunctuationBracket,
             PunctuationSeparator,

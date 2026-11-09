@@ -5,12 +5,11 @@ import testapi/arith(add_i32);
 import testapi/iter(loop);
 import testapi/model as model;
 import testapi/model(Expr, Leaf, Pair, Summary);
-import testapi/model({value});
 import testapi/normalize(normalize);
 
 fn add_summary(left: Summary, right: Summary) -> Summary {
-  let .({value as left_value}) = left;
-  let .({value as right_value}) = right;
+  let left_value = model.Value.get(left);
+  let right_value = model.Value.get(right);
   model.summary(add_i32(left_value, right_value))
 }
 

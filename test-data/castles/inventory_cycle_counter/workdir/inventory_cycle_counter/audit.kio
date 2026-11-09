@@ -1,11 +1,14 @@
 module inventory_cycle_counter/audit;
 
-import inventory_cycle_counter/model(Bin, {expected}, {observed});
+import inventory_cycle_counter/model(Bin, Expected, Observed);
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 
-pub fn delta(bin: Bin) -> I32 { arith.sub_i32(bin.?{observed}, bin.?{expected}) }
+pub fn delta(bin: Bin) -> I32 {
+  arith.sub_i32(bin.>select { Observed.get }, bin.>select { Expected.get })
+}
 
 pub fn abs_delta(bin: Bin) -> I32 {
   let d = delta(bin);
@@ -13,9 +16,9 @@ pub fn abs_delta(bin: Bin) -> I32 {
 }
 
 pub fn status(bin: Bin) -> String {
-  if(arith.eq_i32(bin.?{observed}, bin.?{expected})) {
+  if(arith.eq_i32(bin.>select { Observed.get }, bin.>select { Expected.get })) {
     "ok"
-  } else if(arith.lt_i32(bin.?{observed}, bin.?{expected})) {
+  } else if(arith.lt_i32(bin.>select { Observed.get }, bin.>select { Expected.get })) {
     "missing"
   } else {
     "overage"

@@ -1,0 +1,2 @@
+`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure
+root=3, current=3, next=3

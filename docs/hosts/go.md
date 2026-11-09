@@ -355,9 +355,9 @@ do not use content hashes or registry-order suffixes. Stable site aliases are
 the names normal host code should use.
 
 For public-newtype members, the stable alias keeps the module, newtype, and
-member boundaries distinct: `A_b.c` in module `api` uses
-`Exp_KioItem_api__AB__c_<slot>`, while `A.b_c` uses the readable
-`Exp_Api__A_bC_<slot>`.
+member boundaries distinct: `A_b.mk` in module `api` uses
+`Exp_KioItem_api__AB__mk_<slot>`, while `A.mk` uses the readable
+`Exp_Api__A_mk_<slot>`.
 
 ### Passing values through generic slots and host containers
 

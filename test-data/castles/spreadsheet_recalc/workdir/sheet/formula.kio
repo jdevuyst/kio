@@ -5,6 +5,7 @@ module sheet/formula;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr, add_all, add_unique, addr_name, col_of, make_addr, row_of);
 import sheet/list(List, cons, nil);
@@ -15,44 +16,44 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 rec {
-  pub labels Expr_node =
-    { ref_at: Addr }
-    | { lit: I32 }
-    | { add_l: Expr, add_r: Expr }
-    | { sub_l: Expr, sub_r: Expr }
-    | { mul_l: Expr, mul_r: Expr }
-    | { sum_lo: Addr, sum_hi: Addr }
-    | { max_lo: Addr, max_hi: Addr }
-    | { if_c: Expr, if_t: Expr, if_e: Expr };
-  pub newtype Expr : Expr_node { pub constructor expr; pub projector un_expr }
+  pub type Expr_node =
+    | { Ref_at: Addr }
+    | { Lit: I32 }
+    | { Add_l: Expr; Add_r: Expr }
+    | { Sub_l: Expr; Sub_r: Expr }
+    | { Mul_l: Expr; Mul_r: Expr }
+    | { Sum_lo: Addr; Sum_hi: Addr }
+    | { Max_lo: Addr; Max_hi: Addr }
+    | { If_c: Expr; If_t: Expr; If_e: Expr };
+  pub type { Expr: Expr_node { pub mk; pub get } }
 }
 
-pub fn cell_ref(a: Addr) -> Expr { Expr.expr(({ref_at = a}.>widen_sum)[Expr_node]) }
+pub fn cell_ref(a: Addr) -> Expr { Expr.mk((Ref_at.mk(a).>widen_sum)[Expr_node]) }
 
-pub fn lit_num(n: I32) -> Expr { Expr.expr(({lit = n}.>widen_sum)[Expr_node]) }
+pub fn lit_num(n: I32) -> Expr { Expr.mk((Lit.mk(n).>widen_sum)[Expr_node]) }
 
 pub fn add(left: Expr, right: Expr) -> Expr {
-  Expr.expr(({add_l = left, add_r = right}.>widen_sum)[Expr_node])
+  Expr.mk(((Add_l.mk(left), Add_r.mk(right)).>widen_sum)[Expr_node])
 }
 
 pub fn sub(left: Expr, right: Expr) -> Expr {
-  Expr.expr(({sub_l = left, sub_r = right}.>widen_sum)[Expr_node])
+  Expr.mk(((Sub_l.mk(left), Sub_r.mk(right)).>widen_sum)[Expr_node])
 }
 
 pub fn mul(left: Expr, right: Expr) -> Expr {
-  Expr.expr(({mul_l = left, mul_r = right}.>widen_sum)[Expr_node])
+  Expr.mk(((Mul_l.mk(left), Mul_r.mk(right)).>widen_sum)[Expr_node])
 }
 
 pub fn sum_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr(({sum_lo = lo, sum_hi = hi}.>widen_sum)[Expr_node])
+  Expr.mk(((Sum_lo.mk(lo), Sum_hi.mk(hi)).>widen_sum)[Expr_node])
 }
 
 pub fn max_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr(({max_lo = lo, max_hi = hi}.>widen_sum)[Expr_node])
+  Expr.mk(((Max_lo.mk(lo), Max_hi.mk(hi)).>widen_sum)[Expr_node])
 }
 
 pub fn if_else(cond: Expr, then_arm: Expr, else_arm: Expr) -> Expr {
-  Expr.expr(({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum)[Expr_node])
+  Expr.mk(((If_c.mk(cond), If_t.mk(then_arm), If_e.mk(else_arm)).>widen_sum)[Expr_node])
 }
 
 rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List[Addr]) -> List[Addr] {
@@ -73,28 +74,34 @@ pub fn range_cells(lo: Addr, hi: Addr) -> List[Addr] {
 /// The cells this formula reads, in first-mention order. Each address lands
 /// once, so an aggregate overlapping an explicit reference is still one edge.
 pub rec(loop) fn precedents_onto(e: Expr, acc: List[Addr]) -> List[Addr] {
-  match(e.>Expr.un_expr) {
+  match(e.>Expr.get) {
     (
-    , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
+    , .(r: Ref_at) {
+        add_unique(acc, r.>select { Ref_at.get })
+      }
     , .(_n: Lit) { acc }
     , .(left: Add_l, right: Add_r) {
-        let seen = recur(cont) precedents_onto(left.?{add_l}, acc);
-        recur precedents_onto(right.?{add_r}, seen)
+        let seen = recur(cont) precedents_onto(left.>select { Add_l.get }, acc);
+        recur precedents_onto(right.>select { Add_r.get }, seen)
       }
     , .(left: Sub_l, right: Sub_r) {
-        let seen = recur(cont) precedents_onto(left.?{sub_l}, acc);
-        recur precedents_onto(right.?{sub_r}, seen)
+        let seen = recur(cont) precedents_onto(left.>select { Sub_l.get }, acc);
+        recur precedents_onto(right.>select { Sub_r.get }, seen)
       }
     , .(left: Mul_l, right: Mul_r) {
-        let seen = recur(cont) precedents_onto(left.?{mul_l}, acc);
-        recur precedents_onto(right.?{mul_r}, seen)
+        let seen = recur(cont) precedents_onto(left.>select { Mul_l.get }, acc);
+        recur precedents_onto(right.>select { Mul_r.get }, seen)
       }
-    , .(lo: Sum_lo, hi: Sum_hi) { add_all(acc, range_cells(lo.?{sum_lo}, hi.?{sum_hi})) }
-    , .(lo: Max_lo, hi: Max_hi) { add_all(acc, range_cells(lo.?{max_lo}, hi.?{max_hi})) }
+    , .(lo: Sum_lo, hi: Sum_hi) {
+        add_all(acc, range_cells(lo.>select { Sum_lo.get }, hi.>select { Sum_hi.get }))
+      }
+    , .(lo: Max_lo, hi: Max_hi) {
+        add_all(acc, range_cells(lo.>select { Max_lo.get }, hi.>select { Max_hi.get }))
+      }
     , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
-        let after_cond = recur(cont) precedents_onto(cond.?{if_c}, acc);
-        let after_then = recur(cont) precedents_onto(then_arm.?{if_t}, after_cond);
-        recur precedents_onto(else_arm.?{if_e}, after_then)
+        let after_cond = recur(cont) precedents_onto(cond.>select { If_c.get }, acc);
+        let after_then = recur(cont) precedents_onto(then_arm.>select { If_t.get }, after_cond);
+        recur precedents_onto(else_arm.>select { If_e.get }, after_then)
       }
     )
   }
@@ -114,43 +121,51 @@ fn aggregate(name: String, lo: Addr, hi: Addr) -> String {
 
 /// The formula as a user would write it.
 pub rec(loop) fn render_expr(e: Expr) -> String {
-  match(e.>Expr.un_expr) {
+  match(e.>Expr.get) {
     (
-    , .(r: Ref_at) { addr_name(r.?{ref_at}) }
-    , .(n: Lit) { int_to_string(n.?{lit}) }
+    , .(r: Ref_at) {
+        addr_name(r.>select { Ref_at.get })
+      }
+    , .(n: Lit) {
+        int_to_string(n.>select { Lit.get })
+      }
     , .(left: Add_l, right: Add_r) {
         infix(
-        , recur(cont) render_expr(left.?{add_l})
+        , recur(cont) render_expr(left.>select { Add_l.get })
         , " + "
-        , recur(cont) render_expr(right.?{add_r})
+        , recur(cont) render_expr(right.>select { Add_r.get })
         )
       }
     , .(left: Sub_l, right: Sub_r) {
         infix(
-        , recur(cont) render_expr(left.?{sub_l})
+        , recur(cont) render_expr(left.>select { Sub_l.get })
         , " - "
-        , recur(cont) render_expr(right.?{sub_r})
+        , recur(cont) render_expr(right.>select { Sub_r.get })
         )
       }
     , .(left: Mul_l, right: Mul_r) {
         infix(
-        , recur(cont) render_expr(left.?{mul_l})
+        , recur(cont) render_expr(left.>select { Mul_l.get })
         , " * "
-        , recur(cont) render_expr(right.?{mul_r})
+        , recur(cont) render_expr(right.>select { Mul_r.get })
         )
       }
-    , .(lo: Sum_lo, hi: Sum_hi) { aggregate("SUM", lo.?{sum_lo}, hi.?{sum_hi}) }
-    , .(lo: Max_lo, hi: Max_hi) { aggregate("MAX", lo.?{max_lo}, hi.?{max_hi}) }
+    , .(lo: Sum_lo, hi: Sum_hi) {
+        aggregate("SUM", lo.>select { Sum_lo.get }, hi.>select { Sum_hi.get })
+      }
+    , .(lo: Max_lo, hi: Max_hi) {
+        aggregate("MAX", lo.>select { Max_lo.get }, hi.>select { Max_hi.get })
+      }
     , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
         cat3(
         , "IF("
         , cat3(
-          , recur(cont) render_expr(cond.?{if_c})
+          , recur(cont) render_expr(cond.>select { If_c.get })
           , ", "
           , cat3(
-            , recur(cont) render_expr(then_arm.?{if_t})
+            , recur(cont) render_expr(then_arm.>select { If_t.get })
             , ", "
-            , recur(cont) render_expr(else_arm.?{if_e})
+            , recur(cont) render_expr(else_arm.>select { If_e.get })
             )
           )
         , ")"

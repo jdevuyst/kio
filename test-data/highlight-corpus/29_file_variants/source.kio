@@ -5,7 +5,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };

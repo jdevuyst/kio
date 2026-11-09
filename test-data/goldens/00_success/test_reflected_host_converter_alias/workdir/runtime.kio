@@ -1,0 +1,3 @@
+module runtime;
+
+host type Text;

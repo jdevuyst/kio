@@ -1,0 +1,10 @@
+package pre_input_close;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

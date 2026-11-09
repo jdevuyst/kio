@@ -1,0 +1,5 @@
+module bridge;
+
+import runtime as runtime;
+
+pub type Text = runtime.Text;

@@ -13,6 +13,12 @@ const identifier = "variable.other.kio";
 const functionName = "entity.name.function.kio";
 const fixtures = [];
 
+fixture("ordinary imported nominal and alias keep type roles", "import provider(Field); type Alias = provider.Field;", [
+  ["(Field)", "Field", identifier],
+  ["Alias =", "Alias", "entity.name.type.kio"],
+  ["provider.Field", "Field", identifier],
+]);
+
 for (const ending of ["]", "\n]", " // closing\n]"]) {
   fixture(`ambiguous square bang marker ${JSON.stringify(ending)}`, `module m; fn run() { [!x!${ending} }`, [["x!", "x!", null]]);
   fixture(`ambiguous bare square bang ${JSON.stringify(ending)}`, `module m; fn run() { [x!${ending} }`, [["x!", "x!", null]]);
@@ -73,13 +79,17 @@ fixture("unmarked control spellings are ordinary", "module controls; fn f() { if
   ["else(value)", "else", functionName],
 ]);
 
-fixture("newtype members and names", "module members;\nnewtype Cell : . { constructor constructor; pub projector projector; };", [
-  ["constructor constructor", "constructor", keyword], ["constructor;", "constructor", functionName],
-  ["projector projector", "projector", keyword], ["projector;", "projector", functionName],
+fixture("signature nominal members", "signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; } }; breaking { remove { api.old; } } }", [
+  ["rec type", "rec", keyword], ["type {", "type", keyword],
+  ["Cell:", "Cell", "entity.name.type.kio"],
+  ["pub mk;", "mk", functionName], ["pub get;", "get", functionName],
 ]);
-fixture("multiline scoped members", "module members;\nrec newtype Cell : . | Cell {\n pub(api)\n projector // member\n get;\n constructor\n make;\n};", [
-  ["projector //", "projector", keyword], ["constructor\n", "constructor", keyword],
-  ["get;", "get", functionName], ["make;", "make", functionName],
+fixture("nominal members and names", "module members;\ntype { Cell: . { mk; pub get; }; }", [
+  ["type {", "type", keyword], ["Cell:", "Cell", "entity.name.type.kio"],
+  ["mk;", "mk", functionName], ["get;", "get", functionName],
+]);
+fixture("multiline scoped members", "module members;\nrec type { Cell: . | Cell {\n pub(api)\n get // member\n ;\n mk;\n}; }", [
+  ["pub(api)", "pub", keyword], ["get //", "get", functionName], ["mk;", "mk", functionName],
 ]);
 fixture("same-line declaration owners", "module source; import helper as h; host type Text { owned }; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }", [
   ["import helper", "import", keyword], ["op _", "op", keyword], ["impl add", "impl", keyword],
@@ -124,12 +134,12 @@ fixture("host role and role name", "module roles;\nhost type Number\n role // an
 fixture("incomplete role retained", "module roles;\nhost type Number role(\nfn after(role: .) -> . { role }", [
   ["role(", "role", keyword], ["role:", "role", identifier], ["{ role }", "role", identifier],
 ]);
-fixture("incomplete member recovery", "module members;\nnewtype Cell : . { constructor\nfn after(projector: .) -> . { projector }", [
-  ["constructor\n", "constructor", keyword], ["projector:", "projector", identifier], ["{ projector }", "projector", identifier],
+fixture("incomplete member recovery", "module members;\ntype { Cell: . { mk\nfn after(get: .) -> . { get }", [
+  ["mk\n", "mk", functionName], ["get:", "get", identifier], ["{ get }", "get", identifier],
 ]);
-fixture("newtype wrong parents", "module members;\nfn constructor(projector: .) -> . { role(projector); constructor }", [
-  ["fn constructor", "constructor", functionName], ["projector:", "projector", identifier],
-  ["role(", "role", functionName], ["; constructor", "constructor", identifier],
+fixture("nominal member words in ordinary parents", "module members;\nfn mk(get: .) -> . { role(get); mk }", [
+  ["fn mk", "mk", functionName], ["get:", "get", identifier],
+  ["role(", "role", functionName], ["; mk", "mk", identifier],
 ]);
 fixture("named configuration choices and optional Unit scalars", 'package modes;\nbuild { docs { md "docs"; md_out ((())); html (()) }; target rust { out "out/rust"; namespace ((())); thread_safety ((send_sync)) } }', [
   ["md_out ((()))", "md_out", keyword], ["md_out ((()))", "(", "punctuation.bracket.kio"],
@@ -417,14 +427,14 @@ for (const name of ["newtype", "labels"]) {
   fixture(`raw split annotated recursive callee ${name}`, `recur(poly)\n ${name}(())`, [["poly)", "poly", null], [`${name}(())`, name, functionName]]);
   fixture(`raw multiline annotated recursive callee ${name}`, `recur(\n poly) ${name}(())`, [["poly)", "poly", "keyword.control.kio"], [`${name}(())`, name, functionName]]);
 }
-fixture("raw split recursive data declaration", "rec\n newtype N : . { constructor make; projector get; };", [["newtype N", "newtype", keyword], ["constructor make", "constructor", keyword]]);
+fixture("raw split recursive data declaration", "rec\n type { N: . { mk; get; }; }", [["type {", "type", keyword], ["mk;", "mk", functionName]]);
 for (const source of ["recur(value, poly) again()", "recur(\n value, poly) again()", "recur(value,\n poly"]) {
   fixture(`raw invalid recursive annotation name ${source}`, source, [["value,", "value", identifier], ["poly", "poly", source.endsWith("poly") ? null : "keyword.control.kio"]]);
 }
 for (const prefix of ["rec", "rec(poly)", "rec(\n poly"]) {
   const suffix = prefix.endsWith("poly") ? ")" : "";
   const target = prefix.includes("poly") ? "poly" : "rec";
-  const declaration = prefix === "rec" ? "newtype N : . { constructor make; projector get; };" : "fn again() { () }";
+  const declaration = prefix === "rec" ? "type { N: . { mk; get; }; }" : "fn again() { () }";
   const scope = target === "rec" ? null : identifier;
   fixture(`raw recursion later-line declaration ${prefix}`, `${prefix}\n ${suffix} ${declaration}`, [[prefix, target, scope]]);
   fixture(`raw recursion later-line ordinary ${prefix}`, `${prefix}\n ${suffix};`, [[prefix, target, scope]]);
@@ -468,7 +478,7 @@ fixture("multiline target keys", 'package p;\nbuild { target js {\n target "a";\
 fixture("wrong host role parent", "module h;\nhost type N { role };\nfn next(role: .) -> . { role }", [
   ["{ role };", "role", identifier], ["role:", "role", identifier], ["-> . { role }", "role", identifier],
 ]);
-fixture("member missing terminator", "module m;\nnewtype N : . { constructor make projector; };", [["make projector", "projector", identifier]]);
+fixture("member missing terminator", "module m;\ntype { N: . { mk get; }; }", [["mk get", "get", identifier]]);
 fixture("multiline function name", "module m;\nfn // declaration\n again(value: .) -> . { recur again(value) }", [
   ["again(value:", "again", functionName], ["recur again", "recur", keyword],
 ]);
@@ -479,26 +489,26 @@ fixture("recursive name in member path", "module m;\nfn f() -> . { other.rec aga
 fixture("recursive call word in member path", "module m;\nfn f() -> . { other.recur again(); other.\n recur again() }", [
   ["other.recur", "recur", identifier], ["\n recur again", "recur", identifier],
 ]);
-fixture("newtype missing payload", "module m;\nnewtype N { constructor make; };", [["constructor make", "constructor", identifier]]);
-fixture("newtype empty payload", "module m;\nnewtype N : { projector get; };", [["projector get", "projector", identifier]]);
-fixture("newtype polymorphic payload", "module m;\nnewtype Cell[A]<B> : Pair[A][B] { constructor make; projector get; };", [
-  ["constructor make", "constructor", keyword], ["projector get", "projector", keyword],
+fixture("nominal missing payload", "module m;\ntype { N { mk; }; }", [["mk;", "mk", identifier]]);
+fixture("nominal empty payload", "module m;\ntype { N: { get; }; }", [["get;", "get", identifier]]);
+fixture("nominal polymorphic payload", "module m;\ntype { Cell[A]<B>: Pair[A][B] { mk; get; }; }", [
+  ["mk;", "mk", functionName], ["get;", "get", functionName],
 ]);
 for (const payload of ["{field}", "Box[{field}]", "T | {field}", "T -> {field}", "{\n field\n}"]) {
-  fixture(`rejected newtype braced payload ${payload}`, `module m;\nnewtype N : ${payload} { constructor make; projector get; };\nfn after(projector: .) -> . { projector }`, [
-    ["constructor make", "constructor", identifier], ["projector get", "projector", identifier],
+  fixture(`rejected nominal braced payload ${payload}`, `module m;\ntype { N: ${payload} { mk; get; }; }\nfn after(projector: .) -> . { projector }`, [
+    ["mk;", "mk", identifier], ["get;", "get", identifier],
     ["fn after", "after", functionName], ["projector:", "projector", identifier], ["{ projector }", "projector", identifier],
   ]);
 }
 for (const payload of ["Box", "Box[.]", "(T & U)", "[A] A -> A", "T | U", "T -> U", "(\n T\n)", "!"]) {
-  fixture(`admitted newtype payload ${payload}`, `module m;\nnewtype N : ${payload} { constructor make; projector get; };`, [
-    ["constructor make", "constructor", keyword], ["projector get", "projector", keyword],
+  fixture(`admitted nominal payload ${payload}`, `module m;\ntype { N: ${payload} { mk; get; }; }`, [
+    ["mk;", "mk", functionName], ["get;", "get", functionName],
   ]);
 }
 for (const [sibling, targets] of [
   ["type Next = .;", [["type Next", "type", keyword]]],
   ["literal unit = .t;", [["literal unit", "literal", keyword]]],
-  ["labels { tag: . };", [["labels {", "labels", keyword]]],
+  ["type { Tag: .; };", [["type { Tag", "type", keyword]]],
   ["macro macro : . -> . { impl handler; };", [["macro macro", "macro", keyword], ["impl handler", "impl", keyword]]],
   ["varop [* *] { foldl join empty; };", [["varop [*", "varop", keyword], ["foldl join", "foldl", keyword]]],
   ["op _ + _ { impl add; };", [["op _", "op", keyword], ["impl add", "impl", keyword]]],
@@ -506,16 +516,16 @@ for (const [sibling, targets] of [
   ["equiv same() { (); () }", [["equiv same", "equiv", keyword], ["same()", "same", functionName]]],
   ["rec(loop) fn again() { recur again() }", [["rec(loop)", "rec", keyword], ["recur again", "recur", keyword]]],
 ]) {
-  fixture(`invalid newtype sibling ${sibling}`, `module m;\nnewtype N : Box[{field}] { constructor make; };\n${sibling}`, [
-    ["constructor make", "constructor", identifier], ...targets,
+  fixture(`invalid nominal sibling ${sibling}`, `module m;\ntype { N: Box[{field}] { mk; }; }\n${sibling}`, [
+    ["mk;", "mk", identifier], ...targets,
   ]);
   for (const head of ["varop(())", "varop", "varop [+"]) {
     fixture(`invalid varop sibling ${head} ${sibling}`, `module m;\n${head}\n${sibling}`, targets);
   }
 }
 fixture("comment keywords", "// rec again() constructor projector role cache docs target", [["// rec again() constructor projector role cache docs target", "// rec again() constructor projector role cache docs target", "comment.line.double-slash.kio"]]);
-fixture("invalid newtype nested-group recovery", "module m;\nnewtype N : Box[{field(} { constructor make; };\ntype Next = .;", [
-  ["constructor make", "constructor", identifier], ["type Next", "type", keyword],
+fixture("invalid nominal nested-group recovery", "module m;\ntype { N: Box[{field(} { mk; }; }\ntype Next = .;", [
+  ["mk;", "mk", identifier], ["type Next", "type", keyword],
 ]);
 fixture("string keywords", '"rec again() constructor projector role cache docs target"', [
   ['"rec', '"', "string.quoted.double.kio"],
@@ -554,7 +564,7 @@ fixture("nested if condition", "module m;\nfn f() -> . { if(if (.t) { .t } else 
   ["if(if", "if", functionName], ["if (.t)", "if", functionName],
   ["else { .f", "else", "keyword.control.kio"], ["else { ()", "else", "keyword.control.kio"],
 ]);
-fixture("conditional label condition", "module m;\nfn f() -> . { if({flag}) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
+fixture("conditional grouped condition", "module m;\nfn f() -> . { if((flag)) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
 fixture("conditional do condition", "module m;\nfn f() -> . { if(scope { .t }) { () } else { () } }", [
   ["scope {", "scope", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
@@ -571,7 +581,7 @@ fixture("macro conditional condition", "module m;\nfn f() -> . { if (pred()) { (
   ["(pred", "pred", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
 for (const [open, close] of [["[*", "*]"], ["*[", "]*"]]) {
-  fixture(`varop conditional condition ${open}`, `module m;\nfn f() -> . { if(${open} {flag}, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
+  fixture(`varop conditional condition ${open}`, `module m;\nfn f() -> . { if(${open} flag, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
   fixture(`varop contextual element ${open}`, `module m;\nfn f() -> . { ${open} if, do ${close} }`, [["if,", "if", identifier], [`do ${close}`, "do", identifier]]);
 }
 fixture("local binding keyword", "module m;\nfn f(let: .) -> . { let x = let; x }", [
@@ -606,12 +616,8 @@ fixture("incomplete control sibling", "module m;\nfn broken() -> . { if value(\n
   ["if value", "if", identifier], ["if:", "if", identifier], ["do:", "do", identifier], ["else:", "else", identifier],
   ["{ if;", "if", identifier], ["; do;", "do", identifier], ["; else }", "else", identifier],
 ]);
-fixture("labels shield control names", "module m;\nfn f() -> . { { if = (), do = (), else = (), let = () } }", [
-  ["if =", "if", "entity.name.label.kio"], ["do =", "do", "entity.name.label.kio"],
-  ["else =", "else", "entity.name.label.kio"], ["let =", "let", "entity.name.label.kio"],
-]);
-fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if.T;\nlabels { do: else.T, let: rec.T };\nmacro let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
-  ["literal if", "if", identifier], ["= if.T", "if", identifier], ["{ do:", "do", identifier], ["do: else", "else", identifier],
+fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if.T;\ntype { Do: else.T; Let: rec.T; };\nmacro let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
+  ["literal if", "if", identifier], ["= if.T", "if", identifier], ["{ Do:", "Do", "entity.name.type.kio"], ["Do: else", "else", identifier],
   ["macro let", "let", "entity.name.macro.kio"], ["let: if", "if", identifier], ["captures do", "captures", keyword], ["do.else", "do", identifier],
   ["impl(fills)", "impl", keyword], ["fills)", "fills", keyword], ["if.let", "if", identifier],
   ["equiv do", "do", functionName], ["{ if(())", "if", functionName],
@@ -650,8 +656,8 @@ for (const width of [32, 128, 512]) {
     [["foldl join", "foldl", null], ["fn after", "fn", keyword]]);
 }
 
-fixture("slots in type and scalar binding positions", "module m;\nlabels Shared = { field: _ };\nfn run() -> . { let _ = (); let scalar = (); scalar }", [
-  ["field: _", "_", "variable.parameter.slot.kio"], ["let _", "_", "variable.parameter.slot.kio"],
+fixture("slots in type and scalar binding positions", "module m;\ntype { Field: _; };\nfn run() -> . { let _ = (); let scalar = (); scalar }", [
+  ["Field: _", "_", "variable.parameter.slot.kio"], ["let _", "_", "variable.parameter.slot.kio"],
   ["let scalar", "scalar", identifier], ["; scalar }", "scalar", identifier],
 ]);
 fixture("monadic binding arrow taxonomy", "module m;\nfn run() -> . { do (bind) { let scalar <- value; scalar } }", [
@@ -676,8 +682,7 @@ for (const stem of ["x", "t", "f", "_arg", "x1_y"]) {
 fixture("booleans retain their ordinary role", "module m;\nfn run() { (.t, .f) }", [
   [".t,", ".t", "constant.language.boolean.kio"], [".f)", ".f", "constant.language.boolean.kio"],
 ]);
-fixture("explicit row and existential let patterns", "module m;\nfn run() { let .({field as x, other}) = row; let .(<A> packed) = value; packed }", [
-  ["let .({", "let", keyword], ["field as", "as", keyword], ["as x", "x", identifier],
+fixture("existential let pattern", "module m;\nfn run() { let .(<A> packed) = value; packed }", [
   ["let .(<", "let", keyword], ["packed)", "packed", identifier],
 ]);
 fixture("ordinary contextual let call before binding arrow", "module m;\nfn run() { let(f) <- x }", [

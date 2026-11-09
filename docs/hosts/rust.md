@@ -369,7 +369,7 @@ ordinary representation conversions.
 
 Every public newtype in a bridged module has a generated type at
 `shapes::nominal::<declaring module path>::<TypeName>`, even when it has no
-public constructor or projector. For example, `newtype Token` declared in
+public constructor or projector. For example, a nominal `Token` declared in
 `greeter/model` is `greeter::shapes::nominal::greeter::model::Token<MyHost>`.
 Its public surface follows the members the package exposes:
 

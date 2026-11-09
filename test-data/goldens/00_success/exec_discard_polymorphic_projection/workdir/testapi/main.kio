@@ -4,7 +4,7 @@ host fn observe(_unit: .);
 
 host fn consume(_unit: .);
 
-newtype Receiver : [A][B] A -> A { constructor mk; projector get }
+type { Receiver: [A][B] A -> A { mk; get } }
 
 fn identity[A][B](value: A) -> A { value }
 

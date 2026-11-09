@@ -4,14 +4,14 @@ import testapi(Bool, String);
 
 // The three Bool facts are recorded, not derived from the bearings: this host
 // offers no string comparison, so a letter cannot inspect its own arm strings.
-pub labels Card = {
-, glyph: String
-, left: String
-, right: String
-, mnemonic: String
-, crossed: Bool
-, vowel: Bool
-, high: Bool
+pub type Card = {
+  Glyph: String;
+  Left: String;
+  Right: String;
+  Mnemonic: String;
+  Crossed: Bool;
+  Vowel: Bool;
+  High: Bool
 };
 
 fn card(
@@ -22,7 +22,17 @@ fn card(
 , crossed: Bool
 , vowel: Bool
 , high: Bool
-) -> Card { {glyph, left, right, mnemonic, crossed, vowel, high} }
+) -> Card {
+  (
+  , Glyph.mk(glyph)
+  , Left.mk(left)
+  , Right.mk(right)
+  , Mnemonic.mk(mnemonic)
+  , Crossed.mk(crossed)
+  , Vowel.mk(vowel)
+  , High.mk(high)
+  )
+}
 
 pub fn a() -> Card { card("A", "S", "SE", "left arm at rest, right low", .f, .t, .f) }
 

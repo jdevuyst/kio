@@ -6,11 +6,11 @@ import testapi(Int);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // `head_or` / `tail_or` destructure the cons-cell sum via `match`.
 // Clause order matters: the cons-cell pattern is strictly more
@@ -19,13 +19,13 @@ fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A &
 // and a `.(_: .)` slot is non-consuming and would absorb both
 // arms if placed first.
 fn head_or[A](fallback: A, xs: List[A]) -> A {
-  match(xs.>List.un_list) {
+  match(xs.>List.get) {
     (.(head: A, _rest: List[A]) { head }, .(_empty: .) { fallback })
   }
 }
 
 fn tail_or[A](fallback: List[A], xs: List[A]) -> List[A] {
-  match(xs.>List.un_list) {
+  match(xs.>List.get) {
     (.(_head: A, rest: List[A]) { rest }, .(_empty: .) { fallback })
   }
 }

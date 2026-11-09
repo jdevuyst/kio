@@ -1,0 +1,25 @@
+module main;
+
+import __comptime__;
+
+pure fn factory[A]() -> __Comptime__ -> __Type__ {
+  .(ct) { __reflect_type__(ct)[A] }
+}
+
+pure fn probe_impl(ct: __Comptime__) -> __Checked_term__ {
+  let reflect = factory[.]();
+  __if_then_else__(
+  , __type_equal__(ct, reflect(ct), __reflect_type__(ct)[.])
+  , .() -> __Checked_term__ { __term_unit__(ct) }
+  , .() -> __Checked_term__ { __macro_error__(ct, "proof lambda lost its captured type") }
+  )
+}
+
+macro probe : . -> . { impl probe_impl }
+
+pub fn main() { probe(()) }
+
+equiv proof_lambda() {
+  main();
+  ()
+}

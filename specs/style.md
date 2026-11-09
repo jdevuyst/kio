@@ -22,7 +22,7 @@ A divergence between two conformant implementations on the same input is a spec 
 
 ## Block bodies (`{ … }`)
 
-Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every macro trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
+Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every macro trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Other braced lists do not count as executable blocks:
 
 ```kio
 fn id[A](x: A) -> A { x }
@@ -36,7 +36,7 @@ fn choose() {
 }
 ```
 
-**Block macro calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every macro head and continuation label, without consulting declarations or exposure kinds. Thus a short `do(bind) { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
+**Block macro calls.** Formatting preserves the written prefix groups and blocks; it does not rewrite their projection into a direct call. An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every macro head and continuation label, without consulting declarations or exposure kinds. Thus a short `do(bind) { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
 
 ```kio
 if(ready) {
@@ -94,9 +94,9 @@ their written result types.
 
 ## Declaration modifiers
 
-When an ordinary module-body `fn` carries both `pub` and `pure`, `kio fmt` emits `pub pure` in that order, regardless of the source order. No other declaration admits `pure`. A scope restriction stays bound to `pub` with no inner spaces — `pub(a/b)` — and precedes `pure`: `kio fmt` emits `pub(a/b) pure fn f(...)`. Every singleton recursive modifier follows visibility: `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`. A one-member braced `rec(loop)` function group formats to its singleton shorthand for private, scoped, and public members alike. A capability-free type group always keeps its bare `rec { ... }` braces; it contains at least two members and has no singleton shorthand or group-level visibility.
+When an ordinary module-body `fn` carries both `pub` and `pure`, `kio fmt` emits `pub pure` in that order, regardless of the source order. No other declaration admits `pure`. A scope restriction stays bound to `pub` with no inner spaces — `pub(a/b)` — and precedes `pure`: `kio fmt` emits `pub(a/b) pure fn f(...)`. Every singleton recursive modifier follows visibility: `pub rec type` and `pub rec(loop) fn`. A one-member braced `rec(loop)` function group formats to its singleton shorthand for private, scoped, and public members alike. A capability-free type group always keeps its bare `rec { ... }` braces; it contains at least two members and has no singleton shorthand or group-level visibility.
 
-**Recursive type groups.** `rec {` ends the introducing line. Each complete `type`, `newtype`, or surface `labels` member starts on a new line at +2 indentation, preserving member order; the closing `}` returns to the group's column. Visibility and doc comments stay on the member. A member never repeats `rec` because the enclosing braces supply its scope.
+**Recursive type groups.** `rec {` ends the introducing line. Each complete alias or nominal `type` declaration starts on a new line at +2 indentation, preserving member order; the closing `}` returns to the group's column. Visibility and doc comments stay on the member. A member never repeats `rec` because the enclosing braces supply its scope.
 
 ## Comma-separated lists: A1 (width-driven, leading commas when broken)
 
@@ -140,31 +140,19 @@ fn filter[A](keep: A -> Bool, xs: List[A]) -> List[A] {
 A1 applies to every comma-separated list that remains comma-separated in canonical output:
 
 - Signature value-parameter groups (`fn`, lambdas, `equiv`; `name: T` value params and product-destructuring patterns — `(a: A, b: B)` bare or `name: (a: A, b: B)` as-pattern — in one value group; see [`language.md` § Parameter patterns](language.md#parameter-patterns)).
-- `labels` arm lists.
 - Selective `import` name lists (`import path(foo, bar);`).
 - Product-valued expressions, including preassembled products of `match` clauses.
 - Tuple literals (`(a, b, c)`).
 - Call argument lists (`f(a, b, c)`).
-- Label construction in expression position (`{f = e1, g = e2}`).
-- Label access and update postfix lists (`x.?{f, g}` / `x.!{f = e1, g = e2}`).
-- Row-let statement lists (`let .({f, g as payload}) = row;`).
 
 Type and binder brackets are not comma lists. Each contains exactly one entry,
 so multiple arguments or binders use adjacent singleton groups (`[A][B]`).
 Comma-list and empty bracket forms are rejected, in both definitions and
 applications, rather than split by formatting. This applies to callable
-signatures, prefix-forall types, `type` / `newtype` / named `labels` heads,
+signatures, prefix-forall types, alias and nominal `type` heads,
 type constructors, value instantiation and literal-carrier annotations. Function-type value groups are not comma lists; product domains use `&` (`(A & B) -> C`).
 
-An explicit label-reuse marker keeps the canonical spelling `name: _` (or `name[A]: _` with its universal header). Formatting never expands `_` back into the original payload and never treats it as a new declaration.
-
-A standalone label forward uses `pub(scope) type {local} = {source.label};`,
-with ordinary optional visibility, compact braced names, and spaces around
-`=`. Comments inside the declaration stay inside its body; in particular an
-interior `///` comment does not become documentation attached to the item.
-An external documentation comment remains attached to the forwarding item.
-
-For label construction and update payloads, `kio fmt` uses the shortest canonical payload spelling: `{f = f}` becomes `{f}`, `{m.f = f}` becomes `{m.f}`, and `{f = ()}` becomes `{f=}`. The same rule applies inside update lists, so `r.!{f = f}` becomes `r.!{f}` and `r.!{f = ()}` becomes `r.!{f=}`.
+Existing nominal types use ordinary RHS references: `type Row = Existing & { Added: . };`. Formatting retains the written reference and its type arguments without introducing another declaration.
 
 Inline `match` clauses are entries of a trailing product block, separated by semicolons: `match(v) { .() { 0 }; .[B](n: B) -> I32 { 1 } }`. The block uses the block-call layout above. A preassembled product of clauses, supplied as `match(v) { clauses }`, keeps the ordinary comma-list layout at the product's definition.
 
@@ -186,7 +174,7 @@ comma-delimited lists.
 An outer braced declaration or section ends at `}`; its optional redundant
 suffix `;` is omitted. Nonbraced outer entries retain their terminator. Braces
 inside a qualifier or right-hand side are not declaration bodies: for example,
-`host type T { owned };` and `labels N = { x: . };` retain their terminators.
+`host type T { owned };` and `type N = { X: .; };` retain their terminators.
 Inside a semicolon-delimited block, both braced and nonbraced entries use the
 parent's between-entry separators.
 
@@ -199,10 +187,13 @@ equiv id_unit_eq {
 
 The same final-vs-non-final rule applies inside ordinary function bodies and neutral trailing blocks, including `scope { ... }` and `do(bind) { ... }`. A non-final expression keeps a following `;`; the final expression does not. An optional final separator never turns an expression into a discarded statement or changes a block's value. A final binding retains the separator required by its binding grammar.
 
-**`newtype` member blocks.** A `newtype`'s `{ … }` body is a semicolon-clause block of exactly two members — one `constructor` and one `projector`, separated by `;`. The members are an unordered set in the source (either may be written first); `kio fmt` canonicalizes them to `constructor`-then-`projector`.
+**Nominal declaration blocks.** The entries in `type { Name: Payload; Other: Payload; }` use the same semicolon-clause layout. Their source order is preserved. An anonymous declaration ends at its outer `}`; a named RHS such as `type Pair = { First: .; Second: .; };` keeps the alias terminator. Products, sums and parentheses on a named RHS preserve the written grouping and ordinary type meaning; formatting does not combine separate declarations into a named alias.
+
+A written entry member body contains exactly `mk` and `get`, with independent visibility. Either role can appear first in source; canonical output puts `mk` before `get`, with comments attached to their roles. An omitted body remains omitted. Formatting an explicit singleton retains its written member body.
 
 ```kio
-newtype Celsius : . { pub constructor mk_celsius; pub projector to_unit }
+pub type { Celsius: . { mk; pub get } }
+type Pair = { First: .; Second: . };
 ```
 
 ## Type-operator chains
@@ -436,8 +427,7 @@ exactly one blank line:
 Within each block, statements sort lexicographically by ASCII codepoint on
 their full rendered string, without locale or case folding. Within a selective
 list, items sort by their full rendered spelling: ordinary selections retain
-their optional `as` alias,
-labels retain braces, and operator selections retain their complete tags and
+their optional `as` alias, and operator selections retain their complete tags and
 grammars. Empty blocks are skipped.
 
 Selective imports always use parentheses, including for one item. The opening
@@ -558,7 +548,7 @@ and trailing-whitespace normalization. The 100-column line-length budget does
 **not** apply to comments — long comments stay long. The attachment and
 relocation rules below determine their output positions.
 
-**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, `newtype`, `labels`, either `rec` group, `macro`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
+**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, either `rec` group, `macro`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
 
 **File-header comments.** Line comments at the very top of a file, immediately preceding the file header — a `module …;` (regular or root module), a `package …;`, or a `dependency …;` — survive a `kio fmt` round-trip. They emit on their own lines at column 0, above the header, in source order, ahead of any `///` module doc-comment. (A `///` run directly above a module header is the module's doc-comment and rides the `///` rule below; the plain `//` header is what this clause preserves.)
 
@@ -627,13 +617,12 @@ Within an expression body, comments preserve through a `kio fmt` round-trip at t
 - **Inside a `match` clause body** — comments captured between the clause's `{` and the body expression.
 - **Inside a call's argument list** — comments captured before each argument's first token (or before the leading `,` separator). Any comment forces the call into the multi-line A1 layout, with the comment on its own line above its argument's `, arg` line.
 - **Inside a tuple literal** — same per-element capture as call arguments. Any comment forces the tuple into the multi-line A1 layout. Comment preservation applies to source formatting, not to comments inside surface forms eliminated from emitted Kio'.
-- **Inside a label-value `{f = e, g = e'}`** — same per-label capture as tuple elements; the same surface-form comment lifetime applies.
 - **Inside a type or binder bracket** — comments remain with its single entry.
   Multiple type arguments use separate brackets, never a leading-comma list.
   A comment that requires a line break breaks that bracket without moving the
   type across its application boundary.
-- **Inside a `labels { f: X, g: Y }` block** — comments above any label entry; the same surface-form comment lifetime applies.
-- **Trailing the last element of a comma list, before the `)` / `}`** — a comment after the final argument / tuple element / label / row-let binder emits on its own line below that element, inside the broken A1 layout, before the closer. The list breaks to multi-line because a comment can't sit inline before the closer.
+- **Inside a `type { F: X; G: Y; }` block** — comments above any nominal entry and within its optional member body; the same surface-form comment lifetime applies.
+- **Trailing the last element of a comma list, before the `)` / `}`** — a comment after the final argument or tuple element emits on its own line below that element, inside the broken A1 layout, before the closer. The list breaks to multi-line because a comment can't sit inline before the closer.
 - **Dangling at the end of a block, before `}`** — a comment after the body's last token emits on its own line at the body indent, before the closing `}`, forcing the block to multi-line layout.
 - **Trailing the last item / at end of file** — a comment after the last top-level item, before end of file, emits at column 0 below the body, separated by one blank line like a top-level item.
 

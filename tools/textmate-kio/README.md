@@ -16,7 +16,7 @@ the compiler. Neither this grammar nor standalone Tree-sitter reconstructs a
 consumer's dynamic operator grammar.
 
 TextMate uses bounded `begin` / `end` states for strings, module-first import
-paths and selection groups, row lets, and variadic callable clauses. An import's
+paths and selection groups, and variadic callable clauses. An import's
 written grammar is sufficient; no provider is read. Token quotation and
 variadic separator semicolons stay inside the parenthesized selection list.
 Grammar-owned `op`/`varop` tags and four-mode/finalizer clause heads receive

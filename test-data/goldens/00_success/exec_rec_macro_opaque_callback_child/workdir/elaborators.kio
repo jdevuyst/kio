@@ -12,10 +12,8 @@ pure fn choose_callbacks_impl(
 , required: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
   let unit_type = __reflect_type__(ct)[.];
-  let zero = __type_arity_zero__(ct);
-  let one = __type_arity_succ__(ct, zero);
-  let callback_type = __type_arrow__(ct, unit_type, zero, unit_type);
-  let consumer_type = __type_arrow__(ct, callback_type, one, unit_type);
+  let callback_type = __type_arrow__(ct, unit_type, unit_type);
+  let consumer_type = __type_arrow__(ct, callback_type, unit_type);
   let fallback =
     __term_fn__(
     , ct

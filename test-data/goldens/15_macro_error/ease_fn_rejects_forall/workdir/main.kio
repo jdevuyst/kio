@@ -2,7 +2,7 @@ module main;
 
 import macros/algebraic_macros(macro ease);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
 fn foo(x: A) -> A { x }
 

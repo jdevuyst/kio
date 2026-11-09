@@ -9,6 +9,7 @@ module tree/delete;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(eq_i32, lt_i32, sub_i32);
@@ -26,8 +27,6 @@ import tree/node(
 , size_of
 , three_node
 , two_node
-, {three}
-, {two}
 );
 import tree/tally(
 , Tally
@@ -39,7 +38,7 @@ import tree/tally(
 , tally_zero
 );
 
-labels Del = { held: Node } | { deficit: Node } | { missing: . };
+type Del = { Held: Node } | { Deficit: Node } | { Missing: . };
 
 /// The two outcomes a *successful* removal can have. Naming them apart from
 /// `Del` keeps `missing` out of the rebalancing layer, which cannot produce it.
@@ -49,17 +48,17 @@ type Fixed = Shrunk & Tally;
 
 type Del_out = Del & Tally;
 
-labels Successor = { least: I32 & String } | { no_least: . };
+type Successor = { Least: I32 & String } | { No_least: . };
 
-fn held(n: Node) -> Shrunk { ({held = n}.>widen_sum)[Shrunk] }
+fn held(n: Node) -> Shrunk { (Held.mk(n).>widen_sum)[Shrunk] }
 
-fn deficit(n: Node) -> Shrunk { ({deficit = n}.>widen_sum)[Shrunk] }
+fn deficit(n: Node) -> Shrunk { (Deficit.mk(n).>widen_sum)[Shrunk] }
 
-fn missing() -> Del { ({missing=}.>widen_sum)[Del] }
+fn missing() -> Del { (Missing.mk(()).>widen_sum)[Del] }
 
-fn least(k: I32, v: String) -> Successor { ({least = (k, v)}.>widen_sum)[Successor] }
+fn least(k: I32, v: String) -> Successor { (Least.mk((k, v)).>widen_sum)[Successor] }
 
-fn no_least() -> Successor { ({no_least=}.>widen_sum)[Successor] }
+fn no_least() -> Successor { (No_least.mk(()).>widen_sum)[Successor] }
 
 fn del_of_shrunk(s: Shrunk) -> Del {
   match(s) {
@@ -77,16 +76,16 @@ fn del_of_shrunk(s: Shrunk) -> Del {
 /// node its contradictory arguments describe, so it can neither drop a key nor
 /// invent one.
 fn fix_two_left(d: Node, k1: I32, v1: String, r: Node) -> Fixed {
-  match(r.>Node.un_node) {
+  match(r.>Node.get) {
     (
     , .(_e: Leaf) { (held(two_node(d, k1, v1, r)), tally_zero()) }
     , .(n: Two) {
-        let .(rl: Node, rk: I32, rv: String, rr: Node) = n.?{two};
+        let .(rl: Node, rk: I32, rv: String, rr: Node) = n.>select { Two.get };
         (deficit(three_node(d, k1, v1, rl, rk, rv, rr)), tally_merge())
       }
     , .(n: Three) {
         let .(rl: Node, rk1: I32, rv1: String, rm: Node, rk2: I32, rv2: String, rr: Node) =
-          n.?{three};
+          n.>select { Three.get };
         (
         , held(two_node(two_node(d, k1, v1, rl), rk1, rv1, two_node(rm, rk2, rv2, rr)))
         , tally_borrow_right()
@@ -97,16 +96,16 @@ fn fix_two_left(d: Node, k1: I32, v1: String, r: Node) -> Fixed {
 }
 
 fn fix_two_right(l: Node, k1: I32, v1: String, d: Node) -> Fixed {
-  match(l.>Node.un_node) {
+  match(l.>Node.get) {
     (
     , .(_e: Leaf) { (held(two_node(l, k1, v1, d)), tally_zero()) }
     , .(n: Two) {
-        let .(ll: Node, lk: I32, lv: String, lr: Node) = n.?{two};
+        let .(ll: Node, lk: I32, lv: String, lr: Node) = n.>select { Two.get };
         (deficit(three_node(ll, lk, lv, lr, k1, v1, d)), tally_merge())
       }
     , .(n: Three) {
         let .(ll: Node, lk1: I32, lv1: String, lm: Node, lk2: I32, lv2: String, lr: Node) =
-          n.?{three};
+          n.>select { Three.get };
         (
         , held(two_node(two_node(ll, lk1, lv1, lm), lk2, lv2, two_node(lr, k1, v1, d)))
         , tally_borrow_left()
@@ -117,16 +116,16 @@ fn fix_two_right(l: Node, k1: I32, v1: String, d: Node) -> Fixed {
 }
 
 fn fix_three_left(d: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Fixed {
-  match(m.>Node.un_node) {
+  match(m.>Node.get) {
     (
     , .(_e: Leaf) { (held(three_node(d, k1, v1, m, k2, v2, r)), tally_zero()) }
     , .(n: Two) {
-        let .(ml: Node, mk: I32, mv: String, mr: Node) = n.?{two};
+        let .(ml: Node, mk: I32, mv: String, mr: Node) = n.>select { Two.get };
         (held(two_node(three_node(d, k1, v1, ml, mk, mv, mr), k2, v2, r)), tally_merge())
       }
     , .(n: Three) {
         let .(ml: Node, mk1: I32, mv1: String, mm: Node, mk2: I32, mv2: String, mr: Node) =
-          n.?{three};
+          n.>select { Three.get };
         let borrowed =
           three_node(two_node(d, k1, v1, ml), mk1, mv1, two_node(mm, mk2, mv2, mr), k2, v2, r);
         (held(borrowed), tally_borrow_right())
@@ -136,16 +135,16 @@ fn fix_three_left(d: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r:
 }
 
 fn fix_three_mid(l: Node, k1: I32, v1: String, d: Node, k2: I32, v2: String, r: Node) -> Fixed {
-  match(l.>Node.un_node) {
+  match(l.>Node.get) {
     (
     , .(_e: Leaf) { (held(three_node(l, k1, v1, d, k2, v2, r)), tally_zero()) }
     , .(n: Two) {
-        let .(ll: Node, lk: I32, lv: String, lr: Node) = n.?{two};
+        let .(ll: Node, lk: I32, lv: String, lr: Node) = n.>select { Two.get };
         (held(two_node(three_node(ll, lk, lv, lr, k1, v1, d), k2, v2, r)), tally_merge())
       }
     , .(n: Three) {
         let .(ll: Node, lk1: I32, lv1: String, lm: Node, lk2: I32, lv2: String, lr: Node) =
-          n.?{three};
+          n.>select { Three.get };
         let borrowed =
           three_node(two_node(ll, lk1, lv1, lm), lk2, lv2, two_node(lr, k1, v1, d), k2, v2, r);
         (held(borrowed), tally_borrow_left())
@@ -155,16 +154,16 @@ fn fix_three_mid(l: Node, k1: I32, v1: String, d: Node, k2: I32, v2: String, r: 
 }
 
 fn fix_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, d: Node) -> Fixed {
-  match(m.>Node.un_node) {
+  match(m.>Node.get) {
     (
     , .(_e: Leaf) { (held(three_node(l, k1, v1, m, k2, v2, d)), tally_zero()) }
     , .(n: Two) {
-        let .(ml: Node, mk: I32, mv: String, mr: Node) = n.?{two};
+        let .(ml: Node, mk: I32, mv: String, mr: Node) = n.>select { Two.get };
         (held(two_node(l, k1, v1, three_node(ml, mk, mv, mr, k2, v2, d))), tally_merge())
       }
     , .(n: Three) {
         let .(ml: Node, mk1: I32, mv1: String, mm: Node, mk2: I32, mv2: String, mr: Node) =
-          n.?{three};
+          n.>select { Three.get };
         let borrowed =
           three_node(l, k1, v1, two_node(ml, mk1, mv1, mm), mk2, mv2, two_node(mr, k2, v2, d));
         (held(borrowed), tally_borrow_left())
@@ -179,8 +178,12 @@ fn fix_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, d
 fn at_two_left(s: Shrunk, k1: I32, v1: String, r: Node) -> Fixed {
   match(s) {
     (
-    , .(h: Held) { (held(two_node(h.?{held}, k1, v1, r)), tally_zero()) }
-    , .(d: Deficit) { fix_two_left(d.?{deficit}, k1, v1, r) }
+    , .(h: Held) {
+        (held(two_node(h.>select { Held.get }, k1, v1, r)), tally_zero())
+      }
+    , .(d: Deficit) {
+        fix_two_left(d.>select { Deficit.get }, k1, v1, r)
+      }
     )
   }
 }
@@ -188,8 +191,12 @@ fn at_two_left(s: Shrunk, k1: I32, v1: String, r: Node) -> Fixed {
 fn at_two_right(l: Node, k1: I32, v1: String, s: Shrunk) -> Fixed {
   match(s) {
     (
-    , .(h: Held) { (held(two_node(l, k1, v1, h.?{held})), tally_zero()) }
-    , .(d: Deficit) { fix_two_right(l, k1, v1, d.?{deficit}) }
+    , .(h: Held) {
+        (held(two_node(l, k1, v1, h.>select { Held.get })), tally_zero())
+      }
+    , .(d: Deficit) {
+        fix_two_right(l, k1, v1, d.>select { Deficit.get })
+      }
     )
   }
 }
@@ -197,8 +204,12 @@ fn at_two_right(l: Node, k1: I32, v1: String, s: Shrunk) -> Fixed {
 fn at_three_left(s: Shrunk, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Fixed {
   match(s) {
     (
-    , .(h: Held) { (held(three_node(h.?{held}, k1, v1, m, k2, v2, r)), tally_zero()) }
-    , .(d: Deficit) { fix_three_left(d.?{deficit}, k1, v1, m, k2, v2, r) }
+    , .(h: Held) {
+        (held(three_node(h.>select { Held.get }, k1, v1, m, k2, v2, r)), tally_zero())
+      }
+    , .(d: Deficit) {
+        fix_three_left(d.>select { Deficit.get }, k1, v1, m, k2, v2, r)
+      }
     )
   }
 }
@@ -206,8 +217,12 @@ fn at_three_left(s: Shrunk, k1: I32, v1: String, m: Node, k2: I32, v2: String, r
 fn at_three_mid(l: Node, k1: I32, v1: String, s: Shrunk, k2: I32, v2: String, r: Node) -> Fixed {
   match(s) {
     (
-    , .(h: Held) { (held(three_node(l, k1, v1, h.?{held}, k2, v2, r)), tally_zero()) }
-    , .(d: Deficit) { fix_three_mid(l, k1, v1, d.?{deficit}, k2, v2, r) }
+    , .(h: Held) {
+        (held(three_node(l, k1, v1, h.>select { Held.get }, k2, v2, r)), tally_zero())
+      }
+    , .(d: Deficit) {
+        fix_three_mid(l, k1, v1, d.>select { Deficit.get }, k2, v2, r)
+      }
     )
   }
 }
@@ -215,8 +230,12 @@ fn at_three_mid(l: Node, k1: I32, v1: String, s: Shrunk, k2: I32, v2: String, r:
 fn at_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, s: Shrunk) -> Fixed {
   match(s) {
     (
-    , .(h: Held) { (held(three_node(l, k1, v1, m, k2, v2, h.?{held})), tally_zero()) }
-    , .(d: Deficit) { fix_three_right(l, k1, v1, m, k2, v2, d.?{deficit}) }
+    , .(h: Held) {
+        (held(three_node(l, k1, v1, m, k2, v2, h.>select { Held.get })), tally_zero())
+      }
+    , .(d: Deficit) {
+        fix_three_right(l, k1, v1, m, k2, v2, d.>select { Deficit.get })
+      }
     )
   }
 }
@@ -243,15 +262,16 @@ fn lift(dt: Del_out, repair: Shrunk -> (Shrunk & Tally)) -> Del_out {
 /// The smallest key of a subtree. `no_least` means the subtree is empty, which
 /// under a node means that node already sits at the bottom of the tree.
 rec(loop) fn min_key(t: Node) -> Successor {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { no_least() }
     , .(n: Two) {
-        let .(l: Node, k: I32, v: String, _r: Node) = n.?{two};
+        let .(l: Node, k: I32, v: String, _r: Node) = n.>select { Two.get };
         if(is_leaf(l)) { least(k, v) } else { recur min_key(l) }
       }
     , .(n: Three) {
-        let .(l: Node, k1: I32, v1: String, _m: Node, _k2: I32, _v2: String, _r: Node) = n.?{three};
+        let .(l: Node, k1: I32, v1: String, _m: Node, _k2: I32, _v2: String, _r: Node) =
+          n.>select { Three.get };
         if(is_leaf(l)) { least(k1, v1) } else { recur min_key(l) }
       }
     )
@@ -266,16 +286,16 @@ rec(loop) fn min_key(t: Node) -> Successor {
 /// key can actually be taken out. `no_least` says that subtree is empty, which
 /// means the node already *is* the bottom and its key goes directly.
 rec(loop) fn del(t: Node, k: I32) -> Del_out {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { (missing(), tally_zero()) }
     , .(n: Two) {
-        let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
+        let .(l: Node, k1: I32, v1: String, r: Node) = n.>select { Two.get };
         if(eq_i32(k, k1)) {
           match(min_key(r)) {
             (
             , .(s: Least) {
-                let .(sk: I32, sv: String) = s.?{least};
+                let .(sk: I32, sv: String) = s.>select { Least.get };
                 let below = recur(cont) del(r, sk);
                 lift(below, .(x) { at_two_right(l, sk, sv, x) })
               }
@@ -291,12 +311,13 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
         }
       }
     , .(n: Three) {
-        let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
+        let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) =
+          n.>select { Three.get };
         if(eq_i32(k, k1)) {
           match(min_key(m)) {
             (
             , .(s: Least) {
-                let .(sk: I32, sv: String) = s.?{least};
+                let .(sk: I32, sv: String) = s.>select { Least.get };
                 let below = recur(cont) del(m, sk);
                 lift(below, .(x) { at_three_mid(l, sk, sv, x, k2, v2, r) })
               }
@@ -307,7 +328,7 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
           match(min_key(r)) {
             (
             , .(s: Least) {
-                let .(sk: I32, sv: String) = s.?{least};
+                let .(sk: I32, sv: String) = s.>select { Least.get };
                 let below = recur(cont) del(r, sk);
                 lift(below, .(x) { at_three_right(l, k1, v1, m, sk, sv, x) })
               }
@@ -334,9 +355,14 @@ pub fn delete(t: Tree, k: I32) -> Tree & Tally {
   let .(d: Del, acc: Tally) = del(root_of(t), k);
   match(d) {
     (
-    , .(h: Held) { (make_tree(h.?{held}, sub_i32(size, 1)), acc) }
+    , .(h: Held) {
+        (make_tree(h.>select { Held.get }, sub_i32(size, 1)), acc)
+      }
     , .(x: Deficit) {
-        (make_tree(x.?{deficit}, sub_i32(size, 1)), tally_add(acc, tally_root_shrink()))
+        (
+        , make_tree(x.>select { Deficit.get }, sub_i32(size, 1))
+        , tally_add(acc, tally_root_shrink())
+        )
       }
     , .(_m: Missing) { (make_tree(root_of(t), size), acc) }
     )

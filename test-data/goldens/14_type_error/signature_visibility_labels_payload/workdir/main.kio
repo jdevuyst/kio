@@ -1,5 +1,5 @@
 module main;
 
-newtype Hidden : . { constructor mk; projector un }
+type { Hidden: . { mk; get } }
 
-pub labels Public_row = { value: Hidden };
+pub type Public_row = { Value: Hidden };

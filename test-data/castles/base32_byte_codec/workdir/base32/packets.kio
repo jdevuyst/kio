@@ -14,7 +14,7 @@ import testapi(I32, String);
 
 /// A fixture is either a payload to round-trip or a transmission to
 /// decode as received.
-pub labels Fixture = { payload: alphabet.Bytes } | { received: alphabet.Glyphs };
+pub type Fixture = { Payload: alphabet.Bytes } | { Received: alphabet.Glyphs };
 
 fn byte(rest: alphabet.Bytes, value: I32) -> alphabet.Bytes { list.cons(value, rest) }
 
@@ -93,9 +93,9 @@ fn damaged() -> alphabet.Glyphs {
     .>glyph("K"))
 }
 
-fn to_encode(payload: alphabet.Bytes) -> Fixture { widen_sum({payload})[Fixture] }
+fn to_encode(payload: alphabet.Bytes) -> Fixture { widen_sum(Payload.mk(payload))[Fixture] }
 
-fn off_the_wire(glyphs: alphabet.Glyphs) -> Fixture { widen_sum({received = glyphs})[Fixture] }
+fn off_the_wire(glyphs: alphabet.Glyphs) -> Fixture { widen_sum(Received.mk(glyphs))[Fixture] }
 
 fn queue(rest: list.List[Fixture], fixture: Fixture) -> list.List[Fixture] {
   list.cons(fixture, rest)

@@ -14,11 +14,11 @@ import testapi/text(string_concat);
 // Cons-list of `a`. Same shape as the other host-loop goldens —
 // `()` is empty, `(A & List(A))` is a cons cell. Used here for
 // the worklist of `(lo, hi)` sub-range jobs.
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Build the nine-element input `[5, 2, 8, 1, 9, 3, 7, 4, 6]` by
 // pushing each value in source order. Same content as
@@ -115,7 +115,7 @@ fn partition(arr: Array[I32], lo: I32, hi: I32) -> I32 {
 // and continues; otherwise partitions and enqueues the two
 // halves. Exits with `()` when the worklist is empty.
 fn quicksort_step(arr: Array[I32], worklist: List[I32 & I32]) -> List[I32 & I32] | . {
-  match(worklist.>List.un_list) {
+  match(worklist.>List.get) {
     (
     , .(job: I32 & I32, rest: List[I32 & I32]) {
         widen_sum(match(job) {

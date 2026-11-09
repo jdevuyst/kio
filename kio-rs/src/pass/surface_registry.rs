@@ -6,7 +6,9 @@
 //! before lowering erases the declarations that define those bindings.
 
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(feature = "surface")]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
@@ -36,7 +38,6 @@ enum NamedKind {
     Ordinary,
     Literal,
     Macro,
-    GeneratedLabelNominal,
 }
 
 impl NamedKind {
@@ -58,14 +59,6 @@ struct NamedDecl {
     kind: NamedKind,
     #[cfg(feature = "cli")]
     omitted_from_unsealed_contract: bool,
-}
-
-#[derive(Clone, Debug)]
-struct LabelDecl {
-    name: String,
-    span: Span,
-    vis: Visibility,
-    origin: SourceOrigin,
 }
 
 #[derive(Clone, Debug)]
@@ -91,8 +84,6 @@ struct RegistryModule {
     imports: Vec<crate::ast::Import>,
     local_named: Vec<NamedDecl>,
     named_exports: BTreeMap<String, Vec<NamedDecl>>,
-    local_labels: Vec<LabelDecl>,
-    label_exports: BTreeMap<String, LabelDecl>,
     local_operators: Vec<OperatorDecl>,
     operator_exports: BTreeMap<String, OperatorDecl>,
     visibility_sites: Vec<VisibilitySite>,
@@ -156,12 +147,9 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
     let ordinal = Cell::new(0u32);
     let mut local_named = Vec::new();
     let mut named_exports: BTreeMap<String, Vec<NamedDecl>> = BTreeMap::new();
-    let mut local_labels = Vec::new();
-    let mut label_exports = BTreeMap::new();
     let mut local_operators = Vec::new();
     let mut operator_exports = BTreeMap::new();
     let mut visibility_sites = Vec::new();
-    let mut seen_labels = BTreeSet::new();
 
     let mut add_named = |name: &str,
                          span: Span,
@@ -259,36 +247,26 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
                                     labels.type_alias_span.unwrap_or(labels.meta.span),
                                     labels.vis.clone(),
                                     NamedKind::Ordinary,
-                                    true,
+                                    false,
                                 );
                             }
                             for entry in &labels.entries {
-                                if entry.is_reuse_marker()
-                                    || !seen_labels.insert(entry.name.clone())
-                                {
-                                    continue;
-                                }
-                                let label = LabelDecl {
-                                    name: entry.name.clone(),
-                                    span: entry.name_span,
-                                    vis: labels.vis.clone(),
-                                    origin: SourceOrigin::Declaration {
-                                        module: module_path.clone(),
-                                        name: entry.name.clone(),
-                                        ordinal: ordinal.get(),
-                                    },
-                                };
-                                ordinal.set(ordinal.get() + 1);
-                                local_labels.push(label.clone());
-                                label_exports.entry(entry.name.clone()).or_insert(label);
-                                let generated = crate::ast::mint_label_newtype_name(&entry.name);
                                 add_named(
-                                    &generated,
+                                    &entry.name,
                                     entry.name_span,
                                     labels.vis.clone(),
-                                    NamedKind::GeneratedLabelNominal,
-                                    true,
+                                    NamedKind::Ordinary,
+                                    false,
                                 );
+                                if let Some(members) = &entry.members {
+                                    for member in [&members.constructor, &members.projector] {
+                                        add_visibility(
+                                            &member.vis,
+                                            member.span,
+                                            format!("{}.{}", entry.name, member.name),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -338,53 +316,27 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
                         labels.type_alias_span.unwrap_or(labels.meta.span),
                         labels.vis.clone(),
                         NamedKind::Ordinary,
-                        true,
+                        false,
                     );
                 }
                 for entry in &labels.entries {
-                    if entry.is_reuse_marker() || !seen_labels.insert(entry.name.clone()) {
-                        continue;
-                    }
-                    // The lowercase label occupies the consumed label
-                    // registry; the uppercase spelling is its generated
-                    // nominal. Both are selectable exports.
-                    let label = LabelDecl {
-                        name: entry.name.clone(),
-                        span: entry.name_span,
-                        vis: labels.vis.clone(),
-                        origin: SourceOrigin::Declaration {
-                            module: module_path.clone(),
-                            name: entry.name.clone(),
-                            ordinal: ordinal.get(),
-                        },
-                    };
-                    ordinal.set(ordinal.get() + 1);
-                    local_labels.push(label.clone());
-                    label_exports.entry(entry.name.clone()).or_insert(label);
-                    let generated = crate::ast::mint_label_newtype_name(&entry.name);
                     add_named(
-                        &generated,
+                        &entry.name,
                         entry.name_span,
                         labels.vis.clone(),
-                        NamedKind::GeneratedLabelNominal,
-                        true,
+                        NamedKind::Ordinary,
+                        false,
                     );
+                    if let Some(members) = &entry.members {
+                        for member in [&members.constructor, &members.projector] {
+                            add_visibility(
+                                &member.vis,
+                                member.span,
+                                format!("{}.{}", entry.name, member.name),
+                            );
+                        }
+                    }
                 }
-            }
-            Item::LabelForward(forward, _) => {
-                let label = LabelDecl {
-                    name: forward.name.clone(),
-                    span: forward.name_span,
-                    vis: forward.vis.clone(),
-                    origin: SourceOrigin::Declaration {
-                        module: module_path.clone(),
-                        name: forward.name.clone(),
-                        ordinal: ordinal.get(),
-                    },
-                };
-                ordinal.set(ordinal.get() + 1);
-                local_labels.push(label.clone());
-                label_exports.entry(forward.name.clone()).or_insert(label);
             }
             Item::Equiv(_, _) => {}
             Item::Macro(macro_def, _) => {
@@ -458,9 +410,7 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
         }
     }
 
-    // The projected ordinary resolver sees only ordinary values/types and
-    // generated nominal label types. Lowercase labels live in their own
-    // registry and are selected only by a braced use item.
+    // Compact and explicit nominal declarations share the ordinary namespace.
     let mut skeleton_bindings: BTreeMap<String, (Visibility, Span)> = BTreeMap::new();
     for decl in &local_named {
         visibility_sites.push(VisibilitySite {
@@ -472,13 +422,6 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
             .entry(decl.name.clone())
             .and_modify(|(vis, _)| *vis = union_visibility(vis, &decl.vis))
             .or_insert_with(|| (decl.vis.clone(), decl.span));
-    }
-    for decl in &local_labels {
-        visibility_sites.push(VisibilitySite {
-            vis: decl.vis.clone(),
-            span: decl.span,
-            description: format!("label `{}`", decl.name),
-        });
     }
     let skeleton_items = skeleton_bindings
         .into_iter()
@@ -493,8 +436,6 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
             imports: module.imports.clone(),
             local_named,
             named_exports,
-            local_labels,
-            label_exports,
             local_operators,
             operator_exports,
             visibility_sites,
@@ -548,7 +489,7 @@ fn validate_operator_imports_for_module(
             .iter()
             .filter_map(|item| match item {
                 ImportItem::OperatorPattern { grammar, span, .. } => Some((grammar, *span)),
-                ImportItem::Name { .. } | ImportItem::Label { .. } => None,
+                ImportItem::Name { .. } => None,
             })
             .collect();
         if operator_items.is_empty() {
@@ -622,89 +563,7 @@ fn validate_operator_imports(index: &RegistryIndex) -> Result<(), LocatedError> 
     Ok(())
 }
 
-fn validate_label_imports(index: &RegistryIndex) -> Result<(), LocatedError> {
-    for module in index.modules.values() {
-        for usage in &module.imports {
-            let ImportKind::Selective { items, from } = &usage.kind else {
-                continue;
-            };
-            let label_items: Vec<_> = items.iter().filter_map(ImportItem::as_label).collect();
-            if label_items.is_empty() {
-                continue;
-            }
-            let source = module_path_string(from);
-            let Some(target) = index.modules.get(&source) else {
-                return Err(LocatedError {
-                    file_path: module.file_path.clone(),
-                    error: Error::import(
-                        from.span,
-                        format!("module `{source}` is not in this package"),
-                    ),
-                });
-            };
-            for (name, span) in label_items {
-                let Some(decl) = target.label_exports.get(name) else {
-                    let mut error = Error::import(
-                        span,
-                        format!("module `{source}` does not export label `{name}`"),
-                    );
-                    if target.named_exports.contains_key(name) {
-                        error = error.with_help(format!(
-                            "`{name}` is an ordinary binding; import it without braces: `import {source}({name});`"
-                        ));
-                    } else {
-                        let visible_labels = target
-                            .label_exports
-                            .values()
-                            .filter(|candidate| is_visible(&candidate.vis, &module.path))
-                            .map(|candidate| candidate.name.as_str());
-                        if let Some((near, unique)) =
-                            crate::error::closest_name_with_uniqueness(name, visible_labels)
-                        {
-                            error = error.with_help(format!("did you mean `{{{near}}}`?"));
-                            if unique {
-                                error = error.with_suggestion(span, near);
-                            }
-                        }
-                    }
-                    return Err(LocatedError {
-                        file_path: module.file_path.clone(),
-                        error,
-                    });
-                };
-                if !is_visible(&decl.vis, &module.path) {
-                    let error = match &decl.vis {
-                        Visibility::PublicIn(path) => Error::import(
-                            span,
-                            format!(
-                                "label `{name}` from module `{source}` is restricted to `pub({})` and is not visible from `{}`",
-                                module_path_string(path),
-                                module_path_string(&module.path),
-                            ),
-                        ),
-                        Visibility::Private => Error::import(
-                            span,
-                            format!("label `{name}` in module `{source}` is private"),
-                        )
-                        .with_help(format!(
-                            "add `pub` to label `{name}` in module `{source}` to make it importable"
-                        )),
-                        Visibility::Public => unreachable!("public label is visible"),
-                    };
-                    return Err(LocatedError {
-                        file_path: module.file_path.clone(),
-                        error,
-                    });
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Give a directed namespace diagnostic when a bare selective item names only
-/// a label export. The ordinary resolver still owns every other ordinary-use
-/// error, including visibility and closest-name suggestions.
+/// Check the explicit macro selector against the selected ordinary declaration.
 fn validate_ordinary_namespace_selection(index: &RegistryIndex) -> Result<(), LocatedError> {
     for module in index.modules.values() {
         for usage in &module.imports {
@@ -771,20 +630,6 @@ fn validate_ordinary_namespace_selection(index: &RegistryIndex) -> Result<(), Lo
                         });
                     }
                     continue;
-                }
-                if target.label_exports.contains_key(name) {
-                    return Err(LocatedError {
-                        file_path: module.file_path.clone(),
-                        error: Error::import(
-                            usage.span,
-                            format!(
-                                "`{name}` in module `{source}` is a label, not an ordinary value or type"
-                            ),
-                        )
-                        .with_help(format!(
-                            "import label syntax with braces: `import {source}({{{name}}});`"
-                        )),
-                    });
                 }
             }
         }
@@ -906,9 +751,6 @@ fn named_origins(
                                 NamedKind::Macro => {
                                     format!("`{name}` is imported as a macro from `{source}` here")
                                 }
-                                NamedKind::GeneratedLabelNominal => format!(
-                                    "`{name}` is imported as a generated label type from `{source}` here"
-                                ),
                                 NamedKind::Ordinary => {
                                     format!("`{name}` is imported from `{source}` here")
                                 }
@@ -1011,10 +853,6 @@ fn named_origins(
                 NamedKind::Macro => {
                     format!("`{}` is declared as a macro here", decl.name)
                 }
-                NamedKind::GeneratedLabelNominal => format!(
-                    "`{}` is generated by a same-module label declaration here",
-                    decl.name
-                ),
                 NamedKind::Ordinary => format!("`{}` is declared locally here", decl.name),
             };
             register_named_origin(
@@ -1037,91 +875,6 @@ fn named_origins(
         scopes.insert(module_path.clone(), visible);
     }
     Ok(scopes)
-}
-
-fn register_label_origin(
-    visible: &mut BTreeMap<String, VisibleOrigin>,
-    module_path: &str,
-    name: &str,
-    candidate: VisibleOrigin,
-) -> Result<(), Error> {
-    let Some(first) = visible.get(name) else {
-        visible.insert(name.to_owned(), candidate);
-        return Ok(());
-    };
-    if first.origin == candidate.origin {
-        if !first.local && !candidate.local {
-            return Err(duplicate_consumed_import(first, &candidate, "label", name));
-        }
-        return Ok(());
-    }
-    Err(Error::name_res(
-        candidate.span,
-        format!("label `{name}` has more than one source"),
-    )
-    .with_secondary(first.span, first.description.clone())
-    .with_help(format!(
-        "give label `{name}` one origin in module `{module_path}`: remove one import or rename the local declaration"
-    )))
-}
-
-fn validate_label_origins(index: &RegistryIndex) -> Result<(), LocatedError> {
-    for (module_path, module) in &index.modules {
-        let mut visible = BTreeMap::new();
-        for decl in &module.local_labels {
-            register_label_origin(
-                &mut visible,
-                module_path,
-                &decl.name,
-                VisibleOrigin {
-                    origin: decl.origin.clone(),
-                    span: decl.span,
-                    description: format!("label `{}` is declared locally here", decl.name),
-                    local: true,
-                    kind: NamedKind::Ordinary,
-                },
-            )
-            .map_err(|error| LocatedError {
-                file_path: module.file_path.clone(),
-                error,
-            })?;
-        }
-        for usage in &module.imports {
-            let ImportKind::Selective { items, from } = &usage.kind else {
-                continue;
-            };
-            let source = module_path_string(from);
-            let target = index
-                .modules
-                .get(&source)
-                .expect("surface imports were validated before label-origin checking");
-            for (name, span) in items.iter().filter_map(ImportItem::as_label) {
-                let Some(decl) = target.label_exports.get(name) else {
-                    continue;
-                };
-                if !is_visible(&decl.vis, &module.path) {
-                    continue;
-                }
-                register_label_origin(
-                    &mut visible,
-                    module_path,
-                    name,
-                    VisibleOrigin {
-                        origin: decl.origin.clone(),
-                        span,
-                        description: format!("label `{name}` is imported from `{source}` here"),
-                        local: false,
-                        kind: NamedKind::Ordinary,
-                    },
-                )
-                .map_err(|error| LocatedError {
-                    file_path: module.file_path.clone(),
-                    error,
-                })?;
-            }
-        }
-    }
-    Ok(())
 }
 
 fn register_operator_origin(
@@ -1298,12 +1051,10 @@ pub fn validate_package(
     let package = Package::build(package_root, skeletons, None)?;
     validate_visibility(&index)?;
     validate_operator_imports(&index)?;
-    validate_label_imports(&index)?;
     validate_ordinary_namespace_selection(&index)?;
     package.resolve_imports()?;
     package.check_no_value_cycles()?;
     named_origins(&index)?;
-    validate_label_origins(&index)?;
     validate_operator_origins(&index)
 }
 
@@ -1504,10 +1255,6 @@ pub(crate) fn filter_unsealed_contract_imports(modules: &mut [(PathBuf, Module<S
                                     .all(|declaration| declaration.omitted_from_unsealed_contract)
                         })
                     }
-                    ImportItem::Label { name, .. } => target
-                        .label_exports
-                        .get(name)
-                        .is_some_and(|declaration| is_visible(&declaration.vis, &importer)),
                     ImportItem::OperatorPattern { grammar, .. } => target
                         .operator_exports
                         .get(&grammar.dispatch_key().render())
@@ -1686,6 +1433,37 @@ mod tests {
         );
     }
 
+    fn expect_ordinary_origin_error(sources: &[(&str, &str)], needle: &str) {
+        let modules = parsed_headers(sources);
+        validate_package(Path::new(""), &modules).expect("surface imports validate");
+        let skeletons = modules
+            .iter()
+            .map(|(path, module)| (path.clone(), project_module(path, module).skeleton))
+            .collect();
+        let package = Package::build(Path::new(""), skeletons, None).expect("ordinary headers");
+        package.resolve_imports().expect("ordinary imports resolve");
+        let error = package
+            .check_binding_origins()
+            .expect_err("conflicting written origins");
+        let Error::NameRes(diagnostic) = error.error else {
+            panic!("expected NameRes, got {:?}", error.error);
+        };
+        assert!(
+            diagnostic.message.contains(needle),
+            "{}",
+            diagnostic.message
+        );
+        let [first] = diagnostic.secondary() else {
+            panic!("the earlier introduction remains identified");
+        };
+        assert!(first.span.start < diagnostic.span.start);
+        assert!(
+            diagnostic
+                .help()
+                .is_some_and(|help| help.contains("remove"))
+        );
+    }
+
     #[test]
     fn distinct_imported_literal_origins_conflict() {
         expect_name_error(
@@ -1734,27 +1512,59 @@ mod tests {
         validate(&[(
             "main.kio",
             "module main;
-             newtype Box : . { pub constructor pick; pub projector choose; };
-             literal pick = 1;
-             literal choose = 2;",
+             type { Box: . { pub mk; pub get; }; }
+             literal mk = 1;
+             literal get = 2;",
         )])
         .expect("newtype members are selected through their type, not as free bindings");
     }
 
     #[test]
-    fn generated_label_type_is_the_selective_import_name() {
+    fn compact_nominal_type_uses_the_ordinary_selective_import_name() {
         validate(&[
-            ("origin.kio", "module origin; pub labels { item: . };"),
-            ("main.kio", "module main; import origin(Item, {item});"),
+            ("origin.kio", "module origin; pub type { Item: .; }"),
+            ("main.kio", "module main; import origin(Item);"),
         ])
-        .expect("labels export their lowercase syntax and uppercase nominal");
+        .expect("compact nominal entries export their exact ordinary type name");
     }
 
     #[test]
-    fn identity_alias_and_imported_generated_label_nominal_conflict() {
-        expect_name_error(
+    fn nominal_registry_uses_one_ordinary_identity_per_written_declaration() {
+        let modules = parsed_headers(&[(
+            "api.kio",
+            "module api; pub type { Explicit: . { pub mk; get; }; } \
+             pub type Bundle = { Compact: . { pub(api) mk; get; }; Other: .; }; \
+             type Reused = Other;",
+        )]);
+        let projection = project_module(&modules[0].0, &modules[0].1);
+        let declarations = &projection.registry.local_named;
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|declaration| declaration.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Explicit", "Bundle", "Compact", "Other", "Reused"],
+        );
+        assert!(
+            declarations
+                .iter()
+                .all(|declaration| declaration.kind == NamedKind::Ordinary)
+        );
+        let sites = &projection.registry.visibility_sites;
+        assert!(sites.iter().any(|site| site.description == "Compact.mk"
+            && matches!(&site.vis, Visibility::PublicIn(path) if path.segments.join("/") == "api")));
+        assert!(
+            sites
+                .iter()
+                .any(|site| site.description == "Compact.get" && site.vis == Visibility::Private)
+        );
+    }
+
+    #[test]
+    fn identity_alias_and_imported_compact_nominal_conflict() {
+        expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub labels { item: . };"),
+                ("origin.kio", "module origin; pub type { Item: .; };"),
                 (
                     "main.kio",
                     "module main; import origin(Item); import origin as source; type Item = source.Item;",
@@ -1765,10 +1575,10 @@ mod tests {
     }
 
     #[test]
-    fn generic_identity_alias_and_imported_generated_label_nominal_conflict() {
-        expect_name_error(
+    fn generic_identity_alias_and_imported_compact_nominal_conflict() {
+        expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub labels { wrap[A]: A };"),
+                ("origin.kio", "module origin; pub type { Wrap[A]: A; };"),
                 (
                     "main.kio",
                     "module main; import origin(Wrap); import origin as source; type Wrap[A] = source.Wrap[A];",
@@ -1779,11 +1589,11 @@ mod tests {
     }
 
     #[test]
-    fn named_label_aliases_keep_distinct_declaration_origins() {
+    fn named_compact_aliases_keep_distinct_declaration_origins() {
         let modules = parsed_headers(&[(
             "origin.kio",
             "module origin; \
-             labels Exact[A][B] = { item[A][B]: A & B }; \
+             type Exact[A][B] = { Item[A][B]: A & B; }; \
              type Forward[A][B] = Item[A][ B];",
         )]);
         let projection = project_module(&modules[0].0, &modules[0].1);
@@ -1801,123 +1611,100 @@ mod tests {
     }
 
     #[test]
-    fn distinct_imported_label_origins_conflict() {
-        expect_name_error(
+    fn distinct_imported_nominal_origins_conflict() {
+        expect_ordinary_origin_error(
             &[
-                ("first.kio", "module first; pub labels { item: . };"),
-                ("second.kio", "module second; pub labels { item: . };"),
+                ("first.kio", "module first; pub type { Item: .; };"),
+                ("second.kio", "module second; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import first({item}); import second({item});",
+                    "module main; import first(Item); import second(Item);",
                 ),
             ],
-            "label `item` has more than one source",
+            "binding `Item` has more than one source",
         );
     }
 
     #[test]
-    fn repeated_import_of_one_label_origin_is_a_duplicate() {
-        expect_duplicate_import_error(
+    fn repeated_import_of_one_nominal_origin_is_a_duplicate() {
+        expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub labels { item: . };"),
+                ("origin.kio", "module origin; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import origin({item}); import origin({item});",
+                    "module main; import origin(Item); import origin(Item);",
                 ),
             ],
-            "duplicate label import `item`",
+            "binding `Item` is introduced more than once",
         );
     }
 
     #[test]
-    fn imported_and_local_label_origins_conflict() {
-        expect_name_error(
+    fn imported_and_local_nominal_origins_conflict() {
+        expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub labels { item: . };"),
+                ("origin.kio", "module origin; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import origin({item}); labels { item: . };",
+                    "module main; import origin(Item); type { Item: .; };",
                 ),
             ],
-            "label `item` has more than one source",
+            "binding `Item` has more than one source",
         );
     }
 
     #[test]
-    fn label_and_value_imports_select_independent_namespaces() {
+    fn nominal_and_value_imports_select_exact_case_distinct_names() {
         validate(&[
             (
                 "first.kio",
-                "module first; labels { item: . }; pub fn item() -> . { () }",
+                "module first; type { Item: .; }; pub fn item() -> . { () }",
             ),
             (
                 "second.kio",
-                "module second; fn item() -> . { () } pub labels { item: . };",
+                "module second; fn item() -> . { () } pub type { Item: .; };",
             ),
             (
                 "main.kio",
-                "module main; import first(item); import second({item});",
+                "module main; import first(item); import second(Item);",
             ),
         ])
-        .expect("each spelling resolves only in its selected namespace");
+        .expect("each exact type/value spelling selects its written provider");
     }
 
     #[test]
-    fn local_label_and_literal_alias_namespaces_coexist() {
+    fn local_nominal_and_literal_alias_names_are_case_distinct() {
         validate(&[(
             "main.kio",
-            "module main; literal item = 1; labels { item: . };",
+            "module main; literal item = 1; type { Item: .; };",
         )])
-        .expect("literal aliases and labels occupy distinct surface namespaces");
+        .expect("ordinary type and value spellings are distinct");
     }
 
     #[test]
-    fn imported_label_and_literal_alias_namespaces_coexist() {
+    fn imported_nominal_and_literal_alias_names_are_case_distinct() {
         validate(&[
-            ("labels.kio", "module labels; pub labels { item: . };"),
+            ("labels.kio", "module labels; pub type { Item: .; };"),
             ("literals.kio", "module literals; pub literal item = 1;"),
             (
                 "main.kio",
-                "module main; import labels({item}); import literals(item);",
+                "module main; import labels(Item); import literals(item);",
             ),
         ])
-        .expect("distinct surface namespaces do not create one binding origin");
+        .expect("distinct ordinary spellings do not create one binding origin");
     }
 
     #[test]
-    fn bare_label_import_has_directed_braces_help() {
+    fn ordinary_import_does_not_infer_a_different_case_spelling() {
         let error = validate(&[
-            ("origin.kio", "module origin; pub labels { item: . };"),
+            ("origin.kio", "module origin; pub type { Item: .; };"),
             ("main.kio", "module main; import origin(item);"),
         ])
-        .expect_err("a bare item must not select the label namespace");
+        .expect_err("a value-shaped import cannot infer a type-shaped declaration");
         let Error::Import(diagnostic) = error.error else {
             panic!("expected Import diagnostic")
         };
-        assert!(diagnostic.message.contains("is a label, not an ordinary"));
-        assert!(
-            diagnostic
-                .help()
-                .is_some_and(|help| help.contains("import origin({item})"))
-        );
-    }
-
-    #[test]
-    fn braced_ordinary_import_has_directed_bare_help() {
-        let error = validate(&[
-            ("origin.kio", "module origin; pub fn item() -> . { () }"),
-            ("main.kio", "module main; import origin({item});"),
-        ])
-        .expect_err("braces must not select the ordinary namespace");
-        let Error::Import(diagnostic) = error.error else {
-            panic!("expected Import diagnostic")
-        };
-        assert!(diagnostic.message.contains("does not export label `item`"));
-        assert!(
-            diagnostic
-                .help()
-                .is_some_and(|help| help.contains("import origin(item)"))
-        );
+        assert!(diagnostic.message.contains("does not export `item`"));
     }
 
     #[test]
@@ -1953,14 +1740,27 @@ mod tests {
     }
 
     #[test]
-    fn generated_label_nominal_and_type_conflict_in_either_declaration_order() {
+    #[cfg(feature = "surface")]
+    fn compact_nominal_and_type_conflict_in_either_declaration_order() {
         for source in [
-            "module main; type Item = .; labels { item: . };",
-            "module main; labels { item: . }; type Item = .;",
+            "module main; type Item = .; type { Item: .; };",
+            "module main; type { Item: .; }; type Item = .;",
         ] {
-            expect_name_error(
-                &[("main.kio", source)],
-                "duplicate top-level declaration `Item`",
+            let error = <crate::pass::full::FullPipeline as crate::pipeline::Pipeline>::lower_package_named(
+                parsed_modules(&[("main.kio", source)]), None, None,
+            ).expect_err("ordinary nominal lowering rejects the duplicate name");
+            let Error::NameRes(diagnostic) = error.error else {
+                panic!("expected a name-resolution error");
+            };
+            assert!(diagnostic.message.contains("nominal `Item` collides"));
+            assert_eq!(
+                &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
+                "Item"
+            );
+            assert!(
+                diagnostic
+                    .help()
+                    .is_some_and(|help| help.contains("rename"))
             );
         }
     }
@@ -2114,18 +1914,27 @@ mod tests {
     #[test]
     fn newtype_member_visibility_descriptions_are_qualified() {
         for (members, expected) in [
-            ("pub(other) constructor mk; pub projector un;", "Tag.mk"),
-            ("pub constructor mk; pub(other) projector un;", "Tag.un"),
+            ("pub(other) mk; pub get;", "Tag.mk"),
+            ("pub mk; pub(other) get;", "Tag.get"),
         ] {
-            let source = format!("module deep/sub; pub newtype Tag : . {{ {members} }};");
-            let error = validate(&[("deep/sub.kio", source.as_str())])
-                .expect_err("a non-prefix member visibility must be rejected");
-            assert!(matches!(error.error, Error::Import(_)));
-            assert!(
-                error.error.diagnostic().message.contains(expected),
-                "got: {:?}",
-                error.error
-            );
+            for declaration in [
+                format!("pub type {{ Tag: . {{ {members} }}; }}"),
+                format!("pub type {{ Tag: . {{ {members} }}; Other: .; }}"),
+                format!("pub type Alias = {{ Tag: . {{ {members} }}; }};"),
+                format!(
+                    "rec {{ pub type {{ Tag: Peer {{ {members} }}; }}; type {{ Peer: Tag; }}; }}"
+                ),
+            ] {
+                let source = format!("module deep/sub; {declaration}");
+                let error = validate(&[("deep/sub.kio", source.as_str())])
+                    .expect_err("a non-prefix member visibility must be rejected");
+                assert!(matches!(error.error, Error::Import(_)));
+                assert!(
+                    error.error.diagnostic().message.contains(expected),
+                    "got: {:?}",
+                    error.error
+                );
+            }
         }
     }
 
@@ -2164,17 +1973,23 @@ mod tests {
     }
 
     #[test]
+    fn repeated_nominal_items_in_one_import_are_duplicates() {
+        expect_ordinary_origin_error(
+            &[
+                ("origin.kio", "module origin; pub type { Item: .; };"),
+                ("main.kio", "module main; import origin(Item, Item);"),
+            ],
+            "binding `Item` is introduced more than once",
+        );
+    }
+
+    #[test]
     fn repeated_consumed_imports_in_one_import_are_duplicates() {
         for (provider, consumer, expected) in [
             (
                 "module origin; pub literal pick = 1;",
                 "module main; import origin(pick, pick);",
                 "duplicate literal alias import `pick`",
-            ),
-            (
-                "module origin; pub labels { item: . };",
-                "module main; import origin({item}, {item});",
-                "duplicate label import `item`",
             ),
             (
                 "module origin; pub fn f() -> . { () } pub op + _ { impl f; };",
@@ -2201,7 +2016,7 @@ mod tests {
                 "origin.kio",
                 "module origin;
                  pub literal pick = 1;
-                 pub labels { item: . };
+                 pub type { Item: .; };
                  pub fn f() -> . { () }
                  pub op + _ { impl f; };
                  pub varop [* *] { foldr cons nil; };",
@@ -2209,8 +2024,8 @@ mod tests {
             (
                 "main.kio",
                 "module main;
-                 import origin(pick, {item}, op + _, varop [* *]);
-                 import origin(pick, {item}, op + _, varop [* *]);
+                 import origin(pick, Item, op + _, varop [* *]);
+                 import origin(pick, Item, op + _, varop [* *]);
                  import missing(absent);",
             ),
         ])
@@ -2315,15 +2130,15 @@ mod tests {
                  pub fn nil() -> . { () }
                  pub fn cons(x: ., xs: .) -> . { x }
                  pub varop [* *] { foldr cons nil; };
-                 pub labels { item: . };",
+                 pub type { Item: .; };",
             ),
             (
                 "main.kio",
                 "module main;
-                 import origin(one, Item, {item}, op + _, varop [* *]);
+                 import origin(one, Item, op + _, varop [* *]);
                  fn unary() -> . { + () }
                  fn list() -> . { [* (), () *] }
-                 fn labeled() -> Item { {item=} }",
+                 fn nominal() -> Item { Item.mk(()) }",
             ),
         ]);
         validate_package(Path::new(""), &modules).expect("registry imports have one origin");

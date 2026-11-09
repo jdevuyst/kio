@@ -10,7 +10,7 @@ import option/macros/spine_macros(
 , macro widen_sum
 );
 
-// `Option(A)` is the native sum `Present(A) | .`, not a nominal wrapper, so
+// `Option(A)` is the native sum `Present[A] | .`, not a nominal wrapper, so
 // `match` / `widen_sum` / `narrow_sum` / `flatten_sum` work on it
 // directly. Labeling the present arm — rather than using a bare `A | .` —
 // restores the "this `A` is the present case" signal a reader wants at a
@@ -28,7 +28,7 @@ import option/macros/spine_macros(
 /// user-facing constructor `some` is the fn below; the underlying label is
 /// `present` so the two names never collide (the label mints a `present`
 /// projector, leaving `some` free for the constructor function).
-pub labels { present[A]: A };
+pub type { Present[A]: A }
 
 /// Option shape whose labeled present arm distinguishes a value from the bare absent unit.
 pub type Option[A] = Present[A] | .;
@@ -36,10 +36,10 @@ pub type Option[A] = Present[A] | .;
 // =====================================================================
 // Constructors
 // =====================================================================
-/// `some(x)` is the present case carrying `x`: `{present = x}` builds the
+/// `some(x)` is the present case carrying `x`: `Present.mk(x)` builds the
 /// labeled value and `widen_sum` injects it as the left arm of the
-/// `Present(A) | .` sum (target inferred from the return type).
-pub fn some[A](x: A) -> Option[A] { widen_sum({present = x}) }
+/// `Present[A] | .` sum (target inferred from the return type).
+pub fn some[A](x: A) -> Option[A] { widen_sum(Present.mk(x)) }
 
 /// `none(A)` is the absent case - the bare `()` arm on the right.
 pub fn none[A] -> Option[A] { widen_sum(()) }

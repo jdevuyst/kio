@@ -19,7 +19,7 @@ fn type_name(ty: &EvalAstType) -> String {
 }
 
 #[test]
-fn replay_preserves_packet_prefix_effects_and_preorder_spans_on_fallback() {
+fn replay_preserves_packet_effects_and_preorder_spans() {
     let left = raw("left", typ("L"));
     let right = raw("right", typ("R"));
     let packet = EvalRef::new(CheckedTerm::from_node(
@@ -35,7 +35,6 @@ fn replay_preserves_packet_prefix_effects_and_preorder_spans_on_fallback() {
     ));
     let node = CheckedTermNode::TermCall {
         fn_value: function,
-        params: vec![typ("P0"), typ("P1"), typ("P2")],
         arg_packet: packet,
     };
     let events = RefCell::new(Vec::new());
@@ -66,24 +65,19 @@ fn replay_preserves_packet_prefix_effects_and_preorder_spans_on_fallback() {
         [
             "raw:callee",
             "type:T",
-            "raw:left",
             "type:L",
             "type:R",
             "raw:left",
-            "raw:right",
-            "type:P0",
-            "type:P1*P2",
-            "type:P1",
-            "type:P2"
+            "raw:right"
         ]
     );
-    assert_eq!(next, 6);
+    assert_eq!(next, 5);
     let Expr::Call { args, meta, .. } = result else {
         unreachable!()
     };
     let mut start = 0;
     assert_eq!(meta.span, checked_template_span(span, &mut start));
-    assert_eq!(args.len(), 4);
+    assert_eq!(args.len(), 2);
     assert!(
         matches!(&args[0], CallArg::Type(ty) if matches!(ty, Type::Path { segments, .. } if segments[0].name == "T"))
     );
@@ -92,7 +86,7 @@ fn replay_preserves_packet_prefix_effects_and_preorder_spans_on_fallback() {
             unreachable!()
         };
         assert!(
-            matches!(callee.as_ref(), Expr::Path { segments, .. } if matches!(segments.last().unwrap().name.as_str(), "__fst__" | "__snd__"))
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.last().unwrap().name == "__pair__")
         );
     }
 }
@@ -121,7 +115,7 @@ fn deep_lets(depth: usize) -> EvalRef<CheckedTerm> {
 }
 
 #[test]
-fn replay_unwind_releases_pending_deep_results_and_fallback_packets() {
+fn replay_unwind_releases_pending_deep_results_and_call_packets() {
     let body = deep_lets(10_000);
     let node = CheckedTermNode::IntrinsicPair {
         left: body.clone(),
@@ -150,8 +144,13 @@ fn replay_unwind_releases_pending_deep_results_and_fallback_packets() {
 
     let node = CheckedTermNode::TermCall {
         fn_value: raw("callee", unit()),
-        params: vec![unit(), unit(), unit()],
-        arg_packet: body,
+        arg_packet: EvalRef::new(CheckedTerm::from_node(
+            CheckedTermNode::IntrinsicPair {
+                left: body,
+                right: raw("tripwire", unit()),
+            },
+            unit(),
+        )),
     };
     let mut conversions = 0;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -160,16 +159,19 @@ fn replay_unwind_releases_pending_deep_results_and_fallback_packets() {
             &[],
             zero_span(),
             &mut 0,
-            &mut |expr, _| crate::ast::convert_expr::<EvalPhase, PrePrime>(expr),
-            &mut |ty| {
+            &mut |expr, _| {
                 conversions += 1;
-                assert!(conversions < 3, "tripwire after one complete projection");
-                convert_type::<EvalPhase, PrePrime>(ty)
+                assert!(
+                    !matches!(expr, Expr::Path { segments, .. } if segments[0].name == "tripwire"),
+                    "tripwire after deep call packet result",
+                );
+                crate::ast::convert_expr::<EvalPhase, PrePrime>(expr)
             },
+            &mut convert_type::<EvalPhase, PrePrime>,
         )
     }));
     assert!(result.is_err());
-    assert_eq!(conversions, 3);
+    assert_eq!(conversions, 10_003);
     let result = instantiate(
         &CheckedTermNode::Local {
             name: "reused".to_owned(),

@@ -1,5 +1,5 @@
 module core/store;
 
-pub rec labels { foo[A]: (Foo[A] -> A) -> A };
+pub rec type { Foo[A]: (Foo[A] -> A) -> A { pub mk; pub get } }
 
-pub fn read_foo[A](value: Foo[A], next: Foo[A] -> A) -> A { value.?{foo}(next) }
+pub fn read_foo[A](value: Foo[A], next: Foo[A] -> A) -> A { Foo.get(value)(next) }

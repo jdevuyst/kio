@@ -14,17 +14,17 @@ import testapi/text(string_concat);
 // `map_right` / `and_then` are the right-biased combinators from the
 // Haskell / Rust tradition — they fix the error arm and transform
 // the value arm. Use as `Either(Error, Value)`.
-newtype Either[A][B] : A | B { pub constructor mk_either; pub projector un_either }
+type { Either[A][B]: A | B { pub mk; pub get } }
 
-fn left[A][B](v: A) -> Either[A][B] { Either.mk_either(widen_sum(v)[A | B]) }
+fn left[A][B](v: A) -> Either[A][B] { Either.mk(widen_sum(v)[A | B]) }
 
-fn right[A][B](v: B) -> Either[A][B] { Either.mk_either(widen_sum(v)[A | B]) }
+fn right[A][B](v: B) -> Either[A][B] { Either.mk(widen_sum(v)[A | B]) }
 
 // `map_right` lifts a total `b -> c` over `Either(a, b)`. The
 // `left` arm passes through unchanged; the `right` arm gets `f`
 // applied to its payload.
 fn map_right[A][B][C](f: B -> C, e: Either[A][B]) -> Either[A][C] {
-  match(e.>Either.un_either) {
+  match(e.>Either.get) {
     (.(l: A) { left[A][C](l) }, .(r: B) { right[A][C](f(r)) })
   }
 }
@@ -33,7 +33,7 @@ fn map_right[A][B][C](f: B -> C, e: Either[A][B]) -> Either[A][C] {
 // `left` arm passes through unchanged; the `right` arm dispatches
 // to `f`. The "right is the value, left is the error" convention.
 fn and_then[A][B][C](f: B -> Either[A][C], e: Either[A][B]) -> Either[A][C] {
-  match(e.>Either.un_either) {
+  match(e.>Either.get) {
     (.(l: A) { left[A][C](l) }, .(r: B) { f(r) })
   }
 }
@@ -42,7 +42,7 @@ fn and_then[A][B][C](f: B -> Either[A][C], e: Either[A][B]) -> Either[A][C] {
 // `left` payload is quoted because it is a String literal in the
 // equations; the `right` payload is bare because it is a number.
 fn print_either(e: Either[String][I32]) -> String {
-  match(e.>Either.un_either) {
+  match(e.>Either.get) {
     (
     , .(s: String) { string_concat("left(\"", string_concat(s, "\")")) }
     , .(v: I32) { string_concat("right(", string_concat(int_to_string(v), ")")) }

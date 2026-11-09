@@ -1,24 +1,25 @@
 module circuit_netlist_eval/render;
 
 import circuit_netlist_eval/domain(
+, Checksum
+, Enable
+, Fanout_ok
+, Fanout_probe
+, Gate_ab_and
+, Gate_bc_or
+, Gate_enable_a
+, Gate_mask
+, Gate_xor
+, Pin_a
+, Pin_b
+, Pin_c
+, Probe_alarm
+, Probe_carry
 , State
-, {checksum}
-, {enable}
-, {fanout_ok}
-, {fanout_probe}
-, {gate_ab_and}
-, {gate_bc_or}
-, {gate_enable_a}
-, {gate_mask}
-, {gate_xor}
-, {pin_a}
-, {pin_b}
-, {pin_c}
-, {probe_alarm}
-, {probe_carry}
-, {truth_ok}
-, {warning_count}
+, Truth_ok
+, Warning_count
 );
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -42,32 +43,38 @@ pub fn render_report(s: State) {
   io.print("circuit_netlist_eval\n");
   io.print(cat5(
   , "pins: A="
-  , bool_text(s.?{pin_a})
+  , bool_text(s.>select { Pin_a.get })
   , " B="
-  , bool_text(s.?{pin_b})
-  , cat5(" C=", bool_text(s.?{pin_c}), " EN=", bool_text(s.?{enable}), "\n")
+  , bool_text(s.>select { Pin_b.get })
+  , cat5(
+    , " C="
+    , bool_text(s.>select { Pin_c.get })
+    , " EN="
+    , bool_text(s.>select { Enable.get })
+    , "\n"
+    )
   ));
   io.print("stage0 gates:\n");
-  print_bool_line("  g_and = AND(A,B) -> ", s.?{gate_ab_and});
-  print_bool_line("  g_or = OR(B,C) -> ", s.?{gate_bc_or});
-  print_bool_line("  g_en = AND(EN,A) -> ", s.?{gate_enable_a});
+  print_bool_line("  g_and = AND(A,B) -> ", s.>select { Gate_ab_and.get });
+  print_bool_line("  g_or = OR(B,C) -> ", s.>select { Gate_bc_or.get });
+  print_bool_line("  g_en = AND(EN,A) -> ", s.>select { Gate_enable_a.get });
   io.print("stage1 gates:\n");
-  print_bool_line("  g_xor = XOR(g_or,g_en) -> ", s.?{gate_xor});
-  print_bool_line("  g_mask = OR(g_and,C) -> ", s.?{gate_mask});
+  print_bool_line("  g_xor = XOR(g_or,g_en) -> ", s.>select { Gate_xor.get });
+  print_bool_line("  g_mask = OR(g_and,C) -> ", s.>select { Gate_mask.get });
   io.print("fanout:\n");
   io.print(cat5(
   , "  g_or -> xor.left="
-  , bool_text(s.?{gate_bc_or})
+  , bool_text(s.>select { Gate_bc_or.get })
   , " probe.bus="
-  , bool_text(s.?{fanout_probe})
+  , bool_text(s.>select { Fanout_probe.get })
   , "\n"
   ));
   io.print("probes:\n");
-  print_bool_line("  carry=", s.?{probe_carry});
-  print_bool_line("  alarm=", s.?{probe_alarm});
-  io.print(cat3("  checksum=", int_text(s.?{checksum}), "\n"));
+  print_bool_line("  carry=", s.>select { Probe_carry.get });
+  print_bool_line("  alarm=", s.>select { Probe_alarm.get });
+  io.print(cat3("  checksum=", int_text(s.>select { Checksum.get }), "\n"));
   io.print("diagnostics:\n");
-  print_bool_line("  fanout_consistent=", s.?{fanout_ok});
-  print_bool_line("  truth_tables_consistent=", s.?{truth_ok});
-  io.print(cat3("  warning_count=", int_text(s.?{warning_count}), "\n"))
+  print_bool_line("  fanout_consistent=", s.>select { Fanout_ok.get });
+  print_bool_line("  truth_tables_consistent=", s.>select { Truth_ok.get });
+  io.print(cat3("  warning_count=", int_text(s.>select { Warning_count.get }), "\n"))
 }

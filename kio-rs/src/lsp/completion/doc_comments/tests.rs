@@ -20,9 +20,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
             path.clone(),
             "module provider; pub fn stale() {}".to_owned(),
         )]),
-        label_reuse_indexes: Default::default(),
         import_aliases: Default::default(),
-        generated_label_nominals: Default::default(),
         root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
         warnings: Vec::new(),
     };
@@ -87,6 +85,52 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
     );
     assert!(result.items.is_empty());
     assert!(result.is_incomplete);
+}
+
+#[test]
+fn doc_compact_nominal_members_respect_owner_and_role_visibility() {
+    let source = concat!(
+        "module provider; ",
+        "pub type Alias = { Token: . { mk; pub get; }; }; ",
+        "pub type { Default: .; Scoped: . { pub(provider) mk; pub get; }; } ",
+        "type { Hidden: . { pub mk; pub get; }; }",
+    );
+    let path = crate::lsp::util::test_file_path("/provider.kio");
+    let analysis = LspAnalysis {
+        position_index: crate::pass::typecheck_full::PositionIndex::new(),
+        file_to_module: BTreeMap::from([(path.clone(), "provider".to_owned())]),
+        sources: std::collections::HashMap::from([(path, source.to_owned())]),
+        import_aliases: Default::default(),
+        root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
+        warnings: Vec::new(),
+    };
+    let module = crate::pass::parser::parse("module app; import provider as p;").unwrap();
+    let result = names(
+        &module,
+        "p.",
+        None,
+        &CompletionSources {
+            local: Some(&analysis),
+            catalog: Some(&analysis),
+            declarations: Some(&analysis.file_to_module),
+            state: None,
+        },
+    );
+    assert_eq!(
+        labels(&result),
+        [
+            "p.Alias",
+            "p.Alias.get",
+            "p.Default",
+            "p.Default.get",
+            "p.Default.mk",
+            "p.Scoped",
+            "p.Scoped.get",
+            "p.Token",
+            "p.Token.get",
+        ]
+    );
+    assert!(!result.is_incomplete);
 }
 
 #[test]
@@ -232,24 +276,25 @@ fn embedded_plain_edits_reframe_multiline_and_reject_unsafe_shapes() {
 }
 
 #[test]
-fn doc_scope_keeps_operator_label_member_and_type_identities() {
+fn doc_scope_keeps_operator_alias_member_and_type_identities() {
     let prefix = concat!(
         "module app; import __intrinsics__;\n",
         "fn value() -> . { () }\n",
         "fn pair(a: ., b: .) -> . { a }\n",
         "op _ + _ { impl pair }\n",
-        "newtype Box : . { constructor make; projector read; };\n",
-        "labels { field: . };\n",
-        "type {alias} = {field};\n",
+        "type { Box: . { mk; get; }; };\n",
+        "type { Field: .; };\n",
+        "type Alias = Field;\n",
     );
     for (term, expected) in [
         ("+|", vec!["+"]),
         ("op _ +|", vec!["op _ + _"]),
-        ("{a|lias}", vec!["{alias}"]),
-        ("Fi|", vec!["Field"]),
-        ("Box.|", vec!["Box.make", "Box.read"]),
-        ("@type ma|", vec!["make"]),
-        ("@type F|", vec![]),
+        ("Al|ias", vec!["Alias"]),
+        ("{a|lias}", vec![]),
+        ("Fi|", vec!["Field", "Field.get", "Field.mk"]),
+        ("Box.|", vec!["Box.get", "Box.mk"]),
+        ("@type Box.m|", vec!["Box.mk"]),
+        ("@type F|", vec!["Field.get", "Field.mk"]),
         ("@type {a|lias}", vec![]),
     ] {
         let (_, list) = marked(&format!("{prefix}/// [`{term}`]\nfn doc() {{}}\n"));

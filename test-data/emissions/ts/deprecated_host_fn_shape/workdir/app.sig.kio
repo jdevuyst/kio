@@ -6,7 +6,7 @@ v(1) {
       module api {
         host type Box[A];
         host type Str role(str);
-        pub newtype Token[A] : A { pub constructor make_token; pub projector read_token };
+        pub type { Token[A]: A { pub mk; pub get } };
         host type Unused[A];
         pub fn echo(value: Str) -> Str;
         host fn old(head: Str, value: Str & Box[Token[.]]) -> Box[Token[.]];

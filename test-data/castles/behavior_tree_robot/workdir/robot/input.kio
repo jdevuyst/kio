@@ -8,7 +8,7 @@ import testapi(Bool, String);
 import testapi/io as io;
 import testapi/text as text;
 
-pub labels Input = { world: model.World } | { end: . } | { invalid: String };
+pub type Input = { World: model.World } | { End: . } | { Invalid: String };
 
 fn fields(hazard_line: String, door_line: String) -> Input {
   let valid_hazard =
@@ -17,16 +17,16 @@ fn fields(hazard_line: String, door_line: String) -> Input {
     if(text.string_eq(door_line, "blocked")) { .t } else { text.string_eq(door_line, "open") };
   if(valid_hazard) {
     if(valid_door) {
-      {world = {
-      , model.hazard = text.string_eq(hazard_line, "hazard")
-      , model.blocked = text.string_eq(door_line, "blocked")
-      }}
+      World.mk((
+      , model.Hazard.mk(text.string_eq(hazard_line, "hazard"))
+      , model.Blocked.mk(text.string_eq(door_line, "blocked"))
+      ))
         .>widen_sum
     } else {
-      {invalid = "door field must be open or blocked"}.>widen_sum
+      Invalid.mk("door field must be open or blocked").>widen_sum
     }
   } else {
-    {invalid = "hazard field must be clear or hazard"}.>widen_sum
+    Invalid.mk("hazard field must be clear or hazard").>widen_sum
   }
 }
 
@@ -35,9 +35,9 @@ pub fn read() -> Input {
     .(hazard_line: String) {
       match(io.read_ascii_line()) {
         .(door_line: String) { fields(hazard_line, door_line) };
-        .() { {invalid = "missing door field"}.>widen_sum }
+        .() { Invalid.mk("missing door field").>widen_sum }
       }
     };
-    .() { {end=}.>widen_sum }
+    .() { End.mk(()).>widen_sum }
   }
 }

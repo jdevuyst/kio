@@ -508,10 +508,9 @@ fn adapter_failed_body_projects_patterns_and_shadow_order_once() {
 }
 
 #[test]
-fn adapter_failed_body_projects_row_let_and_excludes_unfinished_rhs_binder() {
-    let (source, offset) = at(
-        "module app; fn run(record: .) { let .({field as renamed}) = record; let unfinished = |",
-    );
+fn adapter_failed_body_projects_prior_binding_and_excludes_unfinished_rhs_binder() {
+    let (source, offset) =
+        at("module app; fn run(record: .) { let renamed = record; let unfinished = |");
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     assert!(probe.syntax.is_none());
     assert_eq!(names(&project(&probe).values), ["renamed", "record"]);
@@ -525,7 +524,7 @@ fn adapter_grammar_slots_do_not_admit_lexical_values_or_types() {
             KioFileKind::Module,
         ),
         ("package app; build { |", KioFileKind::Package),
-        ("module app; newtype Box : . { |", KioFileKind::Module),
+        ("module app; type { Box: . { |", KioFileKind::Module),
     ] {
         let (source, offset) = probe(marked, Some(kind));
         let probe = probe_tooling(&source, Some(kind), Some(offset), None);

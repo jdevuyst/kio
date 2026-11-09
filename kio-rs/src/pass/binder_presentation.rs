@@ -42,7 +42,7 @@ pub(crate) struct TypeNameProjection {
 impl TypeNameProjection {
     pub(crate) fn new<P>(ty: &crate::ast::Type<P>, replacements: HashMap<String, String>) -> Self
     where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+        P: crate::ast::Phase,
     {
         use crate::ast::Type;
         enum Work<'a, P: crate::ast::Phase> {
@@ -141,7 +141,6 @@ impl TypeNameProjection {
                     pending.push(Work::Type(param));
                 }
                 Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-                Type::LabelSugar { ext, .. } => match *ext {},
             }
         }
         let mut suffixes = HashMap::<&str, usize>::new();

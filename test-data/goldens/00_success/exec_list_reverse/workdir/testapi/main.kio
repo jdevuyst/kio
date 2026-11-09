@@ -8,11 +8,11 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Reverse a list via fold-with-cons. State is `(remaining, output)`;
 // each step conses the head of `remaining` onto `output` and advances.
@@ -21,7 +21,7 @@ fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A &
 fn reverse_step[A](state: List[A] & List[A]) -> (List[A] & List[A]) | List[A] {
   match(state) {
     .(remaining: List[A], output: List[A]) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(x: A, rest: List[A]) {
             widen_sum((rest, push(x, output)))[(List[A] & List[A]) | List[A]]
@@ -41,11 +41,11 @@ fn reverse[A](xs: List[A]) -> List[A] {
 fn print_list_step(state: List[I32] & String) -> (List[I32] & String) | . {
   match(state) {
     .(xs: List[I32], acc: String) {
-      match(xs.>List.un_list) {
+      match(xs.>List.get) {
         (
         , .(x: I32, rest: List[I32]) {
             let sep =
-              match(rest.>List.un_list) {
+              match(rest.>List.get) {
                 (.(_hd: I32, _tl: List[I32]) { ","[String] }, .(_empty: .) { "" })
               };
             widen_sum((rest, string_concat(acc, string_concat(int_to_string(x), sep))))[| (& List[I32]

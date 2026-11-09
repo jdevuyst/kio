@@ -48,7 +48,6 @@ pub enum SourceNameKind {
     Value,
     Type,
     Macro,
-    Label,
     Equiv,
 }
 
@@ -160,25 +159,8 @@ pub enum TokenKind {
     /// the same wire/CSS class as a function definition while allowing LSP
     /// semantic tokens to omit the definition-only `declaration` modifier.
     EntityNameFunctionReference,
-    /// Type definition names (`newtype Box`, `type List`, `host type Foo`).
-    /// The classifier keys off definition sites: a type *reference* in
-    /// code (a `Box` in `let x: Box(Int) = …`) is not classified here
-    /// and stays `Identifier`.
+    /// Type declaration and reference names, including nominal entry heads.
     EntityNameType,
-    /// Label spellings inside `labels { foo: T, bar: U }` blocks — the
-    /// closest analogue to Rust's struct field names.
-    EntityNameLabel,
-    /// A label reference: a reuse marker (`foo: _`), a selective import, or
-    /// an unqualified label in an expression. This keeps the static token
-    /// wire vocabulary identical to [`EntityNameLabel`](Self::EntityNameLabel),
-    /// while letting semantic tokens distinguish references from declarations
-    /// without parsing the source a second time.
-    EntityNameLabelReference,
-    /// A label reference whose parsed path carries an explicit module
-    /// qualifier. The wire and presentation kinds remain
-    /// `entity.name.label`; LSP binder repair uses the parsed distinction
-    /// so trivia between the qualifier and leaf cannot erase identity.
-    EntityNameQualifiedLabelReference,
     /// Function-parameter binders (the `x` in `fn foo(x: T)`).
     /// Parameter *uses* in the body stay `Identifier`.
     VariableParameter,
@@ -218,9 +200,6 @@ impl TokenKind {
             TokenKind::EntityNameFunction => "entity.name.function",
             TokenKind::EntityNameFunctionReference => "entity.name.function",
             TokenKind::EntityNameType => "entity.name.type",
-            TokenKind::EntityNameLabel => "entity.name.label",
-            TokenKind::EntityNameLabelReference => "entity.name.label",
-            TokenKind::EntityNameQualifiedLabelReference => "entity.name.label",
             TokenKind::VariableParameter => "variable.parameter",
         }
     }
@@ -268,9 +247,6 @@ impl TokenKind {
             TokenKind::EntityNameFunction => "kio-entity-name-function",
             TokenKind::EntityNameFunctionReference => "kio-entity-name-function",
             TokenKind::EntityNameType => "kio-entity-name-type",
-            TokenKind::EntityNameLabel => "kio-entity-name-label",
-            TokenKind::EntityNameLabelReference => "kio-entity-name-label",
-            TokenKind::EntityNameQualifiedLabelReference => "kio-entity-name-label",
             TokenKind::VariableParameter => "kio-variable-parameter",
         }
     }
@@ -326,8 +302,6 @@ fn dump_with_tooling_and_docs(
     use crate::pass::parser::{KeywordRole, SourceNameRole, ToolingSyntax};
 
     let mut overrides = AstOverrides::default();
-    // Prefix roles are refined by completed AST carriers below: for example,
-    // a label head becomes a reference when its payload is a reuse marker.
     for fact in &probe.facts.source_names {
         overrides.insert(
             fact.span.start,
@@ -335,11 +309,6 @@ fn dump_with_tooling_and_docs(
                 SourceNameRole::Module => TokenKind::EntityNameModule,
                 SourceNameRole::Function => TokenKind::EntityNameFunction,
                 SourceNameRole::Type => TokenKind::EntityNameType,
-                SourceNameRole::Label => TokenKind::EntityNameLabel,
-                SourceNameRole::LabelReference => TokenKind::EntityNameLabelReference,
-                SourceNameRole::QualifiedLabelReference => {
-                    TokenKind::EntityNameQualifiedLabelReference
-                }
                 SourceNameRole::FunctionReference => TokenKind::EntityNameFunctionReference,
                 SourceNameRole::Parameter => TokenKind::VariableParameter,
             },
@@ -683,10 +652,8 @@ fn ident_text(token: &LexToken) -> Option<&str> {
 ///   `Call.callee`) → `entity.name.function`. This is approximate —
 ///   the path's actual target isn't resolved at parse time — but it
 ///   matches the visual convention readers expect.
-/// - Type definition names (`newtype Box`, `type _List`)
-///   → `entity.name.type`. The newtype's `constructor` / `projector`
-///   member names → `entity.name.function`.
-/// - Label names inside `labels { foo: T, bar: U }` → `entity.name.label`.
+/// - Type declaration names and references → `entity.name.type`.
+///   Fixed nominal member roles `mk` and `get` → `entity.name.function`.
 /// - Function-parameter binders → `variable.parameter`.
 ///
 /// Keyword roles are recovered from the represented declaration or expression
@@ -927,15 +894,6 @@ impl AstOverrides {
             self.source_reference(&path, leaf.span, kind, false);
         }
     }
-
-    fn source_label(&mut self, path: &str, range: Span, raw: &[LexToken]) {
-        if self.source_references.is_some()
-            && let Some(name) = path.rsplit('.').next()
-            && let Some(span) = find_last_ident_in_span(raw, range, name)
-        {
-            self.source_reference(path, span, SourceNameKind::Label, false);
-        }
-    }
 }
 
 impl std::ops::Deref for AstOverrides {
@@ -1090,8 +1048,6 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
                 overrides.insert(seg.span.start, TokenKind::EntityNameModule);
             }
             // Ordinary names retain their default identifier classification.
-            // A braced label item is classified identically to label
-            // references in expressions.
             for item in items {
                 match item {
                     ast::ImportItem::Name {
@@ -1114,11 +1070,6 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
                             {
                                 overrides.insert(keyword.start, TokenKind::KeywordDeclaration);
                             }
-                        }
-                    }
-                    ast::ImportItem::Label { name, span, .. } => {
-                        if let Some(name_span) = find_ident_in_span(raw, *span, name) {
-                            overrides.insert(name_span.start, TokenKind::EntityNameLabelReference);
                         }
                     }
                     ast::ImportItem::OperatorPattern {
@@ -1182,22 +1133,6 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
         ast::Item::LiteralAlias(a, _) => walk_literal_alias(a, raw, overrides),
         ast::Item::Newtype(n) => walk_newtype(n, raw, overrides),
         ast::Item::Labels(t, _) => walk_labels(t, raw, overrides),
-        ast::Item::LabelForward(forward, _) => {
-            overrides.source_reference(
-                &forward.name,
-                forward.name_span,
-                SourceNameKind::Label,
-                true,
-            );
-            overrides.source_label(&forward.target, forward.target_span, raw);
-            mark_declaration_keyword(raw, forward.meta.span, "type", overrides);
-            overrides.insert(forward.name_span.start, TokenKind::EntityNameLabel);
-            if let Some(name) = forward.target.rsplit('.').next()
-                && let Some(span) = find_last_ident_in_span(raw, forward.target_span, name)
-            {
-                overrides.insert(span.start, label_reference_kind(&forward.target));
-            }
-        }
         ast::Item::Equiv(e, _) => walk_equiv(e, raw, overrides),
         ast::Item::Macro(s, _) => {
             overrides.source_reference(&s.name, s.name_span, SourceNameKind::Macro, true);
@@ -1397,24 +1332,14 @@ fn walk_literal_alias(
 }
 
 fn walk_newtype(n: &ast::Newtype<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    mark_declaration_keyword(raw, n.meta.span, "newtype", overrides);
+    mark_declaration_keyword(raw, n.meta.span, "type", overrides);
     if let Some(span) = n.rec_span {
         mark_declaration_keyword(raw, span, "rec", overrides);
     }
-    if let Some(s) = find_name_after_kw(raw, n.meta.span, "newtype", &n.name) {
-        overrides.insert(s.start, TokenKind::EntityNameType);
-    }
-    // A member span includes its visibility prefix. The final name follows
-    // the member keyword, even when either spelling also occurs in a scope path.
+    overrides.source_reference(&n.name, n.name_span, SourceNameKind::Type, true);
+    overrides.insert(n.name_span.start, TokenKind::EntityNameType);
     for member in [&n.constructor, &n.projector] {
-        if let Some(name) = find_last_ident_in_span(raw, member.span, &member.name) {
-            if let Some(index) = first_token_at_or_after(raw, name.start).checked_sub(1)
-                && let Some(keyword) = ident_text(&raw[index])
-            {
-                mark_declaration_keyword(raw, raw[index].span, keyword, overrides);
-            }
-            overrides.insert(name.start, TokenKind::EntityNameFunction);
-        }
+        mark_nominal_member(member, raw, overrides);
     }
     for tp in &n.type_params {
         mark_type_param(tp, raw, overrides);
@@ -1425,31 +1350,37 @@ fn walk_newtype(n: &ast::Newtype<ast::Surface>, raw: &[LexToken], overrides: &mu
     walk_type(&n.payload, raw, overrides);
 }
 
+fn mark_nominal_member(
+    member: &ast::TypeMember<ast::Surface>,
+    raw: &[LexToken],
+    overrides: &mut AstOverrides,
+) {
+    // A member's fixed role is its final token; scoped visibility may repeat
+    // the same spelling earlier in the member span.
+    if let Some(name) = find_last_ident_in_span(raw, member.span, &member.name) {
+        mark_declaration_keyword(raw, name, &member.name, overrides);
+        overrides.insert(name.start, TokenKind::EntityNameFunction);
+    }
+}
+
 fn walk_labels(t: &ast::Labels<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    mark_declaration_keyword(raw, t.meta.span, "labels", overrides);
+    mark_declaration_keyword(raw, t.meta.span, "type", overrides);
     if let Some(span) = t.rec_span {
         mark_declaration_keyword(raw, span, "rec", overrides);
     }
-    // Named form: `labels T = { … };` — the T is the alias type name.
+    // The named compact form introduces an ordinary alias alongside its entries.
     if let Some(s) = t.type_alias_span {
         overrides.insert(s.start, TokenKind::EntityNameType);
+        if let Some(name) = &t.type_alias_name {
+            overrides.source_reference(name, s, SourceNameKind::Type, true);
+        }
     }
     for tp in &t.type_alias_params {
         mark_type_param(tp, raw, overrides);
     }
     for entry in &t.entries {
-        overrides.source_reference(
-            &entry.name,
-            entry.name_span,
-            SourceNameKind::Label,
-            !entry.is_reuse_marker(),
-        );
-        let kind = if entry.is_reuse_marker() {
-            TokenKind::EntityNameLabelReference
-        } else {
-            TokenKind::EntityNameLabel
-        };
-        overrides.insert(entry.name_span.start, kind);
+        overrides.source_reference(&entry.name, entry.name_span, SourceNameKind::Type, true);
+        overrides.insert(entry.name_span.start, TokenKind::EntityNameType);
         for tp in &entry.type_params {
             mark_type_param(tp, raw, overrides);
         }
@@ -1457,6 +1388,13 @@ fn walk_labels(t: &ast::Labels<ast::Surface>, raw: &[LexToken], overrides: &mut 
             mark_type_param(tp, raw, overrides);
         }
         walk_type(&entry.payload, raw, overrides);
+        if let Some(members) = &entry.members {
+            mark_nominal_member(&members.constructor, raw, overrides);
+            mark_nominal_member(&members.projector, raw, overrides);
+        }
+    }
+    if let Some(rhs) = &t.type_alias_rhs {
+        rhs.visit_types(&mut |ty| walk_type(ty, raw, overrides));
     }
 }
 
@@ -1631,14 +1569,6 @@ fn walk_type(ty: &ast::Type<ast::Surface>, raw: &[LexToken], overrides: &mut Ast
             walk_type(left, raw, overrides);
             walk_type(right, raw, overrides);
         }
-        LabelSugar { labels, .. } => {
-            for label in labels {
-                overrides.source_label(&label.label, label.label_span, raw);
-                if let Some(payload) = &label.payload {
-                    walk_type(payload, raw, overrides);
-                }
-            }
-        }
         Forall { param, body, .. } => {
             mark_type_param(param, raw, overrides);
             walk_type(body, raw, overrides);
@@ -1714,16 +1644,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                             if let Some(pattern) = pattern {
                                 walk_param_pattern(pattern, raw, overrides, false);
                             }
-                        }
-                        ast::NeutralItem::RowBinding { entries, meta, .. } => {
-                            mark_leading_keyword(
-                                raw,
-                                meta.span,
-                                "let",
-                                TokenKind::KeywordDeclaration,
-                                overrides,
-                            );
-                            walk_row_let_entries(entries, raw, overrides);
                         }
                         ast::NeutralItem::ExistentialBinding {
                             type_params,
@@ -1863,55 +1783,10 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             walk_expr(value, raw, overrides);
             walk_expr(body, raw, overrides);
         }
-        RowLet {
-            entries,
-            value,
-            body,
-            meta,
-            ..
-        } => {
-            mark_leading_keyword(
-                raw,
-                meta.span,
-                "let",
-                TokenKind::KeywordDeclaration,
-                overrides,
-            );
-            walk_row_let_entries(entries, raw, overrides);
-            walk_expr(value, raw, overrides);
-            walk_expr(body, raw, overrides);
-        }
         Seq { value, body, .. } => {
             walk_expr(value, raw, overrides);
             walk_expr(body, raw, overrides);
         }
-        Elaborator { call, .. } => match call {
-            ast::ElaboratorCall::FieldAccess { receiver, labels } => {
-                walk_expr(receiver, raw, overrides);
-                for label in labels {
-                    overrides.source_label(&label.label, label.label_span, raw);
-                    if let Some(name) = label.label.rsplit('.').next()
-                        && let Some(s) = find_last_ident_in_span(raw, label.label_span, name)
-                    {
-                        overrides.insert(s.start, label_reference_kind(&label.label));
-                    }
-                }
-            }
-            ast::ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver() {
-                    walk_expr(receiver, raw, overrides);
-                }
-                for update in updates {
-                    overrides.source_label(&update.label, update.label_span, raw);
-                    if let Some(name) = update.label.rsplit('.').next()
-                        && let Some(s) = find_last_ident_in_span(raw, update.label_span, name)
-                    {
-                        overrides.insert(s.start, label_reference_kind(&update.label));
-                    }
-                    walk_expr(&update.value, raw, overrides);
-                }
-            }
-        },
         RecOrder { ext, .. } | RecQuote { ext, .. } => match *ext {},
         UserMacro { name, stages, .. } => {
             if let Some(s) = find_ident_in_span(raw, e.meta().span, name) {
@@ -1962,17 +1837,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                 walk_type(ty, raw, overrides);
             }
         }
-        LabelValue { labels, .. } => {
-            for label in labels {
-                overrides.source_label(&label.label, label.label_span, raw);
-                if let Some(name) = label.label.rsplit('.').next()
-                    && let Some(s) = find_last_ident_in_span(raw, label.label_span, name)
-                {
-                    overrides.insert(s.start, label_reference_kind(&label.label));
-                }
-                walk_expr(&label.value, raw, overrides);
-            }
-        }
         OpChain { kind, .. } => match kind {
             ast::OpChainKind::Normal { slots, .. } => {
                 for slot in slots {
@@ -2012,33 +1876,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
     }
 }
 
-fn walk_row_let_entries(
-    entries: &[ast::RowLetEntry],
-    raw: &[LexToken],
-    overrides: &mut AstOverrides,
-) {
-    for entry in entries {
-        overrides.source_label(&entry.label, entry.label_span, raw);
-        if let Some(name) = entry.label.rsplit('.').next()
-            && let Some(span) = find_last_ident_in_span(raw, entry.label_span, name)
-        {
-            overrides.insert(span.start, label_reference_kind(&entry.label));
-        }
-        if let Some(span) = find_ident_in_span(raw, entry.local_span, &entry.local) {
-            overrides.insert(span.start, TokenKind::VariableParameter);
-        }
-        if entry.alias_explicit
-            && let Some(keyword) = find_ident_in_span(
-                raw,
-                Span::new(entry.label_span.end, entry.local_span.start),
-                "as",
-            )
-        {
-            overrides.insert(keyword.start, TokenKind::KeywordDeclaration);
-        }
-    }
-}
-
 fn walk_ufcs_callee(
     callee: &ast::Expr<ast::Surface>,
     kind: SourceNameKind,
@@ -2066,14 +1903,6 @@ fn walk_call_arg(arg: &ast::CallArg<ast::Surface>, raw: &[LexToken], overrides: 
     match arg {
         ast::CallArg::Value(value) => walk_expr(value, raw, overrides),
         ast::CallArg::Type(ty) => walk_type(ty, raw, overrides),
-    }
-}
-
-fn label_reference_kind(label: &str) -> TokenKind {
-    if label.contains('.') {
-        TokenKind::EntityNameQualifiedLabelReference
-    } else {
-        TokenKind::EntityNameLabelReference
     }
 }
 
@@ -2259,13 +2088,13 @@ mod tests {
         let source = "module main;
             import provider(Thing, helper); import provider as q;
             type Alias[A] = A & Thing & q.Thing;
-            newtype Box : Thing { constructor make; projector get; };
+            type { Box: Thing { mk; get; }; };
             fn run[Thing](x: Thing) -> Thing { helper(x) }
             macro build : [Thing] Thing -> Thing {
-                captures (Thing, helper, Box.make); impl q.helper;
+                captures (Thing, helper, Box.mk); impl q.helper;
             };
             op _ + _ { impl q.helper; };
-            fn member() -> . { Box.make(()) }";
+            fn member() -> . { Box.mk(()) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let legacy = super::source_references(source, &module).unwrap();
         fn names(
@@ -2286,10 +2115,11 @@ mod tests {
         assert_eq!(
             names(&legacy),
             [
+                ("Box", Type, true),
                 ("helper", Value, false),
                 ("x", Value, false),
                 ("build", Macro, true),
-                ("Box.make", Value, false),
+                ("Box.mk", Value, false),
             ]
         );
         let dependencies = super::source_dependencies(source, &module).unwrap();
@@ -2299,6 +2129,7 @@ mod tests {
                 ("A", Type, false),
                 ("Thing", Type, false),
                 ("q.Thing", Type, false),
+                ("Box", Type, true),
                 ("Thing", Type, false),
                 ("Thing", Type, false),
                 ("Thing", Type, false),
@@ -2399,11 +2230,10 @@ mod tests {
     }
 
     #[test]
-    fn explicit_row_and_existential_lets_keep_written_source_roles() {
+    fn explicit_pattern_and_existential_lets_keep_written_source_roles() {
         let source = "module m;
             fn run[A](input: A) {
                 let .(whole: (first: A, second: A)) = pair;
-                let .({field as alias, short}) = row;
                 let .(<Hidden> payload) = rhs;
                 let .(<Other> (left: Other, right: Other)) = rhs_again;
                 let .(<Last> last) = fetch(input);
@@ -2414,9 +2244,6 @@ mod tests {
         let probed = dump(source).unwrap();
         assert_eq!(cached, probed, "cached/probe parity");
         for (needle, offset, expected) in [
-            ("let .({", 0, TokenKind::KeywordDeclaration),
-            ("as alias", 3, TokenKind::VariableParameter),
-            ("short}", 0, TokenKind::VariableParameter),
             ("let .(<Hidden>", 0, TokenKind::KeywordDeclaration),
             ("<Hidden>", 1, TokenKind::VariableParameter),
             ("payload) =", 0, TokenKind::Identifier),
@@ -2730,10 +2557,10 @@ mod tests {
             host type Text role(str);\n\
             pub pure fn module(module: .) -> . { let build = module; scope { build } }\n\
             fn branch(if: .) -> . { branch_if(.t) { if } else { module(if) } }\n\
-            newtype Box : . { pub(keyword/module) constructor constructor; projector projector; };\n\
-            pub(keyword/module) rec newtype Ring : . { constructor ring; projector unring; };\n\
+            type { Box: . { pub(keyword/module) mk; get; }; };\n\
+            pub(keyword/module) rec type { Ring: . { mk; get; }; };\n\
             macro macro : . -> . { captures helper.impl; impl(fills) helper.fills; };\n\
-            labels { reused: . }; labels { reused: _ };";
+            type { Reused: .; }; type Alias = Reused;";
         let module = crate::pass::parser::parse(source).expect("ordinary contextual names");
         let probed = dump(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
@@ -2761,11 +2588,11 @@ mod tests {
         assert_eq!(at("branch_if(.t)", 0), TokenKind::EntityNameMacroReference);
         assert_eq!(at("{ if }", 2), TokenKind::Identifier);
         assert_eq!(
-            at("constructor constructor", 0),
+            at("pub(keyword/module) mk", 0),
             TokenKind::KeywordDeclaration
         );
         assert_eq!(
-            at("constructor constructor", 12),
+            at("pub(keyword/module) mk", 20),
             TokenKind::EntityNameFunction
         );
     }
@@ -2917,47 +2744,26 @@ mod tests {
     }
 
     #[test]
-    fn tooling_bridge_retains_newtype_member_and_row_let_roles_before_body_errors() {
-        for (source, needle, offset, expected) in [
-            (
-                "module app; newtype Box : . { constructor constructor; ? }",
-                "constructor constructor",
-                12,
-                TokenKind::EntityNameFunction,
-            ),
-            (
-                "module app; fn run(row: .) { let .({provider.field as module}) = row; ? }",
-                "provider.field",
-                9,
-                TokenKind::EntityNameQualifiedLabelReference,
-            ),
-            (
-                "module app; fn run(row: .) { let .({field as module}) = row; ? }",
-                "field as",
-                0,
-                TokenKind::EntityNameLabelReference,
-            ),
-            (
-                "module app; fn run(row: .) { let .({field as module}) = row; ? }",
-                "as module",
-                3,
-                TokenKind::VariableParameter,
-            ),
-        ] {
-            let probe = crate::pass::parser::probe_tooling_source(source, None);
-            assert!(probe.parse_error.is_some(), "malformed suffix");
-            let start = (source.find(needle).unwrap() + offset) as u32;
-            let tokens = dump(source).unwrap();
-            assert_eq!(
-                tokens
-                    .iter()
-                    .find(|token| token.span.start == start)
-                    .unwrap()
-                    .kind,
-                expected,
-                "{source}"
-            );
-        }
+    fn tooling_bridge_retains_nominal_member_roles_before_body_errors() {
+        let (source, needle, offset, expected) = (
+            "module app; type { Box: . { mk; ? }",
+            "mk;",
+            0,
+            TokenKind::EntityNameFunction,
+        );
+        let probe = crate::pass::parser::probe_tooling_source(source, None);
+        assert!(probe.parse_error.is_some(), "malformed suffix");
+        let start = (source.find(needle).unwrap() + offset) as u32;
+        let tokens = dump(source).unwrap();
+        assert_eq!(
+            tokens
+                .iter()
+                .find(|token| token.span.start == start)
+                .unwrap()
+                .kind,
+            expected,
+            "{source}"
+        );
     }
 
     /// Helper: classify a source snippet and return the
@@ -3037,7 +2843,8 @@ mod tests {
 
     #[test]
     fn malformed_import_keeps_sibling_and_next_declaration_roles() {
-        let source = "module c; import missing/provider(op _ = _, {kept}); fn after(value: .) -> . { value }";
+        let source =
+            "module c; import missing/provider(op _ = _, Kept); fn after(value: .) -> . { value }";
         assert!(crate::pass::parser::parse(source).is_err());
         assert!(crate::pass::parser::parse_lazy(source).is_err());
         let (_, errors) = crate::pass::parser::parse_recover_imports(source)
@@ -3047,7 +2854,7 @@ mod tests {
 
         let classified = dump(source).expect("token dump after import recovery");
         for (spelling, expected) in [
-            ("kept", TokenKind::EntityNameLabelReference),
+            ("Kept", TokenKind::Identifier),
             ("value", TokenKind::VariableParameter),
         ] {
             let start = source.find(spelling).expect("retained token") as u32;
@@ -3356,7 +3163,7 @@ mod tests {
             "fn identity(as: .) -> . {\n",
             "  as\n",
             "}\n",
-            "fn row(row: .) -> . { let .({field as local}) = row; as }\n",
+            "fn value(as: .) -> . { as }\n",
         );
         let tokens = dump(source).expect("token dump");
         let kinds_for = |spelling: &str| {
@@ -3390,7 +3197,7 @@ mod tests {
                 TokenKind::EntityNameModule,
                 TokenKind::VariableParameter,
                 TokenKind::Identifier,
-                TokenKind::KeywordDeclaration,
+                TokenKind::VariableParameter,
                 TokenKind::Identifier,
             ]
         );
@@ -3523,7 +3330,7 @@ mod tests {
     #[test]
     fn import_tags_do_not_reclassify_ordinary_selected_names() {
         let source = "module app;
-            import providers/op(op, import, variadic, foldl, foldr1, finalize, {op},
+            import providers/op(op, import, variadic, foldl, foldr1, finalize, Op,
                 op _ + _, varop [% %]);
             fn op(import: .) -> . { import }
             fn import(value: .) -> . { value }";
@@ -3543,7 +3350,7 @@ mod tests {
         for name in ["import,", "variadic,", "foldl,", "foldr1,", "finalize,"] {
             assert_eq!(at(name, 0), TokenKind::Identifier, "{name}");
         }
-        assert_eq!(at("{op}", 1), TokenKind::EntityNameLabelReference);
+        assert_eq!(at("Op,", 0), TokenKind::Identifier);
         assert_eq!(at("op _ +", 0), TokenKind::KeywordDeclaration);
         assert_eq!(at("varop [%", 0), TokenKind::KeywordDeclaration);
         assert_eq!(at("fn op", 3), TokenKind::EntityNameFunction);
@@ -3638,7 +3445,7 @@ mod tests {
 
     #[test]
     fn lexical_fallback_keeps_rec_contextual() {
-        let source = "rec value; rec(loop); rec { }; rec newtype Cell; rec labels Rows;";
+        let source = "rec value; rec(loop); rec { }; rec type { Cell: .; }; rec type Rows = .;";
         let raw = lex(source).expect("lexical fixture");
         let got = dump_lexical(&raw, &[], source)
             .into_iter()
@@ -4158,10 +3965,9 @@ mod tests {
     }
 
     #[test]
-    fn newtype_name_and_members_classify() {
+    fn nominal_name_and_fixed_members_classify() {
         // Ordinary and marked type names receive the same semantic roles.
-        // Trailing `;` is part of the newtype-decl grammar.
-        let src = "module m;\npub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };\npub newtype _Box[_A] : _A { pub constructor mk_marked; pub projector un_marked; };\n";
+        let src = "module m;\npub type { Box[A]: A { pub mk; pub get; }; }\npub type { _Box[_A]: _A { pub mk; pub get; }; }\n";
         let toks = dumped_text(src);
         for name in ["Box", "_Box"] {
             assert!(
@@ -4179,7 +3985,7 @@ mod tests {
                 "{name}: {toks:?}"
             );
         }
-        for name in ["mk_box", "un_box", "mk_marked", "un_marked"] {
+        for name in ["mk", "get"] {
             assert!(
                 toks.contains(&(name, "entity.name.function")),
                 "{name}: {toks:?}"
@@ -4205,90 +4011,95 @@ mod tests {
     }
 
     #[test]
-    fn labels_entry_names_classify_as_entity_name_label() {
-        // `labels { foo: Int, bar: String };` — entry names are labels.
-        // Trailing `;` is part of the labels-decl grammar.
-        let src = "module m;\nlabels { foo: Int, bar: String };\n";
-        let toks = dumped(src);
-        // `foo` at byte 19.
-        assert_eq!(find_kind_at(&toks, 19), Some("entity.name.label"));
-        // `bar` at byte 29.
-        assert_eq!(find_kind_at(&toks, 29), Some("entity.name.label"));
+    fn compact_nominal_entries_and_existing_operands_classify_as_types() {
+        let src = "module m; type Person = { Name: String; Age: Int { mk; pub get; }; } | (Existing & Other);";
+        let toks = dumped_text(src);
+        for name in [
+            "Person", "Name", "Age", "String", "Int", "Existing", "Other",
+        ] {
+            assert!(
+                toks.contains(&(name, "entity.name.type")),
+                "{name}: {toks:?}"
+            );
+        }
+        for name in ["mk", "get"] {
+            assert!(
+                toks.contains(&(name, "entity.name.function")),
+                "{name}: {toks:?}"
+            );
+        }
     }
 
     #[test]
-    fn label_value_labels_distinguish_declarations_from_references() {
-        let src = "module m;\nlabels { red: ., blue: . };\nfn pick() -> Red { {red = ()} }\n";
+    fn nominal_declarations_and_constructor_keep_distinct_roles() {
+        let src = "module m;\ntype { Red: .; Blue: .; };\nfn pick() -> Red { Red.mk(()) }\n";
+        crate::pass::parser::parse(src).expect("nominal declaration and constructor syntax");
         let toks = dump(src).expect("token dump");
-        assert_eq!(
-            toks.iter()
-                .find(|token| token.span.start == 19)
-                .map(|token| token.kind),
-            Some(TokenKind::EntityNameLabel)
-        );
-        assert_eq!(
-            toks.iter()
-                .find(|token| token.span.start == 27)
-                .map(|token| token.kind),
-            Some(TokenKind::EntityNameLabel)
-        );
-        assert_eq!(
-            toks.iter()
-                .find(|token| token.span.start == 58)
-                .map(|token| token.kind),
-            Some(TokenKind::EntityNameLabelReference)
-        );
+        for (needle, expected) in [
+            ("Red:", TokenKind::EntityNameType),
+            ("Blue:", TokenKind::EntityNameType),
+            ("mk(())", TokenKind::EntityNameFunctionReference),
+        ] {
+            let start = src.find(needle).unwrap() as u32;
+            assert_eq!(
+                toks.iter()
+                    .find(|token| token.span.start == start)
+                    .map(|token| token.kind),
+                Some(expected),
+                "{needle}"
+            );
+        }
     }
 
     #[test]
-    fn forwarded_label_tokens_distinguish_the_local_binding_and_target_leaf() {
-        let source = "module m; type {item} = {item.item}; type {other} = {item};";
-        let tokens = dump(source).expect("forwarding token dump");
+    fn alias_tokens_distinguish_binding_qualifier_and_target_leaf() {
+        let source = "module m; type Item = item.Original; type Other = Item;";
+        crate::pass::parser::parse(source).expect("ordinary aliases");
+        let tokens = dump(source).expect("alias token dump");
         let kind_at = |start: usize| {
             tokens
                 .iter()
                 .find(|token| token.span.start == start as u32)
                 .map(|token| token.kind)
         };
-        let local = source.find("{item}").unwrap() + 1;
-        let qualified = source.find("item.item").unwrap();
-        let bare = source.rfind("{item}").unwrap() + 1;
-        assert_eq!(kind_at(local), Some(TokenKind::EntityNameLabel));
+        let local = source.find("Item =").unwrap();
+        let qualified = source.find("item.Original").unwrap();
+        let bare = source.rfind("Item;").unwrap();
+        assert_eq!(kind_at(local), Some(TokenKind::EntityNameType));
         assert_eq!(kind_at(qualified), Some(TokenKind::Identifier));
         assert_eq!(
             kind_at(qualified + "item.".len()),
-            Some(TokenKind::EntityNameQualifiedLabelReference)
+            Some(TokenKind::EntityNameType)
         );
-        assert_eq!(kind_at(bare), Some(TokenKind::EntityNameLabelReference));
+        assert_eq!(kind_at(bare), Some(TokenKind::EntityNameType));
     }
 
     #[test]
-    fn repeated_qualified_label_name_classifies_the_leaf_for_every_form() {
+    fn repeated_qualified_nominal_members_classify_the_callable_leaf() {
         let src = concat!(
             "module m;\n",
-            "fn forms(row: Foo) -> Foo {\n",
-            "  let .({item.item as local}) = row;\n",
-            "  let accessed = row.?{item.item};\n",
-            "  let updated = row.!{item.item = accessed};\n",
-            "  {item.item = updated}\n",
+            "fn forms(row: item.Item) -> . {\n",
+            "  let accessed = item.Item.get(row);\n",
+            "  let updated = item.Item.mk(accessed);\n",
+            "  item.Item.get(updated); ()\n",
             "}\n",
         );
         let toks = dumped(src);
         let paths: Vec<_> = src
-            .match_indices("item.item")
+            .match_indices("item.Item.")
             .map(|(start, _)| start)
             .collect();
-        assert_eq!(paths.len(), 4, "row-let, access, update, and value");
+        assert_eq!(paths.len(), 3, "two projections and one constructor");
         for start in paths {
             assert_eq!(
                 find_kind_at(&toks, start as u32),
                 Some("identifier"),
-                "qualifier at byte {start} must not be rebound as the label leaf"
+                "the qualifier must not be classified as the callable leaf"
             );
             assert_eq!(
-                find_kind_at(&toks, start as u32 + "item.".len() as u32),
-                Some("entity.name.label"),
-                "final label segment at byte {start} was not classified"
+                find_kind_at(&toks, start as u32 + "item.Item.".len() as u32),
+                Some("entity.name.function"),
+                "the nominal member leaf must be classified"
             );
         }
     }

@@ -277,9 +277,6 @@ fn annotate_walk(e: &mut Expr<Routed>, outer: &[String]) {
         Expr::Call { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -449,9 +446,6 @@ fn walk<'a>(
         Expr::Call { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -570,7 +564,6 @@ fn lifetime_walk_type(ty: &mut Type<Routed>, _stack_eligible: bool) {
             lifetime_walk_type(body, false);
         }
         Type::Unit { .. } | Type::Bottom { .. } => {}
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -673,9 +666,6 @@ fn lifetime_walk_expr(e: &mut Expr<Routed>) {
         Expr::Call { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -868,9 +858,6 @@ fn walk_param_escapes(name: &str, e: &Expr<Routed>, bound: &mut Vec<String>, esc
         Expr::Call { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},

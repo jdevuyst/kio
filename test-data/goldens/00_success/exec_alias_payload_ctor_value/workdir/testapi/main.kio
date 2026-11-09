@@ -8,13 +8,13 @@ import testapi/io(print);
 // alias's expansion, exactly as a direct call does.
 type Msg = String;
 
-newtype Box : Msg { pub constructor mk_box; pub projector un_box }
+type { Box: Msg { pub mk; pub get } }
 
 fn apply_ctor(f: Msg -> Box, x: String) -> Box { f(x) }
 
 fn apply_proj(g: Box -> Msg, b: Box) -> Msg { g(b) }
 
 pub fn main() {
-  let b = apply_ctor(Box.mk_box, "alias payload crosses"[String]);
-  print(apply_proj(Box.un_box, b))
+  let b = apply_ctor(Box.mk, "alias payload crosses"[String]);
+  print(apply_proj(Box.get, b))
 }

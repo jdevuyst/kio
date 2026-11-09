@@ -58,7 +58,7 @@ fn assert_known_type(error: &Error, name: &str, primary: Span, kind: &str) {
 #[test]
 fn explicit_type_parameter_call_arguments_keep_admitted_calls() {
     let source = "module main;
-        newtype List[A] : . { constructor mk; projector get; };
+        type { List[A]: . { mk; get; }; };
         fn nil[A]() -> List[A] { List.mk(()) }
         fn cons[A](head: A, tail: List[A]) -> List[A] { tail }
         fn singleton[A](x: A) -> List[A] { cons(x, nil[A](())) }
@@ -217,12 +217,7 @@ fn local_nominal_value_errors_keep_exact_declaration_kind_and_span() {
     for (declaration, kind, binding_start, binding_len) in [
         ("host type Value;", "host type", 0, "host type Value;".len()),
         ("type Value = .;", "type alias", 5, 5),
-        (
-            "newtype Value : . { constructor mk; projector get; };",
-            "newtype",
-            8,
-            5,
-        ),
+        ("type { Value: . { mk; get; }; };", "newtype", 7, 5),
     ] {
         let source = format!("module main; {declaration} fn value() -> . {{ Value }}");
         let primary = source.rfind("Value }").unwrap();
@@ -245,7 +240,7 @@ fn local_nominal_value_errors_keep_exact_declaration_kind_and_span() {
 #[test]
 fn imported_nominal_value_errors_keep_the_selected_provider() {
     let provider = "module provider; pub type Value = .;";
-    let decoy = "module decoy; pub newtype Value : . { pub constructor mk; pub projector get; };";
+    let decoy = "module decoy; pub type { Value: . { pub mk; pub get; }; };";
     for (usage, value, code) in [
         (
             "import provider(Value);",
@@ -322,7 +317,7 @@ fn valid_type_bindings_and_constructor_paths_keep_their_meaning() {
     for source in [
         "module main; host type Value; fn value(input: Value) -> Value { input }",
         "module main; fn value[A](input: A) -> A { input }",
-        "module main; newtype Value : . { constructor mk; projector get; }; fn value() -> . { Value.get(Value.mk(())) }",
+        "module main; type { Value: . { mk; get; }; }; fn value() -> . { Value.get(Value.mk(())) }",
         "module main; fn outer[A](value: A) -> . { let inner = .[A](other: A) -> A { other }; () }",
     ] {
         prime_check(&[("main.kio", source)]).expect("valid type/value positions remain accepted");
@@ -334,7 +329,7 @@ fn valid_type_bindings_and_constructor_paths_keep_their_meaning() {
 #[cfg(feature = "surface")]
 #[test]
 fn generated_nominal_value_errors_use_the_lowered_declaration_kind() {
-    for declaration in ["labels { field: . };", "labels Fields = { field: . };"] {
+    for declaration in ["type { Field: .; };", "type Fields = { Field: .; };"] {
         let source = format!("module main; {declaration} fn value() -> . {{ Field }}");
         let error = full_check(&[("main.kio", &source)]).unwrap_err().error;
         let primary = source.rfind("Field }").unwrap();

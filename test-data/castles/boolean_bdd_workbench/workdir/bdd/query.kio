@@ -6,6 +6,7 @@ import list/core as lists;
 import list/list as walk;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith as arith;
@@ -24,7 +25,11 @@ pub rec(loop) fn evaluate(store: table.Store, root: table.Node_id, assignment: I
   match(table.lookup(store, root)) {
     .(node: table.Node) {
       let child =
-        if(assignment(node.?{table.level})) { node.?{table.high} } else { node.?{table.low} };
+        if(assignment(node.>select { table.Level.get })) {
+          node.>select { table.High.get }
+        } else {
+          node.>select { table.Low.get }
+        };
       recur evaluate(store, child, assignment)
     };
     .() { table.truth(root) }
@@ -36,9 +41,14 @@ rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment)
     ().>widen_sum
   } else match(table.lookup(store, root)) {
     .(node: table.Node) {
-      let high = table.same_id(node.?{table.low}, table.false_id());
-      let child = if(high) { node.?{table.high} } else { node.?{table.low} };
-      recur choose(store, child, lists.cons((node.?{table.level}, high), values))
+      let high = table.same_id(node.>select { table.Low.get }, table.false_id());
+      let child =
+        if(high) {
+          node.>select { table.High.get }
+        } else {
+          node.>select { table.Low.get }
+        };
+      recur choose(store, child, lists.cons((node.>select { table.Level.get }, high), values))
     };
     .() { values.>widen_sum }
   }
@@ -61,7 +71,10 @@ rec(loop) fn collect(
         .(node: table.Node) {
           recur collect(
           , store
-          , lists.cons(node.?{table.low}, lists.cons(node.?{table.high}, tail))
+          , lists.cons(
+            , node.>select { table.Low.get }
+            , lists.cons(node.>select { table.High.get }, tail)
+            )
           , lists.cons(id, seen)
           )
         };
@@ -80,7 +93,9 @@ fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {
   if(table.terminal(child)) {
     .t
   } else match(table.lookup(store, child)) {
-    .(node: table.Node) { arith.lt_i32(level, node.?{table.level}) };
+    .(node: table.Node) {
+      arith.lt_i32(level, node.>select { table.Level.get })
+    };
     .() { .f }
   }
 }
@@ -88,11 +103,12 @@ fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {
 pub fn valid_store(store: table.Store) -> Bool {
   walk.foldl(
   , .(valid: Bool, id: table.Node_id, node: table.Node) {
-      let distinct = logic.not(table.same_id(node.?{table.low}, node.?{table.high}));
+      let distinct =
+        logic.not(table.same_id(node.>select { table.Low.get }, node.>select { table.High.get }));
       let ordered =
         logic.and(
-        , valid_child(store, node.?{table.level}, node.?{table.low})
-        , valid_child(store, node.?{table.level}, node.?{table.high})
+        , valid_child(store, node.>select { table.Level.get }, node.>select { table.Low.get })
+        , valid_child(store, node.>select { table.Level.get }, node.>select { table.High.get })
         );
       let peers =
         walk.filter(
@@ -100,19 +116,19 @@ pub fn valid_store(store: table.Store) -> Bool {
             logic.and(
             , logic.not(table.same_id(id, other_id))
             , logic.and(
-              , arith.eq_i32(node.?{table.level}, other.?{table.level})
+              , arith.eq_i32(node.>select { table.Level.get }, other.>select { table.Level.get })
               , logic.and(
-                , table.same_id(node.?{table.low}, other.?{table.low})
-                , table.same_id(node.?{table.high}, other.?{table.high})
+                , table.same_id(node.>select { table.Low.get }, other.>select { table.Low.get })
+                , table.same_id(node.>select { table.High.get }, other.>select { table.High.get })
                 )
               )
             )
           }
-        , store.?{table.nodes}
+        , store.>select { table.Nodes.get }
         );
       logic.and(valid, logic.and(distinct, logic.and(ordered, walk.null(peers))))
     }
   , .t
-  , store.?{table.nodes}
+  , store.>select { table.Nodes.get }
   )
 }

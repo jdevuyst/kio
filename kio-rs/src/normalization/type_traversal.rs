@@ -19,9 +19,7 @@ macro_rules! clone_phase_type {
                     visit(right);
                 }
                 Type::Forall { body, .. } => visit(body),
-                Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                    match *ext {}
-                }
+                Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
             }
         }
 
@@ -87,9 +85,7 @@ macro_rules! clone_phase_type {
                         body: Box::new(child()),
                         meta: meta.clone(),
                     },
-                    Type::LabelSugar { ext, .. }
-                    | Type::Infer { ext, .. }
-                    | Type::Goal { ext, .. } => match *ext {},
+                    Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
                 };
                 assert!(
                     ready.next().is_none(),
@@ -105,7 +101,7 @@ macro_rules! clone_phase_type {
 clone_phase_type!(EvalPhase, children, clone_type);
 clone_phase_type!(PrePrime, pre_prime_children, clone_pre_prime_type);
 
-/// Reflection exposes binder handles and function arity, not just alpha-equivalence.
+/// Exact reflected snapshots retain binder handles and internal callable layout.
 /// Flat tokens keep key construction, comparison and release off the native stack.
 #[derive(Debug, Clone)]
 pub(super) struct ReflectionTypeKey {
@@ -181,9 +177,7 @@ impl ReflectionTypeKey {
                             binder_ordinal += 1;
                             ReflectionTypePart::Forall(param.name.clone())
                         }
-                        Type::LabelSugar { ext, .. }
-                        | Type::Infer { ext, .. }
-                        | Type::Goal { ext, .. } => match *ext {},
+                        Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
                     });
                     let start = pending.len();
                     children(ty, |child| pending.push(Part::Type(child)));
@@ -222,9 +216,7 @@ pub(super) fn canonicalize_function_abi(root: &mut EvalAstType) {
             Type::Path { args, .. } => pending.extend(args.iter_mut().rev()),
             Type::Forall { body, .. } => pending.push(body),
             Type::Unit { .. } | Type::Bottom { .. } => {}
-            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                match *ext {}
-            }
+            Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
         }
     }
 }
@@ -318,9 +310,7 @@ pub(super) fn to_pre_prime(
                 body: Box::new(child()),
                 meta: Meta::new(meta.span),
             },
-            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                match *ext {}
-            }
+            Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
         };
         assert!(ready.next().is_none(), "replay type consumes every child");
         drop(ready);

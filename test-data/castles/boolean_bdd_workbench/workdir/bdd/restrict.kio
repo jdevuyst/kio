@@ -5,55 +5,81 @@ import list/core as lists;
 import list/list as walk;
 import macros/control(macro if);
 import macros/match(macro match);
-import macros/spine_macros(macro reorder_prod);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
 type Cached = table.Node_id & table.Node_id;
 
-labels State = { store: table.Store, cache: lists.List[Cached], hits: I32 };
+type State = { Store: table.Store; Cache: lists.List[Cached]; Hits: I32 };
 
 fn remember(s: State, from: table.Node_id, to: table.Node_id) -> State & table.Node_id {
-  ((s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod)[State], to)
+  (
+  , (
+    , Store.mk(s.>select { Store.get })
+    , Cache.mk(lists.cons((from, to), s.>select { Cache.get }))
+    , Hits.mk(s.>select { Hits.get })
+    )
+  , to
+  )
 }
 
 rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> State & table.Node_id {
   match(walk.find(
   , .(from: table.Node_id, _to: table.Node_id) { table.same_id(from, id) }
-  , s.?{cache}
+  , s.>select { Cache.get }
   )) {
     .(_from: table.Node_id, to: table.Node_id) {
-      ((s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod)[State], to)
+      (
+      , (
+        , Store.mk(s.>select { Store.get })
+        , Cache.mk(s.>select { Cache.get })
+        , Hits.mk(arith.add_i32(s.>select { Hits.get }, 1))
+        )
+      , to
+      )
     };
     .() {
-      match(table.lookup(s.?{store}, id)) {
+      match(table.lookup(s.>select { Store.get }, id)) {
         .(node: table.Node) {
-          if(arith.eq_i32(node.?{table.level}, variable)) {
-            let answer = if(value) { node.?{table.high} } else { node.?{table.low} };
+          if(arith.eq_i32(node.>select { table.Level.get }, variable)) {
+            let answer = if(value) {
+              node.>select { table.High.get }
+            } else {
+              node.>select { table.Low.get }
+            };
             remember(s, id, answer)
-          } else if(arith.lt_i32(variable, node.?{table.level})) {
+          } else if(arith.lt_i32(variable, node.>select { table.Level.get })) {
             remember(s, id, id)
           } else {
             let .(after_low: State, low: table.Node_id) = recur(cont) visit(
             , s
-            , node.?{table.low}
+            , node.>select { table.Low.get }
             , variable
             , value
             );
             let .(after_high: State, high: table.Node_id) = recur(cont) visit(
             , after_low
-            , node.?{table.high}
+            , node.>select { table.High.get }
             , variable
             , value
             );
             let .(store: table.Store, answer: table.Node_id) = table.intern(
-            , after_high.?{store}
-            , node.?{table.level}
+            , after_high.>select { Store.get }
+            , node.>select { table.Level.get }
             , low
             , high
             );
-            remember(after_high.!{store}, id, answer)
+            remember(
+            , (
+              , Store.mk(store)
+              , Cache.mk(after_high.>select { Cache.get })
+              , Hits.mk(after_high.>select { Hits.get })
+              )
+            , id
+            , answer
+            )
           }
         };
         .() { remember(s, id, id) }
@@ -65,7 +91,7 @@ rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> S
 pub fn restrict(store: table.Store, id: table.Node_id, variable: I32, value: Bool) ->
   table.Store & table.Node_id & I32
    {
-  let initial = {store, cache = lists.nil[Cached], hits = 0};
+  let initial = (Store.mk(store), Cache.mk(lists.nil[Cached]), Hits.mk(0));
   let .(final: State, answer: table.Node_id) = visit(initial, id, variable, value);
-  (final.?{store}, answer, final.?{hits})
+  (final.>select { Store.get }, answer, final.>select { Hits.get })
 }

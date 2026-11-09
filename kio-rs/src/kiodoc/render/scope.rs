@@ -399,13 +399,13 @@ mod tests {
         let module = crate::pass::parser::parse(
             "module api; pub fn value(x: .) -> . { x } \
              pub type Alias = .; pub literal text = \"x\"; \
-             pub newtype Box : . { pub constructor make; projector read; }; \
-             pub labels Row = { field: . }; pub labels { other: . }; \
-             pub type {forward} = {field}; \
+             pub type { Box: . { pub mk; get; }; }; \
+             pub type Row = { Field: .; }; pub type { Other: .; }; \
+             pub type Forward = Field; \
              pub op _ + _ { impl add; }; pub macro choose : . -> . { impl choose_impl; }; \
              host type Text role(str); host fn emit(value: Text) -> .; \
              rec(loop) { pub fn first(x: .) -> . { recur second(x) }; fn second(x: .) -> . { recur first(x) } } \
-             rec { pub type Chain = Node; pub newtype Node : . | Chain { constructor wrap; projector unwrap; }; pub labels Markers = { mark: . }; }"
+             rec { pub type Chain = Node; pub type { Node: . | Chain { mk; get; }; }; pub type Markers = { Mark: .; }; }"
         ).unwrap();
         let refs = crate::kiodoc::refs::module_scope_from_surface_for_boundary(&module);
         let boundary = PackageBoundaryScope::from_bridged_module_asts(
@@ -430,7 +430,7 @@ mod tests {
                 "{name}"
             );
         }
-        for name in ["second", "read", "wrap", "unwrap", "add", "choose_impl"] {
+        for name in ["second", "mk", "get", "add", "choose_impl"] {
             assert_eq!(
                 crate::kiodoc::refs::resolve_in_module(name, &refs),
                 crate::kiodoc::refs::RefOutcome::Unresolved,
@@ -438,19 +438,27 @@ mod tests {
             );
             assert_eq!(boundary.signature(name), None, "{name}");
         }
+        for name in ["Box.get", "Node.mk", "Node.get"] {
+            assert!(
+                !refs.top_level.iter().any(|exported| exported == name),
+                "{name}"
+            );
+            assert_eq!(boundary.signature(name), None, "{name}");
+        }
+        assert!(refs.top_level.iter().any(|name| name == "Box.mk"));
         assert_eq!(
-            crate::kiodoc::refs::resolve_in_module("make", &refs),
+            crate::kiodoc::refs::resolve_in_module("Box.mk", &refs),
             crate::kiodoc::refs::RefOutcome::Resolved
         );
-        assert_eq!(boundary.signature("make"), None);
+        assert_eq!(boundary.signature("Box.mk"), None);
     }
 
     #[test]
     fn boundary_links_preserve_selection_and_never_borrow_unsupported_names() {
         use crate::kiodoc::render::{rewrite::rewrite, site::SymbolIndex};
-        let public = "module api; pub labels { foo: . }; fn foo() -> . { () } \
-                      pub newtype Box : . { pub constructor make; projector read; };";
-        let other = "module other; pub fn make() -> . { () } pub newtype Box : . { constructor box; projector unbox; };";
+        let public = "module api; pub type { Foo: .; }; fn foo() -> . { () } \
+                      pub type { Box: . { pub mk; get; }; };";
+        let other = "module other; pub fn make() -> . { () } pub type { Box: . { mk; get; }; };";
         let boundary = PackageBoundaryScope::from_bridged_modules(
             Some("package pkg; bridge { api; other; }"),
             [("api", public), ("other", other)].into_iter(),
@@ -458,29 +466,29 @@ mod tests {
         let mut index = SymbolIndex::default();
         index.insert("Box", "other", "item-other-Box");
         index.insert("foo", "api", "item-api-foo");
-        index.insert("make", "other", "item-other-make");
+        index.insert("Box.mk", "other", "item-other-Box-mk");
         assert_eq!(
             rewrite(
-                "[`Box`], [`foo`], [`make`].",
+                "[`Box`], [`foo`], [`Box.mk`].",
                 "",
                 ".md",
                 &index,
                 &boundary,
                 &std::collections::HashSet::new()
             ),
-            "`Box`, `foo`, `make`."
+            "`Box`, `foo`, `Box.mk`."
         );
         index.insert("Box", "api", "item-api-Box");
         assert_eq!(
             rewrite(
-                "[`Box`], [`foo`], [`make`].",
+                "[`Box`], [`foo`], [`Box.mk`].",
                 "",
                 ".md",
                 &index,
                 &boundary,
                 &std::collections::HashSet::new()
             ),
-            "[`Box`](api.md#item-api-Box), `foo`, `make`."
+            "[`Box`](api.md#item-api-Box), `foo`, `Box.mk`."
         );
         let local = ModuleScope::from_source(public).unwrap();
         assert_eq!(
@@ -537,8 +545,8 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_label_nominals_render_the_owner_with_exact_visibility() {
-        let source = "module api; labels { hidden: . }; pub(api) labels { scoped: . }; pub labels Row = { field: . };";
+    fn compact_nominals_render_the_owner_with_exact_visibility() {
+        let source = "module api; type { Hidden: .; }; pub(api) type { Scoped: .; }; pub type Row = { Field: .; };";
         let module = ModuleScope::from_source(source).unwrap();
         for name in ["Hidden", "Scoped", "Field"] {
             assert!(module.signature(name).is_some(), "{name}");
@@ -550,7 +558,7 @@ mod tests {
         );
         assert_eq!(
             boundary.signature("Field"),
-            Some("pub labels Row = { field: . };".to_owned())
+            Some("pub type Row = { Field: . };".to_owned())
         );
         assert_eq!(boundary.source("Field"), boundary.signature("Field"));
         for name in ["Hidden", "Scoped"] {
@@ -562,7 +570,7 @@ mod tests {
     #[test]
     fn recursive_group_boundary_lookup_keeps_context_without_exporting_peers() {
         let module = crate::pass::parser::parse(
-            "module api;\nrec { pub newtype Visible : . | Hidden { constructor make; projector read; }; newtype Hidden : . | Visible { constructor wrap; projector unwrap; }; }\n",
+            "module api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
         ).unwrap();
         for scope in [
             PackageBoundaryScope::from_bridged_module_asts(
@@ -573,13 +581,13 @@ mod tests {
                 Some("package pkg; bridge { api; }"),
                 std::iter::once((
                     "api",
-                    "module api;\nrec { pub newtype Visible : . | Hidden { constructor make; projector read; }; newtype Hidden : . | Visible { constructor wrap; projector unwrap; }; }\n",
+                    "module api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
                 )),
             ),
         ] {
             let source = scope.source("Visible").expect("exported member");
             assert!(source.starts_with("rec {"), "{source}");
-            assert!(source.contains("newtype Hidden"), "{source}");
+            assert!(source.contains("Hidden: . | Visible"), "{source}");
             assert_eq!(scope.signature("Visible"), Some(source));
             assert_eq!(scope.source("Hidden"), None);
             assert_eq!(scope.signature("Hidden"), None);
@@ -650,10 +658,10 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_views_select_the_braced_declaration_in_both_scopes() {
+    fn alias_views_select_the_written_declaration_in_both_scopes() {
         let source = concat!(
             "module pkg/api; pub fn field() -> . { () } ",
-            "pub type {field} = {original}; type {hidden} = {original};",
+            "pub type Field = Original; type Hidden = Original;",
         );
         let local = ModuleScope::from_source(source).unwrap();
         let boundary = PackageBoundaryScope::from_bridged_modules(
@@ -662,25 +670,25 @@ mod tests {
         );
         for scope in [&local as &dyn DirectiveScope, &boundary] {
             assert_eq!(
-                scope.signature("{field}").as_deref(),
-                Some("pub type {field} = {original};")
+                scope.signature("Field").as_deref(),
+                Some("pub type Field = Original;")
             );
-            assert_eq!(scope.source("{field}"), scope.signature("{field}"));
-            assert_eq!(scope.ty("{field}"), None);
+            assert_eq!(scope.source("Field"), scope.signature("Field"));
+            assert_eq!(scope.ty("Field"), None);
             assert!(
                 scope
                     .signature("field")
                     .unwrap()
                     .starts_with("pub fn field")
             );
-            assert_eq!(scope.signature("Field"), None);
-            let LinkTarget::Exact(anchor) = scope.link_target("{field}") else {
-                panic!("forwarded label has an exact declaration anchor");
+            assert_eq!(scope.signature("Missing"), None);
+            let LinkTarget::Exact(anchor) = scope.link_target("Field") else {
+                panic!("the alias has an exact declaration anchor");
             };
-            assert_eq!(anchor, "label-pkg_2fapi-_7bfield_7d");
+            assert_eq!(anchor, "item-pkg_2fapi-Field");
         }
-        assert!(local.signature("{hidden}").is_some());
-        assert_eq!(boundary.signature("{hidden}"), None);
+        assert!(local.signature("Hidden").is_some());
+        assert_eq!(boundary.signature("Hidden"), None);
     }
 
     #[test]

@@ -4,15 +4,15 @@ import macros/sequence(Bind, macro do);
 import testapi(String);
 import testapi/io as io;
 
-newtype Box[A] : A { constructor box; projector un_box }
+type { Box[A]: A { mk; get } }
 
-fn pure[A](value: A) -> Box[A] { Box.box(value) }
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 
-fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.un_box(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 fn receiver() -> Bind[Box] { io.print("receiver\n"); bind }
 
 pub fn main() {
   let result = do(receiver()) { let value <- pure("retained\n"[String]); pure(value) };
-  io.print(Box.un_box(result))
+  io.print(Box.get(result))
 }

@@ -22,13 +22,13 @@ pub fn same(a: Bool, b: Bool) -> Bool {
   if(a) { b } else { not(b) }
 }
 
-pub labels Operation = { conjunction: . } | { disjunction: . } | { exclusive: . };
+pub type Operation = { Conjunction: . } | { Disjunction: . } | { Exclusive: . };
 
-pub fn conjunction_op() -> Operation { {conjunction=}.>widen_sum }
+pub fn conjunction_op() -> Operation { Conjunction.mk(()).>widen_sum }
 
-pub fn disjunction_op() -> Operation { {disjunction=}.>widen_sum }
+pub fn disjunction_op() -> Operation { Disjunction.mk(()).>widen_sum }
 
-pub fn exclusive_op() -> Operation { {exclusive=}.>widen_sum }
+pub fn exclusive_op() -> Operation { Exclusive.mk(()).>widen_sum }
 
 pub fn op_code(op: Operation) -> I32 {
   match(op) {

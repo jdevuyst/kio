@@ -7,30 +7,27 @@
 module turtle/command;
 
 import list/core as list;
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 
-pub labels { pen_cmd: Bool };
+pub type { Pen_cmd: Bool }
 
-pub labels { move_cmd: I32 };
+pub type { Move_cmd: I32 }
 
-pub labels { turn_cmd: Bool };
+pub type { Turn_cmd: Bool }
 
-pub labels { goto_cmd: I32 & I32 };
+pub type { Goto_cmd: I32 & I32 }
 
-pub labels { mark_cmd: I32 };
+pub type { Mark_cmd: I32 }
 
-pub labels { unknown_cmd: String };
+pub type { Unknown_cmd: String }
 
 rec {
-  pub labels { repeat_cmd: I32 & list.List[Command] };
-  pub labels { command: | Pen_cmd
-  | Move_cmd
-  | Turn_cmd
-  | Goto_cmd
-  | Mark_cmd
-  | Repeat_cmd
-  | Unknown_cmd }
+  pub type { Repeat_cmd: I32 & list.List[Command] };
+  pub type {
+    Command: Pen_cmd | Move_cmd | Turn_cmd | Goto_cmd | Mark_cmd | Repeat_cmd | Unknown_cmd
+  }
 }
 
 pub type Command_shape =
@@ -38,32 +35,34 @@ pub type Command_shape =
   ;
 
 /// Open one command node for structural dispatch.
-pub fn un_command(c: Command) -> Command_shape { c.?{command} }
+pub fn un_command(c: Command) -> Command_shape {
+  c.>select { Command.get }
+}
 
 /// `pen down` when `down` is set, `pen up` otherwise.
-pub fn pen(down: Bool) -> Command { {command = ({pen_cmd = down}.>widen_sum)[Command_shape]} }
+pub fn pen(down: Bool) -> Command { Command.mk((Pen_cmd.mk(down).>widen_sum)[Command_shape]) }
 
 /// Advance `n` cells along the current heading.
-pub fn move(n: I32) -> Command { {command = ({move_cmd = n}.>widen_sum)[Command_shape]} }
+pub fn move(n: I32) -> Command { Command.mk((Move_cmd.mk(n).>widen_sum)[Command_shape]) }
 
 /// `turn right` when `right` is set, `turn left` otherwise.
-pub fn turn(right: Bool) -> Command { {command = ({turn_cmd = right}.>widen_sum)[Command_shape]} }
+pub fn turn(right: Bool) -> Command { Command.mk((Turn_cmd.mk(right).>widen_sum)[Command_shape]) }
 
 /// Teleport to `(x, y)`.
 pub fn goto(x: I32, y: I32) -> Command {
-  {command = ({goto_cmd = (x, y)}.>widen_sum)[Command_shape]}
+  Command.mk((Goto_cmd.mk((x, y)).>widen_sum)[Command_shape])
 }
 
 /// Stamp the current cell with glyph code `code`.
-pub fn mark(code: I32) -> Command { {command = ({mark_cmd = code}.>widen_sum)[Command_shape]} }
+pub fn mark(code: I32) -> Command { Command.mk((Mark_cmd.mk(code).>widen_sum)[Command_shape]) }
 
 /// Run `body` `n` times.
 pub fn repeat(n: I32, body: list.List[Command]) -> Command {
-  {command = ({repeat_cmd = (n, body)}.>widen_sum)[Command_shape]}
+  Command.mk((Repeat_cmd.mk((n, body)).>widen_sum)[Command_shape])
 }
 
 /// A word the parser did not recognise, kept verbatim so the echo can show
 /// exactly what the source said.
 pub fn unknown(word: String) -> Command {
-  {command = ({unknown_cmd = word}.>widen_sum)[Command_shape]}
+  Command.mk((Unknown_cmd.mk(word).>widen_sum)[Command_shape])
 }

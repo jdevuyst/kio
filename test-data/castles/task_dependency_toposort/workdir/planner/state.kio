@@ -1,22 +1,23 @@
 module planner/state;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import planner/tasks(task_effort, task_name);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32);
 import testapi/text(string_concat);
 
-pub labels Plan_state = {
-, fetched: Bool
-, schema_done: Bool
-, core_done: Bool
-, js_done: Bool
-, rust_done: Bool
-, bundle_done: Bool
-, notes_done: Bool
-, order_text: String
-, completed_count: I32
-, effort_score: I32
+pub type Plan_state = {
+  Fetched: Bool;
+  Schema_done: Bool;
+  Core_done: Bool;
+  Js_done: Bool;
+  Rust_done: Bool;
+  Bundle_done: Bool;
+  Notes_done: Bool;
+  Order_text: String;
+  Completed_count: I32;
+  Effort_score: I32
 };
 
 fn build_state(
@@ -31,53 +32,61 @@ fn build_state(
 , completed_count: I32
 , effort_score: I32
 ) -> Plan_state {
-  {
-  , fetched
-  , schema_done
-  , core_done
-  , js_done
-  , rust_done
-  , bundle_done
-  , notes_done
-  , order_text
-  , completed_count
-  , effort_score
-  }
+  (
+  , Fetched.mk(fetched)
+  , Schema_done.mk(schema_done)
+  , Core_done.mk(core_done)
+  , Js_done.mk(js_done)
+  , Rust_done.mk(rust_done)
+  , Bundle_done.mk(bundle_done)
+  , Notes_done.mk(notes_done)
+  , Order_text.mk(order_text)
+  , Completed_count.mk(completed_count)
+  , Effort_score.mk(effort_score)
+  )
 }
 
 pub fn empty() -> Plan_state { build_state(.f, .f, .f, .f, .f, .f, .f, "order:\n", 0, 0) }
 
-pub fn completed(plan: Plan_state) -> I32 { plan.?{completed_count} }
+pub fn completed(plan: Plan_state) -> I32 {
+  plan.>select { Completed_count.get }
+}
 
-pub fn effort(plan: Plan_state) -> I32 { plan.?{effort_score} }
+pub fn effort(plan: Plan_state) -> I32 {
+  plan.>select { Effort_score.get }
+}
 
-pub fn order(plan: Plan_state) -> String { plan.?{order_text} }
+pub fn order(plan: Plan_state) -> String {
+  plan.>select { Order_text.get }
+}
 
 fn append_order(current: String, task: I32) -> String {
   string_concat(string_concat(current, "  -> "), string_concat(task_name(task), "\n"))
 }
 
-fn next_completed(plan: Plan_state) -> I32 { add_i32(plan.?{completed_count}, 1) }
+fn next_completed(plan: Plan_state) -> I32 {
+  add_i32(plan.>select { Completed_count.get }, 1)
+}
 
 fn next_effort(plan: Plan_state, task: I32) -> I32 {
-  add_i32(plan.?{effort_score}, task_effort(task))
+  add_i32(plan.>select { Effort_score.get }, task_effort(task))
 }
 
 pub fn is_done(plan: Plan_state, task: I32) -> Bool {
   if(eq_i32(task, 0)) {
-    plan.?{fetched}
+    plan.>select { Fetched.get }
   } else if(eq_i32(task, 1)) {
-    plan.?{schema_done}
+    plan.>select { Schema_done.get }
   } else if(eq_i32(task, 2)) {
-    plan.?{core_done}
+    plan.>select { Core_done.get }
   } else if(eq_i32(task, 3)) {
-    plan.?{js_done}
+    plan.>select { Js_done.get }
   } else if(eq_i32(task, 4)) {
-    plan.?{rust_done}
+    plan.>select { Rust_done.get }
   } else if(eq_i32(task, 5)) {
-    plan.?{bundle_done}
+    plan.>select { Bundle_done.get }
   } else if(eq_i32(task, 6)) {
-    plan.?{notes_done}
+    plan.>select { Notes_done.get }
   } else {
     .f
   }
@@ -102,7 +111,7 @@ fn marked(
   , rust_done
   , bundle_done
   , notes_done
-  , append_order(plan.?{order_text}, task)
+  , append_order(plan.>select { Order_text.get }, task)
   , next_completed(plan)
   , next_effort(plan, task)
   )
@@ -114,83 +123,83 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan
     , task
     , .t
-    , plan.?{schema_done}
-    , plan.?{core_done}
-    , plan.?{js_done}
-    , plan.?{rust_done}
-    , plan.?{bundle_done}
-    , plan.?{notes_done}
+    , plan.>select { Schema_done.get }
+    , plan.>select { Core_done.get }
+    , plan.>select { Js_done.get }
+    , plan.>select { Rust_done.get }
+    , plan.>select { Bundle_done.get }
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 1)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
+    , plan.>select { Fetched.get }
     , .t
-    , plan.?{core_done}
-    , plan.?{js_done}
-    , plan.?{rust_done}
-    , plan.?{bundle_done}
-    , plan.?{notes_done}
+    , plan.>select { Core_done.get }
+    , plan.>select { Js_done.get }
+    , plan.>select { Rust_done.get }
+    , plan.>select { Bundle_done.get }
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 2)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
-    , plan.?{schema_done}
+    , plan.>select { Fetched.get }
+    , plan.>select { Schema_done.get }
     , .t
-    , plan.?{js_done}
-    , plan.?{rust_done}
-    , plan.?{bundle_done}
-    , plan.?{notes_done}
+    , plan.>select { Js_done.get }
+    , plan.>select { Rust_done.get }
+    , plan.>select { Bundle_done.get }
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 3)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
-    , plan.?{schema_done}
-    , plan.?{core_done}
+    , plan.>select { Fetched.get }
+    , plan.>select { Schema_done.get }
+    , plan.>select { Core_done.get }
     , .t
-    , plan.?{rust_done}
-    , plan.?{bundle_done}
-    , plan.?{notes_done}
+    , plan.>select { Rust_done.get }
+    , plan.>select { Bundle_done.get }
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 4)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
-    , plan.?{schema_done}
-    , plan.?{core_done}
-    , plan.?{js_done}
+    , plan.>select { Fetched.get }
+    , plan.>select { Schema_done.get }
+    , plan.>select { Core_done.get }
+    , plan.>select { Js_done.get }
     , .t
-    , plan.?{bundle_done}
-    , plan.?{notes_done}
+    , plan.>select { Bundle_done.get }
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 5)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
-    , plan.?{schema_done}
-    , plan.?{core_done}
-    , plan.?{js_done}
-    , plan.?{rust_done}
+    , plan.>select { Fetched.get }
+    , plan.>select { Schema_done.get }
+    , plan.>select { Core_done.get }
+    , plan.>select { Js_done.get }
+    , plan.>select { Rust_done.get }
     , .t
-    , plan.?{notes_done}
+    , plan.>select { Notes_done.get }
     )
   } else if(eq_i32(task, 6)) {
     marked(
     , plan
     , task
-    , plan.?{fetched}
-    , plan.?{schema_done}
-    , plan.?{core_done}
-    , plan.?{js_done}
-    , plan.?{rust_done}
-    , plan.?{bundle_done}
+    , plan.>select { Fetched.get }
+    , plan.>select { Schema_done.get }
+    , plan.>select { Core_done.get }
+    , plan.>select { Js_done.get }
+    , plan.>select { Rust_done.get }
+    , plan.>select { Bundle_done.get }
     , .t
     )
   } else {

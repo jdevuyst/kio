@@ -2,26 +2,26 @@ module model;
 
 import testapi/io as io;
 
-pub newtype Phantom[A] : . { constructor make; projector read }
+pub type { Phantom[A]: . { mk; get } }
 
-pub fn source[A] -> Phantom[A] { io.print("create\n"); Phantom.make(()) }
+pub fn source[A] -> Phantom[A] { io.print("create\n"); Phantom.mk(()) }
 
-pub fn consume[A](value: Phantom[A]) { value.>Phantom.read }
+pub fn consume[A](value: Phantom[A]) { value.>Phantom.get }
 
-newtype Hidden[*F][A][B] : . { constructor make; projector read }
+type { Hidden[*F][A][B]: . { mk; get } }
 
-fn hidden[A][B] -> Hidden[Phantom][A][B] { io.print("hidden\n"); Hidden.make(()) }
+fn hidden[A][B] -> Hidden[Phantom][A][B] { io.print("hidden\n"); Hidden.mk(()) }
 
 pub fn private_case() {
   let delayed = hidden[.];
   io.print("partial\n");
   let value = delayed[.];
-  value.>Hidden.read;
+  value.>Hidden.get;
   io.print("private\n")
 }
 
-newtype Local : . { constructor make; projector read }
+type { Local: . { mk; get } }
 
-fn local() -> Local { Local.make(()) }
+fn local() -> Local { Local.mk(()) }
 
-pub fn nullary_case() { local().>Local.read; io.print("nullary\n") }
+pub fn nullary_case() { local().>Local.get; io.print("nullary\n") }

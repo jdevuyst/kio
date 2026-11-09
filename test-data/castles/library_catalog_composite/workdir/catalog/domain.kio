@@ -16,24 +16,23 @@ pub type Call_list = lcore.List[I32];
 
 pub type Line_list = lcore.List[String];
 
-pub labels Book = { title: String, copies_total: I32, copies_out: I32 };
+pub type Book = { Title: String; Copies_total: I32; Copies_out: I32 };
 
-pub labels Member = { member_id: I32, fines: I32, held: Call_list };
+pub type Member = { Member_id: I32; Fines: I32; Held: Call_list };
 
-pub labels Hold_rec = { holder: I32, held_call: I32 };
+pub type Hold_rec = { Holder: I32; Held_call: I32 };
 
-pub labels Op =
-  { checkout: I32 & I32 }
-  | { return: I32 & I32 & I32 }
-  | { hold: I32 & I32 }
-  | { report: . };
+pub type Op =
+  { Checkout: I32 & I32 } | { Return: I32 & I32 & I32 } | { Hold: I32 & I32 } | { Report: . }
+  ;
 
-pub labels Failure =
-  { unknown_call: I32 }
-  | { unknown_member: I32 }
-  | { no_copies: I32 }
-  | { not_held: I32 & I32 }
-  | { copies_available: I32 };
+pub type Failure =
+  | { Unknown_call: I32 }
+  | { Unknown_member: I32 }
+  | { No_copies: I32 }
+  | { Not_held: I32 & I32 }
+  | { Copies_available: I32 }
+  ;
 
 pub type Book_index = dict.Dict[I32][Book];
 
@@ -51,30 +50,30 @@ pub type Applied = Book_index & Member_index & Hold_list & String;
 
 pub type Outcome = result.Result[Applied][Failure];
 
-pub fn op_checkout(member: I32, call: I32) -> Op { ({checkout = (member, call)}.>widen_sum)[Op] }
+pub fn op_checkout(member: I32, call: I32) -> Op { (Checkout.mk((member, call)).>widen_sum)[Op] }
 
 pub fn op_return(member: I32, call: I32, days_late: I32) -> Op {
-  ({return = (member, call, days_late)}.>widen_sum)[Op]
+  (Return.mk((member, call, days_late)).>widen_sum)[Op]
 }
 
-pub fn op_hold(member: I32, call: I32) -> Op { ({hold = (member, call)}.>widen_sum)[Op] }
+pub fn op_hold(member: I32, call: I32) -> Op { (Hold.mk((member, call)).>widen_sum)[Op] }
 
-pub fn op_report() -> Op { ({report=}.>widen_sum)[Op] }
+pub fn op_report() -> Op { (Report.mk(()).>widen_sum)[Op] }
 
-pub fn fail_unknown_call(call: I32) -> Failure { ({unknown_call = call}.>widen_sum)[Failure] }
+pub fn fail_unknown_call(call: I32) -> Failure { (Unknown_call.mk(call).>widen_sum)[Failure] }
 
 pub fn fail_unknown_member(member: I32) -> Failure {
-  ({unknown_member = member}.>widen_sum)[Failure]
+  (Unknown_member.mk(member).>widen_sum)[Failure]
 }
 
-pub fn fail_no_copies(call: I32) -> Failure { ({no_copies = call}.>widen_sum)[Failure] }
+pub fn fail_no_copies(call: I32) -> Failure { (No_copies.mk(call).>widen_sum)[Failure] }
 
 pub fn fail_not_held(member: I32, call: I32) -> Failure {
-  ({not_held = (member, call)}.>widen_sum)[Failure]
+  (Not_held.mk((member, call)).>widen_sum)[Failure]
 }
 
 pub fn fail_copies_available(call: I32) -> Failure {
-  ({copies_available = call}.>widen_sum)[Failure]
+  (Copies_available.mk(call).>widen_sum)[Failure]
 }
 
 pub fn cat(left: String, right: String) -> String { string_concat(left, right) }

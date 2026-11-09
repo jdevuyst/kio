@@ -33,7 +33,7 @@ use super::canonicalize_for_comparison;
 use super::persistent_exact::PersistentExactNameMap;
 use super::types::{
     NominalHeadBinding, collect_free_type_vars, fresh_type_var_with, resolve_nominal_head_kind,
-    type_contains_goal,
+    type_contains_goal, type_contains_infer,
 };
 use super::{InternedType, RetainedTypeBinder, TypeCtx, append_type_args, subst_type};
 
@@ -822,20 +822,6 @@ impl ScopedType {
         &self.ty
     }
 
-    pub(crate) fn canonicalized_for_comparison(&self, tcx: &TypeCtx<'_, '_, Lowered>) -> Self {
-        let (ty, identity_canonical) =
-            super::aliases::canonicalize_deep_for_comparison_with_binder_lookup(
-                self.ty.as_type(),
-                &tcx.env.alias_ctx(),
-                &self.scope,
-                self.ty.identity_is_canonical(),
-            );
-        Self::new(
-            InternedType::fresh_with_identity(ty, identity_canonical),
-            self.scope.clone(),
-        )
-    }
-
     pub(crate) fn same_snapshot(&self, other: &Self) -> bool {
         self.ty == other.ty && self.scope == other.scope
     }
@@ -849,6 +835,12 @@ impl ScopedType {
 
     pub(crate) fn projected_scope_compatible(&self, other: &Self) -> bool {
         self.projected_scope_with(other).is_some()
+    }
+
+    pub(crate) fn projected_context_matches(&self, other: &Self) -> bool {
+        self.scope.store_nonce == other.scope.store_nonce
+            && self.scope.context == other.scope.context
+            && self.scope.module_path == other.scope.module_path
     }
 
     fn projected_scope_for<'a>(
@@ -935,6 +927,20 @@ impl ScopedType {
         }
     }
 
+    pub(crate) fn projected_reflection_bindings(
+        &self,
+    ) -> Vec<(String, Kind, Option<super::env::TypeBinderId>)> {
+        let mut bindings = Vec::new();
+        self.scope.bindings.for_each(|name, binding| {
+            let identity = match binding.identity {
+                RigidIdentity::Ambient(identity) => Some(identity),
+                RigidIdentity::Alpha(_) => None,
+            };
+            bindings.push((name.to_owned(), binding.kind.clone(), identity));
+        });
+        bindings
+    }
+
     pub(crate) fn projected_reflection_candidate(&self) -> Option<ProjectedReflectionCandidate> {
         if type_contains_goal(self.ty.as_type()) || super::type_contains_infer(self.ty.as_type()) {
             return None;
@@ -983,6 +989,181 @@ impl ScopedType {
             InternedType::fresh_with_identity(child.clone(), self.ty.identity_is_canonical()),
             scope,
         ))
+    }
+
+    /// Add capture-free aliases for reflected occurrences while retaining all
+    /// original owner proofs. In particular, no Goal owner is renamed here.
+    pub(crate) fn projected_reflection_rebind(
+        &self,
+        names: &HashMap<String, String>,
+        bindings: &[(String, Kind, Option<super::env::TypeBinderId>)],
+    ) -> Option<Self> {
+        let mut scope = self.scope.clone();
+        for (old, new) in names {
+            if old != new
+                && matches!(
+                    scope.binding(old).map(|binding| &binding.identity),
+                    Some(RigidIdentity::Ambient(_))
+                )
+            {
+                return None;
+            }
+        }
+        for (name, kind, identity) in bindings {
+            let binding = RigidBinding {
+                kind: kind.clone(),
+                identity: identity.map_or_else(
+                    || RigidIdentity::Alpha(name.clone()),
+                    RigidIdentity::Ambient,
+                ),
+            };
+            if let Some(existing) = scope.binding(name) {
+                if existing != &binding {
+                    return None;
+                }
+            } else {
+                scope.insert(name.clone(), binding);
+            }
+        }
+        if names.is_empty() {
+            return Some(Self::new(self.ty.clone(), scope));
+        }
+        // Alias targets were reserved against every binder and nominal spelling
+        // in the complete operand group, so only free occurrences are rewritten.
+        enum Work<'a> {
+            Enter(&'a Type<Lowered>),
+            Finish(&'a Type<Lowered>, usize),
+            Leave(&'a str),
+        }
+        let mut bound = HashMap::<&str, usize>::new();
+        let mut work = vec![Work::Enter(self.ty.as_type())];
+        let mut values = Vec::<Type<Lowered>>::new();
+        while let Some(next) = work.pop() {
+            match next {
+                Work::Leave(name) => {
+                    *bound.get_mut(name).expect("entered reflection binder") -= 1;
+                }
+                Work::Enter(ty) => {
+                    work.push(Work::Finish(ty, values.len()));
+                    match ty {
+                        Type::Path { args, .. } | Type::Goal { args, .. } => {
+                            work.extend(args.iter().rev().map(Work::Enter))
+                        }
+                        Type::Function { param, ret, .. } => {
+                            work.push(Work::Enter(ret));
+                            work.push(Work::Enter(param));
+                        }
+                        Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
+                            work.push(Work::Enter(right));
+                            work.push(Work::Enter(left));
+                        }
+                        Type::Forall { param, body, .. } => {
+                            *bound.entry(&param.name).or_default() += 1;
+                            work.push(Work::Leave(&param.name));
+                            work.push(Work::Enter(body));
+                        }
+                        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
+                    }
+                }
+                Work::Finish(ty, base) => {
+                    let mut children = values.drain(base..);
+                    let mut child = || children.next().expect("rewritten reflection child");
+                    let output = match ty {
+                        Type::Path {
+                            segments,
+                            args,
+                            meta,
+                        } => {
+                            let mut segments = segments.clone();
+                            if let [head] = segments.as_mut_slice()
+                                && bound.get(head.as_str()).copied().unwrap_or_default() == 0
+                                && let Some(name) = names.get(head.as_str())
+                            {
+                                *head = crate::ast::PathSegment::synth(name, head.span);
+                            }
+                            Type::Path {
+                                segments,
+                                args: args.iter().map(|_| child()).collect(),
+                                meta: meta.clone(),
+                            }
+                        }
+                        Type::Goal {
+                            goal,
+                            args,
+                            meta,
+                            ext,
+                        } => Type::Goal {
+                            goal: *goal,
+                            args: args.iter().map(|_| child()).collect(),
+                            meta: meta.clone(),
+                            ext: *ext,
+                        },
+                        Type::Function {
+                            abi_arity,
+                            caps,
+                            meta,
+                            ..
+                        } => Type::Function {
+                            param: Box::new(child()),
+                            ret: Box::new(child()),
+                            abi_arity: *abi_arity,
+                            caps: *caps,
+                            meta: meta.clone(),
+                        },
+                        Type::Product { meta, .. } => Type::Product {
+                            left: Box::new(child()),
+                            right: Box::new(child()),
+                            meta: meta.clone(),
+                        },
+                        Type::Sum { meta, .. } => Type::Sum {
+                            left: Box::new(child()),
+                            right: Box::new(child()),
+                            meta: meta.clone(),
+                        },
+                        Type::Forall { param, meta, .. } => Type::Forall {
+                            param: param.clone(),
+                            body: Box::new(child()),
+                            meta: meta.clone(),
+                        },
+                        Type::Unit { meta } => Type::Unit { meta: meta.clone() },
+                        Type::Bottom { meta } => Type::Bottom { meta: meta.clone() },
+                        Type::Infer { meta, ext } => Type::Infer {
+                            meta: meta.clone(),
+                            ext: *ext,
+                        },
+                    };
+                    drop(children);
+                    values.push(output);
+                }
+            }
+        }
+        Some(Self::new(
+            InternedType::fresh_with_identity(
+                values.pop().expect("rewritten reflection root"),
+                self.ty.identity_is_canonical(),
+            ),
+            scope,
+        ))
+    }
+
+    pub(crate) fn projected_reflection_close_forall(
+        &self,
+        param: TypeParam,
+        span: Span,
+    ) -> Option<Self> {
+        let mut scope = self.scope.clone();
+        if let Some(binding) = scope.binding(&param.name) {
+            if binding
+                != &(RigidBinding {
+                    kind: param.effective_kind(),
+                    identity: RigidIdentity::Alpha(param.name.clone()),
+                })
+            {
+                return None;
+            }
+            scope.bindings.remove(param.name.as_str())?;
+        }
+        Self::new(self.ty.clone(), scope).projected_forall_abstract(param, span)
     }
 
     pub(crate) fn projected_binary_peer(
@@ -1392,6 +1573,10 @@ const _: () =
     assert!(std::mem::size_of::<ClosedProjectedType>() == std::mem::size_of::<ScopedType>());
 
 impl ClosedProjectedType {
+    pub(crate) fn reflection_scope(&self) -> &ScopedType {
+        &self.0
+    }
+
     pub(crate) fn ty(&self) -> &InternedType<Lowered> {
         self.0.ty()
     }
@@ -2111,6 +2296,79 @@ pub(crate) trait GoalTypeContext {
     }
 
     fn mismatch(&self, found: &ScopedType, expected: &ScopedType, span: Span) -> Error;
+
+    fn rigid_mismatch(
+        &self,
+        _found: &ScopedType,
+        _expected: &ScopedType,
+        _span: Span,
+    ) -> Option<Error> {
+        None
+    }
+}
+
+type RigidMismatch<'a> = dyn Fn(&ScopedType, &ScopedType, Span) -> Option<Error> + 'a;
+
+/// A call-local diagnostic interpretation for the actual failing rigid leaf.
+/// The wrapped context retains every equation and validation decision.
+pub(crate) struct RigidMismatchContext<'a, C> {
+    pub(crate) context: &'a C,
+    pub(crate) mismatch: Option<&'a RigidMismatch<'a>>,
+}
+
+impl<C: GoalTypeContext> GoalTypeContext for RigidMismatchContext<'_, C> {
+    fn capability(&self) -> GoalContextCapability {
+        self.context.capability()
+    }
+    fn canonicalize(
+        &self,
+        ty: &Type<Lowered>,
+        identity: bool,
+        scope: &RigidScope,
+    ) -> (Type<Lowered>, bool) {
+        self.context.canonicalize(ty, identity, scope)
+    }
+    fn canonicalize_alias_frontier(
+        &self,
+        ty: &Type<Lowered>,
+        identity: bool,
+        scope: &RigidScope,
+    ) -> Option<(Type<Lowered>, bool)> {
+        self.context
+            .canonicalize_alias_frontier(ty, identity, scope)
+    }
+    fn nominal_head_kind(
+        &self,
+        segments: &[PathSegment],
+        supplied: usize,
+        span: Span,
+        scope: &RigidScope,
+        identity: bool,
+    ) -> Result<Kind, Error> {
+        self.context
+            .nominal_head_kind(segments, supplied, span, scope, identity)
+    }
+    fn complete_scheme_frontier(
+        &self,
+        ty: &Type<Lowered>,
+        identity: bool,
+        scope: &RigidScope,
+    ) -> Option<super::aliases::AliasCompleteSchemeAnalysis> {
+        self.context.complete_scheme_frontier(ty, identity, scope)
+    }
+    fn mismatch(&self, found: &ScopedType, expected: &ScopedType, span: Span) -> Error {
+        self.context.mismatch(found, expected, span)
+    }
+    fn rigid_mismatch(
+        &self,
+        found: &ScopedType,
+        expected: &ScopedType,
+        span: Span,
+    ) -> Option<Error> {
+        self.mismatch
+            .and_then(|diagnose| diagnose(found, expected, span))
+            .or_else(|| self.context.rigid_mismatch(found, expected, span))
+    }
 }
 
 /// Immutable environment for one stack-confined specialization relation.
@@ -2120,13 +2378,11 @@ pub(crate) trait GoalTypeContext {
 #[derive(Debug)]
 pub(crate) struct IsolatedSpecializationContext {
     nominal_head_kinds: HashMap<Vec<String>, Kind>,
-    opaque_goal_kinds: HashMap<TypeGoalRef, Kind>,
 }
 
 pub(crate) struct IsolatedSpecializationContextBuilder {
     source_capability: GoalContextCapability,
     nominal_head_kinds: HashMap<Vec<String>, Kind>,
-    opaque_goal_kinds: HashMap<TypeGoalRef, Kind>,
 }
 
 impl IsolatedSpecializationContextBuilder {
@@ -2134,42 +2390,7 @@ impl IsolatedSpecializationContextBuilder {
         Self {
             source_capability: GoalContextCapability::Production(tcx.context_id()),
             nominal_head_kinds: HashMap::new(),
-            opaque_goal_kinds: HashMap::new(),
         }
-    }
-
-    /// Retain only immutable kind evidence for open carrier goals while the
-    /// live store is available. Evaluator-time specialization treats these
-    /// goals as opaque rigid subtrees; it never receives store authority.
-    pub(crate) fn record_carrier_goals(
-        &mut self,
-        input: &ScopedType,
-        store: &GoalStore,
-    ) -> Result<(), Error> {
-        assert_eq!(
-            input.scope.context, self.source_capability,
-            "specialization goal evidence came from another type-checking context"
-        );
-        assert_eq!(
-            input.scope.store_nonce, store.nonce,
-            "specialization goal evidence came from another inference store"
-        );
-        for goal in goal_refs(input.ty.as_type()) {
-            let kind = store.goal_state(goal, input.ty.span())?.kind.clone();
-            match self.opaque_goal_kinds.entry(goal) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(kind);
-                }
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    assert_eq!(
-                        entry.get(),
-                        &kind,
-                        "one projected goal acquired conflicting kind evidence"
-                    );
-                }
-            }
-        }
-        Ok(())
     }
 
     pub(crate) fn canonicalize_carrier(
@@ -2208,7 +2429,6 @@ impl IsolatedSpecializationContextBuilder {
     pub(crate) fn finish(self) -> Arc<IsolatedSpecializationContext> {
         Arc::new(IsolatedSpecializationContext {
             nominal_head_kinds: self.nominal_head_kinds,
-            opaque_goal_kinds: self.opaque_goal_kinds,
         })
     }
 
@@ -2275,7 +2495,6 @@ impl IsolatedSpecializationContextBuilder {
                     self.record_nominal_head_kinds(arg, scope, tcx)?;
                 }
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
         Ok(())
     }
@@ -2285,28 +2504,7 @@ impl IsolatedSpecializationContext {
     pub(crate) fn from_canonical_nominal_head_kinds(
         nominal_head_kinds: HashMap<Vec<String>, Kind>,
     ) -> Arc<Self> {
-        Arc::new(Self {
-            nominal_head_kinds,
-            opaque_goal_kinds: HashMap::new(),
-        })
-    }
-
-    fn opaque_goal_head_kind(
-        &self,
-        goal: TypeGoalRef,
-        supplied_args: usize,
-        span: Span,
-    ) -> Result<Kind, Error> {
-        let base = self.opaque_goal_kinds.get(&goal).ok_or_else(|| {
-            Error::type_(
-                span,
-                "specialization context omitted immutable kind evidence for an open type",
-            )
-        })?;
-        base.arity().checked_sub(supplied_args).ok_or_else(|| {
-            Error::type_(span, "specialization received an over-applied open type")
-        })?;
-        Ok(base.clone())
+        Arc::new(Self { nominal_head_kinds })
     }
 
     fn validate_input(&self, input: &ScopedType) -> Result<(), Error> {
@@ -2389,7 +2587,6 @@ impl IsolatedSpecializationContext {
                 meta.span,
                 "specialization requires a goal-free inspected type",
             )),
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 }
@@ -6262,7 +6459,14 @@ impl GoalStore {
             (Type::Infer { .. }, _) | (_, Type::Infer { .. }) => unreachable!(
                 "a source `_` placeholder reached the goal solver; planning must allocate a Type::Goal first"
             ),
-            (Type::LabelSugar { ext, .. }, _) | (_, Type::LabelSugar { ext, .. }) => match *ext {},
+            (Type::Path { .. }, Type::Path { .. }) => {
+                if let Some(error) =
+                    ctx.rigid_mismatch(&found.materialize(), &expected.materialize(), span)
+                {
+                    return Err(error);
+                }
+                Err(equation.mismatch(self, delta, ctx, span))
+            }
             _ => Err(equation.mismatch(self, delta, ctx, span)),
         }
     }
@@ -6769,7 +6973,6 @@ impl GoalStore {
                     Type::Infer { .. } => {
                         unreachable!("a source `_` placeholder reached the goal-aware kind checker")
                     }
-                    Type::LabelSugar { ext, .. } => match *ext {},
                 })
             },
         )?;
@@ -7080,7 +7283,6 @@ impl GoalStore {
             Type::Infer { .. } => {
                 unreachable!("a source `_` placeholder reached the goal-aware kind checker")
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -7370,7 +7572,6 @@ impl GoalStore {
                 identity_canonical: identity,
             },
             Type::Infer { .. } => unreachable!("a source `_` placeholder reached goal zonking"),
-            Type::LabelSugar { ext, .. } => match *ext {},
         };
         Ok(rebuilt)
     }
@@ -7556,6 +7757,7 @@ pub(crate) fn solve_isolated_specialization<T>(
     mut finalize_output: impl FnMut(ScopedType) -> Result<T, Error>,
     span: Span,
     ctx: &IsolatedSpecializationContext,
+    rigid_mismatch: Option<&RigidMismatch<'_>>,
 ) -> Result<IsolatedSpecialization<T>, Error> {
     let pattern_base_scope = pattern_scope.clone().without_lexical_foralls(params);
     let source_scope = pattern_base_scope.merged(target_scope).map_err(|()| {
@@ -7585,7 +7787,11 @@ pub(crate) fn solve_isolated_specialization<T>(
             owner,
             param.effective_kind(),
             GoalSolutionPolicy::PolytypeAllowed,
-            GoalOrigin::named(span, GoalRole::TypeArgument, param.name.clone()),
+            GoalOrigin::named(
+                span,
+                GoalRole::TypeArgument,
+                param.written_name().unwrap_or(&param.name),
+            ),
         )?;
         let occurrence = store.scoped_goal_at(goal, Vec::new(), owner, span)?;
         replacements.push(occurrence.ty().clone());
@@ -7596,7 +7802,17 @@ pub(crate) fn solve_isolated_specialization<T>(
     let found = ScopedType::new(instantiated, isolated_scope.clone());
     ctx.validate_solver_pattern(&found)?;
     let mut delta = store.begin_delta(owner, span)?;
-    if !store.constrain_isolated_specialization_equation(&mut delta, found, target, span, ctx)? {
+    let relation_context = RigidMismatchContext {
+        context: ctx,
+        mismatch: rigid_mismatch,
+    };
+    if !store.constrain_isolated_specialization_equation(
+        &mut delta,
+        found,
+        target,
+        span,
+        &relation_context,
+    )? {
         return Ok(IsolatedSpecialization::NoMatch);
     }
     let outputs = goals
@@ -7644,15 +7860,41 @@ pub(crate) fn solve_scoped_specialization_by_name(
     target: &ScopedType,
     span: Span,
     ctx: &IsolatedSpecializationContext,
+    rigid_mismatch: Option<&RigidMismatch<'_>>,
 ) -> Result<IsolatedSpecialization<ScopedType>, Error> {
-    if type_contains_goal(pattern.ty().as_type()) || type_contains_goal(target.ty().as_type()) {
-        return solve_scoped_specialization_with_opaque_goals(params, pattern, target, span, ctx);
+    assert!(
+        !type_contains_goal(pattern.ty().as_type())
+            && !type_contains_goal(target.ty().as_type())
+            && !type_contains_infer(pattern.ty().as_type())
+            && !type_contains_infer(target.ty().as_type()),
+        "the evaluator authenticates complete specialization pattern and target types",
+    );
+    // Rebinding an opened parameter leaves its original lexical scope intact.
+    // Only the free proofs used by these complete operands belong in this
+    // equation; an unused shadow must not replace the target's caller proof.
+    let mut pattern_scope = pattern
+        .scope
+        .projected_for_goal_free_type(pattern.ty().as_type());
+    for param in params {
+        if pattern_scope.binding(&param.name).is_none() {
+            pattern_scope.insert(
+                param.name.clone(),
+                pattern
+                    .scope
+                    .binding(&param.name)
+                    .expect("specialization pattern scope omitted a leading forall binder")
+                    .clone(),
+            );
+        }
     }
+    let target_scope = target
+        .scope
+        .projected_for_goal_free_type(target.ty().as_type());
     solve_isolated_specialization(
         params,
         target.ty(),
-        &pattern.scope,
-        &target.scope,
+        &pattern_scope,
+        &target_scope,
         |replacements| {
             let substitutions = params
                 .iter()
@@ -7664,201 +7906,7 @@ pub(crate) fn solve_scoped_specialization_by_name(
         Ok,
         span,
         ctx,
-    )
-}
-
-#[derive(Debug)]
-struct OpaqueSpecializationGoal {
-    name: String,
-    kind: Kind,
-    exact: Type<Lowered>,
-}
-
-fn solve_scoped_specialization_with_opaque_goals(
-    params: &[TypeParam],
-    pattern: &ScopedType,
-    target: &ScopedType,
-    span: Span,
-    ctx: &IsolatedSpecializationContext,
-) -> Result<IsolatedSpecialization<ScopedType>, Error> {
-    fn collect_single_path_names(ty: &Type<Lowered>, names: &mut HashSet<String>) {
-        match ty {
-            Type::Path { segments, args, .. } => {
-                if let [name] = segments.as_slice() {
-                    names.insert(name.name.clone());
-                }
-                for arg in args {
-                    collect_single_path_names(arg, names);
-                }
-            }
-            Type::Goal { args, .. } => {
-                for arg in args {
-                    collect_single_path_names(arg, names);
-                }
-            }
-            Type::Function { param, ret, .. } => {
-                collect_single_path_names(param, names);
-                collect_single_path_names(ret, names);
-            }
-            Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                collect_single_path_names(left, names);
-                collect_single_path_names(right, names);
-            }
-            Type::Forall { param, body, .. } => {
-                names.insert(param.name.clone());
-                collect_single_path_names(body, names);
-            }
-            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-            Type::LabelSugar { ext, .. } => match *ext {},
-        }
-    }
-
-    fn replace_goals(
-        ty: &Type<Lowered>,
-        ctx: &IsolatedSpecializationContext,
-        by_goal: &mut HashMap<TypeGoalRef, usize>,
-        placeholders: &mut Vec<OpaqueSpecializationGoal>,
-        forbidden_names: &mut HashSet<String>,
-    ) -> Result<Type<Lowered>, Error> {
-        if let Type::Goal {
-            goal,
-            args,
-            meta,
-            ext,
-        } = ty
-        {
-            let kind = ctx.opaque_goal_head_kind(*goal, args.len(), meta.span)?;
-            let index = if let Some(index) = by_goal.get(goal) {
-                *index
-            } else {
-                let mut ordinal = placeholders.len();
-                let name = loop {
-                    let candidate = format!("\0isolated-specialization-open-{ordinal}");
-                    if forbidden_names.insert(candidate.clone()) {
-                        break candidate;
-                    }
-                    ordinal = ordinal
-                        .checked_add(1)
-                        .expect("specialization placeholder count exceeded usize");
-                };
-                let index = placeholders.len();
-                placeholders.push(OpaqueSpecializationGoal {
-                    name,
-                    kind,
-                    exact: Type::Goal {
-                        goal: *goal,
-                        args: Vec::new(),
-                        meta: meta.clone(),
-                        ext: *ext,
-                    },
-                });
-                by_goal.insert(*goal, index);
-                index
-            };
-            let args = args
-                .iter()
-                .map(|arg| replace_goals(arg, ctx, by_goal, placeholders, forbidden_names))
-                .collect::<Result<Vec<_>, _>>()?;
-            return Ok(Type::synth_path(
-                vec![placeholders[index].name.clone()],
-                args,
-                meta.span,
-            ));
-        }
-
-        let mut replaced = ty.clone();
-        match &mut replaced {
-            Type::Path { args, .. } => {
-                for arg in args {
-                    *arg = replace_goals(arg, ctx, by_goal, placeholders, forbidden_names)?;
-                }
-            }
-            Type::Function { param, ret, .. } => {
-                **param = replace_goals(param, ctx, by_goal, placeholders, forbidden_names)?;
-                **ret = replace_goals(ret, ctx, by_goal, placeholders, forbidden_names)?;
-            }
-            Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                **left = replace_goals(left, ctx, by_goal, placeholders, forbidden_names)?;
-                **right = replace_goals(right, ctx, by_goal, placeholders, forbidden_names)?;
-            }
-            Type::Forall { body, .. } => {
-                **body = replace_goals(body, ctx, by_goal, placeholders, forbidden_names)?;
-            }
-            Type::Goal { .. } => unreachable!("goal replacement returned at the root"),
-            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-            Type::LabelSugar { ext, .. } => match *ext {},
-        }
-        Ok(replaced)
-    }
-
-    let pattern_base_scope = pattern.scope.clone().without_lexical_foralls(params);
-    let exact_source_scope = pattern_base_scope.merged(&target.scope).map_err(|()| {
-        Error::type_(
-            span,
-            "specialization operands carry incompatible rigid binder scopes",
-        )
-    })?;
-    let mut forbidden_names = HashSet::new();
-    collect_single_path_names(pattern.ty().as_type(), &mut forbidden_names);
-    collect_single_path_names(target.ty().as_type(), &mut forbidden_names);
-    exact_source_scope.bindings.for_each(|name, _| {
-        forbidden_names.insert(name.to_owned());
-    });
-    let mut by_goal = HashMap::new();
-    let mut placeholders = Vec::new();
-    let opaque_pattern = replace_goals(
-        pattern.ty().as_type(),
-        ctx,
-        &mut by_goal,
-        &mut placeholders,
-        &mut forbidden_names,
-    )?;
-    let opaque_target = replace_goals(
-        target.ty().as_type(),
-        ctx,
-        &mut by_goal,
-        &mut placeholders,
-        &mut forbidden_names,
-    )?;
-
-    let mut opaque_source_scope = exact_source_scope.clone();
-    for placeholder in &placeholders {
-        opaque_source_scope =
-            opaque_source_scope.with_alpha(placeholder.name.clone(), placeholder.kind.clone());
-    }
-    let mut opaque_pattern_scope = opaque_source_scope.clone();
-    for param in params {
-        opaque_pattern_scope = opaque_pattern_scope.with_lexical_forall(param);
-    }
-    let opaque_pattern = InternedType::fresh_canonical(opaque_pattern);
-    let opaque_target = InternedType::fresh_canonical(opaque_target);
-    let rehydration = placeholders
-        .into_iter()
-        .map(|placeholder| (placeholder.name, placeholder.exact))
-        .collect::<HashMap<_, _>>();
-
-    solve_isolated_specialization(
-        params,
-        &opaque_target,
-        &opaque_pattern_scope,
-        &opaque_source_scope,
-        |replacements| {
-            let substitutions = params
-                .iter()
-                .zip(replacements)
-                .map(|(param, replacement)| (param.name.clone(), replacement.clone_type()))
-                .collect::<HashMap<_, _>>();
-            InternedType::fresh_canonical(subst_type(opaque_pattern.as_type(), &substitutions))
-        },
-        |output| {
-            let exact = subst_type(output.ty().as_type(), &rehydration);
-            Ok(ScopedType::new(
-                InternedType::fresh_canonical(exact),
-                exact_source_scope.clone(),
-            ))
-        },
-        span,
-        ctx,
+        rigid_mismatch,
     )
 }
 
@@ -7868,6 +7916,7 @@ pub(crate) fn solve_canonical_specialization_by_name(
     target: &InternedType<Lowered>,
     span: Span,
     ctx: &IsolatedSpecializationContext,
+    rigid_mismatch: Option<&RigidMismatch<'_>>,
 ) -> Result<IsolatedSpecialization<InternedType<Lowered>>, Error> {
     let mut pattern_scope = RigidScope::empty(
         TypeGoalStoreIdentity::ISOLATED,
@@ -7898,6 +7947,7 @@ pub(crate) fn solve_canonical_specialization_by_name(
         |output| Ok(output.into_interned_type()),
         span,
         ctx,
+        rigid_mismatch,
     )
 }
 
@@ -7982,7 +8032,6 @@ pub(crate) fn contains_goal_beneath_forall(ty: &Type<Lowered>, beneath_forall: b
             .iter()
             .any(|arg| contains_goal_beneath_forall(arg, beneath_forall)),
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => false,
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -8031,7 +8080,6 @@ fn for_each_type_event<'a>(
         Type::Infer { .. } => {
             unreachable!("a source `_` placeholder reached inference-goal traversal")
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -9142,6 +9190,7 @@ mod tests {
             &target,
             sp(),
             &isolated_ctx(),
+            None,
         )
         .expect("compatible isolated relation should close every binder") else {
             panic!("compatible isolated relation was reported as a miss")
@@ -9183,6 +9232,7 @@ mod tests {
             &target,
             sp(),
             &isolated_ctx(),
+            None,
         )
         .expect("ordinary structural incompatibility is not malformed");
         assert!(matches!(outcome, IsolatedSpecialization::NoMatch));
@@ -9191,8 +9241,9 @@ mod tests {
     #[test]
     fn isolated_specialization_accepts_a_binder_free_exact_equation() {
         let ty = InternedType::fresh_canonical(unit());
-        let outcome = solve_canonical_specialization_by_name(&[], &ty, &ty, sp(), &isolated_ctx())
-            .expect("a binder-free exact equation is a valid specialization");
+        let outcome =
+            solve_canonical_specialization_by_name(&[], &ty, &ty, sp(), &isolated_ctx(), None)
+                .expect("a binder-free exact equation is a valid specialization");
         let IsolatedSpecialization::Matched(arguments) = outcome else {
             panic!("a binder-free exact equation was reported as a miss")
         };
@@ -9221,9 +9272,74 @@ mod tests {
             &InternedType::fresh_canonical(unit()),
             sp(),
             &isolated_ctx(),
+            None,
         )
         .expect_err("unused flexible binder must remain underdetermined");
         assert!(error.diagnostic().message.contains("Unused"));
+    }
+
+    #[test]
+    fn isolated_specialization_diagnostic_uses_the_written_parameter_name() {
+        let param = TypeParam {
+            presentation: crate::ast::TypeParamPresentation::written(),
+            name: "Unused".to_owned(),
+            span: sp(),
+            kind: None,
+        }
+        .renamed("__reflected__".to_owned());
+        let unit = InternedType::fresh_canonical(unit());
+        let error = solve_canonical_specialization_by_name(
+            &[param],
+            &unit,
+            &unit,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect_err("the unused parameter remains an inference diagnostic");
+        let message = &error.diagnostic().message;
+        assert!(message.contains("`Unused`"), "{message}");
+        assert!(!message.contains("__reflected__"), "{message}");
+    }
+
+    #[test]
+    fn isolated_specialization_keeps_equal_written_names_semantically_distinct() {
+        let original = TypeParam {
+            presentation: crate::ast::TypeParamPresentation::written(),
+            name: "A".to_owned(),
+            span: sp(),
+            kind: None,
+        };
+        let params = [
+            original.renamed("first".to_owned()),
+            original.renamed("second".to_owned()),
+        ];
+        let pattern = InternedType::fresh_canonical(product(
+            path(&["first"], Vec::new()),
+            path(&["second"], Vec::new()),
+        ));
+        let target = InternedType::fresh_canonical(product(
+            path(&["m", "I32"], Vec::new()),
+            path(&["m", "String"], Vec::new()),
+        ));
+        let IsolatedSpecialization::Matched(arguments) = solve_canonical_specialization_by_name(
+            &params,
+            &pattern,
+            &target,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect("presentation names do not identify solver variables") else {
+            panic!("two distinct parameters must match independently")
+        };
+        assert_eq!(
+            arguments
+                .iter()
+                .map(|ty| display_type(ty.as_type()))
+                .collect::<Vec<_>>(),
+            ["m.I32", "m.String"],
+        );
     }
 
     #[test]
@@ -9249,6 +9365,7 @@ mod tests {
             &target,
             sp(),
             &isolated_ctx(),
+            None,
         )
         .expect("the scoped rigid target should specialize") else {
             panic!("the scoped rigid target was reported as a miss")
@@ -9279,11 +9396,147 @@ mod tests {
     }
 
     #[test]
-    fn scoped_specialization_rehydrates_an_open_target_without_store_authority() {
-        let mut store = GoalStore::new();
-        let owner = owner(&mut store, RigidScope::new());
-        let open_goal = goal(&mut store, owner, Kind::Star);
-        let target = scoped_canonical(&store, owner, goal_type(open_goal));
+    fn scoped_specialization_discards_rebound_shadow_of_target_caller() {
+        let original = TypeParam {
+            presentation: Default::default(),
+            name: "A".to_owned(),
+            span: sp(),
+            kind: None,
+        };
+        let rebound = TypeParam {
+            name: "T".to_owned(),
+            ..original.clone()
+        };
+        let caller_scope = RigidScope::from_bindings([("A".to_owned(), Kind::Star, 7)]);
+        let pattern = ScopedType::new(
+            InternedType::fresh_canonical(function(
+                path(&["T"], Vec::new()),
+                path(&["T"], Vec::new()),
+            )),
+            caller_scope
+                .clone()
+                .with_lexical_forall(&original)
+                .with_lexical_forall(&rebound),
+        );
+        let target = ScopedType::new(
+            InternedType::fresh_canonical(function(
+                path(&["A"], Vec::new()),
+                path(&["A"], Vec::new()),
+            )),
+            caller_scope.clone(),
+        );
+        let IsolatedSpecialization::Matched(arguments) = solve_scoped_specialization_by_name(
+            &[rebound],
+            &pattern,
+            &target,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect("a rebound candidate specializes to the caller's type") else {
+            panic!("the identical function shape was reported as a miss")
+        };
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments[0].scope.binding("A"), caller_scope.binding("A"));
+        assert!(arguments[0].scope.binding("T").is_none());
+        let scheme = ScopedType::new(
+            InternedType::fresh_canonical(forall(
+                "A",
+                function(path(&["A"], Vec::new()), path(&["A"], Vec::new())),
+            )),
+            caller_scope.clone(),
+        );
+        let instantiated = scheme
+            .projected_instantiate_forall(&arguments[0])
+            .expect("the solved argument retains the exact caller scope");
+        assert_eq!(display_type(instantiated.ty().as_type()), "A -> A");
+        assert_eq!(instantiated.scope.binding("A"), caller_scope.binding("A"));
+    }
+
+    #[test]
+    fn scoped_specialization_preserves_caller_dependencies_between_arguments() {
+        let params = ["T", "U"].map(|name| TypeParam {
+            presentation: Default::default(),
+            name: name.to_owned(),
+            span: sp(),
+            kind: None,
+        });
+        let caller_scope = RigidScope::from_bindings([
+            ("A".to_owned(), Kind::Star, 7),
+            ("B".to_owned(), Kind::Star, 8),
+        ]);
+        let mut pattern_scope = caller_scope.clone();
+        for name in ["A", "B"] {
+            pattern_scope = pattern_scope.with_lexical_forall(&TypeParam {
+                name: name.to_owned(),
+                ..params[0].clone()
+            });
+        }
+        for param in &params {
+            pattern_scope = pattern_scope.with_lexical_forall(param);
+        }
+        let pattern = ScopedType::new(
+            InternedType::fresh_canonical(product(
+                path(&["T"], Vec::new()),
+                path(&["U"], Vec::new()),
+            )),
+            pattern_scope,
+        );
+        let target = ScopedType::new(
+            InternedType::fresh_canonical(product(
+                path(&["A"], Vec::new()),
+                function(path(&["A"], Vec::new()), path(&["B"], Vec::new())),
+            )),
+            caller_scope.clone(),
+        );
+        let IsolatedSpecialization::Matched(arguments) = solve_scoped_specialization_by_name(
+            &params,
+            &pattern,
+            &target,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect("both arguments retain their caller dependencies") else {
+            panic!("the product pattern was reported as a miss")
+        };
+        assert_eq!(arguments.len(), 2);
+        assert_eq!(display_type(arguments[0].ty().as_type()), "A");
+        assert_eq!(display_type(arguments[1].ty().as_type()), "A -> B");
+        assert_eq!(arguments[0].scope.binding("A"), caller_scope.binding("A"));
+        assert!(arguments[0].scope.binding("B").is_none());
+        for name in ["A", "B"] {
+            assert_eq!(arguments[1].scope.binding(name), caller_scope.binding(name));
+        }
+    }
+
+    #[test]
+    fn scoped_specialization_retains_unused_parameter_proof_for_diagnostic() {
+        let param = TypeParam {
+            presentation: Default::default(),
+            name: "Unused".to_owned(),
+            span: sp(),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
+        };
+        let pattern = ScopedType::new(
+            InternedType::fresh_canonical(unit()),
+            RigidScope::new().with_lexical_forall(&param),
+        );
+        let target = ScopedType::new(InternedType::fresh_canonical(unit()), RigidScope::new());
+        let error = solve_scoped_specialization_by_name(
+            &[param],
+            &pattern,
+            &target,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect_err("the unused parameter remains underdetermined, with its original proof");
+        assert!(error.diagnostic().message.contains("Unused"));
+    }
+
+    #[test]
+    fn scoped_specialization_rejects_distinct_caller_identities() {
         let param = TypeParam {
             presentation: Default::default(),
             name: "T".to_owned(),
@@ -9291,167 +9544,55 @@ mod tests {
             kind: None,
         };
         let pattern = ScopedType::new(
-            InternedType::fresh_canonical(path(&["T"], Vec::new())),
-            target.scope.clone().with_lexical_forall(&param),
-        );
-        let context = IsolatedSpecializationContext {
-            nominal_head_kinds: HashMap::new(),
-            opaque_goal_kinds: HashMap::from([(open_goal, Kind::Star)]),
-        };
-
-        let IsolatedSpecialization::Matched(mut arguments) = solve_scoped_specialization_by_name(
-            std::slice::from_ref(&param),
-            &pattern,
-            &target,
-            sp(),
-            &context,
-        )
-        .expect("an open target is rigid evidence, not isolated-store authority") else {
-            panic!("an open target was reported as a structural miss")
-        };
-        let argument = arguments.pop().expect("one forall produced one argument");
-        assert_eq!(
-            argument.transient_key(),
-            target.transient_key(),
-            "the matched argument must recover the exact foreign goal and rigid scope"
-        );
-
-        let scheme = ScopedType::new(
-            InternedType::fresh_canonical(forall("T", path(&["T"], Vec::new()))),
-            target.scope.clone(),
-        );
-        let instantiated = scheme
-            .projected_instantiate_forall(&argument)
-            .expect("an exact same-store open argument must instantiate its forall");
-        assert!(matches!(
-            instantiated.ty().as_type(),
-            Type::Goal { goal, .. } if *goal == open_goal
-        ));
-    }
-
-    #[test]
-    fn scoped_specialization_rehydrates_one_open_head_across_distinct_arguments() {
-        let a = TypeParam {
-            presentation: Default::default(),
-            name: "A".to_owned(),
-            span: sp(),
-            kind: None,
-        };
-        let b = TypeParam {
-            presentation: Default::default(),
-            name: "B".to_owned(),
-            span: sp(),
-            kind: None,
-        };
-        let mut store = GoalStore::new();
-        let owner = owner(
-            &mut store,
-            RigidScope::new()
-                .with_lexical_forall(&a)
-                .with_lexical_forall(&b),
-        );
-        let open_goal = goal(&mut store, owner, Kind::arrow_chain(1));
-        let outer_scope = store.owner_scope(owner, sp()).unwrap();
-        let flexible = TypeParam {
-            presentation: Default::default(),
-            name: "F".to_owned(),
-            span: sp(),
-            kind: Some(Box::new(Kind::arrow_chain(1))),
-        };
-        let pattern = ScopedType::new(
             InternedType::fresh_canonical(product(
-                path(&["F"], vec![path(&["A"], Vec::new())]),
-                path(&["F"], vec![path(&["B"], Vec::new())]),
+                path(&["T"], Vec::new()),
+                path(&["A"], Vec::new()),
             )),
-            outer_scope.clone().with_lexical_forall(&flexible),
+            RigidScope::from_bindings([("A".to_owned(), Kind::Star, 7)])
+                .with_lexical_forall(&param),
         );
         let target = ScopedType::new(
-            InternedType::fresh_canonical(product(
-                Type::Goal {
-                    goal: open_goal,
-                    args: vec![path(&["A"], Vec::new())],
-                    meta: Meta::new(sp()),
-                    ext: (),
-                },
-                Type::Goal {
-                    goal: open_goal,
-                    args: vec![path(&["B"], Vec::new())],
-                    meta: Meta::new(sp()),
-                    ext: (),
-                },
-            )),
-            outer_scope.clone(),
+            InternedType::fresh_canonical(product(unit(), path(&["A"], Vec::new()))),
+            RigidScope::from_bindings([("A".to_owned(), Kind::Star, 8)]),
         );
-        let context = IsolatedSpecializationContext {
-            nominal_head_kinds: HashMap::new(),
-            opaque_goal_kinds: HashMap::from([(open_goal, Kind::arrow_chain(1))]),
-        };
-
-        let IsolatedSpecialization::Matched(mut arguments) = solve_scoped_specialization_by_name(
-            std::slice::from_ref(&flexible),
+        let error = solve_scoped_specialization_by_name(
+            &[param],
             &pattern,
             &target,
             sp(),
-            &context,
+            &isolated_ctx(),
+            None,
         )
-        .expect("one open head may be observed at two exact rigid arguments") else {
-            panic!("two applications of one open head were treated as unrelated constants")
-        };
-        let argument = arguments.pop().expect("one forall produced one argument");
-        let expected = ScopedType::new(
-            InternedType::fresh_canonical(goal_type(open_goal)),
-            outer_scope,
-        );
-        assert_eq!(
-            argument.transient_key(),
-            expected.transient_key(),
-            "the inferred higher-kinded argument must rehydrate the exact foreign goal head"
-        );
-    }
-
-    #[test]
-    fn scoped_specialization_does_not_hoist_an_applied_goal_out_of_forall() {
-        let mut store = GoalStore::new();
-        let owner = owner(&mut store, RigidScope::new());
-        let open_goal = goal(&mut store, owner, Kind::arrow_chain(1));
-        let outer_scope = store.owner_scope(owner, sp()).unwrap();
-        let flexible = TypeParam {
-            presentation: Default::default(),
-            name: "T".to_owned(),
-            span: sp(),
-            kind: None,
-        };
-        let pattern = ScopedType::new(
-            InternedType::fresh_canonical(forall("A", path(&["T"], Vec::new()))),
-            outer_scope.clone().with_lexical_forall(&flexible),
-        );
-        let target = ScopedType::new(
-            InternedType::fresh_canonical(forall(
-                "A",
-                Type::Goal {
-                    goal: open_goal,
-                    args: vec![path(&["A"], Vec::new())],
-                    meta: Meta::new(sp()),
-                    ext: (),
-                },
-            )),
-            outer_scope,
-        );
-        let context = IsolatedSpecializationContext {
-            nominal_head_kinds: HashMap::new(),
-            opaque_goal_kinds: HashMap::from([(open_goal, Kind::arrow_chain(1))]),
-        };
-
-        let outcome = solve_scoped_specialization_by_name(
-            std::slice::from_ref(&flexible),
-            &pattern,
-            &target,
-            sp(),
-            &context,
-        );
+        .expect_err("same spelling cannot merge different caller identities");
         assert!(
-            !matches!(outcome, Ok(IsolatedSpecialization::Matched(_))),
-            "an inferred argument cannot retain the target forall's local rigid"
+            error
+                .diagnostic()
+                .message
+                .contains("incompatible rigid binder scopes")
+        );
+    }
+
+    #[test]
+    fn scoped_specialization_rejects_foreign_context_for_closed_types() {
+        let pattern = ScopedType::new(InternedType::fresh_canonical(unit()), RigidScope::new());
+        let target = ScopedType::new(
+            InternedType::fresh_canonical(unit()),
+            RigidScope::new().with_test_context(2, "<test>"),
+        );
+        let error = solve_scoped_specialization_by_name(
+            &[],
+            &pattern,
+            &target,
+            sp(),
+            &isolated_ctx(),
+            None,
+        )
+        .expect_err("pruning unused bindings preserves the operand's context capability");
+        assert!(
+            error
+                .diagnostic()
+                .message
+                .contains("incompatible rigid binder scopes")
         );
     }
 
@@ -10013,6 +10154,43 @@ mod tests {
                 .projected_binary_peer(&child_value, ScopedTypeBinaryKind::Product, sp())
                 .is_none(),
             "a descendant goal scope must not capture a parent rigid occurrence"
+        );
+    }
+
+    #[test]
+    fn projected_reflection_bindings_keep_visible_lexical_identity() {
+        let param = TypeParam {
+            name: "A".to_owned(),
+            kind: Some(Box::new(Kind::arrow_chain(1))),
+            presentation: Default::default(),
+            span: sp(),
+        };
+        let scope = RigidScope::from_bindings([
+            ("A".to_owned(), Kind::Star, 7),
+            ("B".to_owned(), Kind::Star, 8),
+        ])
+        .with_lexical_forall(&param);
+        let ty = ScopedType::new(InternedType::fresh(unit()), scope);
+        let mut bindings = ty.projected_reflection_bindings();
+        bindings.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(
+            bindings,
+            vec![
+                ("A".to_owned(), Kind::arrow_chain(1), None),
+                (
+                    "B".to_owned(),
+                    Kind::Star,
+                    Some(super::super::env::TypeBinderId::for_test(8))
+                ),
+            ]
+        );
+        let closed = ClosedProjectedType(ty);
+        assert_eq!(
+            closed
+                .reflection_scope()
+                .projected_reflection_bindings()
+                .len(),
+            2
         );
     }
 
@@ -16090,19 +16268,13 @@ mod tests {
                 "base.kio",
                 "module base;
                  pub host type Value;
-                 pub newtype Box[A] : A {
-                     pub constructor box;
-                     pub projector unbox;
-                 };",
+                 pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "wrong.kio",
                 "module wrong;
                  pub host type Value;
-                 pub newtype Box[A][ B] : A {
-                     pub constructor box;
-                     pub projector unbox;
-                 };",
+                 pub type { Box[A][ B]: A { pub mk; pub get; }; };",
             ),
             (
                 "owner.kio",

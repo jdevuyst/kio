@@ -2,10 +2,7 @@ module word1_names2/word3_items4;
 
 import testapi as api;
 
-pub newtype _Item1_part2__[Value1_type2] : Value1_type2 {
-  pub constructor wrap1_value2;
-  pub projector read1_value2
-  }
+pub type { _Item1_part2__[Value1_type2]: Value1_type2 { pub mk; pub get } }
 
 pub fn keep1_value2[Value1_type2](_value1_part2__: Value1_type2) -> Value1_type2 { _value1_part2__ }
 

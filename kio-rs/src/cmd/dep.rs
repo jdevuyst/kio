@@ -888,7 +888,7 @@ mod tests {
         // The consumer holds the congruent counterpart newtype.
         std::fs::write(
             dir.path().join("local.kio"),
-            "module local;\n\npub newtype Tag : . { pub constructor mk; pub projector un; };\n",
+            "module local;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write local");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
@@ -899,7 +899,7 @@ mod tests {
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub newtype Tag : . { pub constructor mk; pub projector un; };\n\n\
+            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n\n\
              pub fn make_tag() -> Tag { Tag.mk(()) }\n",
         )
         .expect("write store");
@@ -929,7 +929,11 @@ mod tests {
             "store: {store}"
         );
         assert!(
-            !store.contains("newtype Tag"),
+            !crate::pass::parser::parse(&store)
+                .expect("materialized source parses")
+                .items
+                .iter()
+                .any(|item| matches!(item, crate::ast::Item::Newtype(nominal) if nominal.name == "Tag")),
             "store still declares Tag: {store}"
         );
         let relay = std::fs::read_to_string(dir.path().join("lib/relay.kio")).expect("read relay");
@@ -954,7 +958,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("core")).expect("mk core");
         std::fs::write(
             dir.path().join("core/store.kio"),
-            "module core/store;\n\npub newtype Tag : . { pub constructor mk; pub projector un; };\n",
+            "module core/store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write counterpart");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
@@ -965,7 +969,7 @@ mod tests {
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub newtype Tag : . { pub constructor mk; pub projector un; };\n\n\
+            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n\n\
              fn _rehost_gdgphcgfcphdhegphcgf() -> . { () }\n\n\
              literal _rehost_gdgphcgfcphdhegphcgf_n2 = 2;\n",
         )
@@ -1005,7 +1009,7 @@ mod tests {
         // Counterpart `Tag` has an incongruent payload (`!` vs the dep's `.`).
         std::fs::write(
             dir.path().join("local.kio"),
-            "module local;\n\npub newtype Tag : ! { pub constructor mk; pub projector un; };\n",
+            "module local;\n\npub type { Tag: ! { pub mk; pub get; }; };\n",
         )
         .expect("write local");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
@@ -1016,7 +1020,7 @@ mod tests {
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub newtype Tag : . { pub constructor mk; pub projector un; };\n",
+            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write store");
         std::fs::write(

@@ -1,17 +1,28 @@
 module main;
 
 import macros/control(Bool, macro if);
+import macros/row_macros(macro with);
 
 host type First_payload;
 
 host type Second_payload;
 
-pub labels State = { first: First_payload, second: Second_payload };
+pub type { First: First_payload { pub mk; pub get }; Second: Second_payload { pub mk; pub get } }
+
+pub type State = First & Second;
 
 pub fn update_first(condition: Bool, state: State, replacement: Second_payload) -> State {
-  if(condition) { state.!{second = replacement} } else { state }
+  if(condition) {
+    state.>with { Second.mk(replacement) }
+  } else {
+    state
+  }
 }
 
 pub fn update_last(condition: Bool, state: State, replacement: Second_payload) -> State {
-  if(condition) { state } else { state.!{second = replacement} }
+  if(condition) {
+    state
+  } else {
+    state.>with { Second.mk(replacement) }
+  }
 }

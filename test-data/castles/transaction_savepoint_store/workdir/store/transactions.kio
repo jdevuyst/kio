@@ -4,6 +4,7 @@ import list/core as cells;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import store/history as history;
 import testapi(Bool, I32, String);
@@ -12,36 +13,36 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Savepoint = { name: String, saved: history.Snapshot };
+pub type Savepoint = { Name: String; Saved: history.Snapshot };
 
-pub labels State = {
-, committed: history.Snapshot
-, working: history.Snapshot
-, active: Bool
-, points: cells.List[Savepoint]
-, clock: I32
-, commits: I32
+pub type State = {
+  Committed: history.Snapshot;
+  Working: history.Snapshot;
+  Active: Bool;
+  Points: cells.List[Savepoint];
+  Clock: I32;
+  Commits: I32
 };
 
-pub labels Reply = { updated: State, message: String, successful: Bool };
+pub type Reply = { Updated: State; Message: String; Successful: Bool };
 
 pub fn initial() -> State {
-  {
-  , committed = history.empty()
-  , working = history.empty()
-  , active = .f
-  , points = cells.nil[_]
-  , clock = 0
-  , commits = 0
-  }
+  (
+  , Committed.mk(history.empty())
+  , Working.mk(history.empty())
+  , Active.mk(.f)
+  , Points.mk(cells.nil[_])
+  , Clock.mk(0)
+  , Commits.mk(0)
+  )
 }
 
 pub fn accepted(state: State, message: String) -> Reply {
-  {updated = state, message, successful = .t}
+  (Updated.mk(state), Message.mk(message), Successful.mk(.t))
 }
 
 pub fn rejected(state: State, message: String) -> Reply {
-  {updated = state, message, successful = .f}
+  (Updated.mk(state), Message.mk(message), Successful.mk(.f))
 }
 
 pub rec(loop) fn seek(name: String, points: cells.List[Savepoint]) ->
@@ -49,7 +50,7 @@ pub rec(loop) fn seek(name: String, points: cells.List[Savepoint]) ->
    {
   match(cells.uncons(points)) {
     .(point: Savepoint, rest: cells.List[Savepoint]) {
-      if(text.string_eq(point.?{name}, name)) {
+      if(text.string_eq(point.>select { Name.get }, name)) {
         widen_sum((point, rest))[(Savepoint & cells.List[Savepoint]) | .]
       } else {
         recur seek(name, rest)
@@ -60,19 +61,19 @@ pub rec(loop) fn seek(name: String, points: cells.List[Savepoint]) ->
 }
 
 pub fn begin(s: State) -> Reply {
-  if(s.?{active}) {
+  if(s.>select { Active.get }) {
     rejected(s, "transaction already active")
   } else {
-    accepted(s.!{active = .t}, "begin")
+    accepted(s.>with { Active.mk(.t) }, "begin")
   }
 }
 
 pub fn put(s: State, key: String, value: I32) -> Reply {
-  if(s.?{active}) {
-    let next = arith.add_i32(s.?{clock}, 1);
-    let root = history.write(s.?{working}, key, widen_sum(value)[I32 | .], next);
+  if(s.>select { Active.get }) {
+    let next = arith.add_i32(s.>select { Clock.get }, 1);
+    let root = history.write(s.>select { Working.get }, key, widen_sum(value)[I32 | .], next);
     accepted(
-    , s.!{working = root, clock = next}
+    , s.>with { Working.mk(root); Clock.mk(next) }
     , text.string_concat(
       , "put "
       , text.string_concat(key, text.string_concat("=", fmt.int_to_string(value)))
@@ -84,12 +85,12 @@ pub fn put(s: State, key: String, value: I32) -> Reply {
 }
 
 pub fn delete(s: State, key: String) -> Reply {
-  if(s.?{active}) {
-    match(history.get(s.?{working}, key)) {
+  if(s.>select { Active.get }) {
+    match(history.get(s.>select { Working.get }, key)) {
       .(_value: I32) {
-        let next = arith.add_i32(s.?{clock}, 1);
-        let root = history.write(s.?{working}, key, widen_sum(())[I32 | .], next);
-        accepted(s.!{working = root, clock = next}, text.string_concat("delete ", key))
+        let next = arith.add_i32(s.>select { Clock.get }, 1);
+        let root = history.write(s.>select { Working.get }, key, widen_sum(())[I32 | .], next);
+        accepted(s.>with { Working.mk(root); Clock.mk(next) }, text.string_concat("delete ", key))
       };
       .() { rejected(s, text.string_concat("missing key ", key)) }
     }
@@ -99,14 +100,19 @@ pub fn delete(s: State, key: String) -> Reply {
 }
 
 pub fn save(s: State, name: String) -> Reply {
-  if(s.?{active}) {
-    match(seek(name, s.?{points})) {
+  if(s.>select { Active.get }) {
+    match(seek(name, s.>select { Points.get })) {
       .(_existing: Savepoint, _rest: cells.List[Savepoint]) {
         rejected(s, text.string_concat("duplicate savepoint ", name))
       };
       .() {
-        let point = {name, saved = s.?{working}};
-        accepted(s.!{points = cells.cons(point, s.?{points})}, text.string_concat("save ", name))
+        let point = (Name.mk(name), Saved.mk(s.>select { Working.get }));
+        accepted(
+        , s.>with {
+            Points.mk(cells.cons(point, s.>select { Points.get }))
+          }
+        , text.string_concat("save ", name)
+        )
       }
     }
   } else {
@@ -115,11 +121,14 @@ pub fn save(s: State, name: String) -> Reply {
 }
 
 pub fn rollback(s: State, name: String) -> Reply {
-  if(s.?{active}) {
-    match(seek(name, s.?{points})) {
+  if(s.>select { Active.get }) {
+    match(seek(name, s.>select { Points.get })) {
       .(point: Savepoint, older: cells.List[Savepoint]) {
         accepted(
-        , s.!{working = point.?{saved}, points = cells.cons(point, older)}
+        , s.>with {
+            Working.mk(point.>select { Saved.get });
+            Points.mk(cells.cons(point, older))
+          }
         , text.string_concat("rollback ", name)
         )
       };
@@ -131,10 +140,10 @@ pub fn rollback(s: State, name: String) -> Reply {
 }
 
 pub fn release(s: State, name: String) -> Reply {
-  if(s.?{active}) {
-    match(seek(name, s.?{points})) {
+  if(s.>select { Active.get }) {
+    match(seek(name, s.>select { Points.get })) {
       .(_point: Savepoint, older: cells.List[Savepoint]) {
-        accepted(s.!{points = older}, text.string_concat("release ", name))
+        accepted(s.>with { Points.mk(older) }, text.string_concat("release ", name))
       };
       .() { rejected(s, text.string_concat("missing savepoint ", name)) }
     }
@@ -144,10 +153,15 @@ pub fn release(s: State, name: String) -> Reply {
 }
 
 pub fn commit(s: State) -> Reply {
-  if(s.?{active}) {
-    let count = arith.add_i32(s.?{commits}, 1);
+  if(s.>select { Active.get }) {
+    let count = arith.add_i32(s.>select { Commits.get }, 1);
     accepted(
-    , s.!{committed = s.?{working}, active = .f, points = cells.nil[_], commits = count}
+    , s.>with {
+        Committed.mk(s.>select { Working.get });
+        Active.mk(.f);
+        Points.mk(cells.nil[_]);
+        Commits.mk(count)
+      }
     , text.string_concat("commit ", fmt.int_to_string(count))
     )
   } else {
@@ -156,30 +170,43 @@ pub fn commit(s: State) -> Reply {
 }
 
 pub fn abort(s: State) -> Reply {
-  if(s.?{active}) {
-    accepted(s.!{working = s.?{committed}, active = .f, points = cells.nil[_]}, "abort")
+  if(s.>select { Active.get }) {
+    accepted(
+    , s.>with {
+        Working.mk(s.>select { Committed.get });
+        Active.mk(.f);
+        Points.mk(cells.nil[_])
+      }
+    , "abort"
+    )
   } else {
     rejected(s, "abort requires a transaction")
   }
 }
 
 fn point_signature(point: Savepoint) -> String {
-  text.string_concat(point.?{name}, text.string_concat("=", history.signature(point.?{saved})))
+  text.string_concat(
+  , point.>select { Name.get }
+  , text.string_concat("=", history.signature(point.>select { Saved.get }))
+  )
 }
 
 pub fn signature(s: State) -> String {
-  let .(mode: String) = if(s.?{active}) { "active" } else { "idle" };
+  let .(mode: String) = if(s.>select { Active.get }) { "active" } else { "idle" };
   text.string_concat(
   , mode
   , text.string_concat(
-    , text.string_concat("/", fmt.int_to_string(s.?{clock}))
+    , text.string_concat("/", fmt.int_to_string(s.>select { Clock.get }))
     , text.string_concat(
-      , text.string_concat("/", fmt.int_to_string(s.?{commits}))
+      , text.string_concat("/", fmt.int_to_string(s.>select { Commits.get }))
       , text.string_concat(
-        , text.string_concat("/base=", history.signature(s.?{committed}))
+        , text.string_concat("/base=", history.signature(s.>select { Committed.get }))
         , text.string_concat(
-          , text.string_concat("/work=", history.signature(s.?{working}))
-          , text.string_concat("/points=", lists.to_string(point_signature, s.?{points}))
+          , text.string_concat("/work=", history.signature(s.>select { Working.get }))
+          , text.string_concat(
+            , "/points="
+            , lists.to_string(point_signature, s.>select { Points.get })
+            )
           )
         )
       )
@@ -188,5 +215,10 @@ pub fn signature(s: State) -> String {
 }
 
 pub fn point_names(s: State) -> String {
-  lists.to_string(.(point: Savepoint) { point.?{name} }, s.?{points})
+  lists.to_string(
+  , .(point: Savepoint) {
+      point.>select { Name.get }
+    }
+  , s.>select { Points.get }
+  )
 }

@@ -3,7 +3,7 @@ module testapi/main;
 import testapi(String);
 import testapi/io as io;
 
-newtype Pack <A> : (A -> String) & A { constructor make; projector open }
+type { Pack <A>: (A -> String) & A { mk; get } }
 
 fn printer() -> String -> String {
   io.print("function;");
@@ -13,7 +13,7 @@ fn printer() -> String -> String {
 fn value() -> String { io.print("value;"); "packed" }
 
 pub fn main() {
-  let .(<Hidden> payload) = Pack.open(Pack.make(printer(), value()));
+  let .(<Hidden> payload) = Pack.get(Pack.mk(printer(), value()));
   let .(show, text) = payload;
   io.print(show(text));
   io.print("\n")

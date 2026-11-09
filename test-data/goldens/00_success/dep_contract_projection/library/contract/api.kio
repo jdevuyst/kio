@@ -1,11 +1,11 @@
 module api;
 
-import surface(Choice, Tag, zero, {tag});
+import surface(Choice, Tag, zero);
 import surface(op _ + _);
 
 pub type Identity[A] = A;
 
-pub newtype Pack[A] <Hidden> : A & Hidden { pub constructor pack; pub projector unpack }
+pub type { Pack[A] <Hidden>: A & Hidden { pub mk; pub get } }
 
 pub fn id[A](value: A) -> A { value + value }
 

@@ -1,0 +1,14 @@
+package equiv_opaque_type_arguments_distinct;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

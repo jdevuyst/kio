@@ -7,4 +7,4 @@ pub type A = _rehost_gdgphcgfcpgb.A;
 
 pub type B = _rehost_gdgphcgfcpgc.B;
 
-pub newtype C : . { pub constructor mk_c; pub projector un_c }
+pub type { C: . { pub mk; pub get } }

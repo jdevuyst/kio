@@ -8,14 +8,15 @@ import host_descriptor(Host_fn);
 import host_descriptor(host_fn_eq, mk_host_fn, mk_host_id);
 import hostrec(make_lit_default, serve_default, test_bool_default);
 import imageio(read_image_stdin);
+import loader(Apply, Hostfn_in, I32_in, I32_out, Lookup, Pair_in, diag_message);
 import loader(Diag, Host_adapter, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(diag_message, {apply}, {hostfn_in}, {i32_in}, {i32_out}, {lookup}, {pair_in});
 import loader(host_adapter_functions, host_adapter_types);
 import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
 import loader(instantiate, un_load_outcome);
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
@@ -87,16 +88,19 @@ fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
 // component and an i32 as its second, rendering the i32 result or the
 // diagnostic.
 fn call_hof[P](surf: Surface[P], name: String, cap: Host_fn, x: I32) -> String {
-  match(surf.?{hostfn_in}(cap)) {
+  match((surf.>select { Hostfn_in.get[P] })(cap)) {
     (
     , .(cb: P) {
-        match(surf.?{lookup}(name)) {
+        match((surf.>select { Lookup.get[P] })(name)) {
           (
           , .(f: P) {
-              match(surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x)))))) {
+              match((surf.>select { Apply.get[P] })((
+              , f
+              , (surf.>select { Pair_in.get[P] })((cb, (surf.>select { I32_in.get[P] })(x)))
+              ))) {
                 (
                 , .(r: P) {
-                    match(surf.?{i32_out}(r)) {
+                    match((surf.>select { I32_out.get[P] })(r)) {
                       (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                     }
                   }

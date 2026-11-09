@@ -93,7 +93,7 @@ def check(host: BuildPythonTypedStubSkinHost[int, str]) -> None:
             continue
         assert_never(inner)
 
-    # A labels-generated newtype namespace: constructor / projector. The
+    # A nominal type namespace: constructor / projector. The
     # internal rep is opaque (`object`); the payload is its role type.
     wrapped = labels.KioType_Name.mk(name)
     unwrapped: str = labels.KioType_Name.get(wrapped)

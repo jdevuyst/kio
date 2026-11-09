@@ -1,60 +1,61 @@
 module priority_dispatch/model;
 
+import macros/row_macros(macro record);
 import testapi(Bool, I32, String);
 
-pub labels Job = {
-, job_id: I32
-, job_name: String
-, job_priority: I32
-, job_deadline: I32
-, job_cpu: I32
-, job_io: I32
-, job_duration: I32
+pub type Job = {
+  Job_id: I32;
+  Job_name: String;
+  Job_priority: I32;
+  Job_deadline: I32;
+  Job_cpu: I32;
+  Job_io: I32;
+  Job_duration: I32
 };
 
-pub labels Slot = { slot_tick: I32, slot_cpu: I32, slot_io: I32 };
+pub type Slot = { Slot_tick: I32; Slot_cpu: I32; Slot_io: I32 };
 
-pub labels Choice = {
-, choice_id: I32
-, choice_name: String
-, choice_rank: I32
-, choice_priority: I32
-, choice_deadline: I32
-, choice_cpu: I32
-, choice_io: I32
-, choice_duration: I32
-, choice_eligible: Bool
+pub type Choice = {
+  Choice_id: I32;
+  Choice_name: String;
+  Choice_rank: I32;
+  Choice_priority: I32;
+  Choice_deadline: I32;
+  Choice_cpu: I32;
+  Choice_io: I32;
+  Choice_duration: I32;
+  Choice_eligible: Bool
 };
 
-pub labels Dispatch_state = {
-, state_tick: I32
-, state_ingress_done: Bool
-, state_backup_done: Bool
-, state_alert_done: Bool
-, state_reconcile_done: Bool
-, state_audit_done: Bool
-, state_dispatched: I32
-, state_blocked: I32
-, state_cpu: I32
-, state_io: I32
-, state_duration: I32
-, state_slack: I32
+pub type Dispatch_state = {
+  State_tick: I32;
+  State_ingress_done: Bool;
+  State_backup_done: Bool;
+  State_alert_done: Bool;
+  State_reconcile_done: Bool;
+  State_audit_done: Bool;
+  State_dispatched: I32;
+  State_blocked: I32;
+  State_cpu: I32;
+  State_io: I32;
+  State_duration: I32;
+  State_slack: I32
 };
 
 pub fn job(id: I32, name: String, priority: I32, deadline: I32, cpu: I32, io: I32, duration: I32) -> Job {
-  {
-  , job_id = id
-  , job_name = name
-  , job_priority = priority
-  , job_deadline = deadline
-  , job_cpu = cpu
-  , job_io = io
-  , job_duration = duration
+  record {
+    Job_id.mk(id);
+    Job_name.mk(name);
+    Job_priority.mk(priority);
+    Job_deadline.mk(deadline);
+    Job_cpu.mk(cpu);
+    Job_io.mk(io);
+    Job_duration.mk(duration)
   }
 }
 
 pub fn slot(tick: I32, cpu: I32, io: I32) -> Slot {
-  {slot_tick = tick, slot_cpu = cpu, slot_io = io}
+  record { Slot_tick.mk(tick); Slot_cpu.mk(cpu); Slot_io.mk(io) }
 }
 
 pub fn choice(
@@ -68,16 +69,16 @@ pub fn choice(
 , duration: I32
 , eligible: Bool
 ) -> Choice {
-  {
-  , choice_id = id
-  , choice_name = name
-  , choice_rank = rank
-  , choice_priority = priority
-  , choice_deadline = deadline
-  , choice_cpu = cpu
-  , choice_io = io
-  , choice_duration = duration
-  , choice_eligible = eligible
+  record {
+    Choice_id.mk(id);
+    Choice_name.mk(name);
+    Choice_rank.mk(rank);
+    Choice_priority.mk(priority);
+    Choice_deadline.mk(deadline);
+    Choice_cpu.mk(cpu);
+    Choice_io.mk(io);
+    Choice_duration.mk(duration);
+    Choice_eligible.mk(eligible)
   }
 }
 
@@ -95,19 +96,19 @@ pub fn dispatch_state(
 , duration: I32
 , slack: I32
 ) -> Dispatch_state {
-  {
-  , state_tick = tick
-  , state_ingress_done = ingress_done
-  , state_backup_done = backup_done
-  , state_alert_done = alert_done
-  , state_reconcile_done = reconcile_done
-  , state_audit_done = audit_done
-  , state_dispatched = dispatched
-  , state_blocked = blocked
-  , state_cpu = cpu
-  , state_io = io
-  , state_duration = duration
-  , state_slack = slack
+  record {
+    State_tick.mk(tick);
+    State_ingress_done.mk(ingress_done);
+    State_backup_done.mk(backup_done);
+    State_alert_done.mk(alert_done);
+    State_reconcile_done.mk(reconcile_done);
+    State_audit_done.mk(audit_done);
+    State_dispatched.mk(dispatched);
+    State_blocked.mk(blocked);
+    State_cpu.mk(cpu);
+    State_io.mk(io);
+    State_duration.mk(duration);
+    State_slack.mk(slack)
   }
 }
 

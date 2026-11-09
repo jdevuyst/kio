@@ -42,11 +42,9 @@ fn call(function: Term, argument: Term) -> Term {
         panic!("unary CPS function")
     };
     let result = type_traversal::clone_type(ret);
-    let param = term_type(&argument);
     node(
         CheckedTermNode::TermCall {
             fn_value: function,
-            params: vec![param],
             arg_packet: argument,
         },
         result,
@@ -195,9 +193,8 @@ fn adapt<'a>(
                     }
                     ordinary => {
                         let rebuilt = match ordinary {
-                            CheckedTermNode::TermCall { params, .. } => CheckedTermNode::TermCall {
+                            CheckedTermNode::TermCall { .. } => CheckedTermNode::TermCall {
                                 fn_value: refs[0].clone(),
-                                params: params.iter().map(type_traversal::clone_type).collect(),
                                 arg_packet: refs[1].clone(),
                             },
                             CheckedTermNode::TermTypeApp { arg, .. } => {
@@ -567,14 +564,18 @@ mod tests {
         let recipe = pair(operand.clone(), operand);
         let adapter = CheckedTermTemplateValueAdapter {
             sources: vec![CheckedTermTemplateSource {
-                ty: boolean(),
+                ty: crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
+                    .unwrap(),
                 force_if_unused: false,
             }],
             slots: vec![CheckedTermTemplateSlot {
                 pieces: vec![CheckedTermTemplatePiece {
                     source_index: 0,
                     source_slot: 0,
-                    source_slot_tys: vec![boolean()],
+                    source_slot_tys: vec![
+                        crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
+                            .unwrap(),
+                    ],
                 }],
             }],
         };
@@ -610,14 +611,18 @@ mod tests {
         );
         let adapter = CheckedTermTemplateValueAdapter {
             sources: vec![CheckedTermTemplateSource {
-                ty: boolean(),
+                ty: crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
+                    .unwrap(),
                 force_if_unused: false,
             }],
             slots: vec![CheckedTermTemplateSlot {
                 pieces: vec![CheckedTermTemplatePiece {
                     source_index: 0,
                     source_slot: 0,
-                    source_slot_tys: vec![boolean()],
+                    source_slot_tys: vec![
+                        crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
+                            .unwrap(),
+                    ],
                 }],
             }],
         };
@@ -667,8 +672,13 @@ mod tests {
             boolean(),
         );
         let terminal = public.adapt_lifted_terminal_callbacks(
-            &[None, Some(arrow(unit(), unit())), None, None],
-            unit(),
+            &[
+                None,
+                Some(ReflectedType::new_trusted(arrow(unit(), unit()))),
+                None,
+                None,
+            ],
+            ReflectedType::new_trusted(unit()),
             template(3, arrow(boolean(), unit())),
         );
         let (adapted, _) = adapt(&terminal, &[true, false, false, false], &unit()).unwrap();

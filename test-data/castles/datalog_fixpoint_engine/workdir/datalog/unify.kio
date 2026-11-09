@@ -23,30 +23,34 @@ import datalog/atom(
 , tconst
 , tvar
 );
-import datalog/atom({t_const});
-import datalog/atom({t_var});
 import datalog/list as list;
 import datalog/subst as subst;
-import datalog/subst({some_const});
+import datalog/subst(Some_const);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
-labels Maybe_subst = { some_subst: subst.Subst } | { no_subst: . };
+type Maybe_subst = { Some_subst: subst.Subst } | { No_subst: . };
 
-fn some_subst(s: subst.Subst) -> Maybe_subst { ({some_subst = s}.>widen_sum)[Maybe_subst] }
+fn some_subst(s: subst.Subst) -> Maybe_subst { (Some_subst.mk(s).>widen_sum)[Maybe_subst] }
 
-fn no_subst() -> Maybe_subst { ({no_subst=}.>widen_sum)[Maybe_subst] }
+fn no_subst() -> Maybe_subst { (No_subst.mk(()).>widen_sum)[Maybe_subst] }
 
 /// A stored fact's arguments are constants by construction. A variable
 /// reaching here would mean a non-ground atom was stored, so the term
 /// refuses to yield a code and the match fails rather than guessing.
 fn ground_code(t: Term) -> subst.Maybe_const {
   match(t) {
-    (.(k: T_const) { subst.some_const(k.?{t_const}) }, .(_v: T_var) { subst.no_const() })
+    (
+    , .(k: T_const) {
+        subst.some_const(k.>select { T_const.get })
+      }
+    , .(_v: T_var) { subst.no_const() }
+    )
   }
 }
 
@@ -57,15 +61,21 @@ fn unify_term(goal: Term, code: I32, s: subst.Subst) -> Maybe_subst {
   match(goal) {
     (
     , .(k: T_const) {
-        if(eq_i32(k.?{t_const}, code)) { some_subst(s) } else { no_subst() }
+        if(eq_i32(k.>select { T_const.get }, code)) { some_subst(s) } else { no_subst() }
       }
     , .(v: T_var) {
-        match(subst.lookup(s, v.?{t_var})) {
+        match(subst.lookup(s, v.>select { T_var.get })) {
           (
           , .(bound: subst.Some_const) {
-              if(eq_i32(bound.?{some_const}, code)) { some_subst(s) } else { no_subst() }
+              if(eq_i32(bound.>select { Some_const.get }, code)) {
+                some_subst(s)
+              } else {
+                no_subst()
+              }
             }
-          , .(_free: subst.No_const) { some_subst(subst.extend(s, v.?{t_var}, code)) }
+          , .(_free: subst.No_const) {
+              some_subst(subst.extend(s, v.>select { T_var.get }, code))
+            }
           )
         }
       }
@@ -76,22 +86,26 @@ fn unify_term(goal: Term, code: I32, s: subst.Subst) -> Maybe_subst {
 fn unify_slot(goal: Term, fact_arg: Term, s: subst.Subst) -> Maybe_subst {
   match(ground_code(fact_arg)) {
     (
-    , .(code: subst.Some_const) { unify_term(goal, code.?{some_const}, s) }
+    , .(code: subst.Some_const) {
+        unify_term(goal, code.>select { Some_const.get }, s)
+      }
     , .(_open: subst.No_const) { no_subst() }
     )
   }
 }
 
 rec(loop) fn unify_args(goals: Args, fact_args: Args, s: subst.Subst) -> Maybe_subst {
-  match(goals.>list.List.un_list) {
+  match(goals.>list.List.get) {
     (
     , .(goal: Term, goal_rest: Args) {
-        match(fact_args.>list.List.un_list) {
+        match(fact_args.>list.List.get) {
           (
           , .(fact_arg: Term, fact_rest: Args) {
               match(unify_slot(goal, fact_arg, s)) {
                 (
-                , .(next: Some_subst) { recur unify_args(goal_rest, fact_rest, next.?{some_subst}) }
+                , .(next: Some_subst) {
+                    recur unify_args(goal_rest, fact_rest, next.>select { Some_subst.get })
+                  }
                 , .(_none: No_subst) { no_subst() }
                 )
               }
@@ -117,7 +131,7 @@ fn match_atom(goal: Atom, fact: Atom, s: subst.Subst) -> Maybe_subst {
 
 rec(loop) {
   pub fn solve_all(body: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
-    match(body.>list.List.un_list) {
+    match(body.>list.List.get) {
       (
       , .(goal: Atom, rest: Atoms) { recur scan_all(goal, rest, db, db, s) }
       , .(_empty: .) { list.of1(s) }
@@ -125,14 +139,14 @@ rec(loop) {
     }
   };
   fn scan_all(goal: Atom, rest: Atoms, facts: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
-    match(facts.>list.List.un_list) {
+    match(facts.>list.List.get) {
       (
       , .(fact: Atom, more: Atoms) {
           match(match_atom(goal, fact, s)) {
             (
             , .(next: Some_subst) {
                 list.append(
-                , recur(cont) solve_all(rest, db, next.?{some_subst})
+                , recur(cont) solve_all(rest, db, next.>select { Some_subst.get })
                 , recur(cont) scan_all(goal, rest, more, db, s)
                 )
               }
@@ -156,7 +170,7 @@ rec(loop) {
   /// `old` is the database as it stood before `delta` was added, so the
   /// three lists satisfy `db = old + delta`.
   pub fn solve_delta(body: Atoms, db: Atoms, old: Atoms, delta: Atoms, s: subst.Subst) -> subst.Substs {
-    match(body.>list.List.un_list) {
+    match(body.>list.List.get) {
       (
       , .(goal: Atom, rest: Atoms) {
           list.append(
@@ -171,14 +185,14 @@ rec(loop) {
   /// This goal takes a new fact, so the delta obligation is discharged
   /// and the rest of the body may match anything.
   fn scan_new(goal: Atom, rest: Atoms, facts: Atoms, db: Atoms, s: subst.Subst) -> subst.Substs {
-    match(facts.>list.List.un_list) {
+    match(facts.>list.List.get) {
       (
       , .(fact: Atom, more: Atoms) {
           match(match_atom(goal, fact, s)) {
             (
             , .(next: Some_subst) {
                 list.append(
-                , solve_all(rest, db, next.?{some_subst})
+                , solve_all(rest, db, next.>select { Some_subst.get })
                 , recur(cont) scan_new(goal, rest, more, db, s)
                 )
               }
@@ -202,14 +216,14 @@ rec(loop) {
   , delta: Atoms
   , s: subst.Subst
   ) -> subst.Substs {
-    match(facts.>list.List.un_list) {
+    match(facts.>list.List.get) {
       (
       , .(fact: Atom, more: Atoms) {
           match(match_atom(goal, fact, s)) {
             (
             , .(next: Some_subst) {
                 list.append(
-                , recur(cont) solve_delta(rest, db, old, delta, next.?{some_subst})
+                , recur(cont) solve_delta(rest, db, old, delta, next.>select { Some_subst.get })
                 , recur(cont) scan_old(goal, rest, more, db, old, delta, s)
                 )
               }
@@ -226,12 +240,18 @@ rec(loop) {
 fn apply_term(t: Term, s: subst.Subst) -> Term {
   match(t) {
     (
-    , .(k: T_const) { tconst(k.?{t_const}) }
+    , .(k: T_const) {
+        tconst(k.>select { T_const.get })
+      }
     , .(v: T_var) {
-        match(subst.lookup(s, v.?{t_var})) {
+        match(subst.lookup(s, v.>select { T_var.get })) {
           (
-          , .(bound: subst.Some_const) { tconst(bound.?{some_const}) }
-          , .(_free: subst.No_const) { tvar(v.?{t_var}) }
+          , .(bound: subst.Some_const) {
+              tconst(bound.>select { Some_const.get })
+            }
+          , .(_free: subst.No_const) {
+              tvar(v.>select { T_var.get })
+            }
           )
         }
       }

@@ -5,5 +5,5 @@ rec {
   /// The transparent chain view.
   pub type Chain = Node;
   /// The nominal node view.
-  pub newtype Node : . | Chain { pub constructor make; pub projector read }
+  pub type { Node: . | Chain { pub mk; pub get }; }
 }

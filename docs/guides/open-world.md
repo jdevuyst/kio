@@ -138,20 +138,20 @@ uses the imported `derive` macro; [Using libraries](using-libraries.md#the-macro
 shows how to add that library and import `macros/derive(derive)`.
 
 ```kio {@explicit_evidence}
-newtype Formatter[A] : A -> String { constructor mk_formatter; projector format }
+type { Formatter[A]: A -> String }
 
 fn apply_formatter[A](formatter: Formatter[A], value: A) -> String {
-  Formatter.format(formatter)(value)
+  Formatter.get(formatter)(value)
 }
 
 fn listed_text() -> String { "listed"[String] }
 
 fn unlisted_formatter() -> Formatter[String] {
-  Formatter.mk_formatter(.(_value: String) { "unlisted"[String] })
+  Formatter.mk(.(_value: String) { "unlisted"[String] })
 }
 
 fn formatter_from_text(text: String) -> Formatter[String] {
-  Formatter.mk_formatter(.(_value: String) { text })
+  Formatter.mk(.(_value: String) { text })
 }
 
 fn choose_string_formatter() -> Formatter[String] {
@@ -177,7 +177,7 @@ composition contract.
 
 A dependency diamond can carry two materialized copies of what began as the
 same nominal type. Re-rooting gives those copies different module paths. For a
-`Store` newtype, the consumer can therefore see both
+`Store` nominal type, the consumer can therefore see both
 `core/store.Store` and `widget/store.Store`.
 
 Those names share a leaf spelling, but nominal identity is the exact

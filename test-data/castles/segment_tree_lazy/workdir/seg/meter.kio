@@ -15,14 +15,14 @@ literal work_slot = 0;
 
 literal push_slot = 1;
 
-pub newtype Meter : Array[I32] { constructor of_cells; projector cells }
+pub type { Meter: Array[I32] { mk; get } }
 
-pub fn new_meter() -> Meter { Meter.of_cells(array_make_filled(2, 0)) }
+pub fn new_meter() -> Meter { Meter.mk(array_make_filled(2, 0)) }
 
-fn read_slot(m: Meter, slot: I32) -> I32 { array_get(Meter.cells(m), slot) }
+fn read_slot(m: Meter, slot: I32) -> I32 { array_get(Meter.get(m), slot) }
 
 fn bump_slot(m: Meter, slot: I32) {
-  let c = Meter.cells(m);
+  let c = Meter.get(m);
   array_set(c, slot, add_i32(array_get(c, slot), 1))
 }
 

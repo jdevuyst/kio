@@ -5,15 +5,15 @@ import api/api as repeated;
 import api/types as nested;
 import java/class as reserved;
 
-pub newtype Foo_bar : . { pub constructor make_foo_bar; pub projector read_foo_bar }
+pub type { Foo_bar: . { pub mk; pub get } }
 
-pub newtype Foobar : . { pub constructor make_foobar; pub projector read_foobar }
+pub type { Foobar: . { pub mk; pub get } }
 
-pub newtype Kiomodule_types : . { pub constructor make_module; pub projector read_module }
+pub type { Kiomodule_types: . { pub mk; pub get } }
 
-pub newtype Kiotype_shapes : . { pub constructor make_type; pub projector read_type }
+pub type { Kiotype_shapes: . { pub mk; pub get } }
 
-pub newtype Kionominal_host : . { pub constructor make_nominal; pub projector read_nominal }
+pub type { Kionominal_host: . { pub mk; pub get } }
 
 host type Text role(str);
 
@@ -21,33 +21,33 @@ host type Box[T];
 
 host type Storage[T];
 
-pub newtype Token : Text { pub constructor make_token; pub projector read_token }
+pub type { Token: Text { pub mk; pub get } }
 
-pub newtype Pick_first[A][B] : A { pub constructor make_pick; pub projector read_pick }
+pub type { Pick_first[A][B]: A { pub mk; pub get } }
 
-pub newtype Opaque : Text { constructor make_opaque; projector read_opaque }
+pub type { Opaque: Text { mk; get } }
 
-pub newtype Object : . { pub constructor make_object; pub projector read_object }
+pub type { Object: . { pub mk; pub get } }
 
-pub newtype String : . { pub constructor make_string; pub projector read_string }
+pub type { String: . { pub mk; pub get } }
 
-pub newtype Void : . { pub constructor make_void; pub projector read_void }
+pub type { Void: . { pub mk; pub get } }
 
-pub newtype Bottom : ! { pub constructor make_bottom; pub projector read_bottom }
+pub type { Bottom: ! { pub mk; pub get } }
 
-pub newtype Deprecated : . { pub constructor make_deprecated; pub projector read_deprecated }
+pub type { Deprecated: . { pub mk; pub get } }
 
-pub newtype Suppress_warnings : . { pub constructor make_warning; pub projector read_warning }
+pub type { Suppress_warnings: . { pub mk; pub get } }
 
-pub newtype Shapes : . { pub constructor make_shapes; pub projector read_shapes }
+pub type { Shapes: . { pub mk; pub get } }
 
-pub newtype Product : . { pub constructor make_product; pub projector read_product }
+pub type { Product: . { pub mk; pub get } }
 
-pub newtype Apply1 : . { pub constructor make_apply; pub projector read_apply }
+pub type { Apply1: . { pub mk; pub get } }
 
-pub newtype Types : . { pub constructor make_types; pub projector read_types }
+pub type { Types: . { pub mk; pub get } }
 
-pub rec newtype Chain : . | Chain { pub constructor make_chain; pub projector read_chain }
+pub rec type { Chain: . | Chain { pub mk; pub get } }
 
 host fn relay(value: Token) -> Token;
 

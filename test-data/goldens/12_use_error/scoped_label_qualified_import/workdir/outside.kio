@@ -1,5 +1,0 @@
-module outside;
-
-import scope/origin as origin;
-
-fn make() { {origin.item=} }

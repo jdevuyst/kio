@@ -1,0 +1,6 @@
+module main;
+
+equiv opaque_types(f: [A] . -> (. | .)) {
+  f[.](());
+  f[!](())
+}

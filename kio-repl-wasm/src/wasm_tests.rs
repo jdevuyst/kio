@@ -56,8 +56,8 @@ export function exerciseReferenceOwnership(repl) {
       ['truth', ['demo/a:', 'in fn literal_use'], ['demo/b:', 'shadow']],
       ['first.proof', ['demo/a:'], ['demo/b:']],
       ['build', ['in macro build', 'in fn bang', 'in fn splice'], ['demo/b:']],
-      ['{field}', ['demo/a:', 'in fn label_use', 'in fn update', 'in fn access', 'in fn row_let'], ['demo/b:', 'in fn qualified', 'in fn value_use']],
-      ['second.{field}', ['demo/b:', 'in fn qualified'], ['demo/a:', 'in fn label_use']],
+      ['Field', ['demo/a:', 'in fn alias_use', 'in fn update', 'in fn access', 'in fn binding'], ['demo/b:', 'in fn qualified', 'in fn value_use']],
+      ['second.Field', ['demo/b:', 'in fn qualified'], ['demo/a:', 'in fn alias_use']],
     ]) {
       const refs = turn(':refs ' + query);
       for (const text of present) check(refs.includes(text), `${query}: missing ${text}: ${refs}`);
@@ -106,12 +106,12 @@ export function exerciseTrailingBlocks(repl) {
       [':normalize packet { () }', '()'],
       [':normalize enter { let value = (); value }', '()'],
       [':normalize .() { let .x. = ((), ()); x2 }()', '()'],
-      [':normalize sequence(box_bind) { let .x. <- box_pure(()); box_pure(x1) }', 'Box.box(())'],
-      [':normalize sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.box(())'],
-      [':normalize box_bind.>sequence { box_pure(()) }', 'Box.box(())'],
-      [':normalize box_bind.>>sequence { box_pure(()) }', 'Box.box(())'],
-      [':normalize sequence { box_pure(()) }.<<box_bind', 'Box.box(())'],
-      [':normalize sequence { box_pure(()) }.<box_bind', 'Box.box(())'],
+      [':normalize sequence(box_bind) { let .x. <- box_pure(()); box_pure(x1) }', 'Box.mk(())'],
+      [':normalize sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.mk(())'],
+      [':normalize box_bind.>sequence { box_pure(()) }', 'Box.mk(())'],
+      [':normalize box_bind.>>sequence { box_pure(()) }', 'Box.mk(())'],
+      [':normalize sequence { box_pure(()) }.<<box_bind', 'Box.mk(())'],
+      [':normalize sequence { box_pure(()) }.<box_bind', 'Box.mk(())'],
     ]) {
       const actual = turn(input);
       check(actual === expected, `${input}: ${actual}`);
@@ -183,13 +183,13 @@ export function exerciseSelectors(repl) {
     for (const selector of ['arithmetic.(varop [* *])', 'varop [% %]']) {
       const refs = clean(repl.eval(':refs ' + selector).output);
       check(refs.includes('in fn use'), `${selector}: imported marked frame use: ${refs}`);
-      check(refs.includes('in fn alias_use'), `${selector}: aliased marked frame use: ${refs}`);
+      check(refs.includes('in fn browser_alias_use'), `${selector}: aliased marked frame use: ${refs}`);
       check(refs.includes('in varop [* *]'), `${selector}: provider declaration: ${refs}`);
       check(!refs.includes('demo/other'), `${selector}: foreign operator identity: ${refs}`);
     }
     const foreignRefs = clean(repl.eval(':refs other.(varop [* *])').output);
     check(foreignRefs.includes('in fn foreign_marked_use'), `competing provider use: ${foreignRefs}`);
-    check(!foreignRefs.includes('in fn use') && !foreignRefs.includes('in fn alias_use'), `competing provider identity: ${foreignRefs}`);
+    check(!foreignRefs.includes('in fn use') && !foreignRefs.includes('in fn browser_alias_use'), `competing provider identity: ${foreignRefs}`);
     repl.eval(':reset');
     const input = ':sig arithmetic.(op _ +';
     check(repl.complete(input, input.length).candidates.length === 0, 'reset candidates');

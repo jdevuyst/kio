@@ -1,0 +1,10 @@
+package macro_nested_type_fuel_refinement;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

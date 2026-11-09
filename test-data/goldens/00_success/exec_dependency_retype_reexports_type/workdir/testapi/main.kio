@@ -1,5 +1,5 @@
 /// `retype` keeps the remapped `newtype` on the module's public export
-/// surface. `widget/store`'s `pub newtype Tag` is collapsed
+/// surface. `widget/store`'s public nominal type `Tag` is collapsed
 /// onto `core/store`'s by the `widget.dep.kio`'s `retype`. A consumer that
 /// imports `Tag` from `widget/store` — natural, since `Tag` was a `pub`
 /// export there before the remap — must still resolve it (`specs/package.md`

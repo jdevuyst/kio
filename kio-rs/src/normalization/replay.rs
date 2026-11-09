@@ -45,18 +45,9 @@ enum Work<'a> {
     Callee(&'a CheckedTerm),
     AfterCallee {
         packet: &'a CheckedTermNode,
-        params: &'a [EvalAstType],
         span: Span,
         base: usize,
     },
-    Packet {
-        node: &'a CheckedTermNode,
-        params: &'a [EvalAstType],
-        root: &'a CheckedTermNode,
-        all_params: &'a [EvalAstType],
-        base: usize,
-    },
-    Project(&'a [EvalAstType]),
     FinishCall {
         span: Span,
         base: usize,
@@ -85,13 +76,11 @@ where
                 let base = out.len();
                 if let CheckedTermNode::TermCall {
                     fn_value,
-                    params,
                     arg_packet,
                 } = node
                 {
                     pending.push(Work::AfterCallee {
                         packet: &arg_packet.node,
-                        params,
                         span: node_span,
                         base,
                     });
@@ -189,62 +178,14 @@ where
                 }
                 node => pending.push(Work::Node(node)),
             },
-            Work::AfterCallee {
-                packet,
-                params,
-                span,
-                base,
-            } => {
+            Work::AfterCallee { packet, span, base } => {
                 let types_end = out.len();
                 pending.push(Work::FinishCall {
                     span,
                     base,
                     types_end,
                 });
-                pending.push(Work::Packet {
-                    node: packet,
-                    params,
-                    root: packet,
-                    all_params: params,
-                    base: types_end,
-                });
-            }
-            Work::Packet {
-                node,
-                params,
-                root,
-                all_params,
-                base,
-            } => match params {
-                [] | [_] => pending.push(Work::Node(node)),
-                [_, rest @ ..] => {
-                    if let CheckedTermNode::IntrinsicPair { left, right } = node {
-                        pending.push(Work::Packet {
-                            node: &right.node,
-                            params: rest,
-                            root,
-                            all_params,
-                            base,
-                        });
-                        pending.push(Work::Node(&left.node));
-                    } else {
-                        // The consumed prefix has already allocated spans and run
-                        // converters. Fallback replays the whole packet after it.
-                        out.truncate(base);
-                        pending.push(Work::Project(all_params));
-                        pending.push(Work::Node(root));
-                    }
-                }
-            },
-            Work::Project(params) => {
-                let Some(Slot::Expr(packet)) = out.pop() else {
-                    unreachable!("fallback packet result")
-                };
-                out.extend(
-                    project_packet(packet, params, type_to_pre_prime)
-                        .into_iter()
-                        .map(Slot::Expr),
-                );
+                pending.push(Work::Node(packet));
             }
             Work::FinishCall {
                 span,
@@ -257,9 +198,7 @@ where
                 for _ in base + 1..types_end {
                     args.push(CallArg::Type(read.ty()));
                 }
-                while read.0.len() != 0 {
-                    args.push(CallArg::Value(read.expr()));
-                }
+                args.push(CallArg::Value(read.expr()));
                 drop(read);
                 out.push(Slot::Expr(Owned::new(Expr::synth_call(callee, args, span))));
             }
@@ -632,11 +571,8 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
                 meta: meta.clone(),
             },
             Expr::RecCall { ext, .. }
-            | Expr::RowLet { ext, .. }
             | Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
@@ -668,52 +604,4 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
         out.push(Owned::new(rebuilt));
     }
     out.pop().expect("copied expression root").take()
-}
-
-fn project_packet<FT>(
-    packet: Owned<Expr<PrePrime>>,
-    params: &[EvalAstType],
-    type_to_pre_prime: &mut FT,
-) -> Vec<Owned<Expr<PrePrime>>>
-where
-    FT: FnMut(&EvalAstType) -> Type<PrePrime>,
-{
-    let mut packet = packet;
-    let mut out = Vec::new();
-    for (index, first) in params.iter().enumerate() {
-        let rest = &params[index + 1..];
-        let Some((last, prefix)) = rest.split_last() else {
-            out.push(packet);
-            return out;
-        };
-        let mut rest_ty = Owned::new(type_traversal::clone_type(last));
-        for component in prefix.iter().rev() {
-            rest_ty = Owned::new(Type::Product {
-                left: Box::new(type_traversal::clone_type(component)),
-                right: Box::new(rest_ty.take()),
-                meta: zero_meta(),
-            });
-        }
-        let first_ty = Owned::new(type_to_pre_prime(first));
-        let rest_ty = Owned::new(type_to_pre_prime(&rest_ty));
-        let fst = checked_template_intrinsic_expr(
-            "__fst__",
-            vec![
-                CallArg::Type(type_traversal::clone_pre_prime_type(&first_ty)),
-                CallArg::Type(type_traversal::clone_pre_prime_type(&rest_ty)),
-                CallArg::Value(clone_expr(&packet)),
-            ],
-        );
-        let snd = checked_template_intrinsic_expr(
-            "__snd__",
-            vec![
-                CallArg::Type(first_ty.take()),
-                CallArg::Type(rest_ty.take()),
-                CallArg::Value(packet.take()),
-            ],
-        );
-        out.push(Owned::new(fst));
-        packet = Owned::new(snd);
-    }
-    out
 }

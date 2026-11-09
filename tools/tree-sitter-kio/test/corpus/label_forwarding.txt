@@ -1,66 +1,50 @@
 ================================================================================
-standalone nonminting label forwarding
+ordinary identity aliases
 ================================================================================
-type {local} = {original};
-pub type {renamed} = {provider.original};
+type Local = Original;
+pub type Renamed = provider.Original;
 --------------------------------------------------------------------------------
 
 (source_file
-  (label_forward_decl
+  (type_alias_decl_head
     (keyword_type)
-    (bracket_lbrace)
-    (entity_name_label)
-    (bracket_rbrace)
+    (entity_name_type)
     (operator_builtin)
-    (bracket_lbrace)
-    (label_path
-      (entity_name_label))
-    (bracket_rbrace)
+    (type_path
+      (entity_name_type))
     (separator_semicolon))
-  (label_forward_decl
+  (type_alias_decl_head
     (keyword_pub)
     (keyword_type)
-    (bracket_lbrace)
-    (entity_name_label)
-    (bracket_rbrace)
+    (entity_name_type)
     (operator_builtin)
-    (bracket_lbrace)
-    (label_path
+    (type_path
       (identifier)
       (separator_dot)
-      (entity_name_label))
-    (bracket_rbrace)
+      (entity_name_type))
     (separator_semicolon)))
 
 ================================================================================
-contextual keywords remain label bindings and target leaves
+uppercase aliases remain ordinary type bindings
 ================================================================================
-type {type} = {original};
-type {next} = {type};
+type Type = Original;
+type Next = Type;
 --------------------------------------------------------------------------------
 
 (source_file
-  (label_forward_decl
+  (type_alias_decl_head
     (keyword_type)
-    (bracket_lbrace)
-    (entity_name_label)
-    (bracket_rbrace)
+    (entity_name_type)
     (operator_builtin)
-    (bracket_lbrace)
-    (label_path
-      (entity_name_label))
-    (bracket_rbrace)
+    (type_path
+      (entity_name_type))
     (separator_semicolon))
-  (label_forward_decl
+  (type_alias_decl_head
     (keyword_type)
-    (bracket_lbrace)
-    (entity_name_label)
-    (bracket_rbrace)
+    (entity_name_type)
     (operator_builtin)
-    (bracket_lbrace)
-    (label_path
-      (entity_name_label))
-    (bracket_rbrace)
+    (type_path
+      (entity_name_type))
     (separator_semicolon)))
 
 ================================================================================
@@ -92,33 +76,27 @@ type Ordinary = .;
     (separator_semicolon)))
 
 ================================================================================
-forwarding comments retain their source positions
+alias comments retain their source positions
 ================================================================================
 /// Declaration documentation.
-type {
+type
   /// Interior documentation trivia.
-  local
-} = {
+  Local =
   provider.
   // Target trivia.
-  original
-};
+  Original;
 --------------------------------------------------------------------------------
 
 (source_file
   (comment_doc)
-  (label_forward_decl
+  (type_alias_decl_head
     (keyword_type)
-    (bracket_lbrace)
     (comment_doc)
-    (entity_name_label)
-    (bracket_rbrace)
+    (entity_name_type)
     (operator_builtin)
-    (bracket_lbrace)
-    (label_path
+    (type_path
       (identifier)
       (separator_dot)
       (comment_line)
-      (entity_name_label))
-    (bracket_rbrace)
+      (entity_name_type))
     (separator_semicolon)))

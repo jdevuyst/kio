@@ -11,7 +11,8 @@ use support::test_binary;
 
 use tempfile::TempDir;
 
-const GROUP: &str = "rec {\n  pub type Chain = Node;\n  pub newtype Node : . | Chain { pub constructor make; pub projector read }\n}";
+const GROUP: &str =
+    "rec {\n  pub type Chain = Node;\n  pub type { Node: . | Chain { pub mk; pub get } }\n}";
 
 fn package(source: &str) -> TempDir {
     let dir = TempDir::new().expect("create documentation package");
@@ -72,7 +73,7 @@ fn kiodoc_recursive_group_site_and_directives_keep_complete_context() {
           /// Alias prose. [`@signature Node`]\n\
           pub type Chain = Node;\n\
           /// Nominal prose. [`@source Chain`]\n\
-          pub newtype Node : . | Chain { pub constructor make; pub projector read; };\n\
+          pub type { Node: . | Chain { pub mk; pub get; }; };\n\
         }\n";
     let dir = package(source);
     success(&doc(dir.path(), &["build", "--html", "--md"]));
@@ -113,24 +114,24 @@ fn kiodoc_recursive_group_site_and_directives_keep_complete_context() {
 }
 
 #[test]
-fn kiodoc_recursive_group_outer_and_newtype_docs_are_validated() {
+fn kiodoc_recursive_group_outer_and_nominal_docs_are_validated() {
     let mut escaped = Vec::new();
     for (label, outer, member) in [
         ("outer reference", "/// [`Missing_outer`]\n", ""),
-        ("newtype reference", "", "/// [`Missing_member`]\n"),
+        ("nominal reference", "", "/// [`Missing_member`]\n"),
         (
             "outer fence",
             "/// ```kio {@}\n/// missing()\n/// ```\n",
             "",
         ),
         (
-            "newtype fence",
+            "nominal fence",
             "",
             "/// ```kio {@}\n/// missing()\n/// ```\n",
         ),
     ] {
         let dir = package(&format!(
-            "module pkg;\n{outer}rec {{\ntype Chain = Node;\n{member}newtype Node : . | Chain {{ constructor make; projector read; }};\n}}\n"
+            "module pkg;\n{outer}rec {{\ntype Chain = Node;\n{member}type {{ Node: . | Chain {{ mk; get; }}; }};\n}}\n"
         ));
         let output = doc(dir.path(), &["check"]);
         let diagnostics = format!(
@@ -151,13 +152,13 @@ fn kiodoc_recursive_group_outer_and_newtype_docs_are_validated() {
 }
 
 #[test]
-fn kiodoc_recursive_label_nominals_are_type_oriented_doc_targets() {
+fn kiodoc_recursive_nominals_are_type_oriented_doc_targets() {
     let dir = package(
         "module pkg;\n\n\
         /// Type [`Twig`]. Signature [`@signature Twig`]. Source [`@source Twig`].\n\
-        rec { type Tree = Twig; labels { twig: . | Tree }; }\n\
+        rec { type Tree = Twig; type { Twig: . | Tree; }; }\n\
         /// Type [`List`]. Signature [`@signature List`]. Source [`@source List`].\n\
-        rec labels { list: . | List };\n",
+        rec type { List: . | List; };\n",
     );
     success(&doc(dir.path(), &["build", "--md"]));
     let rendered = fs::read_to_string(dir.path().join("out/docs-md/pkg.md")).unwrap();
@@ -167,7 +168,7 @@ fn kiodoc_recursive_label_nominals_are_type_oriented_doc_targets() {
     assert!(rendered.contains("id=\"item-pkg-List\""), "{rendered}");
     for name in ["Twig", "List"] {
         // Package pages only expose public declarations; exercise the module
-        // scope for these deliberately private recursive label declarations.
+        // scope for these deliberately private recursive nominal declarations.
         let source = fs::read_to_string(dir.path().join("pkg.kio")).unwrap();
         let bad_source = format!("/// [`@type {name}`]\n{source}");
         fs::write(dir.path().join("pkg.kio"), &bad_source).unwrap();
@@ -187,7 +188,7 @@ fn kiodoc_recursive_group_private_names_do_not_enter_package_scope() {
     let mut escaped = Vec::new();
     for directive in ["Hidden", "@signature Hidden", "@source Node"] {
         let dir = package(
-            "module pkg;\nrec { type Hidden = Node; newtype Node : . | Hidden { constructor make; projector read; }; }\n",
+            "module pkg;\nrec { type Hidden = Node; type { Node: . | Hidden { mk; get; }; }; }\n",
         );
         fs::write(dir.path().join("input.md"), format!("[`{directive}`]\n")).unwrap();
         let output = doc(dir.path(), &["check"]);
@@ -202,15 +203,15 @@ fn kiodoc_recursive_group_private_names_do_not_enter_package_scope() {
 }
 
 #[test]
-fn kiodoc_recursive_named_labels_preserve_group_and_member_ownership() {
+fn kiodoc_recursive_named_compact_type_preserves_group_and_member_ownership() {
     let dir = package(
         "module pkg;\n\n\
         /// Grove group prose.\n\
         rec {\n\
           /// Branch prose. Signature [`@signature Branches`]. Source [`@source Branch`].\n\
-          pub labels Branches = { branch: . | Trunk };\n\
+          pub type Branches = { Branch: . | Trunk; };\n\
           /// Trunk prose.\n\
-          pub newtype Trunk : Branches { pub constructor make; pub projector read; };\n\
+          pub type { Trunk: Branches { pub mk; pub get; }; };\n\
         }\n",
     );
     let checked = Command::new(test_binary!("kio"))
@@ -223,10 +224,7 @@ fn kiodoc_recursive_named_labels_preserve_group_and_member_ownership() {
     let rendered = fs::read_to_string(dir.path().join("out/docs-md/pkg.md")).unwrap();
     let plain = plain_html(&rendered);
     assert_eq!(plain.matches("Grove group prose.").count(), 1, "{plain}");
-    assert!(
-        rendered.contains("id=\"labels-pkg-Branches\""),
-        "{rendered}"
-    );
+    assert!(rendered.contains("id=\"item-pkg-Branches\""), "{rendered}");
     assert!(rendered.contains("id=\"item-pkg-Branch\""), "{rendered}");
     assert!(rendered.contains("id=\"item-pkg-Trunk\""), "{rendered}");
     assert!(!rendered.contains("@signature"), "{rendered}");

@@ -565,7 +565,7 @@ mod facade_tests {
             /// HOSTFNDOC\n\
             host fn effect() -> .;\n\
             /// OPAQUEDOC\n\
-            pub newtype Token : . { pub constructor make; projector read; };\n\
+            pub type { Token: . { pub mk; get; }; };\n\
             /// EXPORTDOC\n\
             pub fn call() -> . { effect() }\n\
             /// PRIVATEDOC\n\
@@ -613,14 +613,14 @@ mod facade_tests {
              host fn tick() -> .; \
              pub fn direct() -> . { () } \
              pub fn effectful() -> . { tick() } \
-             pub newtype Box[A] : A { pub constructor mk; pub projector un; };",
+             pub type { Box[A]: A { pub mk; pub get; }; };",
         )
         .expect("native facade unfoldings");
         for wrapper in [
             super::export_wrapper_name("api", "direct"),
             super::export_wrapper_name("api", "effectful"),
             super::export_newtype_wrapper_name("api", "Box", "mk"),
-            super::export_newtype_wrapper_name("api", "Box", "un"),
+            super::export_newtype_wrapper_name("api", "Box", "get"),
         ] {
             assert!(native.contains(&format!("{{-# INLINABLE {wrapper} #-}}\n{wrapper} ::")));
         }
@@ -834,32 +834,32 @@ v(2) {
     fn projected_rank_n_boundary_values_are_annotated_before_visible_type_arguments() {
         let emitted = render(
             "module api; \
-             pub newtype Pair : . & . { \
-               pub constructor mk_pair; \
-               pub projector un_pair; \
-             }; \
-             pub newtype Tuple : . & . { \
-               pub constructor mk_tuple; \
-               pub projector un_tuple; \
-             }; \
-             pub newtype Choice : ([B] B -> B) | . { \
-               pub constructor mk_choice; \
-               pub projector un_choice; \
-             }; \
-             pub newtype Shadow[Pair] : Pair & ([A] A -> A) & Tuple & Choice { \
-               pub constructor mk_shadow; \
-               pub projector un_shadow; \
-             }; \
+             pub type { Pair: . & . { \
+               pub mk; \
+               pub get; \
+             }; }; \
+             pub type { Tuple: . & . { \
+               pub mk; \
+               pub get; \
+             }; }; \
+             pub type { Choice: ([B] B -> B) | . { \
+               pub mk; \
+               pub get; \
+             }; }; \
+             pub type { Shadow[Pair]: Pair & ([A] A -> A) & Tuple & Choice { \
+               pub mk; \
+               pub get; \
+             }; }; \
              pub fn keep[Pair](value: Pair & ([A] A -> A) & Tuple & Choice) \
                -> Pair & ([A] A -> A) & Tuple & Choice { value }",
         )
         .expect("render projected rank-N boundary value");
-        let name = newtype_export_wrapper("api", "Shadow", "un_shadow");
+        let name = newtype_export_wrapper("api", "Shadow", "get");
         let signature = emitted
             .lines()
             .find(|line| line.starts_with(&format!("{name} ::")))
             .expect("projector export signature");
-        let returned = member_export_boundary("api", "Shadow", "un_shadow", BoundaryRoot::Ret);
+        let returned = member_export_boundary("api", "Shadow", "get", BoundaryRoot::Ret);
         let returned_alias = boundary_alias(&returned);
         assert!(
             signature.contains(&returned_alias),
@@ -913,7 +913,7 @@ v(2) {
             "ordinary exported result did not use the shared concrete lift: {keep_equation}"
         );
 
-        let choice = newtype_export_wrapper("api", "Choice", "un_choice");
+        let choice = newtype_export_wrapper("api", "Choice", "get");
         let choice_equation = emitted
             .lines()
             .find(|line| line.starts_with(&format!("{choice} _pkg")))
@@ -925,7 +925,7 @@ v(2) {
             "transparent newtype wrapper did not use the shared concrete lift: {choice_equation}"
         );
 
-        let constructor = newtype_export_wrapper("api", "Shadow", "mk_shadow");
+        let constructor = newtype_export_wrapper("api", "Shadow", "mk");
         let constructor_equation = emitted
             .lines()
             .find(|line| line.starts_with(&format!("{constructor} _pkg")))
@@ -1048,11 +1048,11 @@ v(2) {
         let package = routed_package_files(&[
             (
                 "actual.kio",
-                "module actual; pub newtype Box[A] : A { pub constructor mk; pub projector un; };",
+                "module actual; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "wrong.kio",
-                "module wrong; pub newtype Box[A] : A & A { pub constructor mk; pub projector un; };",
+                "module wrong; pub type { Box[A]: A & A { pub mk; pub get; }; };",
             ),
             (
                 "caller.kio",
@@ -1253,7 +1253,7 @@ v(2) {
                 "api.kio",
                 "module api; \
              host fn observe() -> .; \
-             newtype Receiver : [A][B] A -> A { constructor mk; projector get }; \
+             type { Receiver: [A][B] A -> A { mk; get }; }; \
              fn identity[A][B](value: A) -> A { value } \
              fn factory() -> Receiver { observe(); Receiver.mk(identity) } \
              fn pure_discard(value: Receiver) -> . { let unused = Receiver.get(value); () } \
@@ -1478,18 +1478,18 @@ v(2) {
     fn recursive_newtype_classification_preserves_parametric_carrier_arguments() {
         let package = routed_package(
             "module api; \
-             pub newtype Const[A] : . { \
-               pub constructor make_const; pub projector read_const; \
-             }; \
-             pub rec newtype Finite : Const[Finite] { \
-               pub constructor make_finite; pub projector read_finite; \
-             }; \
-             pub newtype Id[A] : A { \
-               pub constructor make_id; pub projector read_id; \
-             }; \
-             pub rec newtype Recursive : Id[.] & Id[Recursive] { \
-               pub constructor make_recursive; pub projector read_recursive; \
-             };",
+             pub type { Const[A]: . { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Finite: Const[Finite] { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Id[A]: A { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Recursive: Id[.] & Id[Recursive] { \
+               pub mk; pub get; \
+             }; };",
         );
         let resolution = crate::backends::haskell::skin::NewtypeResolution::build(&package);
         let declaration = |name: &str| {
@@ -1526,26 +1526,26 @@ v(2) {
             &[(
                 "api.kio",
                 "module api; \
-                 newtype Hidden_payload : . { constructor mk_hidden; projector un_hidden; }; \
-                 pub newtype Opaque_a : Hidden_payload { constructor mk_opaque_a; projector un_opaque_a; }; \
-                 pub newtype Opaque_b : Hidden_payload { constructor mk_opaque_b; projector un_opaque_b; }; \
-                 pub newtype Constructor_only[A] : A { pub constructor make_constructor; projector read_constructor; }; \
-                 pub newtype Projector_only[A] : A { constructor make_projector; pub projector read_projector; }; \
-                 pub newtype Existential <U> : U { constructor make_existential; pub projector read_existential; }; \
-                 pub newtype Transparent_both : . { pub constructor make_transparent; pub projector read_transparent; }; \
+                 type { Hidden_payload: . { mk; get; }; }; \
+                 pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
+                 pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
+                 pub type { Constructor_only[A]: A { pub mk; get; }; }; \
+                 pub type { Projector_only[A]: A { mk; pub get; }; }; \
+                 pub type { Existential <U>: U { mk; pub get; }; }; \
+                 pub type { Transparent_both: . { pub mk; pub get; }; }; \
                  rec { \
-                   pub newtype Outer : Hidden { pub constructor make_outer; pub projector read_outer; }; \
-                   pub newtype Hidden : Outer { constructor make_hidden_cycle; projector read_hidden_cycle; }; \
+                   pub type { Outer: Hidden { pub mk; pub get; }; }; \
+                   pub type { Hidden: Outer { mk; get; }; }; \
                  } \
                  rec { \
-                   pub newtype Constructor_outer : Constructor_hidden { pub constructor make_constructor_outer; pub projector read_constructor_outer; }; \
-                   pub newtype Constructor_hidden : Constructor_outer { pub constructor make_constructor_hidden; projector read_constructor_hidden; }; \
+                   pub type { Constructor_outer: Constructor_hidden { pub mk; pub get; }; }; \
+                   pub type { Constructor_hidden: Constructor_outer { pub mk; get; }; }; \
                  } \
                  rec { \
-                   pub newtype Projector_outer : Projector_hidden { pub constructor make_projector_outer; pub projector read_projector_outer; }; \
-                   pub newtype Projector_hidden : Projector_outer { constructor make_projector_hidden; pub projector read_projector_hidden; }; \
+                   pub type { Projector_outer: Projector_hidden { pub mk; pub get; }; }; \
+                   pub type { Projector_hidden: Projector_outer { mk; pub get; }; }; \
                  } \
-                 pub rec newtype Direct_recursive : . | Direct_recursive { pub constructor make_direct; pub projector read_direct; }; \
+                 pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
                  pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
                  pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
                  host fn echo_outer(value: Outer) -> Outer; \
@@ -1613,14 +1613,10 @@ v(2) {
                 emitted.pkg_hs
             );
         }
-        let ctor =
-            super::export_newtype_wrapper_name("api", "Constructor_only", "make_constructor");
-        let hidden_ctor =
-            super::export_newtype_wrapper_name("api", "Constructor_only", "read_constructor");
-        let projector =
-            super::export_newtype_wrapper_name("api", "Projector_only", "read_projector");
-        let hidden_projector =
-            super::export_newtype_wrapper_name("api", "Projector_only", "make_projector");
+        let ctor = super::export_newtype_wrapper_name("api", "Constructor_only", "mk");
+        let hidden_ctor = super::export_newtype_wrapper_name("api", "Constructor_only", "get");
+        let projector = super::export_newtype_wrapper_name("api", "Projector_only", "get");
+        let hidden_projector = super::export_newtype_wrapper_name("api", "Projector_only", "mk");
         assert!(
             emitted.pkg_hs.contains(&format!("  , {ctor}\n")),
             "{}",
@@ -1698,13 +1694,13 @@ v(2) {
                 (
                     "left.kio",
                     "module left; \
-                     pub newtype Token : . { constructor make_token; projector read_token; }; \
+                     pub type { Token: . { mk; get; }; }; \
                      host fn round_token(value: Token) -> Token;",
                 ),
                 (
                     "right.kio",
                     "module right; \
-                     pub newtype Token : . { constructor make_token; projector read_token; }; \
+                     pub type { Token: . { mk; get; }; }; \
                      host fn round_token(value: Token) -> Token;",
                 ),
             ],
@@ -1743,7 +1739,7 @@ v(2) {
                 (
                     "hidden.kio",
                     "module hidden; \
-                     pub newtype Secret[A] : A { constructor make_secret; projector read_secret; }; \
+                     pub type { Secret[A]: A { mk; get; }; }; \
                      pub fn keep_secret[A](value: Secret[A]) -> Secret[A] { value }",
                 ),
             ],
@@ -1778,10 +1774,10 @@ v(2) {
                     "hidden.kio",
                     "module hidden; \
                      pub fn hidden_pair(value: . & .) -> . & . { value } \
-                     pub newtype Hidden_pair : . & . { \
-                       pub constructor make_hidden_pair; \
-                       pub projector read_hidden_pair; \
-                     };",
+                     pub type { Hidden_pair: . & . { \
+                       pub mk; \
+                       pub get; \
+                     }; };",
                 ),
             ],
             "api;",
@@ -1795,10 +1791,8 @@ v(2) {
 
         let visible_wrapper = export_wrapper("api", "keep");
         let hidden_wrapper = export_wrapper("hidden", "hidden_pair");
-        let hidden_constructor =
-            super::export_newtype_wrapper_name("hidden", "Hidden_pair", "make_hidden_pair");
-        let hidden_projector =
-            super::export_newtype_wrapper_name("hidden", "Hidden_pair", "read_hidden_pair");
+        let hidden_constructor = super::export_newtype_wrapper_name("hidden", "Hidden_pair", "mk");
+        let hidden_projector = super::export_newtype_wrapper_name("hidden", "Hidden_pair", "get");
         let hidden_fn_arg = boundary_alias(&export_boundary(
             "hidden",
             "hidden_pair",
@@ -1809,13 +1803,13 @@ v(2) {
         let hidden_constructor_arg = boundary_alias(&member_export_boundary(
             "hidden",
             "Hidden_pair",
-            "make_hidden_pair",
+            "mk",
             BoundaryRoot::Arg(0),
         ));
         let hidden_projector_ret = boundary_alias(&member_export_boundary(
             "hidden",
             "Hidden_pair",
-            "read_hidden_pair",
+            "get",
             BoundaryRoot::Ret,
         ));
 
@@ -1850,10 +1844,10 @@ v(2) {
     fn nested_closure_type_binder_survives_newtype_result_reconstruction() {
         let output = render(
             "module api; \
-             newtype T : . { constructor mk_t; projector un_t; }; \
-             pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
+             type { T: . { mk; get; }; }; \
+             pub type { Box[A]: A { pub mk; pub get; }; }; \
              pub fn box_value() -> [T] T -> Box[T] { \
-                 .[T](value) { Box.mk_box[T]( value) } \
+                 .[T](value) { Box.mk[T]( value) } \
              }",
         )
         .expect("render nested polymorphic closure");
@@ -2161,7 +2155,7 @@ v(2) {
                 "api.kio",
                 "module api; \
                  pub type Id = [A] (A) -> A; \
-                 pub newtype Wrapped_id : [A] (A) -> A { constructor mk; projector un; }; \
+                 pub type { Wrapped_id: [A] (A) -> A { mk; get; }; }; \
                  host fn alias_product(value: Id & ([A] (A) -> A)) -> .; \
                  host fn alias_sum(value: Id | ([A] (A) -> A)) -> .; \
                  host fn newtype_product(value: Wrapped_id & ([A] (A) -> A)) -> .; \
@@ -2169,7 +2163,7 @@ v(2) {
             ),
             (
                 "decoy.kio",
-                "module decoy; type Id = .; newtype Wrapped_id : . { constructor mk; projector un; };",
+                "module decoy; type Id = .; type { Wrapped_id: . { mk; get; }; };",
             ),
         ]);
         let names = HaskellNames::derive("FallbackProbe");
@@ -2247,12 +2241,12 @@ v(2) {
             &[(
                 "api.kio",
                 "module api; \
-                 pub newtype Carrier[H][M] : H & M { \
-                   pub constructor make_carrier; pub projector read_carrier; \
-                 }; \
-                 pub newtype Packed[R] <Rp0> : R & Rp0 { \
-                   constructor make_packed; pub projector read_packed; \
-                 }; \
+                 pub type { Carrier[H][M]: H & M { \
+                   pub mk; pub get; \
+                 }; }; \
+                 pub type { Packed[R] <Rp0>: R & Rp0 { \
+                   mk; pub get; \
+                 }; }; \
                  pub fn rank[Rq0](value: Rq0 & ([X] X -> X)) \
                    -> Rq0 & ([X] X -> X) { value }",
             )],
@@ -2418,7 +2412,7 @@ v(2) {
             (
                 "api.kio",
                 "module api; \
-                 newtype F[A] : A { constructor mk; projector un; }; \
+                 type { F[A]: A { mk; get; }; }; \
                  host fn keep[*F][A][B](value: F[A & B]) -> F[A & B];",
             ),
             ("decoy.kio", "module decoy; type F[A] = A;"),
@@ -2468,9 +2462,9 @@ v(2) {
         const PUBLIC_FACADE: &str = "\
             host fn exchange(value: (. & .) | .) -> (. & .) | .; \
             pub fn roundtrip(value: (. & .) | .) -> (. & .) | . { exchange(value) } \
-            pub newtype Pair : . & . { \
-                pub constructor mk_pair; pub projector un_pair; \
-            };";
+            pub type { Pair: . & . { \
+                pub mk; pub get; \
+            }; };";
 
         let native_source = format!("module api; {PUBLIC_FACADE}");
         let native_package =
@@ -2490,8 +2484,8 @@ v(2) {
         for name in [
             host_field("api", "exchange"),
             export_wrapper("api", "roundtrip"),
-            super::export_newtype_wrapper_name("api", "Pair", "mk_pair"),
-            super::export_newtype_wrapper_name("api", "Pair", "un_pair"),
+            super::export_newtype_wrapper_name("api", "Pair", "mk"),
+            super::export_newtype_wrapper_name("api", "Pair", "get"),
         ] {
             let signature = |output: &str| {
                 let needle = format!("{name} ::");
@@ -2549,7 +2543,7 @@ v(2) {
         };
         let boundary = "host fn exchange(value: . & .) -> . & .;";
         let with_unrelated = "host fn exchange(value: . & .) -> . & .; \
-            newtype Other[A] : A { constructor mk; projector un; };";
+            type { Other[A]: A { mk; get; }; };";
         assert_eq!(
             render_ffi(&format!("module api; {boundary}")),
             render_ffi(&format!("module api; {with_unrelated}")),
@@ -2563,7 +2557,7 @@ v(2) {
             host fn stop(value: .) -> !; \
             host fn discard(value: !) -> .; \
             host fn inspect(value: . & !) -> .; \
-            pub newtype Never : ! { pub constructor mk; pub projector un; }; \
+            pub type { Never: ! { pub mk; pub get; }; }; \
             pub fn stop_public(value: .) -> ! { stop(value) } \
             pub fn discard_public(value: !) -> . { discard(value) } \
             pub fn absurd_public(value: !) -> . { __absurd__[.]( value) }";
@@ -2613,8 +2607,8 @@ v(2) {
             &[(
                 "api.kio",
                 "module api; \
-                 pub newtype Comptime_bool[A] : A { constructor make_bool; projector read_bool; }; \
-                 pub newtype Comptime_str : . { pub constructor make_str; pub projector read_str; }; \
+                 pub type { Comptime_bool[A]: A { mk; get; }; }; \
+                 pub type { Comptime_str: . { pub mk; pub get; }; }; \
                  pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
                  pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
                  pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
@@ -2683,17 +2677,14 @@ v(2) {
     #[test]
     fn native_emitter_errors_propagate_for_public_nominals() {
         for (surface, declaration) in [
-            (
-                "opaque",
-                "pub newtype Secret : . { constructor mk_secret; projector un_secret; };",
-            ),
+            ("opaque", "pub type { Secret: . { mk; get; }; };"),
             (
                 "constructor-only",
-                "pub newtype Input : . { pub constructor mk_input; projector un_input; };",
+                "pub type { Input: . { pub mk; get; }; };",
             ),
             (
                 "projector-only",
-                "pub newtype Output : . { constructor mk_output; pub projector un_output; };",
+                "pub type { Output: . { mk; pub get; }; };",
             ),
         ] {
             // An invalid routed owner pins native emitter-error ownership.
@@ -2717,14 +2708,14 @@ v(2) {
         let output = render(
             "module api; \
              import __comptime__; \
-             pub rec newtype Type_list : . | (__Type__ & Type_list) { \
-               pub constructor mk; pub projector un; \
-             };",
+             pub rec type { Type_list: . | (__Type__ & Type_list) { \
+               pub mk; pub get; \
+             }; };",
         )
         .expect("recursive comptime payload has a structural Haskell boundary");
 
         let constructor = member_export_boundary("api", "Type_list", "mk", BoundaryRoot::Arg(0));
-        let projector = member_export_boundary("api", "Type_list", "un", BoundaryRoot::Ret);
+        let projector = member_export_boundary("api", "Type_list", "get", BoundaryRoot::Ret);
         let constructor_alias = boundary_alias(&constructor);
         let projector_alias = boundary_alias(&projector);
         let constructor_product = constructor.nested(BoundaryStep::Slot(1));
@@ -2773,9 +2764,9 @@ v(2) {
     fn transparent_newtype_payload_keeps_its_prepared_structural_boundaries() {
         let output = render(
             "module api; \
-             pub newtype Wrapped : . & (. | .) { \
-               pub constructor mk_wrapped; pub projector un_wrapped; \
-             }; \
+             pub type { Wrapped: . & (. | .) { \
+               pub mk; pub get; \
+             }; }; \
              host fn nested(value: . & Wrapped) -> .;",
         )
         .expect("transparent nested payload has an exact Haskell facade");
@@ -2811,21 +2802,21 @@ v(2) {
             (
                 "left.kio",
                 "module left; \
-                 pub newtype Same : . { constructor mk; projector un; }; \
+                 pub type { Same: . { mk; get; }; }; \
                  pub host fn round(value: Same) -> Same; \
                  pub fn round_public(value: Same) -> Same { round(value) }",
             ),
             (
                 "right.kio",
                 "module right; \
-                 pub newtype Same : (. & .) { constructor mk; projector un; };",
+                 pub type { Same: (. & .) { mk; get; }; };",
             ),
             (
                 "caller.kio",
                 "module caller; \
                  import left as l; \
                  import left(round); \
-                 pub newtype Same : (. & .) { constructor mk; projector un; }; \
+                 pub type { Same: (. & .) { mk; get; }; }; \
                  pub fn call(value: l.Same) -> l.Same { round(value) }",
             ),
         ];
@@ -2872,7 +2863,7 @@ v(2) {
     fn sum_patterns_use_the_assigned_three_step_keys() {
         let output = render(
             "module api; \
-             pub newtype Same : . { constructor mk; projector un; }; \
+             pub type { Same: . { mk; get; }; }; \
              pub fn keep(value: Same | Same | .) -> Same | Same | . { value }",
         )
         .expect("render repeated sum slots");
@@ -2903,10 +2894,10 @@ v(2) {
             (
                 "types.kio",
                 "module types; \
-                 pub newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-                 pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { \
-                   constructor mk_functor; projector fmap; \
-                 };",
+                 pub type { Box[A]: A { mk; get; }; }; \
+                 pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { \
+                   mk; get; \
+                 }; };",
             ),
             (
                 "api.kio",
@@ -2943,16 +2934,16 @@ v(2) {
     fn polymorphic_function_newtype_members_preserve_product_parameters() {
         let output = render(
             "module api; \
-             pub newtype Pick_first : [A] (A & A) -> A { \
-               pub constructor mk_pick_first; pub projector pick_first; \
-             };",
+             pub type { Pick_first: [A] (A & A) -> A { \
+               pub mk; pub get; \
+             }; };",
         )
         .expect("render polymorphic function newtype members");
         let grouped = standard_hs("forall (t_a :: %KIND%.Type). m ((t_a, t_a) -> m t_a)");
 
         for wrapper in [
-            newtype_export_wrapper("api", "Pick_first", "mk_pick_first"),
-            newtype_export_wrapper("api", "Pick_first", "pick_first"),
+            newtype_export_wrapper("api", "Pick_first", "mk"),
+            newtype_export_wrapper("api", "Pick_first", "get"),
         ] {
             let signature = output
                 .lines()
@@ -3513,7 +3504,6 @@ pub(super) fn type_contains_forall(ty: &Type<Routed>) -> bool {
             ..
         } => type_contains_forall(param) || type_contains_forall(ret),
         Type::Unit { .. } | Type::Bottom { .. } => false,
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -3591,7 +3581,6 @@ fn normalize_rank_n_boundary_type(
                 meta: meta.clone(),
             })
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -3790,7 +3779,6 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                     ty_arg_paren(&body),
                 ))
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }

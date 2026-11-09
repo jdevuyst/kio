@@ -54,6 +54,7 @@ import docs_loader/list/core(List, cons, nil, uncons);
 import docs_loader/list/list(append, elem, length, reverse);
 import docs_loader/macros/control(macro if);
 import docs_loader/macros/match(macro match);
+import docs_loader/macros/row_macros(macro record);
 import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/parse(Nt_entry, Nt_info, Ntab, P_err, P_ok, Perr, Pnl, Pres, Scope, Type_scope);
 import docs_loader/parse(nt_ctor, nt_existential, nt_proj);
@@ -110,7 +111,7 @@ import docs_loader/value(env_nil, env_push, un_value, vclosure, vhostfn_fresh, v
 //      guest binding is evaluated.
 //   4. **instantiate** — evaluate every top-level binding exactly once to a
 //      universal `Value` (`prime_eval`) in the assembled `let`-chain, then
-//      package the operations as `Surface(P)` behind `Loaded`, which hides
+//      package the operations as `Surface[P]` behind `Loaded`, which hides
 //      the internal `Value` representation as the existential witness `P`.
 //
 // **The host capabilities are threaded through `instantiate`.** A guest's
@@ -133,13 +134,13 @@ import docs_loader/value(env_nil, env_push, un_value, vclosure, vhostfn_fresh, v
 // =====================================================================
 /// A loader diagnostic: a message, and the image byte offset it points at
 /// (`()` when the failure has no source position).
-pub labels { diag: String & (. | I32) };
+pub type { Diag: String & (. | I32) }
 
 /// Builds a position-free diagnostic from its message.
-pub fn mk_diag(message: String) -> Diag { {diag = (message, widen_sum(())[. | I32])} }
+pub fn mk_diag(message: String) -> Diag { Diag.mk((message, widen_sum(())[. | I32])) }
 
 /// Builds a diagnostic carrying a source byte offset.
-pub fn mk_diag_at(message: String, pos: . | I32) -> Diag { {diag = (message, pos)} }
+pub fn mk_diag_at(message: String, pos: . | I32) -> Diag { Diag.mk((message, pos)) }
 
 // =====================================================================
 // Decl — one top-level fn declaration extracted from the image
@@ -153,19 +154,19 @@ pub fn mk_diag_at(message: String, pos: . | I32) -> Diag { {diag = (message, pos
 // in the same closure chain. The scanner builds each module's `Decl` list
 // from that module's emitted source text.
 /// A binder-name list for a fn's value parameters, innermost first.
-pub labels { pnames: List[String] };
+pub type { Pnames: List[String] }
 
 /// The empty parameter-name list.
-pub fn pnames_nil() -> Pnames { {pnames = nil[String]} }
+pub fn pnames_nil() -> Pnames { Pnames.mk(nil[String]) }
 
 /// Prepends one parameter name.
-pub fn pnames_cons(name: String, rest: Pnames) -> Pnames { {pnames = cons(name, Pnames.get(rest))} }
+pub fn pnames_cons(name: String, rest: Pnames) -> Pnames { Pnames.mk(cons(name, Pnames.get(rest))) }
 
 /// One-step destructor on a parameter-name list.
 pub fn un_pnames(ps: Pnames) -> . | (String & Pnames) {
   match(uncons(Pnames.get(ps))) {
     (
-    , .(h: String, t: List[String]) { widen_sum((h, {pnames = t}))[. | (String & Pnames)] }
+    , .(h: String, t: List[String]) { widen_sum((h, Pnames.mk(t)))[. | (String & Pnames)] }
     , .(_e: .) { widen_sum(())[. | (String & Pnames)] }
     )
   }
@@ -177,36 +178,36 @@ pub fn pnames_has(ps: Pnames, name: String) -> Bool {
 }
 
 /// Private declaration visibility.
-pub labels { visibility_private: . };
+pub type { Visibility_private: . }
 
 /// Unrestricted public declaration visibility.
-pub labels { visibility_public: . };
+pub type { Visibility_public: . }
 
 /// Public visibility restricted to one module-path subtree.
-pub labels { visibility_scoped: String };
+pub type { Visibility_scoped: String }
 
 /// The complete visibility carried by a declaration in a loaded artifact.
-pub labels { visibility: Visibility_private | Visibility_public | Visibility_scoped };
+pub type { Visibility: Visibility_private | Visibility_public | Visibility_scoped }
 
 /// Builds private visibility.
 pub fn private_visibility() -> Visibility {
-  {visibility = widen_sum({visibility_private=})[| Visibility_private
+  Visibility.mk(widen_sum(Visibility_private.mk(()))[| Visibility_private
   | Visibility_public
-  | Visibility_scoped]}
+  | Visibility_scoped])
 }
 
 /// Builds unrestricted public visibility.
 pub fn public_visibility() -> Visibility {
-  {visibility = widen_sum({visibility_public=})[| Visibility_private
+  Visibility.mk(widen_sum(Visibility_public.mk(()))[| Visibility_private
   | Visibility_public
-  | Visibility_scoped]}
+  | Visibility_scoped])
 }
 
 /// Builds visibility restricted to the module subtree rooted at `root`.
 pub fn scoped_visibility(root: String) -> Visibility {
-  {visibility = widen_sum({visibility_scoped = root})[| Visibility_private
+  Visibility.mk(widen_sum(Visibility_scoped.mk(root))[| Visibility_private
   | Visibility_public
-  | Visibility_scoped]}
+  | Visibility_scoped])
 }
 
 /// Whether this visibility reaches the host-facing public surface.
@@ -340,21 +341,21 @@ fn pnames_render(ps: Pnames) -> String {
 /// empty `Pnames` stage whose closure accepts Unit; each `(…)` group contributes
 /// one named value-domain stage. The grammar admits several successive groups
 /// (`Signature ::= SignatureGroup+`), which form one curried closure chain.
-pub labels { pgroups: List[Pnames] };
+pub type { Pgroups: List[Pnames] }
 
 /// The empty group sequence.
-pub fn pgroups_nil() -> Pgroups { {pgroups = nil[Pnames]} }
+pub fn pgroups_nil() -> Pgroups { Pgroups.mk(nil[Pnames]) }
 
 /// Prepends one erased runtime stage.
 pub fn pgroups_cons(head: Pnames, tail: Pgroups) -> Pgroups {
-  {pgroups = cons(head, Pgroups.get(tail))}
+  Pgroups.mk(cons(head, Pgroups.get(tail)))
 }
 
 /// One-step destructor on a group sequence.
 pub fn un_pgroups(gs: Pgroups) -> . | (Pnames & Pgroups) {
   match(uncons(Pgroups.get(gs))) {
     (
-    , .(h: Pnames, t: List[Pnames]) { widen_sum((h, {pgroups = t}))[. | (Pnames & Pgroups)] }
+    , .(h: Pnames, t: List[Pnames]) { widen_sum((h, Pgroups.mk(t)))[. | (Pnames & Pgroups)] }
     , .(_e: .) { widen_sum(())[. | (Pnames & Pgroups)] }
     )
   }
@@ -369,7 +370,7 @@ pub fn pgroups_one(g: Pnames) -> Pgroups { pgroups_cons(g, pgroups_nil()) }
 /// groups, value parameters with their types, and any return type,
 /// retained for typed contract-matching), body tokens, visibility, and
 /// declaration position.
-pub labels { decl: String & Pgroups & Toks & Toks & Visibility & I32 };
+pub type { Decl: String & Pgroups & Toks & Toks & Visibility & I32 }
 
 /// Builds a fn declaration.
 pub fn mk_decl(
@@ -379,7 +380,7 @@ pub fn mk_decl(
 , body: Toks
 , visibility: Visibility
 , decl_pos: I32
-) -> Decl { {decl = (name, (params, (header, (body, (visibility, decl_pos)))))} }
+) -> Decl { Decl.mk((name, (params, (header, (body, (visibility, decl_pos)))))) }
 
 /// One-step destructor on a fn declaration.
 pub fn un_decl(d: Decl) -> String & Pgroups & Toks & Toks & Visibility & I32 { Decl.get(d) }
@@ -434,19 +435,19 @@ pub fn decl_pos(d: Decl) -> I32 {
 }
 
 /// A cons-list of fn declarations, in dependency order (earliest first).
-pub labels { decls: List[Decl] };
+pub type { Decls: List[Decl] }
 
 /// The empty declaration list.
-pub fn decls_nil() -> Decls { {decls = nil[Decl]} }
+pub fn decls_nil() -> Decls { Decls.mk(nil[Decl]) }
 
 /// Prepends one declaration.
-pub fn decls_cons(head: Decl, tail: Decls) -> Decls { {decls = cons(head, Decls.get(tail))} }
+pub fn decls_cons(head: Decl, tail: Decls) -> Decls { Decls.mk(cons(head, Decls.get(tail))) }
 
 /// One-step destructor on a declaration list.
 pub fn un_decls(ds: Decls) -> . | (Decl & Decls) {
   match(uncons(Decls.get(ds))) {
     (
-    , .(h: Decl, t: List[Decl]) { widen_sum((h, {decls = t}))[. | (Decl & Decls)] }
+    , .(h: Decl, t: List[Decl]) { widen_sum((h, Decls.mk(t)))[. | (Decl & Decls)] }
     , .(_e: .) { widen_sum(())[. | (Decl & Decls)] }
     )
   }
@@ -495,16 +496,16 @@ fn decls_find(ds: Decls, name: String) -> . | Decl {
 // provides `a.name` spellings subject to the same visibility gate rather than
 // importing names one by one.
 /// A selective import's local spelling, original declaration name, and provider module.
-pub labels { import: String & String & String };
+pub type { Import: String & String & String }
 
 /// Builds an import entry (local name, source module).
 pub fn mk_import(name: String, from_module: String) -> Import {
-  {import = (name, name, from_module)}
+  Import.mk((name, name, from_module))
 }
 
 /// Construct a selective import with an explicit local spelling and source name.
 pub fn mk_import_as(local: String, original: String, from_module: String) -> Import {
-  {import = (local, original, from_module)}
+  Import.mk((local, original, from_module))
 }
 
 /// Return an import's local spelling and provider module.
@@ -522,21 +523,21 @@ pub fn import_source(i: Import) -> String {
 }
 
 /// A cons-list of import entries.
-pub labels { imports: List[Import] };
+pub type { Imports: List[Import] }
 
 /// The empty import map.
-pub fn imports_nil() -> Imports { {imports = nil[Import]} }
+pub fn imports_nil() -> Imports { Imports.mk(nil[Import]) }
 
 /// Prepends one import entry.
 pub fn imports_cons(head: Import, tail: Imports) -> Imports {
-  {imports = cons(head, Imports.get(tail))}
+  Imports.mk(cons(head, Imports.get(tail)))
 }
 
 /// One-step destructor on an import map.
 pub fn un_imports(im: Imports) -> . | (Import & Imports) {
   match(uncons(Imports.get(im))) {
     (
-    , .(h: Import, t: List[Import]) { widen_sum((h, {imports = t}))[. | (Import & Imports)] }
+    , .(h: Import, t: List[Import]) { widen_sum((h, Imports.mk(t)))[. | (Import & Imports)] }
     , .(_e: .) { widen_sum(())[. | (Import & Imports)] }
     )
   }
@@ -544,11 +545,11 @@ pub fn un_imports(im: Imports) -> . | (Import & Imports) {
 
 /// A module-alias entry: the local alias and the module it names
 /// (`import path/to/mod as a;` records `(a, path/to/mod)`).
-pub labels { mod_alias: String & String };
+pub type { Mod_alias: String & String }
 
 /// Builds a module-alias entry.
 pub fn mk_alias(alias: String, target_module: String) -> Mod_alias {
-  {mod_alias = (alias, target_module)}
+  Mod_alias.mk((alias, target_module))
 }
 
 /// The alias's local spelling.
@@ -566,14 +567,14 @@ pub fn alias_target(a: Mod_alias) -> String {
 }
 
 /// A cons-list of module-alias entries.
-pub labels { aliases: List[Mod_alias] };
+pub type { Aliases: List[Mod_alias] }
 
 /// The empty alias list.
-pub fn aliases_nil() -> Aliases { {aliases = nil[Mod_alias]} }
+pub fn aliases_nil() -> Aliases { Aliases.mk(nil[Mod_alias]) }
 
 /// Prepends one alias entry.
 pub fn aliases_cons(head: Mod_alias, tail: Aliases) -> Aliases {
-  {aliases = cons(head, Aliases.get(tail))}
+  Aliases.mk(cons(head, Aliases.get(tail)))
 }
 
 /// One-step destructor on an alias list.
@@ -581,7 +582,7 @@ pub fn un_aliases(a: Aliases) -> . | (Mod_alias & Aliases) {
   match(uncons(Aliases.get(a))) {
     (
     , .(h: Mod_alias, t: List[Mod_alias]) {
-        widen_sum((h, {aliases = t}))[. | (Mod_alias & Aliases)]
+        widen_sum((h, Aliases.mk(t)))[. | (Mod_alias & Aliases)]
       }
     , .(_e: .) { widen_sum(())[. | (Mod_alias & Aliases)] }
     )
@@ -589,11 +590,11 @@ pub fn un_aliases(a: Aliases) -> . | (Mod_alias & Aliases) {
 }
 
 /// The source identity of one explicit recursive-data scope.
-pub labels { recursive_type_scope: I32 };
+pub type { Recursive_type_scope: I32 }
 
 /// Builds a recursive-data scope identity from the marker's byte offset.
 pub fn recursive_type_scope(pos: I32) -> . | Recursive_type_scope {
-  widen_sum({recursive_type_scope = pos})[. | Recursive_type_scope]
+  widen_sum(Recursive_type_scope.mk(pos))[. | Recursive_type_scope]
 }
 
 /// The absence of an explicit recursive-data scope.
@@ -623,14 +624,17 @@ fn recursive_type_scopes_match(left: . | Recursive_type_scope, right: . | Recurs
 /// position, erasure facts, the newtype and member visibilities, and the retained header run
 /// (`[A]… <U>… : TYPE`) its member signatures render from, plus its exact
 /// explicit recursive-data scope when one exists.
-pub labels { member_decl: & String
-& I32
-& Nt_info
-& Visibility
-& Visibility
-& Visibility
-& Toks
-& (. | Recursive_type_scope) };
+pub type {
+  Member_decl:
+    & String
+    & I32
+    & Nt_info
+    & Visibility
+    & Visibility
+    & Visibility
+    & Toks
+    & (. | Recursive_type_scope)
+}
 
 /// Builds a member-surface record.
 pub fn mk_member_decl(
@@ -643,13 +647,13 @@ pub fn mk_member_decl(
 , header: Toks
 , recursive_scope: . | Recursive_type_scope
 ) -> Member_decl {
-  {member_decl = (
+  Member_decl.mk((
   , name
   , (
     , decl_pos
     , (info, (nt_visibility, (ctor_visibility, (proj_visibility, (header, recursive_scope)))))
     )
-  )}
+  ))
 }
 
 /// The newtype's name.
@@ -790,14 +794,14 @@ pub fn member_recursive_scope(m: Member_decl) -> . | Recursive_type_scope {
 }
 
 /// A module's member-surface records, declaration order.
-pub labels { members: List[Member_decl] };
+pub type { Members: List[Member_decl] }
 
 /// The empty member list.
-pub fn members_nil() -> Members { {members = nil[Member_decl]} }
+pub fn members_nil() -> Members { Members.mk(nil[Member_decl]) }
 
 /// Prepends one member record.
 pub fn members_cons(head: Member_decl, tail: Members) -> Members {
-  {members = cons[Member_decl](head, Members.get(tail))}
+  Members.mk(cons[Member_decl](head, Members.get(tail)))
 }
 
 /// One-step destructor on a member list.
@@ -805,7 +809,7 @@ pub fn un_members(ms: Members) -> . | (Member_decl & Members) {
   match(uncons[Member_decl](Members.get(ms))) {
     (
     , .(h: Member_decl, t: List[Member_decl]) {
-        widen_sum((h, {members = t}))[. | (Member_decl & Members)]
+        widen_sum((h, Members.mk(t)))[. | (Member_decl & Members)]
       }
     , .(_e: .) { widen_sum(())[. | (Member_decl & Members)] }
     )
@@ -813,7 +817,7 @@ pub fn un_members(ms: Members) -> . | (Member_decl & Members) {
 }
 
 /// Reverses a member list.
-pub fn members_reverse(ms: Members) -> Members { {members = reverse[Member_decl](Members.get(ms))} }
+pub fn members_reverse(ms: Members) -> Members { Members.mk(reverse[Member_decl](Members.get(ms))) }
 
 // The newtype member record named `name`, or `()` when absent.
 fn members_find(ms: Members, name: String) -> . | Member_decl {
@@ -837,17 +841,17 @@ fn members_find(ms: Members, name: String) -> . | Member_decl {
 }
 
 /// One type binder's spelling and kind-star count.
-pub labels { binder_info: String & I32 };
+pub type { Binder_info: String & I32 }
 
 /// A list of binder infos in introduction order.
-pub labels { binders: List[Binder_info] };
+pub type { Binders: List[Binder_info] }
 
 /// The empty binder list.
-pub fn binders_nil() -> Binders { {binders = nil[Binder_info]} }
+pub fn binders_nil() -> Binders { Binders.mk(nil[Binder_info]) }
 
 /// Prepends one binder.
 pub fn binders_cons(head: Binder_info, tail: Binders) -> Binders {
-  {binders = cons[Binder_info](head, Binders.get(tail))}
+  Binders.mk(cons[Binder_info](head, Binders.get(tail)))
 }
 
 /// One-step destructor on a binder list.
@@ -855,7 +859,7 @@ pub fn un_binders(binders: Binders) -> . | (Binder_info & Binders) {
   match(uncons[Binder_info](Binders.get(binders))) {
     (
     , .(head: Binder_info, tail: List[Binder_info]) {
-        widen_sum((head, {binders = tail}))[. | (Binder_info & Binders)]
+        widen_sum((head, Binders.mk(tail)))[. | (Binder_info & Binders)]
       }
     , .(_empty: .) { widen_sum(())[. | (Binder_info & Binders)] }
     )
@@ -864,13 +868,13 @@ pub fn un_binders(binders: Binders) -> . | (Binder_info & Binders) {
 
 /// Reverses a binder list.
 pub fn binders_reverse(binders: Binders) -> Binders {
-  {binders = reverse[Binder_info](Binders.get(binders))}
+  Binders.mk(reverse[Binder_info](Binders.get(binders)))
 }
 
 /// One retained `type` alias declaration: name, positional binders, body
 /// token-run (the text after `=`, semicolon excluded), visibility, and
 /// declaration byte offset, and exact recursive group when present.
-pub labels { alias_decl: String & Binders & Toks & Visibility & I32 & (. | Recursive_type_scope) };
+pub type { Alias_decl: String & Binders & Toks & Visibility & I32 & (. | Recursive_type_scope) }
 
 /// Builds a retained alias record.
 pub fn mk_alias_decl(
@@ -880,7 +884,7 @@ pub fn mk_alias_decl(
 , visibility: Visibility
 , decl_pos: I32
 , recursive_scope: . | Recursive_type_scope
-) -> Alias_decl { {alias_decl = (name, binders, body, visibility, decl_pos, recursive_scope)} }
+) -> Alias_decl { Alias_decl.mk((name, binders, body, visibility, decl_pos, recursive_scope)) }
 
 /// The alias's name.
 pub fn tyalias_name(a: Alias_decl) -> String {
@@ -915,7 +919,7 @@ fn tyalias_binder_names(a: Alias_decl) -> Pnames {
                 }
               }
             , .(_empty: .) {
-                widen_sum({pnames = reverse[String](Pnames.get(reversed))})[| (Binders & Pnames)
+                widen_sum(Pnames.mk(reverse[String](Pnames.get(reversed))))[| (Binders & Pnames)
                 | Pnames]
               }
             )
@@ -969,14 +973,14 @@ pub fn tyalias_recursive_scope(a: Alias_decl) -> . | Recursive_type_scope {
 }
 
 /// A module's retained `type` aliases, declaration order.
-pub labels { tyaliases: List[Alias_decl] };
+pub type { Tyaliases: List[Alias_decl] }
 
 /// The empty alias list.
-pub fn tyaliases_nil() -> Tyaliases { {tyaliases = nil[Alias_decl]} }
+pub fn tyaliases_nil() -> Tyaliases { Tyaliases.mk(nil[Alias_decl]) }
 
 /// Prepends one alias record.
 pub fn tyaliases_cons(head: Alias_decl, tail: Tyaliases) -> Tyaliases {
-  {tyaliases = cons(head, Tyaliases.get(tail))}
+  Tyaliases.mk(cons(head, Tyaliases.get(tail)))
 }
 
 /// One-step destructor on an alias list.
@@ -984,7 +988,7 @@ pub fn un_tyaliases(as0: Tyaliases) -> . | (Alias_decl & Tyaliases) {
   match(uncons(Tyaliases.get(as0))) {
     (
     , .(h: Alias_decl, t: List[Alias_decl]) {
-        widen_sum((h, {tyaliases = t}))[. | (Alias_decl & Tyaliases)]
+        widen_sum((h, Tyaliases.mk(t)))[. | (Alias_decl & Tyaliases)]
       }
     , .(_e: .) { widen_sum(())[. | (Alias_decl & Tyaliases)] }
     )
@@ -1036,11 +1040,11 @@ fn tyaliases_find(aliases: Tyaliases, name: String) -> . | Alias_decl {
 /// One retained host declaration header: whether it is a function, its
 /// declaration-local name, the tokens after that name through the terminating
 /// semicolon (with the semicolon excluded), and declaration byte offset.
-pub labels { host_header: Bool & String & Toks & I32 };
+pub type { Host_header: Bool & String & Toks & I32 }
 
 /// Builds one retained host declaration header.
 pub fn mk_host_header(is_fn: Bool, name: String, header: Toks, decl_pos: I32) -> Host_header {
-  {host_header = (is_fn, name, header, decl_pos)}
+  Host_header.mk((is_fn, name, header, decl_pos))
 }
 
 /// Whether the retained declaration is a host function rather than a host type.
@@ -1072,14 +1076,14 @@ pub fn host_header_decl_pos(header: Host_header) -> I32 {
 }
 
 /// A source-ordered list of retained host declaration headers.
-pub labels { host_headers: List[Host_header] };
+pub type { Host_headers: List[Host_header] }
 
 /// The empty retained host-declaration list.
-pub fn host_headers_nil() -> Host_headers { {host_headers = nil[Host_header]} }
+pub fn host_headers_nil() -> Host_headers { Host_headers.mk(nil[Host_header]) }
 
 /// Prepends one retained host declaration.
 pub fn host_headers_cons(head: Host_header, tail: Host_headers) -> Host_headers {
-  {host_headers = cons[Host_header](head, Host_headers.get(tail))}
+  Host_headers.mk(cons[Host_header](head, Host_headers.get(tail)))
 }
 
 /// One-step destructor on retained host declaration headers.
@@ -1087,7 +1091,7 @@ pub fn un_host_headers(headers: Host_headers) -> . | (Host_header & Host_headers
   match(uncons[Host_header](Host_headers.get(headers))) {
     (
     , .(head: Host_header, tail: List[Host_header]) {
-        widen_sum((head, {host_headers = tail}))[. | (Host_header & Host_headers)]
+        widen_sum((head, Host_headers.mk(tail)))[. | (Host_header & Host_headers)]
       }
     , .(_empty: .) { widen_sum(())[. | (Host_header & Host_headers)] }
     )
@@ -1096,7 +1100,7 @@ pub fn un_host_headers(headers: Host_headers) -> . | (Host_header & Host_headers
 
 /// Reverses retained host declarations into source order.
 pub fn host_headers_reverse(headers: Host_headers) -> Host_headers {
-  {host_headers = reverse[Host_header](Host_headers.get(headers))}
+  Host_headers.mk(reverse[Host_header](Host_headers.get(headers)))
 }
 
 /// One module of a whole-package image: its name, import map, module
@@ -1105,16 +1109,10 @@ pub fn host_headers_reverse(headers: Host_headers) -> Host_headers {
 /// (`host type` and `type` aliases — the importable non-value names), and
 /// its own newtypes' member-surface records, and the source headers of its
 /// host declarations.
-pub labels { module: & String
-& Imports
-& Aliases
-& Ntab
-& Decls
-& Pnames
-& Pnames
-& Members
-& Tyaliases
-& Host_headers };
+pub type {
+  Module:
+    String & Imports & Aliases & Ntab & Decls & Pnames & Pnames & Members & Tyaliases & Host_headers
+}
 
 /// Builds a module record.
 pub fn mk_module(
@@ -1129,13 +1127,13 @@ pub fn mk_module(
 , als: Tyaliases
 , host_headers: Host_headers
 ) -> Module {
-  {module = (
+  Module.mk((
   , name
   , (
     , imports
     , (aliases, (newtypes, (decls, (hostfns, (typenames, (members, (als, host_headers)))))))
     )
-  )}
+  ))
 }
 
 /// One-step destructor on a module record.
@@ -1347,21 +1345,21 @@ fn module_declares_host_type(module: Module, name: String) -> Bool {
 }
 
 /// A cons-list of modules (a whole-package image).
-pub labels { modules: List[Module] };
+pub type { Modules: List[Module] }
 
 /// The empty module list.
-pub fn modules_nil() -> Modules { {modules = nil[Module]} }
+pub fn modules_nil() -> Modules { Modules.mk(nil[Module]) }
 
 /// Prepends one module.
 pub fn modules_cons(head: Module, tail: Modules) -> Modules {
-  {modules = cons(head, Modules.get(tail))}
+  Modules.mk(cons(head, Modules.get(tail)))
 }
 
 /// One-step destructor on a module list.
 pub fn un_modules(ms: Modules) -> . | (Module & Modules) {
   match(uncons(Modules.get(ms))) {
     (
-    , .(h: Module, t: List[Module]) { widen_sum((h, {modules = t}))[. | (Module & Modules)] }
+    , .(h: Module, t: List[Module]) { widen_sum((h, Modules.mk(t)))[. | (Module & Modules)] }
     , .(_e: .) { widen_sum(())[. | (Module & Modules)] }
     )
   }
@@ -1403,11 +1401,11 @@ fn find_module(ms: Modules, name: String) -> . | Module {
 // interleaving erased-`forall` Unit stages with that unchanged inventory.
 /// One exact host function the loader seeds, plus its public ordered
 /// value-group arities. The group inventory is not part of descriptor identity.
-pub labels { hostfn: Host_fn & Group_slots };
+pub type { Hostfn: Host_fn & Group_slots }
 
 /// Builds a host-fn seed entry.
 pub fn mk_hostfn(descriptor: Host_fn, groups: Group_slots) -> Hostfn {
-  {hostfn = (descriptor, groups)}
+  Hostfn.mk((descriptor, groups))
 }
 
 /// The exact host-fn descriptor.
@@ -1425,21 +1423,21 @@ pub fn hostfn_groups(h: Hostfn) -> Group_slots {
 }
 
 /// A cons-list of host-fn seed entries.
-pub labels { hostfns: List[Hostfn] };
+pub type { Hostfns: List[Hostfn] }
 
 /// The empty host-fn list.
-pub fn hostfns_nil() -> Hostfns { {hostfns = nil[Hostfn]} }
+pub fn hostfns_nil() -> Hostfns { Hostfns.mk(nil[Hostfn]) }
 
 /// Prepends one host-fn entry.
 pub fn hostfns_cons(head: Hostfn, tail: Hostfns) -> Hostfns {
-  {hostfns = cons(head, Hostfns.get(tail))}
+  Hostfns.mk(cons(head, Hostfns.get(tail)))
 }
 
 /// One-step destructor on a host-fn list.
 pub fn un_hostfns(hs: Hostfns) -> . | (Hostfn & Hostfns) {
   match(uncons(Hostfns.get(hs))) {
     (
-    , .(h: Hostfn, t: List[Hostfn]) { widen_sum((h, {hostfns = t}))[. | (Hostfn & Hostfns)] }
+    , .(h: Hostfn, t: List[Hostfn]) { widen_sum((h, Hostfns.mk(t)))[. | (Hostfn & Hostfns)] }
     , .(_e: .) { widen_sum(())[. | (Hostfn & Hostfns)] }
     )
   }
@@ -1450,25 +1448,25 @@ pub fn un_hostfns(hs: Hostfns) -> . | (Hostfn & Hostfns) {
 // zero-slot Unit stage per erased unary `forall`. A declared Unit group also
 // contributes a zero-slot stage. The bundle stays inside the
 // opaque image state and cannot drift from a positional parallel list.
-labels { runtime_hostfn: Hostfn & Group_slots };
+type { Runtime_hostfn: Hostfn & Group_slots }
 
-labels { runtime_hostfns: List[Runtime_hostfn] };
+type { Runtime_hostfns: List[Runtime_hostfn] }
 
 fn mk_runtime_hostfn(hostfn: Hostfn, runtime_groups: Group_slots) -> Runtime_hostfn {
-  {runtime_hostfn = (hostfn, runtime_groups)}
+  Runtime_hostfn.mk((hostfn, runtime_groups))
 }
 
-fn runtime_hostfns_nil() -> Runtime_hostfns { {runtime_hostfns = nil[Runtime_hostfn]} }
+fn runtime_hostfns_nil() -> Runtime_hostfns { Runtime_hostfns.mk(nil[Runtime_hostfn]) }
 
 fn runtime_hostfns_cons(head: Runtime_hostfn, rest: Runtime_hostfns) -> Runtime_hostfns {
-  {runtime_hostfns = cons[Runtime_hostfn](head, Runtime_hostfns.get(rest))}
+  Runtime_hostfns.mk(cons[Runtime_hostfn](head, Runtime_hostfns.get(rest)))
 }
 
 fn un_runtime_hostfns(hs: Runtime_hostfns) -> . | (Runtime_hostfn & Runtime_hostfns) {
   match(uncons[Runtime_hostfn](Runtime_hostfns.get(hs))) {
     (
     , .(h: Runtime_hostfn, t: List[Runtime_hostfn]) {
-        widen_sum((h, {runtime_hostfns = t}))[. | (Runtime_hostfn & Runtime_hostfns)]
+        widen_sum((h, Runtime_hostfns.mk(t)))[. | (Runtime_hostfn & Runtime_hostfns)]
       }
     , .(_empty: .) { widen_sum(())[. | (Runtime_hostfn & Runtime_hostfns)] }
     )
@@ -1528,7 +1526,7 @@ fn runtime_hostfns_public(hs: Runtime_hostfns) -> Hostfns {
       }
     , (hs, hostfns_nil())
     );
-  {hostfns = reverse[Hostfn](Hostfns.get(reversed))}
+  Hostfns.mk(reverse[Hostfn](Hostfns.get(reversed)))
 }
 
 // Whether `hs` already lists this exact host fn (dedup guard: the same host fn
@@ -1556,11 +1554,11 @@ fn hostfns_has(hs: Hostfns, descriptor: Host_fn) -> Bool {
 /// One exact host-function descriptor paired with its independently derived
 /// public value-group shape. Image contracts and adapters share this entry
 /// shape without sharing nominal authority.
-pub labels { host_fn_binding: Host_fn & Group_slots };
+pub type { Host_fn_binding: Host_fn & Group_slots }
 
 /// Builds one exact host-function binding.
 pub fn mk_host_fn_binding(descriptor: Host_fn, groups: Group_slots) -> Host_fn_binding {
-  {host_fn_binding = (descriptor, groups)}
+  Host_fn_binding.mk((descriptor, groups))
 }
 
 /// The binding's exact host-function descriptor.
@@ -1578,14 +1576,14 @@ pub fn host_fn_binding_groups(binding: Host_fn_binding) -> Group_slots {
 }
 
 /// The adapter's advertised host-function bindings.
-pub labels { host_fn_bindings: List[Host_fn_binding] };
+pub type { Host_fn_bindings: List[Host_fn_binding] }
 
 /// No advertised host functions.
-pub fn host_fn_bindings_nil() -> Host_fn_bindings { {host_fn_bindings = nil[Host_fn_binding]} }
+pub fn host_fn_bindings_nil() -> Host_fn_bindings { Host_fn_bindings.mk(nil[Host_fn_binding]) }
 
 /// Prepends one advertised host-function binding.
 pub fn host_fn_bindings_cons(head: Host_fn_binding, tail: Host_fn_bindings) -> Host_fn_bindings {
-  {host_fn_bindings = cons[Host_fn_binding](head, Host_fn_bindings.get(tail))}
+  Host_fn_bindings.mk(cons[Host_fn_binding](head, Host_fn_bindings.get(tail)))
 }
 
 /// Splits the first advertised binding from the rest.
@@ -1593,7 +1591,7 @@ pub fn un_host_fn_bindings(bindings: Host_fn_bindings) -> . | (Host_fn_binding &
   match(uncons[Host_fn_binding](Host_fn_bindings.get(bindings))) {
     (
     , .(head: Host_fn_binding, tail: List[Host_fn_binding]) {
-        widen_sum((head, {host_fn_bindings = tail}))[. | (Host_fn_binding & Host_fn_bindings)]
+        widen_sum((head, Host_fn_bindings.mk(tail)))[. | (Host_fn_binding & Host_fn_bindings)]
       }
     , .(_empty: .) { widen_sum(())[. | (Host_fn_binding & Host_fn_bindings)] }
     )
@@ -1603,11 +1601,11 @@ pub fn un_host_fn_bindings(bindings: Host_fn_bindings) -> . | (Host_fn_binding &
 /// A host adapter's single advertised inventory: exact host types and exact
 /// host-function bindings. Function descriptors are derived from the bindings,
 /// so descriptor and staging inventories cannot disagree.
-pub labels { host_adapter: Host_types & Host_fn_bindings };
+pub type { Host_adapter: Host_types & Host_fn_bindings }
 
 /// Builds an advertised host adapter inventory.
 pub fn mk_host_adapter(types: Host_types, functions: Host_fn_bindings) -> Host_adapter {
-  {host_adapter = (types, functions)}
+  Host_adapter.mk((types, functions))
 }
 
 /// The exact host types advertised by an adapter.
@@ -1627,11 +1625,11 @@ pub fn host_adapter_functions(adapter: Host_adapter) -> Host_fn_bindings {
 /// The complete exact host contract retained by an image. Unlike runtime
 /// seeds, it includes bridge-admitted declarations even when no guest body
 /// refers to them.
-pub labels { host_contract: Host_types & Host_fn_bindings };
+pub type { Host_contract: Host_types & Host_fn_bindings }
 
 /// Builds an image host contract.
 pub fn mk_host_contract(types: Host_types, functions: Host_fn_bindings) -> Host_contract {
-  {host_contract = (types, functions)}
+  Host_contract.mk((types, functions))
 }
 
 /// The exact required host types in an image contract.
@@ -1804,13 +1802,13 @@ fn host_type_sets_eq(left: Host_types, right: Host_types) -> Bool {
   }
 }
 
-labels { adapter_binding_found: Host_fn_binding };
+type { Adapter_binding_found: Host_fn_binding }
 
-labels { adapter_binding_conflict: . };
+type { Adapter_binding_conflict: . }
 
 type Adapter_binding_lookup = . | Adapter_binding_found | Adapter_binding_conflict;
 
-labels { adapter_binding_search: Host_fn_bindings & Host_id & (. | Host_fn_binding) };
+type { Adapter_binding_search: Host_fn_bindings & Host_id & (. | Host_fn_binding) }
 
 fn adapter_binding_lookup(bindings: Host_fn_bindings, id: Host_id) -> Adapter_binding_lookup {
   loop(
@@ -1832,29 +1830,29 @@ fn adapter_binding_lookup(bindings: Host_fn_bindings, id: Host_id) -> Adapter_bi
                           , host_fn_binding_groups(prior)
                           , host_fn_binding_groups(candidate)
                           )) {
-                            widen_sum({adapter_binding_search = (
+                            widen_sum(Adapter_binding_search.mk((
                             , rest
                             , (wanted, widen_sum(prior)[. | Host_fn_binding])
-                            )})[Adapter_binding_search | Adapter_binding_lookup]
+                            )))[Adapter_binding_search | Adapter_binding_lookup]
                           } else {
-                            widen_sum(widen_sum({adapter_binding_conflict=})[Adapter_binding_lookup])[| Adapter_binding_search
+                            widen_sum(widen_sum(Adapter_binding_conflict.mk(()))[Adapter_binding_lookup])[| Adapter_binding_search
                             | Adapter_binding_lookup]
                           }
                         } else {
-                          widen_sum(widen_sum({adapter_binding_conflict=})[Adapter_binding_lookup])[| Adapter_binding_search
+                          widen_sum(widen_sum(Adapter_binding_conflict.mk(()))[Adapter_binding_lookup])[| Adapter_binding_search
                           | Adapter_binding_lookup]
                         }
                       }
                     , .(_none: .) {
-                        widen_sum({adapter_binding_search = (
+                        widen_sum(Adapter_binding_search.mk((
                         , rest
                         , (wanted, widen_sum(candidate)[. | Host_fn_binding])
-                        )})[Adapter_binding_search | Adapter_binding_lookup]
+                        )))[Adapter_binding_search | Adapter_binding_lookup]
                       }
                     )
                   }
                 } else {
-                  widen_sum({adapter_binding_search = (rest, (wanted, found))})[| Adapter_binding_search
+                  widen_sum(Adapter_binding_search.mk((rest, (wanted, found))))[| Adapter_binding_search
                   | Adapter_binding_lookup]
                 }
               }
@@ -1862,7 +1860,7 @@ fn adapter_binding_lookup(bindings: Host_fn_bindings, id: Host_id) -> Adapter_bi
                 match(found) {
                   (
                   , .(binding: Host_fn_binding) {
-                      widen_sum(widen_sum({adapter_binding_found = binding})[Adapter_binding_lookup])[| Adapter_binding_search
+                      widen_sum(widen_sum(Adapter_binding_found.mk(binding))[Adapter_binding_lookup])[| Adapter_binding_search
                       | Adapter_binding_lookup]
                     }
                   , .(_none: .) {
@@ -1877,7 +1875,7 @@ fn adapter_binding_lookup(bindings: Host_fn_bindings, id: Host_id) -> Adapter_bi
         }
       }
     }
-  , {adapter_binding_search = (bindings, (id, widen_sum(())[. | Host_fn_binding]))}
+  , Adapter_binding_search.mk((bindings, (id, widen_sum(())[. | Host_fn_binding])))
   )
 }
 
@@ -2349,7 +2347,7 @@ fn wrap_group(params: Pnames, inner: Term) -> Term {
 }
 
 // Reverse a group sequence.
-fn pgroups_reverse(gs: Pgroups) -> Pgroups { {pgroups = reverse(Pgroups.get(gs))} }
+fn pgroups_reverse(gs: Pgroups) -> Pgroups { Pgroups.mk(reverse(Pgroups.get(gs))) }
 
 // Wrap a parsed `body` in its curried closure chain: the last group's
 // lambda innermost, the first group's outermost — `fn f(a: A)(b: B)` is
@@ -2375,18 +2373,18 @@ fn wrap_fn(groups: Pgroups, body: Term) -> Term {
 }
 
 /// Defines the parsed-fn-term arm (a successfully resolved declaration body).
-pub labels { dr_ok: Term };
+pub type { Dr_ok: Term }
 
 /// Defines the parse-failure arm (a malformed declaration body, with the
 /// parse error's message and position).
-pub labels { dr_err: Perr };
+pub type { Dr_err: Perr }
 
 /// The outcome of resolving one declaration: its fn term, or a parse error.
 pub type Decl_result = Dr_ok | Dr_err;
 
-fn dr_ok(t: Term) -> Decl_result { widen_sum({dr_ok = t})[Dr_ok | Dr_err] }
+fn dr_ok(t: Term) -> Decl_result { widen_sum(Dr_ok.mk(t))[Dr_ok | Dr_err] }
 
-fn dr_err(e: Perr) -> Decl_result { widen_sum({dr_err = e})[Dr_ok | Dr_err] }
+fn dr_err(e: Perr) -> Decl_result { widen_sum(Dr_err.mk(e))[Dr_ok | Dr_err] }
 
 // Destructor on `Pres` (a bare sum; identity projects it for `match`).
 fn un_pres(r: Pres) -> P_ok | P_err { r }
@@ -2428,43 +2426,43 @@ fn resolve_decl(
 // fn term is collected (in reverse), and the next name is prepended to the
 // scope. A single malformed body fails the whole resolve.
 /// A cons-list of resolved fn terms.
-pub labels { terms_acc: List[Term] };
+pub type { Terms_acc: List[Term] }
 
-fn terms_acc_nil() -> Terms_acc { {terms_acc = nil[Term]} }
+fn terms_acc_nil() -> Terms_acc { Terms_acc.mk(nil[Term]) }
 
 fn terms_acc_cons(head: Term, tail: Terms_acc) -> Terms_acc {
-  {terms_acc = cons(head, Terms_acc.get(tail))}
+  Terms_acc.mk(cons(head, Terms_acc.get(tail)))
 }
 
 fn un_terms_acc(ts: Terms_acc) -> . | (Term & Terms_acc) {
   match(uncons(Terms_acc.get(ts))) {
     (
-    , .(h: Term, t: List[Term]) { widen_sum((h, {terms_acc = t}))[. | (Term & Terms_acc)] }
+    , .(h: Term, t: List[Term]) { widen_sum((h, Terms_acc.mk(t)))[. | (Term & Terms_acc)] }
     , .(_e: .) { widen_sum(())[. | (Term & Terms_acc)] }
     )
   }
 }
 
 /// Defines the resolve-success arm (the fn terms in declaration order).
-pub labels { rd_ok: Terms_acc };
+pub type { Rd_ok: Terms_acc }
 
 /// Defines the resolve-failure arm: the owning module, the declaration
 /// name, and the body's parse error.
-pub labels { rd_err: String & String & Perr };
+pub type { Rd_err: String & String & Perr }
 
 /// The outcome of resolving every declaration.
 pub type Resolve_result = Rd_ok | Rd_err;
 
-fn rd_ok(ts: Terms_acc) -> Resolve_result { widen_sum({rd_ok = ts})[Rd_ok | Rd_err] }
+fn rd_ok(ts: Terms_acc) -> Resolve_result { widen_sum(Rd_ok.mk(ts))[Rd_ok | Rd_err] }
 
 fn rd_err(owner: String, name: String, e: Perr) -> Resolve_result {
-  widen_sum({rd_err = (owner, (name, e))})[Rd_ok | Rd_err]
+  widen_sum(Rd_err.mk((owner, (name, e))))[Rd_ok | Rd_err]
 }
 
 fn un_decl_result(r: Decl_result) -> Dr_ok | Dr_err { r }
 
 // Reverse the most-recent-first resolved-term accumulator into declaration order.
-fn reverse_terms_acc(ts: Terms_acc) -> Terms_acc { {terms_acc = reverse(Terms_acc.get(ts))} }
+fn reverse_terms_acc(ts: Terms_acc) -> Terms_acc { Terms_acc.mk(reverse(Terms_acc.get(ts))) }
 
 // The `T_hostfn` seed terms for the host fns, in host-fn list order. Each
 // evaluates to a fresh `V_hostfn`, with no arguments accumulated, at its exact
@@ -2636,16 +2634,16 @@ fn and_both(a: Bool, b: Bool) -> Bool {
 // and the package's full module-name set (to tell a package dependency from
 // a host-module import).
 /// A cons-list of module names.
-pub labels { names: List[String] };
+pub type { Names: List[String] }
 
-fn names_nil() -> Names { {names = nil[String]} }
+fn names_nil() -> Names { Names.mk(nil[String]) }
 
-fn names_cons(head: String, tail: Names) -> Names { {names = cons(head, Names.get(tail))} }
+fn names_cons(head: String, tail: Names) -> Names { Names.mk(cons(head, Names.get(tail))) }
 
 fn un_names(ns: Names) -> . | (String & Names) {
   match(uncons(Names.get(ns))) {
     (
-    , .(h: String, t: List[String]) { widen_sum((h, {names = t}))[. | (String & Names)] }
+    , .(h: String, t: List[String]) { widen_sum((h, Names.mk(t)))[. | (String & Names)] }
     , .(_e: .) { widen_sum(())[. | (String & Names)] }
     )
   }
@@ -2746,7 +2744,7 @@ fn deps_satisfied(m: Module, pkg_modules: Names, placed: Names) -> Bool {
 // returning it and the remaining (unplaced, order-preserved) modules, or
 // `()` when none is ready (a cycle, or all placed).
 /// Wraps a Kahn pick's `(ready-module, remaining-modules)`.
-labels { kahn_pick: Module & Modules };
+type { Kahn_pick: Module & Modules }
 
 fn reverse_modules(ms: Modules) -> Modules {
   loop(
@@ -2801,10 +2799,10 @@ fn pick_ready(remaining: Modules, pkg_modules: Names, placed: Names) -> . | Kahn
             (
             , .(m: Module, rest: Modules) {
                 if(deps_satisfied(m, pkg_modules, placed)) {
-                  widen_sum(widen_sum({kahn_pick = (
+                  widen_sum(widen_sum(Kahn_pick.mk((
                   , m
                   , append_modules(reverse_modules(skipped), rest)
-                  )})[. | Kahn_pick])[(Modules & Modules) | . | Kahn_pick]
+                  )))[. | Kahn_pick])[(Modules & Modules) | . | Kahn_pick]
                 } else {
                   widen_sum((rest, modules_cons(m, skipped)))[(Modules & Modules) | . | Kahn_pick]
                 }
@@ -2856,7 +2854,7 @@ fn module_names_render(ms: Modules) -> String {
 }
 
 /// Wraps the topo sort's success arm (the ordered modules).
-labels { topo_ok: Modules };
+type { Topo_ok: Modules }
 
 // Topologically order the modules: repeatedly place a module whose
 // package-deps are all already placed (Kahn's algorithm). When no module
@@ -2891,7 +2889,7 @@ fn topo_sort(ms: Modules) -> Modules | Diag {
                         )))[(Modules & Modules & Names) | Topo_ok | Diag]
                       }
                     , .(_done: .) {
-                        widen_sum({topo_ok = reverse_modules(ordered_rev)})[| (& Modules
+                        widen_sum(Topo_ok.mk(reverse_modules(ordered_rev)))[| (& Modules
                         & Modules
                         & Names)
                         | Topo_ok
@@ -2926,10 +2924,10 @@ fn un_topo(r: Modules | Diag) -> Modules | Diag { r }
 // the per-decl scope and erasure need.
 /// One global declaration: the decl, its owning module's name, that
 /// module's imports and aliases, and the newtype table visible to it.
-pub labels { gdecl: Decl & String & Imports & Aliases & Ntab };
+pub type { Gdecl: Decl & String & Imports & Aliases & Ntab }
 
 fn mk_gdecl(d: Decl, owner: String, imports: Imports, als: Aliases, nt: Ntab) -> Gdecl {
-  {gdecl = (d, (owner, (imports, (als, nt))))}
+  Gdecl.mk((d, (owner, (imports, (als, nt)))))
 }
 
 fn gdecl_decl(g: Gdecl) -> Decl {
@@ -2963,22 +2961,22 @@ fn gdecl_ntab(g: Gdecl) -> Ntab {
 }
 
 /// A cons-list of global declarations.
-pub labels { gdecls: List[Gdecl] };
+pub type { Gdecls: List[Gdecl] }
 
-fn gdecls_nil() -> Gdecls { {gdecls = nil[Gdecl]} }
+fn gdecls_nil() -> Gdecls { Gdecls.mk(nil[Gdecl]) }
 
-fn gdecls_cons(head: Gdecl, tail: Gdecls) -> Gdecls { {gdecls = cons(head, Gdecls.get(tail))} }
+fn gdecls_cons(head: Gdecl, tail: Gdecls) -> Gdecls { Gdecls.mk(cons(head, Gdecls.get(tail))) }
 
 fn un_gdecls(gs: Gdecls) -> . | (Gdecl & Gdecls) {
   match(uncons(Gdecls.get(gs))) {
     (
-    , .(h: Gdecl, t: List[Gdecl]) { widen_sum((h, {gdecls = t}))[. | (Gdecl & Gdecls)] }
+    , .(h: Gdecl, t: List[Gdecl]) { widen_sum((h, Gdecls.mk(t)))[. | (Gdecl & Gdecls)] }
     , .(_e: .) { widen_sum(())[. | (Gdecl & Gdecls)] }
     )
   }
 }
 
-fn reverse_gdecls(gs: Gdecls) -> Gdecls { {gdecls = reverse(Gdecls.get(gs))} }
+fn reverse_gdecls(gs: Gdecls) -> Gdecls { Gdecls.mk(reverse(Gdecls.get(gs))) }
 
 // =====================================================================
 // The nominal-member namespace visible to one module
@@ -3304,7 +3302,7 @@ fn local_hostfn_between(modules: Modules, consumer: String, lower: I32, upper: I
 // The reusable scope is already advanced past the preceding declaration.
 // It remains exact only for a later declaration in the same module when no
 // intervening local host function changes the host-function base.
-labels { fn_scope_cache: String & I32 & Scope };
+type { Fn_scope_cache: String & I32 & Scope }
 
 type Maybe_fn_scope_cache = . | Fn_scope_cache;
 
@@ -3363,7 +3361,7 @@ fn advance_scope(g: Gdecl, scope: Scope) -> Scope {
 // in reverse, resolved terms in reverse, and the exact reusable scope. The
 // suffix and prefix advance together only after the current declaration
 // resolves, so an error remains attached to exactly that declaration.
-labels { resolve_walk: Gdecls & Gdecls & Terms_acc & Maybe_fn_scope_cache };
+type { Resolve_walk: Gdecls & Gdecls & Terms_acc & Maybe_fn_scope_cache }
 
 fn resolve_gdecls_step(
 , hostfns: Hostfns
@@ -3388,14 +3386,14 @@ fn resolve_gdecls_step(
               (
               , .(t: Dr_ok) {
                   let next_cache =
-                    widen_sum({fn_scope_cache = (
+                    widen_sum(Fn_scope_cache.mk((
                     , gdecl_owner(g)
                     , (decl_pos(gdecl_decl(g)), advance_scope(g, scope))
-                    )})[Maybe_fn_scope_cache];
-                  widen_sum({resolve_walk = (
+                    )))[Maybe_fn_scope_cache];
+                  widen_sum(Resolve_walk.mk((
                   , rest
                   , (gdecls_cons(g, processed_rev), (terms_acc_cons(Dr_ok.get(t), acc), next_cache))
-                  )})[Resolve_walk | Resolve_result]
+                  )))[Resolve_walk | Resolve_result]
                 }
               , .(e: Dr_err) {
                   widen_sum(rd_err(gdecl_owner(g), decl_name(gdecl_decl(g)), Dr_err.get(e)))[| Resolve_walk
@@ -3445,7 +3443,7 @@ fn import_visibility_diag(consumer: String, name: String, provider: String) -> D
 /// otherwise its globs, empty when the manifest has no bridge block.
 pub type Bridge = . | Pnames;
 
-fn pnames_reverse_local(ps: Pnames) -> Pnames { {pnames = reverse(Pnames.get(ps))} }
+fn pnames_reverse_local(ps: Pnames) -> Pnames { Pnames.mk(reverse(Pnames.get(ps))) }
 
 // Split a `/`-separated path into its segments (in order).
 fn path_segments(path: String) -> Pnames {
@@ -3519,17 +3517,17 @@ fn or_seg_match(gseg: String, pseg: String) -> Bool {
 }
 
 /// Wraps the glob matcher's verdict so the loop's exit arm is nominal.
-labels { glob_verdict: Bool };
+type { Glob_verdict: Bool }
 
 /// Wraps the matcher's `**` backtrack anchor (`()` until a `**` is seen,
 /// then the glob tail after it and the path position it anchored at) —
 /// nominal so the walk's product state keeps a closed shape.
-labels { star_anchor: . | (Pnames & Pnames) };
+type { Star_anchor: . | (Pnames & Pnames) }
 
-fn no_anchor() -> Star_anchor { {star_anchor = widen_sum(())[. | (Pnames & Pnames)]} }
+fn no_anchor() -> Star_anchor { Star_anchor.mk(widen_sum(())[. | (Pnames & Pnames)]) }
 
 fn anchor_at(g_after: Pnames, p_at: Pnames) -> Star_anchor {
-  {star_anchor = widen_sum((g_after, p_at))[. | (Pnames & Pnames)]}
+  Star_anchor.mk(widen_sum((g_after, p_at))[. | (Pnames & Pnames)])
 }
 
 // Resume the glob walk one path segment past the recorded `**` anchor, or
@@ -3545,13 +3543,13 @@ fn glob_backtrack(star: Star_anchor) -> (Pnames & Pnames & Star_anchor) | Glob_v
               | Glob_verdict]
             }
           , .(_pend: .) {
-              widen_sum({glob_verdict = .f[Bool]})[(Pnames & Pnames & Star_anchor) | Glob_verdict]
+              widen_sum(Glob_verdict.mk(.f[Bool]))[(Pnames & Pnames & Star_anchor) | Glob_verdict]
             }
           )
         }
       }
     , .(_none: .) {
-        widen_sum({glob_verdict = .f[Bool]})[(Pnames & Pnames & Star_anchor) | Glob_verdict]
+        widen_sum(Glob_verdict.mk(.f[Bool]))[(Pnames & Pnames & Star_anchor) | Glob_verdict]
       }
     )
   }
@@ -3590,7 +3588,7 @@ fn glob_segs_match(gsegs: Pnames, psegs: Pnames) -> Bool {
                   (
                   , .(_ph: String, _pt: Pnames) { glob_backtrack(star) }
                   , .(_pend: .) {
-                      widen_sum({glob_verdict = .t[Bool]})[| (Pnames & Pnames & Star_anchor)
+                      widen_sum(Glob_verdict.mk(.t[Bool]))[| (Pnames & Pnames & Star_anchor)
                       | Glob_verdict]
                     }
                   )
@@ -3636,7 +3634,7 @@ fn bridge_admits(bridge: Bridge, module_path: String) -> Bool {
 }
 
 /// Successful revalidation of the manifest's bridge surface.
-labels { bridge_valid: . };
+type { Bridge_valid: . }
 
 type Bridge_validation = Bridge_valid | Diag;
 
@@ -3683,7 +3681,7 @@ fn validate_bridge_globs(modules: Modules, bridge: Bridge) -> Bridge_validation 
                     widen_sum(dead_bridge_glob_diag(glob))[Pnames | Bridge_validation]
                   }
                 }
-              , .(_empty: .) { widen_sum({bridge_valid=})[Pnames | Bridge_validation] }
+              , .(_empty: .) { widen_sum(Bridge_valid.mk(()))[Pnames | Bridge_validation] }
               )
             }
           }
@@ -3692,7 +3690,7 @@ fn validate_bridge_globs(modules: Modules, bridge: Bridge) -> Bridge_validation 
         , pnames_reverse_local(globs)
         )
       }
-    , .(_no_manifest: .) { widen_sum({bridge_valid=})[Bridge_validation] }
+    , .(_no_manifest: .) { widen_sum(Bridge_valid.mk(()))[Bridge_validation] }
     )
   }
 }
@@ -3864,7 +3862,7 @@ fn validate_reachable_host_modules(modules: Modules, bridge: Bridge, reachable: 
               widen_sum(rest)[Modules | Bridge_validation]
             }
           }
-        , .(_empty: .) { widen_sum({bridge_valid=})[Modules | Bridge_validation] }
+        , .(_empty: .) { widen_sum(Bridge_valid.mk(()))[Modules | Bridge_validation] }
         )
       }
     }
@@ -3904,10 +3902,10 @@ fn validate_package_bridge(modules: Modules, bridge: Bridge) -> Bridge_validatio
 // artifact, ready for `instantiate` to evaluate and pack.
 /// One image-surface member entry: the owning module's name and the
 /// newtype's member-surface record.
-pub labels { omember: String & Member_decl };
+pub type { Omember: String & Member_decl }
 
 /// Builds an owner-tagged member entry.
-pub fn mk_omember(owner: String, m: Member_decl) -> Omember { {omember = (owner, m)} }
+pub fn mk_omember(owner: String, m: Member_decl) -> Omember { Omember.mk((owner, m)) }
 
 /// The entry's owning module.
 pub fn omember_owner(o: Omember) -> String {
@@ -3924,21 +3922,21 @@ pub fn omember_decl(o: Omember) -> Member_decl {
 }
 
 /// The image's owner-tagged member entries, module then declaration order.
-pub labels { omembers: List[Omember] };
+pub type { Omembers: List[Omember] }
 
 /// The empty entry list.
-pub fn omembers_nil() -> Omembers { {omembers = nil[Omember]} }
+pub fn omembers_nil() -> Omembers { Omembers.mk(nil[Omember]) }
 
 /// Prepends one entry.
 pub fn omembers_cons(head: Omember, tail: Omembers) -> Omembers {
-  {omembers = cons[Omember](head, Omembers.get(tail))}
+  Omembers.mk(cons[Omember](head, Omembers.get(tail)))
 }
 
 /// One-step destructor on the entry list.
 pub fn un_omembers(os: Omembers) -> . | (Omember & Omembers) {
   match(uncons[Omember](Omembers.get(os))) {
     (
-    , .(h: Omember, t: List[Omember]) { widen_sum((h, {omembers = t}))[. | (Omember & Omembers)] }
+    , .(h: Omember, t: List[Omember]) { widen_sum((h, Omembers.mk(t)))[. | (Omember & Omembers)] }
     , .(_e: .) { widen_sum(())[. | (Omember & Omembers)] }
     )
   }
@@ -3946,29 +3944,25 @@ pub fn un_omembers(os: Omembers) -> . | (Omember & Omembers) {
 
 /// Reverses the entry list.
 pub fn omembers_reverse(os: Omembers) -> Omembers {
-  {omembers = reverse[Omember](Omembers.get(os))}
+  Omembers.mk(reverse[Omember](Omembers.get(os)))
 }
 
 /// One surface export: its module-qualified name and its canonical
 /// signature rendering.
-pub newtype Export_info : String & String {
-  constructor seal_export_info;
-  projector open_export_info
-  }
+pub type { Export_info: String & String { mk; get } }
 
 /// A cons-list of export listing entries, declaration order.
-pub newtype Export_infos : List[Export_info] {
-  constructor seal_export_infos;
-  projector open_export_infos
-  }
+pub type { Export_infos: List[Export_info] { mk; get } }
 
 /// Defines a loaded image: the module-tagged declarations, their resolved
 /// fn terms, the seeded host fns, the exact host preflight contract, the
 /// owner-tagged newtype member surface, the validated canonical export table,
 /// and the bridge surface.
-pub newtype Image :
-  Gdecls & Terms_acc & Runtime_hostfns & Host_contract & Omembers & Export_infos & Bridge
-  { constructor seal_image_state; projector open_image_state }
+pub type {
+  Image:
+    Gdecls & Terms_acc & Runtime_hostfns & Host_contract & Omembers & Export_infos & Bridge
+    { mk; get }
+}
 
 fn mk_image(
 , gs: Gdecls
@@ -3978,13 +3972,11 @@ fn mk_image(
 , ms: Omembers
 , exports: Export_infos
 , bridge: Bridge
-) -> Image {
-  Image.seal_image_state((gs, (terms, (hostfns, (requirements, (ms, (exports, bridge)))))))
-}
+) -> Image { Image.mk((gs, (terms, (hostfns, (requirements, (ms, (exports, bridge))))))) }
 
 fn un_image(im: Image) ->
   Gdecls & Terms_acc & Runtime_hostfns & Host_contract & Omembers & Export_infos & Bridge
-   { Image.open_image_state(im) }
+   { Image.get(im) }
 
 /// The image's module-tagged declarations.
 pub fn image_gdecls(im: Image) -> Gdecls {
@@ -4106,19 +4098,19 @@ pub fn image_exports(im: Image) -> Export_infos {
 }
 
 /// Defines the load-success arm (a resolved image).
-pub labels { lr_image: Image };
+pub type { Lr_image: Image }
 
 /// Defines the load-failure arm (a diagnostic).
-pub labels { lr_diag: Diag };
+pub type { Lr_diag: Diag }
 
 /// The outcome of loading: a resolved image, or a diagnostic.
 pub type Load_outcome = Lr_image | Lr_diag;
 
-fn lr_image(im: Image) -> Load_outcome { widen_sum({lr_image = im})[Lr_image | Lr_diag] }
+fn lr_image(im: Image) -> Load_outcome { widen_sum(Lr_image.mk(im))[Lr_image | Lr_diag] }
 
 /// Builds a load outcome from a diagnostic — the failure arm a source-text
 /// entry point reports when an image cannot be scanned or resolved.
-pub fn lr_diag(d: Diag) -> Load_outcome { widen_sum({lr_diag = d})[Lr_image | Lr_diag] }
+pub fn lr_diag(d: Diag) -> Load_outcome { widen_sum(Lr_diag.mk(d))[Lr_image | Lr_diag] }
 
 /// One-step destructor on a load outcome.
 pub fn un_load_outcome(o: Load_outcome) -> Lr_image | Lr_diag { o }
@@ -4217,10 +4209,10 @@ fn load_package_terms(
           , .(gs: Gdecls) {
               match(un_resolve_result(loop(
               , .(st: Resolve_walk) { resolve_gdecls_step(hostfns, ms, resolve_host_type, st) }
-              , {resolve_walk = (
+              , Resolve_walk.mk((
                 , gs
                 , (gdecls_nil(), (terms_acc_nil(), widen_sum(())[Maybe_fn_scope_cache]))
-                )}
+                ))
               ))) {
                 (
                 , .(ok: Rd_ok) {
@@ -4273,35 +4265,35 @@ fn load_package_terms(
 // leaf or a unique bare `Type.member`; ambiguity is reported with the fully
 // qualified candidates.
 /// Defines a found export: its declaration-order position and its decl.
-pub labels { ef_found: I32 & Gdecl };
+pub type { Ef_found: I32 & Gdecl }
 
 /// Defines the absent-export arm.
-pub labels { ef_absent: . };
+pub type { Ef_absent: . }
 
 /// Defines the ambiguous-bare-name arm (the qualified candidates).
-pub labels { ef_ambiguous: Pnames };
+pub type { Ef_ambiguous: Pnames }
 
 /// Defines a found newtype-member export: the owner-tagged member record
 /// and whether the projector (rather than the constructor) matched.
-pub labels { ef_member: Omember & Bool };
+pub type { Ef_member: Omember & Bool }
 
 /// The outcome of resolving an export name against the image's surface.
 pub type Export_find = Ef_found | Ef_absent | Ef_ambiguous | Ef_member;
 
 fn ef_found(pos: I32, g: Gdecl) -> Export_find {
-  widen_sum({ef_found = (pos, g)})[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
+  widen_sum(Ef_found.mk((pos, g)))[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
 }
 
 fn ef_absent() -> Export_find {
-  widen_sum({ef_absent=})[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
+  widen_sum(Ef_absent.mk(()))[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
 }
 
 fn ef_ambiguous(candidates: Pnames) -> Export_find {
-  widen_sum({ef_ambiguous = candidates})[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
+  widen_sum(Ef_ambiguous.mk(candidates))[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
 }
 
 fn ef_member(o: Omember, is_proj: Bool) -> Export_find {
-  widen_sum({ef_member = (o, is_proj)})[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
+  widen_sum(Ef_member.mk((o, is_proj)))[Ef_found | Ef_absent | Ef_ambiguous | Ef_member]
 }
 
 /// One-step destructor on an export-resolution outcome.
@@ -4378,7 +4370,7 @@ fn split_last_dot(name: String) -> . | (String & String) {
 
 // A member lookup spelling decomposed: the owner filter (`()` for the
 // bare `Type.member` form), the type name, and the member leaf.
-labels { member_query: (. | String) & String & String };
+type { Member_query: (. | String) & String & String }
 
 // Decompose a lookup name into a member query: `Type.member` (one dot,
 // no owner filter) or `path/to/mod.Type.member` (two dots, owner
@@ -4390,11 +4382,11 @@ fn member_query_of(name: String) -> . | Member_query {
         match(split_last_dot(prefix)) {
           (
           , .(owner: String, tyname: String) {
-              widen_sum({member_query = (widen_sum(owner)[. | String], (tyname, leaf))})[| .
+              widen_sum(Member_query.mk((widen_sum(owner)[. | String], (tyname, leaf))))[| .
               | Member_query]
             }
           , .(_bare: .) {
-              widen_sum({member_query = (widen_sum(())[. | String], (prefix, leaf))})[| .
+              widen_sum(Member_query.mk((widen_sum(())[. | String], (prefix, leaf))))[| .
               | Member_query]
             }
           )
@@ -4475,10 +4467,10 @@ fn omember_side_on_surface(o: Omember, is_proj: Bool, bridge: Bridge) -> Bool {
 
 /// Wraps the member walk's first-hit slot — nominal so the walk state
 /// keeps a closed shape.
-labels { mfirst_hit: . | (Omember & Bool) };
+type { Mfirst_hit: . | (Omember & Bool) }
 
 /// Wraps the member walk's exit `(first-hit, candidates)`.
-labels { mscan_done: Mfirst_hit & Pnames };
+type { Mscan_done: Mfirst_hit & Pnames }
 
 // Scan the member surface for the query, extending the candidate list;
 // yields the first hit and all matching qualified spellings.
@@ -4501,7 +4493,7 @@ fn member_scan(im: Image, name: String, cands0: Pnames) -> Mfirst_hit & Pnames {
                                 (
                                 , .(_seen: Omember & Bool) { first }
                                 , .(_none: .) {
-                                    {mfirst_hit = widen_sum((o, is_proj))[. | (Omember & Bool)]}
+                                    Mfirst_hit.mk(widen_sum((o, is_proj))[. | (Omember & Bool)])
                                   }
                                 )
                               };
@@ -4518,7 +4510,7 @@ fn member_scan(im: Image, name: String, cands0: Pnames) -> Mfirst_hit & Pnames {
                       }
                     }
                   , .(_e: .) {
-                      widen_sum({mscan_done = (first, cands)})[| (Omembers & Mfirst_hit & Pnames)
+                      widen_sum(Mscan_done.mk((first, cands)))[| (Omembers & Mfirst_hit & Pnames)
                       | Mscan_done]
                     }
                   )
@@ -4526,12 +4518,12 @@ fn member_scan(im: Image, name: String, cands0: Pnames) -> Mfirst_hit & Pnames {
               }
             }
           }
-        , (image_members(im), ({mfirst_hit = widen_sum(())[. | (Omember & Bool)]}, cands0))
+        , (image_members(im), (Mfirst_hit.mk(widen_sum(())[. | (Omember & Bool)]), cands0))
         ))) {
           .(first: Mfirst_hit, cands: Pnames) { (first, cands) }
         }
       }
-    , .(_nodots: .) { ({mfirst_hit = widen_sum(())[. | (Omember & Bool)]}, cands0) }
+    , .(_nodots: .) { (Mfirst_hit.mk(widen_sum(())[. | (Omember & Bool)]), cands0) }
     )
   }
 }
@@ -4539,11 +4531,11 @@ fn member_scan(im: Image, name: String, cands0: Pnames) -> Mfirst_hit & Pnames {
 /// Wraps the first-hit slot of the surface walk (`()` until a matching
 /// export is seen, then its position and decl) — nominal so the walk's
 /// product state keeps a closed shape.
-labels { first_hit: . | (I32 & Gdecl) };
+type { First_hit: . | (I32 & Gdecl) }
 
-fn no_hit() -> First_hit { {first_hit = widen_sum(())[. | (I32 & Gdecl)]} }
+fn no_hit() -> First_hit { First_hit.mk(widen_sum(())[. | (I32 & Gdecl)]) }
 
-fn hit_at(pos: I32, g: Gdecl) -> First_hit { {first_hit = widen_sum((pos, g))[. | (I32 & Gdecl)]} }
+fn hit_at(pos: I32, g: Gdecl) -> First_hit { First_hit.mk(widen_sum((pos, g))[. | (I32 & Gdecl)]) }
 
 // The single-candidate decision: the fn hit wins the position-carrying
 // arm; otherwise the member hit carries its record.
@@ -4580,7 +4572,7 @@ fn name_has_one_dot(name: String) -> Bool {
   }
 }
 
-fn mfirst_none() -> Mfirst_hit { {mfirst_hit = widen_sum(())[. | (Omember & Bool)]} }
+fn mfirst_none() -> Mfirst_hit { Mfirst_hit.mk(widen_sum(())[. | (Omember & Bool)]) }
 
 /// Resolves a qualified or unqualified export name on the image's bridge surface,
 /// returning the unique match, absence, or the ambiguous candidate names.
@@ -4740,7 +4732,7 @@ pub fn export_term(im: Image, name: String) -> . | Term {
 // exact resolver below.
 
 // The collected binder list and the tokens after the leading binder groups.
-labels { binders_done: Binders & Toks };
+type { Binders_done: Binders & Toks }
 
 // Is the head token the punctuation `code`? (Local mirror of the parser's
 // helper, over the loader's imported token vocabulary.)
@@ -4786,9 +4778,9 @@ fn sig_head_word(ts: Toks) -> . | String {
   }
 }
 
-labels { type_path_read: String & Toks };
+type { Type_path_read: String & Toks }
 
-labels { type_path_read_state: String & Toks };
+type { Type_path_read_state: String & Toks }
 
 // Read one grammar-level TypePath head while leaving any application tokens
 // untouched. Qualified paths are lexed as word (`/` word)* `.` word, rather
@@ -4806,10 +4798,10 @@ fn read_type_path(ts: Toks) -> . | Type_path_read {
                   match(sig_head_word(after_slash)) {
                     (
                     , .(segment: String) {
-                        widen_sum({type_path_read_state = (
+                        widen_sum(Type_path_read_state.mk((
                         , string_concat(rendered, string_concat("/"[String], segment))
                         , sig_rest(after_slash)
-                        )})[Type_path_read_state | . | Type_path_read]
+                        )))[Type_path_read_state | . | Type_path_read]
                       }
                     , .(_missing_segment: .) {
                         widen_sum(())[Type_path_read_state | . | Type_path_read]
@@ -4821,10 +4813,10 @@ fn read_type_path(ts: Toks) -> . | Type_path_read {
                   match(sig_head_word(after_dot)) {
                     (
                     , .(leaf: String) {
-                        widen_sum({type_path_read = (
+                        widen_sum(Type_path_read.mk((
                         , string_concat(rendered, string_concat("."[String], leaf))
                         , sig_rest(after_dot)
-                        )})[Type_path_read_state | . | Type_path_read]
+                        )))[Type_path_read_state | . | Type_path_read]
                       }
                     , .(_missing_leaf: .) {
                         widen_sum(())[Type_path_read_state | . | Type_path_read]
@@ -4832,14 +4824,14 @@ fn read_type_path(ts: Toks) -> . | Type_path_read {
                     )
                   }
                 } else {
-                  widen_sum({type_path_read = (rendered, remaining)})[| Type_path_read_state
+                  widen_sum(Type_path_read.mk((rendered, remaining)))[| Type_path_read_state
                   | .
                   | Type_path_read]
                 }
               }
             }
           }
-        , {type_path_read_state = (first, sig_rest(ts))}
+        , Type_path_read_state.mk((first, sig_rest(ts)))
         )
       }
     , .(_not_word: .) { widen_sum(())[. | Type_path_read] }
@@ -4877,7 +4869,7 @@ fn collect_group_binders(ts: Toks, acc: Binders) -> Binders & Toks {
       match(st) {
         .(cur: Toks, out: Binders) {
           if(sig_head_is(cur, 93[I32])) {
-            widen_sum({binders_done = (out, sig_rest(cur))})[(Toks & Binders) | Binders_done]
+            widen_sum(Binders_done.mk((out, sig_rest(cur))))[(Toks & Binders) | Binders_done]
           } else if(sig_head_is(cur, 44[I32])) {
             widen_sum((sig_rest(cur), out))[(Toks & Binders) | Binders_done]
           } else match(count_stars(cur)) {
@@ -4887,11 +4879,11 @@ fn collect_group_binders(ts: Toks, acc: Binders) -> Binders & Toks {
                 , .(name: String) {
                     widen_sum((
                     , sig_rest(after_stars)
-                    , binders_cons({binder_info = (name, stars)}, out)
+                    , binders_cons(Binder_info.mk((name, stars)), out)
                     ))[(Toks & Binders) | Binders_done]
                   }
                 , .(_notword: .) {
-                    widen_sum({binders_done = (out, after_stars)})[(Toks & Binders) | Binders_done]
+                    widen_sum(Binders_done.mk((out, after_stars)))[(Toks & Binders) | Binders_done]
                   }
                 )
               }
@@ -4921,7 +4913,7 @@ fn collect_binders(ts: Toks) -> Binders & Toks {
               }
             }
           } else {
-            widen_sum({binders_done = (acc, cur)})[(Toks & Binders) | Binders_done]
+            widen_sum(Binders_done.mk((acc, cur)))[(Toks & Binders) | Binders_done]
           }
         }
       }
@@ -4986,20 +4978,20 @@ fn toks_empty(ts: Toks) -> Bool {
   }
 }
 
-labels { host_binder_state: Toks & Binders };
+type { Host_binder_state: Toks & Binders }
 
-labels { host_binders_done: Binders & Toks };
+type { Host_binders_done: Binders & Toks }
 
-labels { host_binders_bad: String };
+type { Host_binders_bad: String }
 
 type Host_binders_result = Host_binders_done | Host_binders_bad;
 
 fn host_binders_done(binders: Binders, after: Toks) -> Host_binders_result {
-  widen_sum({host_binders_done = (binders, after)})[Host_binders_result]
+  widen_sum(Host_binders_done.mk((binders, after)))[Host_binders_result]
 }
 
 fn host_binders_bad(detail: String) -> Host_binders_result {
-  widen_sum({host_binders_bad = detail})[Host_binders_result]
+  widen_sum(Host_binders_bad.mk(detail))[Host_binders_result]
 }
 
 // Parse exactly one kind-marked binder after its opening `[`.
@@ -5010,7 +5002,7 @@ fn parse_host_binder_group(ts: Toks, acc: Binders) -> Host_binders_result {
     , .(name: String) {
         let after_name = sig_rest(after_stars);
         if(sig_head_is(after_name, 93[I32])) {
-          host_binders_done(binders_cons({binder_info = (name, stars)}, acc), sig_rest(after_name))
+          host_binders_done(binders_cons(Binder_info.mk((name, stars)), acc), sig_rest(after_name))
         } else {
           host_binders_bad("expected `]` after one type parameter"[String])
         }
@@ -5033,7 +5025,7 @@ fn parse_host_binders(ts: Toks) -> Host_binders_result {
               , .(done: Host_binders_done) {
                   match(Host_binders_done.get(done)) {
                     .(next_reversed: Binders, after: Toks) {
-                      widen_sum({host_binder_state = (after, next_reversed)})[| Host_binder_state
+                      widen_sum(Host_binder_state.mk((after, next_reversed)))[| Host_binder_state
                       | Host_binders_result]
                     }
                   }
@@ -5048,7 +5040,7 @@ fn parse_host_binders(ts: Toks) -> Host_binders_result {
         }
       }
     }
-  , {host_binder_state = (ts, binders_nil())}
+  , Host_binder_state.mk((ts, binders_nil()))
   )
 }
 
@@ -5306,21 +5298,21 @@ fn collect_host_types(modules: Modules) -> Host_types | Diag {
 // This parser then reconstructs the resolved type shape. Keeping shape and FFI
 // slot count together prevents runtime staging from being inferred by reparsing
 // the rendered canonical string.
-labels { terminal_host_type: . | Host_type };
+type { Terminal_host_type: . | Host_type }
 
-labels { nominal_ids: List[Host_id] };
+type { Nominal_ids: List[Host_id] }
 
-fn nominal_ids_nil() -> Nominal_ids { {nominal_ids = nil[Host_id]} }
+fn nominal_ids_nil() -> Nominal_ids { Nominal_ids.mk(nil[Host_id]) }
 
 fn nominal_ids_cons(head: Host_id, tail: Nominal_ids) -> Nominal_ids {
-  {nominal_ids = cons[Host_id](head, Nominal_ids.get(tail))}
+  Nominal_ids.mk(cons[Host_id](head, Nominal_ids.get(tail)))
 }
 
 fn un_nominal_ids(ids: Nominal_ids) -> . | (Host_id & Nominal_ids) {
   match(uncons[Host_id](Nominal_ids.get(ids))) {
     (
     , .(head: Host_id, tail: List[Host_id]) {
-        widen_sum((head, {nominal_ids = tail}))[. | (Host_id & Nominal_ids)]
+        widen_sum((head, Nominal_ids.mk(tail)))[. | (Host_id & Nominal_ids)]
       }
     , .(_empty: .) { widen_sum(())[. | (Host_id & Nominal_ids)] }
     )
@@ -5410,10 +5402,10 @@ fn alias_ids_union(left: Alias_ids, right: Alias_ids) -> Alias_ids {
 
 fn alias_id_sets_eq(left: Alias_ids, right: Alias_ids) -> Bool { nominal_id_sets_eq(left, right) }
 
-labels { type_dependencies: Host_types & Nominal_ids & Alias_ids };
+type { Type_dependencies: Host_types & Nominal_ids & Alias_ids }
 
 fn mk_type_dependencies(hosts: Host_types, nominals: Nominal_ids, aliases: Alias_ids) -> Type_dependencies {
-  {type_dependencies = (hosts, (nominals, aliases))}
+  Type_dependencies.mk((hosts, (nominals, aliases)))
 }
 
 fn type_dependencies_hosts(dependencies: Type_dependencies) -> Host_types {
@@ -5440,24 +5432,24 @@ fn type_dependencies_nil() -> Type_dependencies {
 
 // Binder keys are parse-time identities. Canonical alpha numbers are assigned
 // only when the fully expanded signature is rendered.
-labels { canonical_binder: I32 & I32 };
+type { Canonical_binder: I32 & I32 }
 
-labels { canonical_binders: List[Canonical_binder] };
+type { Canonical_binders: List[Canonical_binder] }
 
-fn canonical_binders_nil() -> Canonical_binders { {canonical_binders = nil[Canonical_binder]} }
+fn canonical_binders_nil() -> Canonical_binders { Canonical_binders.mk(nil[Canonical_binder]) }
 
 fn canonical_binders_cons(key: I32, stars: I32, rest: Canonical_binders) -> Canonical_binders {
-  {canonical_binders = cons[Canonical_binder](
-  , {canonical_binder = (key, stars)}
+  Canonical_binders.mk(cons[Canonical_binder](
+  , Canonical_binder.mk((key, stars))
   , Canonical_binders.get(rest)
-  )}
+  ))
 }
 
 fn un_canonical_binders(bs: Canonical_binders) -> . | (Canonical_binder & Canonical_binders) {
   match(uncons[Canonical_binder](Canonical_binders.get(bs))) {
     (
     , .(head: Canonical_binder, tail: List[Canonical_binder]) {
-        widen_sum((head, {canonical_binders = tail}))[. | (Canonical_binder & Canonical_binders)]
+        widen_sum((head, Canonical_binders.mk(tail)))[. | (Canonical_binder & Canonical_binders)]
       }
     , .(_empty: .) { widen_sum(())[. | (Canonical_binder & Canonical_binders)] }
     )
@@ -5465,7 +5457,7 @@ fn un_canonical_binders(bs: Canonical_binders) -> . | (Canonical_binder & Canoni
 }
 
 fn canonical_binders_reverse(bs: Canonical_binders) -> Canonical_binders {
-  {canonical_binders = reverse[Canonical_binder](Canonical_binders.get(bs))}
+  Canonical_binders.mk(reverse[Canonical_binder](Canonical_binders.get(bs)))
 }
 
 fn canonical_binders_len(bs: Canonical_binders) -> I32 {
@@ -5496,34 +5488,34 @@ fn canonical_binders_have_base_kind(bs: Canonical_binders) -> Bool {
   )
 }
 
-labels { cr_text: String };
+type { Cr_text: String }
 
-labels { cr_bound_ref: I32 };
+type { Cr_bound_ref: I32 }
 
-labels { cr_binder_group: Canonical_binders };
+type { Cr_binder_group: Canonical_binders }
 
 rec {
-  labels { cr_concat: Canonical_render & Canonical_render };
-  labels { cr_scope: Canonical_binders & Canonical_render };
-  labels { canonical_render: Cr_text | Cr_bound_ref | Cr_binder_group | Cr_concat | Cr_scope }
+  type { Cr_concat: Canonical_render & Canonical_render };
+  type { Cr_scope: Canonical_binders & Canonical_render };
+  type { Canonical_render: Cr_text | Cr_bound_ref | Cr_binder_group | Cr_concat | Cr_scope }
 }
 
 type Canonical_render_node = Cr_text | Cr_bound_ref | Cr_binder_group | Cr_concat | Cr_scope;
 
 fn canonical_render_text(value: String) -> Canonical_render {
-  {canonical_render = widen_sum({cr_text = value})[Canonical_render_node]}
+  Canonical_render.mk(widen_sum(Cr_text.mk(value))[Canonical_render_node])
 }
 
 fn canonical_render_bound(key: I32) -> Canonical_render {
-  {canonical_render = widen_sum({cr_bound_ref = key})[Canonical_render_node]}
+  Canonical_render.mk(widen_sum(Cr_bound_ref.mk(key))[Canonical_render_node])
 }
 
 fn canonical_render_binders(bs: Canonical_binders) -> Canonical_render {
-  {canonical_render = widen_sum({cr_binder_group = bs})[Canonical_render_node]}
+  Canonical_render.mk(widen_sum(Cr_binder_group.mk(bs))[Canonical_render_node])
 }
 
 fn canonical_render_concat(left: Canonical_render, right: Canonical_render) -> Canonical_render {
-  {canonical_render = widen_sum({cr_concat = (left, right)})[Canonical_render_node]}
+  Canonical_render.mk(widen_sum(Cr_concat.mk((left, right)))[Canonical_render_node])
 }
 
 fn canonical_render_concat3(
@@ -5533,21 +5525,24 @@ fn canonical_render_concat3(
 ) -> Canonical_render { canonical_render_concat(first, canonical_render_concat(second, third)) }
 
 fn canonical_render_scope(bs: Canonical_binders, body: Canonical_render) -> Canonical_render {
-  {canonical_render = widen_sum({cr_scope = (bs, body)})[Canonical_render_node]}
+  Canonical_render.mk(widen_sum(Cr_scope.mk((bs, body)))[Canonical_render_node])
 }
 
 fn canonical_render_node(render: Canonical_render) -> Canonical_render_node {
   Canonical_render.get(render)
 }
 
-labels { canonical_type: & Canonical_render
-& Bool
-& I32
-& Bool
-& Type_dependencies
-& Terminal_host_type
-& Param_kinds
-& Bool };
+type {
+  Canonical_type:
+    & Canonical_render
+    & Bool
+    & I32
+    & Bool
+    & Type_dependencies
+    & Terminal_host_type
+    & Param_kinds
+    & Bool
+}
 
 fn mk_canonical_type(
 , rendered: Canonical_render
@@ -5559,13 +5554,13 @@ fn mk_canonical_type(
 , remaining_params: Param_kinds
 , function_scheme: Bool
 ) -> Canonical_type {
-  {canonical_type = (
+  Canonical_type.mk((
   , rendered
   , (
     , is_unit
     , (tail_slots, (compound, (dependencies, (terminal, (remaining_params, function_scheme)))))
     )
-  )}
+  ))
 }
 
 fn canonical_type_render(t: Canonical_type) -> Canonical_render {
@@ -5806,7 +5801,7 @@ fn type_dependency_sets_eq(left: Type_dependencies, right: Type_dependencies) ->
 }
 
 fn no_terminal_host_type() -> Terminal_host_type {
-  {terminal_host_type = widen_sum(())[. | Host_type]}
+  Terminal_host_type.mk(widen_sum(())[. | Host_type])
 }
 
 fn canonical_unit() -> Canonical_type {
@@ -5871,7 +5866,7 @@ fn canonical_host_atom(descriptor: Host_type) -> Canonical_type {
     , nominal_ids_nil()
     , alias_ids_nil()
     )
-  , {terminal_host_type = widen_sum(descriptor)[. | Host_type]}
+  , Terminal_host_type.mk(widen_sum(descriptor)[. | Host_type])
   , host_type_params(descriptor)
   , .f[Bool]
   )
@@ -5956,19 +5951,19 @@ fn canonical_arrow(left: Canonical_type, right: Canonical_type) -> Canonical_typ
   )
 }
 
-labels { canonical_types: List[Canonical_type] };
+type { Canonical_types: List[Canonical_type] }
 
-fn canonical_types_nil() -> Canonical_types { {canonical_types = nil[Canonical_type]} }
+fn canonical_types_nil() -> Canonical_types { Canonical_types.mk(nil[Canonical_type]) }
 
 fn canonical_types_cons(head: Canonical_type, tail: Canonical_types) -> Canonical_types {
-  {canonical_types = cons[Canonical_type](head, Canonical_types.get(tail))}
+  Canonical_types.mk(cons[Canonical_type](head, Canonical_types.get(tail)))
 }
 
 fn un_canonical_types(types: Canonical_types) -> . | (Canonical_type & Canonical_types) {
   match(uncons[Canonical_type](Canonical_types.get(types))) {
     (
     , .(head: Canonical_type, tail: List[Canonical_type]) {
-        widen_sum((head, {canonical_types = tail}))[. | (Canonical_type & Canonical_types)]
+        widen_sum((head, Canonical_types.mk(tail)))[. | (Canonical_type & Canonical_types)]
       }
     , .(_empty: .) { widen_sum(())[. | (Canonical_type & Canonical_types)] }
     )
@@ -6034,7 +6029,7 @@ fn fold_canonical_chain(reversed: Canonical_types, product: Bool) -> Canonical_t
 }
 
 fn canonical_args(reversed: Canonical_types) -> Canonical_render {
-  let ordered = {canonical_types = reverse[Canonical_type](Canonical_types.get(reversed))};
+  let ordered = Canonical_types.mk(reverse[Canonical_type](Canonical_types.get(reversed)));
   loop(
   , .(state: Canonical_types & Canonical_render & Bool) {
       match(state) {
@@ -6096,7 +6091,7 @@ fn canonical_types_dependencies(types: Canonical_types) -> Type_dependencies {
 }
 
 fn canonical_types_reverse(types: Canonical_types) -> Canonical_types {
-  {canonical_types = reverse[Canonical_type](Canonical_types.get(types))}
+  Canonical_types.mk(reverse[Canonical_type](Canonical_types.get(types)))
 }
 
 fn canonical_types_len(types: Canonical_types) -> I32 {
@@ -6156,9 +6151,9 @@ fn canonical_type_kind(t: Canonical_type) -> . | Param_kind {
   }
 }
 
-labels { canonical_application_ok: Canonical_type };
+type { Canonical_application_ok: Canonical_type }
 
-labels { canonical_application_bad: Diag };
+type { Canonical_application_bad: Diag }
 
 type Canonical_application_result = Canonical_application_ok | Canonical_application_bad;
 
@@ -6242,7 +6237,7 @@ fn canonical_application(head: Canonical_type, args: Canonical_types) -> Canonic
   match(validate_application_args(canonical_type_remaining_params(head), args)) {
     (
     , .(remaining: Param_kinds) {
-        widen_sum({canonical_application_ok = mk_canonical_type(
+        widen_sum(Canonical_application_ok.mk(mk_canonical_type(
         , canonical_render_concat3(
           , canonical_type_render(head)
           , canonical_render_text("("[String])
@@ -6258,9 +6253,9 @@ fn canonical_application(head: Canonical_type, args: Canonical_types) -> Canonic
         , canonical_type_terminal(head)
         , remaining
         , .f[Bool]
-        )})[Canonical_application_result]
+        )))[Canonical_application_result]
       }
-    , .(diag: Diag) { widen_sum({canonical_application_bad = diag})[Canonical_application_result] }
+    , .(diag: Diag) { widen_sum(Canonical_application_bad.mk(diag))[Canonical_application_result] }
     )
   }
 }
@@ -6321,19 +6316,19 @@ fn canonical_group(t: Canonical_type) -> Canonical_render {
   }
 }
 
-labels { canonical_render_binding: I32 & I32 };
+type { Canonical_render_binding: I32 & I32 }
 
-labels { canonical_render_bindings: List[Canonical_render_binding] };
+type { Canonical_render_bindings: List[Canonical_render_binding] }
 
 fn canonical_render_bindings_nil() -> Canonical_render_bindings {
-  {canonical_render_bindings = nil[Canonical_render_binding]}
+  Canonical_render_bindings.mk(nil[Canonical_render_binding])
 }
 
 fn canonical_render_bindings_cons(key: I32, alpha: I32, rest: Canonical_render_bindings) -> Canonical_render_bindings {
-  {canonical_render_bindings = cons[Canonical_render_binding](
-  , {canonical_render_binding = (key, alpha)}
+  Canonical_render_bindings.mk(cons[Canonical_render_binding](
+  , Canonical_render_binding.mk((key, alpha))
   , Canonical_render_bindings.get(rest)
-  )}
+  ))
 }
 
 fn canonical_render_binding_find(bindings: Canonical_render_bindings, key: I32) -> . | I32 {
@@ -6347,7 +6342,7 @@ fn canonical_render_binding_find(bindings: Canonical_render_bindings, key: I32) 
                 if(eq_i32(candidate, key)) {
                   widen_sum(widen_sum(alpha)[. | I32])[Canonical_render_bindings | . | I32]
                 } else {
-                  widen_sum({canonical_render_bindings = tail})[Canonical_render_bindings | . | I32]
+                  widen_sum(Canonical_render_bindings.mk(tail))[Canonical_render_bindings | . | I32]
                 }
               }
             }
@@ -6360,7 +6355,7 @@ fn canonical_render_binding_find(bindings: Canonical_render_bindings, key: I32) 
   )
 }
 
-labels { canonical_scope_bindings: Canonical_render_bindings & I32 };
+type { Canonical_scope_bindings: Canonical_render_bindings & I32 }
 
 fn extend_canonical_render_bindings(
 , bs: Canonical_binders
@@ -6385,7 +6380,7 @@ fn extend_canonical_render_bindings(
                 }
               }
             , .(_empty: .) {
-                widen_sum({canonical_scope_bindings = (bindings, next)})[| (& Canonical_binders
+                widen_sum(Canonical_scope_bindings.mk((bindings, next)))[| (& Canonical_binders
                 & Canonical_render_bindings
                 & I32)
                 | Canonical_scope_bindings]
@@ -6459,28 +6454,28 @@ fn canonical_binder_group_text(bs: Canonical_binders, bindings: Canonical_render
   )
 }
 
-labels { cr_visit: Canonical_render };
+type { Cr_visit: Canonical_render }
 
-labels { cr_restore: Canonical_render_bindings };
+type { Cr_restore: Canonical_render_bindings }
 
 type Canonical_render_task = Cr_visit | Cr_restore;
 
-labels { canonical_render_tasks: List[Canonical_render_task] };
+type { Canonical_render_tasks: List[Canonical_render_task] }
 
 fn canonical_render_tasks_nil() -> Canonical_render_tasks {
-  {canonical_render_tasks = nil[Canonical_render_task]}
+  Canonical_render_tasks.mk(nil[Canonical_render_task])
 }
 
 fn canonical_render_tasks_cons(head: Canonical_render_task, rest: Canonical_render_tasks) -> Canonical_render_tasks {
-  {canonical_render_tasks = cons[Canonical_render_task](head, Canonical_render_tasks.get(rest))}
+  Canonical_render_tasks.mk(cons[Canonical_render_task](head, Canonical_render_tasks.get(rest)))
 }
 
 fn canonical_render_visit(render: Canonical_render) -> Canonical_render_task {
-  widen_sum({cr_visit = render})[Canonical_render_task]
+  widen_sum(Cr_visit.mk(render))[Canonical_render_task]
 }
 
 fn canonical_render_restore(bindings: Canonical_render_bindings) -> Canonical_render_task {
-  widen_sum({cr_restore = bindings})[Canonical_render_task]
+  widen_sum(Cr_restore.mk(bindings))[Canonical_render_task]
 }
 
 fn un_canonical_render_tasks(tasks: Canonical_render_tasks) ->
@@ -6489,7 +6484,7 @@ fn un_canonical_render_tasks(tasks: Canonical_render_tasks) ->
   match(uncons[Canonical_render_task](Canonical_render_tasks.get(tasks))) {
     (
     , .(head: Canonical_render_task, tail: List[Canonical_render_task]) {
-        widen_sum((head, {canonical_render_tasks = tail}))[| .
+        widen_sum((head, Canonical_render_tasks.mk(tail)))[| .
         | (Canonical_render_task & Canonical_render_tasks)]
       }
     , .(_empty: .) { widen_sum(())[. | (Canonical_render_task & Canonical_render_tasks)] }
@@ -6517,9 +6512,9 @@ fn canonical_fragments_text(reversed: Pnames) -> String {
   )
 }
 
-labels { canonical_render_state: Canonical_render_tasks & Canonical_render_bindings & I32 & Pnames };
+type { Canonical_render_state: Canonical_render_tasks & Canonical_render_bindings & I32 & Pnames }
 
-labels { canonical_rendered: String };
+type { Canonical_rendered: String }
 
 type Canonical_render_result = Canonical_render_state | Canonical_rendered | Diag;
 
@@ -6543,16 +6538,16 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                         match(canonical_render_node(Cr_visit.get(visit))) {
                           (
                           , .(text: Cr_text) {
-                              widen_sum({canonical_render_state = (
+                              widen_sum(Canonical_render_state.mk((
                               , rest
                               , (bindings, (next_alpha, pnames_cons(Cr_text.get(text), fragments)))
-                              )})[Canonical_render_result]
+                              )))[Canonical_render_result]
                             }
                           , .(bound: Cr_bound_ref) {
                               match(canonical_render_binding_find(bindings, Cr_bound_ref.get(bound))) {
                                 (
                                 , .(alpha: I32) {
-                                    widen_sum({canonical_render_state = (
+                                    widen_sum(Canonical_render_state.mk((
                                     , rest
                                     , (
                                       , bindings
@@ -6564,7 +6559,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                                           )
                                         )
                                       )
-                                    )})[Canonical_render_result]
+                                    )))[Canonical_render_result]
                                   }
                                 , .(_missing: .) {
                                     widen_sum(canonical_parse_diag("internal canonical renderer could not resolve a bound reference"[String]))[Canonical_render_result]
@@ -6579,10 +6574,10 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                               )) {
                                 (
                                 , .(text: String) {
-                                    widen_sum({canonical_render_state = (
+                                    widen_sum(Canonical_render_state.mk((
                                     , rest
                                     , (bindings, (next_alpha, pnames_cons(text, fragments)))
-                                    )})[Canonical_render_result]
+                                    )))[Canonical_render_result]
                                   }
                                 , .(diag: Diag) { widen_sum(diag)[Canonical_render_result] }
                                 )
@@ -6591,7 +6586,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                           , .(concat: Cr_concat) {
                               match(Cr_concat.get(concat)) {
                                 .(left: Canonical_render, right: Canonical_render) {
-                                  widen_sum({canonical_render_state = (
+                                  widen_sum(Canonical_render_state.mk((
                                   , canonical_render_tasks_cons(
                                     , canonical_render_visit(left)
                                     , canonical_render_tasks_cons(
@@ -6600,7 +6595,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                                       )
                                     )
                                   , (bindings, (next_alpha, fragments))
-                                  )})[Canonical_render_result]
+                                  )))[Canonical_render_result]
                                 }
                               }
                             }
@@ -6613,7 +6608,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                                   , next_alpha
                                   ))) {
                                     .(extended: Canonical_render_bindings, next: I32) {
-                                      widen_sum({canonical_render_state = (
+                                      widen_sum(Canonical_render_state.mk((
                                       , canonical_render_tasks_cons(
                                         , canonical_render_visit(body)
                                         , canonical_render_tasks_cons(
@@ -6622,7 +6617,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                                           )
                                         )
                                       , (extended, (next, fragments))
-                                      )})[Canonical_render_result]
+                                      )))[Canonical_render_result]
                                     }
                                   }
                                 }
@@ -6632,26 +6627,26 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
                         }
                       }
                     , .(restore: Cr_restore) {
-                        widen_sum({canonical_render_state = (
+                        widen_sum(Canonical_render_state.mk((
                         , rest
                         , (Cr_restore.get(restore), (next_alpha, fragments))
-                        )})[Canonical_render_result]
+                        )))[Canonical_render_result]
                       }
                     )
                   }
                 }
               , .(_empty: .) {
-                  widen_sum({canonical_rendered = canonical_fragments_text(fragments)})[Canonical_render_result]
+                  widen_sum(Canonical_rendered.mk(canonical_fragments_text(fragments)))[Canonical_render_result]
                 }
               )
             }
           }
         }
       }
-    , {canonical_render_state = (
+    , Canonical_render_state.mk((
       , canonical_render_tasks_cons(canonical_render_visit(render), canonical_render_tasks_nil())
       , (canonical_render_bindings_nil(), (0[I32], pnames_nil()))
-      )}
+      ))
     );
   match(loop_result) {
     (
@@ -6667,7 +6662,7 @@ fn render_canonical_type(render: Canonical_render) -> String | Diag {
 // advances through each identifier byte once and scans only the fixed ASCII
 // identifier alphabet at each level. The negative codes are structural
 // separators and cannot collide with `string_code_at` output.
-rec labels { exact_key_trie[A]: I32 & (. | A) & List[Exact_key_trie[A]] };
+rec type { Exact_key_trie[A]: I32 & (. | A) & List[Exact_key_trie[A]] }
 
 type Exact_key_catalog[A] = List[Exact_key_trie[A]];
 
@@ -6692,7 +6687,7 @@ fn exact_key_trie_children[A](node: Exact_key_trie[A]) -> Exact_key_catalog[A] {
 }
 
 fn exact_key_trie_node[A](code: I32, value: . | A, children: Exact_key_catalog[A]) -> Exact_key_trie[A] {
-  {exact_key_trie = (code, (value, children))}
+  Exact_key_trie.mk((code, (value, children)))
 }
 
 fn exact_key_catalog_child[A](catalog: Exact_key_catalog[A], code: I32) -> . | Exact_key_trie[A] {
@@ -6771,7 +6766,7 @@ fn exact_key_code(owner: String, name: String, pos: I32) -> I32 {
   }
 }
 
-labels { exact_key_trie_frame[A]: I32 & (. | A) & Exact_key_catalog[A] };
+type { Exact_key_trie_frame[A]: I32 & (. | A) & Exact_key_catalog[A] }
 
 type Exact_key_trie_frames[A] = List[Exact_key_trie_frame[A]];
 
@@ -6824,7 +6819,7 @@ fn exact_key_catalog_insert[A](catalog: Exact_key_catalog[A], owner: String, nam
               widen_sum((frames, terminal))[| (Exact_key_catalog[A] & I32 & Exact_key_trie_frames[A])
               | (Exact_key_trie_frames[A] & Exact_key_catalog[A])]
             } else {
-              let frame = {exact_key_trie_frame = (code, (old_value, other_siblings))};
+              let frame = Exact_key_trie_frame.mk((code, (old_value, other_siblings)));
               widen_sum((
               , children
               , add_i32(pos, 1[I32])
@@ -6907,17 +6902,17 @@ fn exact_key_catalog_find[A](catalog: Exact_key_catalog[A], owner: String, name:
 // Keeping the original records lets the ordinary resolver remain the sole
 // authority for visibility, source order, recursive scope, and ambiguity;
 // the index only replaces repeated whole-module list scans.
-labels { exact_type_module_fact: Module };
+type { Exact_type_module_fact: Module }
 
-labels { exact_type_alias_fact: Alias_decl };
+type { Exact_type_alias_fact: Alias_decl }
 
-labels { exact_type_member_fact: Member_decl };
+type { Exact_type_member_fact: Member_decl }
 
-labels { exact_type_host_fact: Host_header };
+type { Exact_type_host_fact: Host_header }
 
-labels { exact_type_import_fact: Import };
+type { Exact_type_import_fact: Import }
 
-labels { exact_type_qualifier_fact: Mod_alias };
+type { Exact_type_qualifier_fact: Mod_alias }
 
 type Exact_type_fact =
   | Exact_type_module_fact
@@ -6964,7 +6959,7 @@ fn exact_type_index_add_aliases(index: Exact_type_index, owner: String, aliases:
                   , out
                   , owner
                   , tyalias_name(alias)
-                  , widen_sum({exact_type_alias_fact = alias})[Exact_type_fact]
+                  , widen_sum(Exact_type_alias_fact.mk(alias))[Exact_type_fact]
                   )
                 ))[(Tyaliases & Exact_type_index) | Exact_type_index]
               }
@@ -6992,7 +6987,7 @@ fn exact_type_index_add_members(index: Exact_type_index, owner: String, members:
                   , out
                   , owner
                   , member_name(member)
-                  , widen_sum({exact_type_member_fact = member})[Exact_type_fact]
+                  , widen_sum(Exact_type_member_fact.mk(member))[Exact_type_fact]
                   )
                 ))[(Members & Exact_type_index) | Exact_type_index]
               }
@@ -7020,7 +7015,7 @@ fn exact_type_index_add_host_headers(index: Exact_type_index, owner: String, hea
                   , out
                   , owner
                   , host_header_name(header)
-                  , widen_sum({exact_type_host_fact = header})[Exact_type_fact]
+                  , widen_sum(Exact_type_host_fact.mk(header))[Exact_type_fact]
                   )
                 ))[(Host_headers & Exact_type_index) | Exact_type_index]
               }
@@ -7050,7 +7045,7 @@ fn exact_type_index_add_imports(index: Exact_type_index, owner: String, imports:
                       , out
                       , owner
                       , name
-                      , widen_sum({exact_type_import_fact = one})[Exact_type_fact]
+                      , widen_sum(Exact_type_import_fact.mk(one))[Exact_type_fact]
                       )
                     ))[(Imports & Exact_type_index) | Exact_type_index]
                   }
@@ -7080,7 +7075,7 @@ fn exact_type_index_add_qualifiers(index: Exact_type_index, owner: String, alias
                   , out
                   , owner
                   , alias_name(alias)
-                  , widen_sum({exact_type_qualifier_fact = alias})[Exact_type_fact]
+                  , widen_sum(Exact_type_qualifier_fact.mk(alias))[Exact_type_fact]
                   )
                 ))[(Aliases & Exact_type_index) | Exact_type_index]
               }
@@ -7101,7 +7096,7 @@ fn exact_type_index_add_module(index: Exact_type_index, module: Module) -> Exact
     , index
     , owner
     , ""[String]
-    , widen_sum({exact_type_module_fact = module})[Exact_type_fact]
+    , widen_sum(Exact_type_module_fact.mk(module))[Exact_type_fact]
     );
   let with_aliases = exact_type_index_add_aliases(with_module, owner, module_tyaliases(module));
   let with_members = exact_type_index_add_members(with_aliases, owner, module_members(module));
@@ -7188,7 +7183,7 @@ fn exact_type_index_module(index: Exact_type_index, owner: String) -> . | Module
 }
 
 fn exact_type_index_aliases(index: Exact_type_index, owner: String, name: String) -> Tyaliases {
-  {tyaliases = exact_type_facts_collect[Alias_decl](
+  Tyaliases.mk(exact_type_facts_collect[Alias_decl](
   , exact_type_index_facts(index, owner, name)
   , .(fact: Exact_type_fact) {
       match(fact) {
@@ -7204,11 +7199,11 @@ fn exact_type_index_aliases(index: Exact_type_index, owner: String, name: String
         )
       }
     }
-  )}
+  ))
 }
 
 fn exact_type_index_members(index: Exact_type_index, owner: String, name: String) -> Members {
-  {members = exact_type_facts_collect[Member_decl](
+  Members.mk(exact_type_facts_collect[Member_decl](
   , exact_type_index_facts(index, owner, name)
   , .(fact: Exact_type_fact) {
       match(fact) {
@@ -7224,11 +7219,11 @@ fn exact_type_index_members(index: Exact_type_index, owner: String, name: String
         )
       }
     }
-  )}
+  ))
 }
 
 fn exact_type_index_host_headers(index: Exact_type_index, owner: String, name: String) -> Host_headers {
-  {host_headers = exact_type_facts_collect[Host_header](
+  Host_headers.mk(exact_type_facts_collect[Host_header](
   , exact_type_index_facts(index, owner, name)
   , .(fact: Exact_type_fact) {
       match(fact) {
@@ -7242,11 +7237,11 @@ fn exact_type_index_host_headers(index: Exact_type_index, owner: String, name: S
         )
       }
     }
-  )}
+  ))
 }
 
 fn exact_type_index_imports(index: Exact_type_index, owner: String, name: String) -> Imports {
-  {imports = exact_type_facts_collect[Import](
+  Imports.mk(exact_type_facts_collect[Import](
   , exact_type_index_facts(index, owner, name)
   , .(fact: Exact_type_fact) {
       match(fact) {
@@ -7260,11 +7255,11 @@ fn exact_type_index_imports(index: Exact_type_index, owner: String, name: String
         )
       }
     }
-  )}
+  ))
 }
 
 fn exact_type_index_qualifiers(index: Exact_type_index, owner: String, name: String) -> Aliases {
-  {aliases = exact_type_facts_collect[Mod_alias](
+  Aliases.mk(exact_type_facts_collect[Mod_alias](
   , exact_type_index_facts(index, owner, name)
   , .(fact: Exact_type_fact) {
       match(fact) {
@@ -7280,7 +7275,7 @@ fn exact_type_index_qualifiers(index: Exact_type_index, owner: String, name: Str
         )
       }
     }
-  )}
+  ))
 }
 
 // A type resolver is anchored in one declaring module and retains the source
@@ -7289,12 +7284,10 @@ fn exact_type_index_qualifiers(index: Exact_type_index, owner: String, name: Str
 // later declarations remain invisible, so adding one cannot retarget an
 // existing signature. `host_types` contains exact descriptors from retained
 // package declarations.
-labels { type_context: & Modules
-& Host_types
-& Module
-& I32
-& (. | Recursive_type_scope)
-& (. | Exact_type_index) };
+type {
+  Type_context:
+    Modules & Host_types & Module & I32 & (. | Recursive_type_scope) & (. | Exact_type_index)
+}
 
 fn mk_type_context_with_index(
 , modules: Modules
@@ -7304,7 +7297,7 @@ fn mk_type_context_with_index(
 , recursive_scope: . | Recursive_type_scope
 , index: . | Exact_type_index
 ) -> Type_context {
-  {type_context = (modules, (host_types, (module, (alias_cutoff, (recursive_scope, index)))))}
+  Type_context.mk((modules, (host_types, (module, (alias_cutoff, (recursive_scope, index))))))
 }
 
 fn mk_type_context(
@@ -7488,14 +7481,14 @@ fn type_context_qualifiers(context: Type_context, name: String) -> Aliases {
 }
 
 // One lexical type binder and its monotonic construction key.
-labels { type_bound: String & I32 & Param_kind };
+type { Type_bound: String & I32 & Param_kind }
 
-labels { type_bounds: List[Type_bound] };
+type { Type_bounds: List[Type_bound] }
 
-fn type_bounds_nil() -> Type_bounds { {type_bounds = nil[Type_bound]} }
+fn type_bounds_nil() -> Type_bounds { Type_bounds.mk(nil[Type_bound]) }
 
 fn type_bounds_cons(name: String, index: I32, kind: Param_kind, rest: Type_bounds) -> Type_bounds {
-  {type_bounds = cons[Type_bound]({type_bound = (name, (index, kind))}, Type_bounds.get(rest))}
+  Type_bounds.mk(cons[Type_bound](Type_bound.mk((name, (index, kind))), Type_bounds.get(rest)))
 }
 
 fn type_bound_index(bounds: Type_bounds, name: String) -> . | I32 {
@@ -7509,7 +7502,7 @@ fn type_bound_index(bounds: Type_bounds, name: String) -> . | I32 {
                 if(string_eq(candidate, name)) {
                   widen_sum(widen_sum(index)[. | I32])[Type_bounds | . | I32]
                 } else {
-                  widen_sum({type_bounds = tail})[Type_bounds | . | I32]
+                  widen_sum(Type_bounds.mk(tail))[Type_bounds | . | I32]
                 }
               }
             }
@@ -7533,7 +7526,7 @@ fn type_bound_kind(bounds: Type_bounds, name: String) -> . | Param_kind {
                 if(string_eq(candidate, name)) {
                   widen_sum(widen_sum(kind)[. | Param_kind])[Type_bounds | . | Param_kind]
                 } else {
-                  widen_sum({type_bounds = tail})[Type_bounds | . | Param_kind]
+                  widen_sum(Type_bounds.mk(tail))[Type_bounds | . | Param_kind]
                 }
               }
             }
@@ -7548,14 +7541,14 @@ fn type_bound_kind(bounds: Type_bounds, name: String) -> . | Param_kind {
 
 // Alias formals map to already-canonical caller types. Alias-body lexical
 // binders are checked first and therefore shadow a same-spelled formal.
-labels { type_subst: String & Canonical_type };
+type { Type_subst: String & Canonical_type }
 
-labels { type_substs: List[Type_subst] };
+type { Type_substs: List[Type_subst] }
 
-fn type_substs_nil() -> Type_substs { {type_substs = nil[Type_subst]} }
+fn type_substs_nil() -> Type_substs { Type_substs.mk(nil[Type_subst]) }
 
 fn type_substs_cons(name: String, value: Canonical_type, rest: Type_substs) -> Type_substs {
-  {type_substs = cons[Type_subst]({type_subst = (name, value)}, Type_substs.get(rest))}
+  Type_substs.mk(cons[Type_subst](Type_subst.mk((name, value)), Type_substs.get(rest)))
 }
 
 fn type_subst_find(substs: Type_substs, name: String) -> . | Canonical_type {
@@ -7569,7 +7562,7 @@ fn type_subst_find(substs: Type_substs, name: String) -> . | Canonical_type {
                 if(string_eq(candidate, name)) {
                   widen_sum(widen_sum(value)[. | Canonical_type])[Type_substs | . | Canonical_type]
                 } else {
-                  widen_sum({type_substs = tail})[Type_substs | . | Canonical_type]
+                  widen_sum(Type_substs.mk(tail))[Type_substs | . | Canonical_type]
                 }
               }
             }
@@ -7586,11 +7579,11 @@ fn type_subst_find(substs: Type_substs, name: String) -> . | Canonical_type {
 
 // The exact alias-expansion stack. It prevents cycles without imposing an
 // arbitrary depth limit on legal acyclic alias chains.
-labels { alias_ref: String & String };
+type { Alias_ref: String & String }
 
-labels { alias_ref_present: . };
+type { Alias_ref_present: . }
 
-labels { alias_refs: List[Alias_ref] & Exact_key_catalog[Alias_ref_present] };
+type { Alias_refs: List[Alias_ref] & Exact_key_catalog[Alias_ref_present] }
 
 fn alias_refs_list(refs: Alias_refs) -> List[Alias_ref] {
   match(Alias_refs.get(refs)) {
@@ -7605,18 +7598,18 @@ fn alias_refs_index(refs: Alias_refs) -> Exact_key_catalog[Alias_ref_present] {
 }
 
 fn alias_refs_with_list(refs: Alias_refs, entries: List[Alias_ref]) -> Alias_refs {
-  {alias_refs = (entries, alias_refs_index(refs))}
+  Alias_refs.mk((entries, alias_refs_index(refs)))
 }
 
 fn alias_refs_nil() -> Alias_refs {
-  {alias_refs = (nil[Alias_ref], exact_key_catalog_nil[Alias_ref_present])}
+  Alias_refs.mk((nil[Alias_ref], exact_key_catalog_nil[Alias_ref_present]))
 }
 
 fn alias_refs_cons(owner: String, name: String, rest: Alias_refs) -> Alias_refs {
-  {alias_refs = (
-  , cons[Alias_ref]({alias_ref = (owner, name)}, alias_refs_list(rest))
-  , exact_key_catalog_insert(alias_refs_index(rest), owner, name, {alias_ref_present=})
-  )}
+  Alias_refs.mk((
+  , cons[Alias_ref](Alias_ref.mk((owner, name)), alias_refs_list(rest))
+  , exact_key_catalog_insert(alias_refs_index(rest), owner, name, Alias_ref_present.mk(()))
+  ))
 }
 
 fn alias_refs_has(refs: Alias_refs, owner: String, name: String) -> Bool {
@@ -7694,7 +7687,7 @@ fn canonical_type_with_alias_refs(t: Canonical_type, refs: Alias_refs) -> Canoni
 
 // Resolution environment. `next_index` is monotonic across nested and sibling
 // traversal; scope restoration never rolls it back.
-labels { type_env: Type_context & Type_bounds & Type_substs & Alias_refs & I32 };
+type { Type_env: Type_context & Type_bounds & Type_substs & Alias_refs & I32 }
 
 fn mk_type_env(
 , context: Type_context
@@ -7702,7 +7695,7 @@ fn mk_type_env(
 , substs: Type_substs
 , aliases: Alias_refs
 , next_index: I32
-) -> Type_env { {type_env = (context, (bounds, (substs, (aliases, next_index))))} }
+) -> Type_env { Type_env.mk((context, (bounds, (substs, (aliases, next_index))))) }
 
 fn type_env_context(env: Type_env) -> Type_context {
   match(Type_env.get(env)) {
@@ -7819,7 +7812,7 @@ fn fresh_canonical_result(env: Type_env) -> Canonical_binders & Canonical_type &
   )
 }
 
-labels { canonical_binders_result: Canonical_binders & Type_env };
+type { Canonical_binders_result: Canonical_binders & Type_env }
 
 fn canonicalize_binders(binders: Binders, initial: Type_env) -> Canonical_binders_result {
   match(Canonical_binders_result.get(loop(
@@ -7846,7 +7839,7 @@ fn canonicalize_binders(binders: Binders, initial: Type_env) -> Canonical_binder
                 }
               }
             , .(_empty: .) {
-                widen_sum({canonical_binders_result = (canonical_binders_reverse(reversed), env)})[| (& Binders
+                widen_sum(Canonical_binders_result.mk((canonical_binders_reverse(reversed), env)))[| (& Binders
                 & Canonical_binders
                 & Type_env)
                 | Canonical_binders_result]
@@ -7858,13 +7851,13 @@ fn canonicalize_binders(binders: Binders, initial: Type_env) -> Canonical_binder
     }
   , (binders, (canonical_binders_nil(), initial))
   ))) {
-    .(renamed: Canonical_binders, env: Type_env) { {canonical_binders_result = (renamed, env)} }
+    .(renamed: Canonical_binders, env: Type_env) { Canonical_binders_result.mk((renamed, env)) }
   }
 }
 
-labels { alias_choice_found: Alias_decl };
+type { Alias_choice_found: Alias_decl }
 
-labels { alias_choice_conflict: . };
+type { Alias_choice_conflict: . }
 
 type Alias_choice = . | Alias_choice_found | Alias_choice_conflict;
 
@@ -7913,7 +7906,7 @@ fn choose_alias(
                     match(found) {
                       (
                       , .(_prior: Alias_decl) {
-                          widen_sum(widen_sum({alias_choice_conflict=})[Alias_choice])[| (& Tyaliases
+                          widen_sum(widen_sum(Alias_choice_conflict.mk(()))[Alias_choice])[| (& Tyaliases
                           & (. | Alias_decl))
                           | Alias_choice]
                         }
@@ -7935,7 +7928,7 @@ fn choose_alias(
                 match(found) {
                   (
                   , .(alias: Alias_decl) {
-                      widen_sum(widen_sum({alias_choice_found = alias})[Alias_choice])[| (& Tyaliases
+                      widen_sum(widen_sum(Alias_choice_found.mk(alias))[Alias_choice])[| (& Tyaliases
                       & (. | Alias_decl))
                       | Alias_choice]
                     }
@@ -7955,38 +7948,38 @@ fn choose_alias(
   )
 }
 
-labels { exact_head_host: Host_type };
+type { Exact_head_host: Host_type }
 
-labels { exact_head_nominal: Host_id & Param_kinds };
+type { Exact_head_nominal: Host_id & Param_kinds }
 
-labels { exact_head_alias: String & Alias_decl };
+type { Exact_head_alias: String & Alias_decl }
 
 type Exact_type_head = Exact_head_host | Exact_head_nominal | Exact_head_alias;
 
 fn exact_head_host(descriptor: Host_type) -> Exact_type_head {
-  widen_sum({exact_head_host = descriptor})[Exact_type_head]
+  widen_sum(Exact_head_host.mk(descriptor))[Exact_type_head]
 }
 
 fn exact_head_nominal(id: Host_id, params: Param_kinds) -> Exact_type_head {
-  widen_sum({exact_head_nominal = (id, params)})[Exact_type_head]
+  widen_sum(Exact_head_nominal.mk((id, params)))[Exact_type_head]
 }
 
 fn exact_head_alias(owner: String, alias: Alias_decl) -> Exact_type_head {
-  widen_sum({exact_head_alias = (owner, alias)})[Exact_type_head]
+  widen_sum(Exact_head_alias.mk((owner, alias)))[Exact_type_head]
 }
 
-labels { exact_type_head_ok: Exact_type_head & Alias_refs };
+type { Exact_type_head_ok: Exact_type_head & Alias_refs }
 
-labels { exact_type_head_bad: Diag };
+type { Exact_type_head_bad: Diag }
 
 type Exact_type_head_result = Exact_type_head_ok | Exact_type_head_bad;
 
 fn exact_type_head_success(head: Exact_type_head) -> Exact_type_head_result {
-  widen_sum({exact_type_head_ok = (head, alias_refs_nil())})[Exact_type_head_result]
+  widen_sum(Exact_type_head_ok.mk((head, alias_refs_nil())))[Exact_type_head_result]
 }
 
 fn exact_type_head_success_with_aliases(head: Exact_type_head, aliases: Alias_refs) -> Exact_type_head_result {
-  widen_sum({exact_type_head_ok = (head, aliases)})[Exact_type_head_result]
+  widen_sum(Exact_type_head_ok.mk((head, aliases)))[Exact_type_head_result]
 }
 
 fn exact_type_head_ok_head(ok: Exact_type_head_ok) -> Exact_type_head {
@@ -8002,12 +7995,12 @@ fn exact_type_head_ok_aliases(ok: Exact_type_head_ok) -> Alias_refs {
 }
 
 fn exact_type_head_failure(diag: Diag) -> Exact_type_head_result {
-  widen_sum({exact_type_head_bad = diag})[Exact_type_head_result]
+  widen_sum(Exact_type_head_bad.mk(diag))[Exact_type_head_result]
 }
 
-labels { host_pick_found: Host_type };
+type { Host_pick_found: Host_type }
 
-labels { host_pick_conflict: . };
+type { Host_pick_conflict: . }
 
 type Host_pick = . | Host_pick_found | Host_pick_conflict | Diag;
 
@@ -8040,7 +8033,7 @@ fn pick_host_type(owner: String, headers: Host_headers, name: String, cutoff: I3
                                   widen_sum((rest, found))[| (Host_headers & (. | Host_type))
                                   | Host_pick]
                                 } else {
-                                  widen_sum(widen_sum({host_pick_conflict=})[Host_pick])[| (& Host_headers
+                                  widen_sum(widen_sum(Host_pick_conflict.mk(()))[Host_pick])[| (& Host_headers
                                   & (. | Host_type))
                                   | Host_pick]
                                 }
@@ -8070,7 +8063,7 @@ fn pick_host_type(owner: String, headers: Host_headers, name: String, cutoff: I3
                 match(found) {
                   (
                   , .(descriptor: Host_type) {
-                      widen_sum(widen_sum({host_pick_found = descriptor})[Host_pick])[| (& Host_headers
+                      widen_sum(widen_sum(Host_pick_found.mk(descriptor))[Host_pick])[| (& Host_headers
                       & (. | Host_type))
                       | Host_pick]
                     }
@@ -8117,9 +8110,9 @@ fn exact_type_resolution_diag(name: String, detail: String) -> Diag {
   ))
 }
 
-labels { member_choice_found: Member_decl };
+type { Member_choice_found: Member_decl }
 
-labels { member_choice_conflict: . };
+type { Member_choice_conflict: . }
 
 type Member_choice = . | Member_choice_found | Member_choice_conflict;
 
@@ -8157,7 +8150,7 @@ fn choose_member(
                     match(found) {
                       (
                       , .(_prior: Member_decl) {
-                          widen_sum(widen_sum({member_choice_conflict=})[Member_choice])[| (& Members
+                          widen_sum(widen_sum(Member_choice_conflict.mk(()))[Member_choice])[| (& Members
                           & (. | Member_decl))
                           | Member_choice]
                         }
@@ -8179,7 +8172,7 @@ fn choose_member(
                 match(found) {
                   (
                   , .(member: Member_decl) {
-                      widen_sum(widen_sum({member_choice_found = member})[Member_choice])[| (& Members
+                      widen_sum(widen_sum(Member_choice_found.mk(member))[Member_choice])[| (& Members
                       & (. | Member_decl))
                       | Member_choice]
                     }
@@ -8217,11 +8210,11 @@ fn member_param_kinds(member: Member_decl) -> Param_kinds | Diag {
   }
 }
 
-labels { type_origin: String & String };
+type { Type_origin: String & String }
 
-labels { type_origins: List[Type_origin] };
+type { Type_origins: List[Type_origin] }
 
-fn type_origin(owner: String, name: String) -> Type_origin { {type_origin = (owner, name)} }
+fn type_origin(owner: String, name: String) -> Type_origin { Type_origin.mk((owner, name)) }
 
 fn type_origin_owner(origin: Type_origin) -> String {
   match(Type_origin.get(origin)) {
@@ -8243,24 +8236,24 @@ fn type_origin_eq(left: Type_origin, right: Type_origin) -> Bool {
   }
 }
 
-fn type_origins_nil() -> Type_origins { {type_origins = nil[Type_origin]} }
+fn type_origins_nil() -> Type_origins { Type_origins.mk(nil[Type_origin]) }
 
 fn type_origins_cons(head: Type_origin, tail: Type_origins) -> Type_origins {
-  {type_origins = cons[Type_origin](head, Type_origins.get(tail))}
+  Type_origins.mk(cons[Type_origin](head, Type_origins.get(tail)))
 }
 
 fn un_type_origins(origins: Type_origins) -> . | (Type_origin & Type_origins) {
   match(uncons[Type_origin](Type_origins.get(origins))) {
     (
     , .(head: Type_origin, tail: List[Type_origin]) {
-        widen_sum((head, {type_origins = tail}))[. | (Type_origin & Type_origins)]
+        widen_sum((head, Type_origins.mk(tail)))[. | (Type_origin & Type_origins)]
       }
     , .(_empty: .) { widen_sum(())[. | (Type_origin & Type_origins)] }
     )
   }
 }
 
-labels { identity_group_opened: I32 & Toks };
+type { Identity_group_opened: I32 & Toks }
 
 fn identity_open_groups(ts: Toks) -> Identity_group_opened {
   loop(
@@ -8271,7 +8264,7 @@ fn identity_open_groups(ts: Toks) -> Identity_group_opened {
             widen_sum((add_i32(count, 1[I32]), sig_rest(remaining)))[| (I32 & Toks)
             | Identity_group_opened]
           } else {
-            widen_sum({identity_group_opened = (count, remaining)})[| (I32 & Toks)
+            widen_sum(Identity_group_opened.mk((count, remaining)))[| (I32 & Toks)
             | Identity_group_opened]
           }
         }
@@ -8366,7 +8359,7 @@ fn identity_alias_args(binders: Binders, ts: Toks) -> . | Toks {
   )
 }
 
-labels { identity_alias_target_read: String & Toks };
+type { Identity_alias_target_read: String & Toks }
 
 fn identity_alias_target_read_close(target: String, groups: I32, after: Toks) ->
   . | Identity_alias_target_read
@@ -8374,7 +8367,7 @@ fn identity_alias_target_read_close(target: String, groups: I32, after: Toks) ->
   match(identity_close_groups(groups, after)) {
     (
     , .(remaining: Toks) {
-        widen_sum({identity_alias_target_read = (target, remaining)})[. | Identity_alias_target_read]
+        widen_sum(Identity_alias_target_read.mk((target, remaining)))[. | Identity_alias_target_read]
       }
     , .(_missing_close: .) { widen_sum(())[. | Identity_alias_target_read] }
     )
@@ -8765,16 +8758,16 @@ fn visible_type_candidates(context: Type_context, name: String) -> Type_origins 
   }
 }
 
-labels { origin_terminal: Type_origin & Type_context & Alias_refs };
+type { Origin_terminal: Type_origin & Type_context & Alias_refs }
 
-labels { origin_expand: Type_origins & Type_context & Alias_refs };
+type { Origin_expand: Type_origins & Type_context & Alias_refs }
 
-labels { origin_bad: Diag };
+type { Origin_bad: Diag }
 
 type Origin_action = Origin_terminal | Origin_expand | Origin_bad;
 
 fn mk_origin_terminal(origin: Type_origin, lookup: Type_context, refs: Alias_refs) -> Origin_terminal {
-  {origin_terminal = (origin, (lookup, refs))}
+  Origin_terminal.mk((origin, (lookup, refs)))
 }
 
 fn origin_terminal_action(origin: Type_origin, lookup: Type_context, refs: Alias_refs) -> Origin_action {
@@ -8799,7 +8792,7 @@ fn origin_terminal_refs(terminal: Origin_terminal) -> Alias_refs {
   }
 }
 
-fn origin_bad_action(diag: Diag) -> Origin_action { widen_sum({origin_bad = diag})[Origin_action] }
+fn origin_bad_action(diag: Diag) -> Origin_action { widen_sum(Origin_bad.mk(diag))[Origin_action] }
 
 fn exact_head_param_kinds(head: Exact_type_head) -> Param_kinds {
   match(head) {
@@ -8819,9 +8812,9 @@ fn exact_head_param_kinds(head: Exact_type_head) -> Param_kinds {
   }
 }
 
-labels { identity_kinds_ok: . };
+type { Identity_kinds_ok: . }
 
-labels { identity_kinds_bad: Diag };
+type { Identity_kinds_bad: Diag }
 
 type Identity_kinds_result = Identity_kinds_ok | Identity_kinds_bad;
 
@@ -8880,21 +8873,21 @@ fn validate_identity_target_kinds(
                   )) {
                     widen_sum(rest)[Type_origins | Identity_kinds_result]
                   } else {
-                    widen_sum(widen_sum({identity_kinds_bad = exact_type_resolution_diag(
+                    widen_sum(widen_sum(Identity_kinds_bad.mk(exact_type_resolution_diag(
                     , type_origin_name(candidate)
                     , "identity alias parameters do not match the target parameter prefix"[String]
-                    )})[Identity_kinds_result])[Type_origins | Identity_kinds_result]
+                    )))[Identity_kinds_result])[Type_origins | Identity_kinds_result]
                   }
                 }
               , .(bad: Exact_type_head_bad) {
-                  widen_sum(widen_sum({identity_kinds_bad = Exact_type_head_bad.get(bad)})[Identity_kinds_result])[| Type_origins
+                  widen_sum(widen_sum(Identity_kinds_bad.mk(Exact_type_head_bad.get(bad)))[Identity_kinds_result])[| Type_origins
                   | Identity_kinds_result]
                 }
               )
             }
           }
         , .(_empty: .) {
-            widen_sum(widen_sum({identity_kinds_ok=})[Identity_kinds_result])[| Type_origins
+            widen_sum(widen_sum(Identity_kinds_ok.mk(()))[Identity_kinds_result])[| Type_origins
             | Identity_kinds_result]
           }
         )
@@ -8927,10 +8920,10 @@ fn origin_alias_action(base: Type_context, owner: String, alias: Alias_decl, ref
                     )) {
                       (
                       , .(_valid: Identity_kinds_ok) {
-                          widen_sum({origin_expand = (
+                          widen_sum(Origin_expand.mk((
                           , candidates
                           , (alias_context, alias_refs_cons(owner, tyalias_name(alias), refs))
-                          )})[Origin_action]
+                          )))[Origin_action]
                         }
                       , .(bad: Identity_kinds_bad) {
                           origin_bad_action(Identity_kinds_bad.get(bad))
@@ -9138,21 +9131,21 @@ fn classify_type_origin(
   }
 }
 
-labels { origin_work: Type_origin & Type_context & Alias_refs };
+type { Origin_work: Type_origin & Type_context & Alias_refs }
 
-labels { origin_works: List[Origin_work] };
+type { Origin_works: List[Origin_work] }
 
-fn origin_works_nil() -> Origin_works { {origin_works = nil[Origin_work]} }
+fn origin_works_nil() -> Origin_works { Origin_works.mk(nil[Origin_work]) }
 
 fn origin_works_cons(head: Origin_work, tail: Origin_works) -> Origin_works {
-  {origin_works = cons[Origin_work](head, Origin_works.get(tail))}
+  Origin_works.mk(cons[Origin_work](head, Origin_works.get(tail)))
 }
 
 fn un_origin_works(work: Origin_works) -> . | (Origin_work & Origin_works) {
   match(uncons[Origin_work](Origin_works.get(work))) {
     (
     , .(head: Origin_work, tail: List[Origin_work]) {
-        widen_sum((head, {origin_works = tail}))[. | (Origin_work & Origin_works)]
+        widen_sum((head, Origin_works.mk(tail)))[. | (Origin_work & Origin_works)]
       }
     , .(_empty: .) { widen_sum(())[. | (Origin_work & Origin_works)] }
     )
@@ -9174,7 +9167,7 @@ fn origin_works_prepend(
             , .(candidate: Type_origin, rest: Type_origins) {
                 widen_sum((
                 , rest
-                , origin_works_cons({origin_work = (candidate, (lookup, refs))}, collected)
+                , origin_works_cons(Origin_work.mk((candidate, (lookup, refs))), collected)
                 ))[(Type_origins & Origin_works) | Origin_works]
               }
             , .(_empty: .) { widen_sum(collected)[(Type_origins & Origin_works) | Origin_works] }
@@ -9187,9 +9180,9 @@ fn origin_works_prepend(
   )
 }
 
-labels { exact_origin_ok: Type_origin & Type_context & Alias_refs };
+type { Exact_origin_ok: Type_origin & Type_context & Alias_refs }
 
-labels { exact_origin_bad: Diag & Alias_refs };
+type { Exact_origin_bad: Diag & Alias_refs }
 
 type Exact_origin_result = Exact_origin_ok | Exact_origin_bad;
 
@@ -9205,7 +9198,7 @@ fn exact_origin_bad_refs(bad: Exact_origin_bad) -> Alias_refs {
   }
 }
 
-labels { origin_walk_state: Origin_works & (. | Origin_terminal) & Alias_refs };
+type { Origin_walk_state: Origin_works & (. | Origin_terminal) & Alias_refs }
 
 fn resolve_exact_type_origin_cached(
 , context: Type_context
@@ -9235,7 +9228,7 @@ fn resolve_exact_type_origin_cached(
                                       let prior_origin = origin_terminal_origin(prior);
                                       let origin = origin_terminal_origin(terminal);
                                       if(type_origin_eq(prior_origin, origin)) {
-                                        widen_sum({origin_walk_state = (
+                                        widen_sum(Origin_walk_state.mk((
                                         , rest
                                         , widen_sum(mk_origin_terminal(
                                           , prior_origin
@@ -9243,20 +9236,20 @@ fn resolve_exact_type_origin_cached(
                                           , terminal_refs
                                           ))[. | Origin_terminal]
                                         , terminal_refs
-                                        )})[Origin_walk_state | Exact_origin_result]
+                                        )))[Origin_walk_state | Exact_origin_result]
                                       } else {
-                                        widen_sum(widen_sum({exact_origin_bad = (
+                                        widen_sum(widen_sum(Exact_origin_bad.mk((
                                         , exact_type_resolution_diag(
                                           , spelling
                                           , "visible bindings have different declaration origins"[String]
                                           )
                                         , terminal_refs
-                                        )})[Exact_origin_result])[| Origin_walk_state
+                                        )))[Exact_origin_result])[| Origin_walk_state
                                         | Exact_origin_result]
                                       }
                                     }
                                   , .(_none: .) {
-                                      widen_sum({origin_walk_state = (
+                                      widen_sum(Origin_walk_state.mk((
                                       , rest
                                       , widen_sum(mk_origin_terminal(
                                         , origin_terminal_origin(terminal)
@@ -9264,7 +9257,7 @@ fn resolve_exact_type_origin_cached(
                                         , terminal_refs
                                         ))[. | Origin_terminal]
                                       , terminal_refs
-                                      )})[Origin_walk_state | Exact_origin_result]
+                                      )))[Origin_walk_state | Exact_origin_result]
                                     }
                                   )
                                 }
@@ -9276,20 +9269,20 @@ fn resolve_exact_type_origin_cached(
                                   , next_lookup: Type_context
                                   , next_refs: Alias_refs
                                   ) {
-                                    widen_sum({origin_walk_state = (
+                                    widen_sum(Origin_walk_state.mk((
                                     , origin_works_prepend(next, next_lookup, next_refs, rest)
                                     , found
                                     , walked
-                                    )})[Origin_walk_state | Exact_origin_result]
+                                    )))[Origin_walk_state | Exact_origin_result]
                                   }
                                 }
                               }
                             , .(bad: Origin_bad) {
                                 let visited = alias_refs_union(refs, walked);
-                                widen_sum(widen_sum({exact_origin_bad = (
+                                widen_sum(widen_sum(Exact_origin_bad.mk((
                                 , Origin_bad.get(bad)
                                 , visited
-                                )})[Exact_origin_result])[Origin_walk_state | Exact_origin_result]
+                                )))[Exact_origin_result])[Origin_walk_state | Exact_origin_result]
                               }
                             )
                           }
@@ -9300,17 +9293,17 @@ fn resolve_exact_type_origin_cached(
                       match(found) {
                         (
                         , .(terminal: Origin_terminal) {
-                            widen_sum(widen_sum({exact_origin_ok = Origin_terminal.get(terminal)})[Exact_origin_result])[| Origin_walk_state
+                            widen_sum(widen_sum(Exact_origin_ok.mk(Origin_terminal.get(terminal)))[Exact_origin_result])[| Origin_walk_state
                             | Exact_origin_result]
                           }
                         , .(_none: .) {
-                            widen_sum(widen_sum({exact_origin_bad = (
+                            widen_sum(widen_sum(Exact_origin_bad.mk((
                             , exact_type_resolution_diag(
                               , spelling
                               , "no terminal declaration origin was found"[String]
                               )
                             , walked
-                            )})[Exact_origin_result])[Origin_walk_state | Exact_origin_result]
+                            )))[Exact_origin_result])[Origin_walk_state | Exact_origin_result]
                           }
                         )
                       }
@@ -9320,15 +9313,15 @@ fn resolve_exact_type_origin_cached(
               }
             }
           }
-        , {origin_walk_state = (
+        , Origin_walk_state.mk((
           , origin_works_prepend(initial, context, alias_refs_nil(), origin_works_nil())
           , widen_sum(())[. | Origin_terminal]
           , alias_refs_nil()
-          )}
+          ))
         )
       }
     , .(diag: Diag) {
-        widen_sum({exact_origin_bad = (diag, alias_refs_nil())})[Exact_origin_result]
+        widen_sum(Exact_origin_bad.mk((diag, alias_refs_nil())))[Exact_origin_result]
       }
     )
   }
@@ -9371,7 +9364,7 @@ fn resolve_exact_type_head(name: String, env: Type_env) -> Exact_type_head_resul
   }
 }
 
-labels { punct_run_done: Toks };
+type { Punct_run_done: Toks }
 
 fn skip_punct_run(ts: Toks, code: I32) -> Toks {
   Punct_run_done.get(loop(
@@ -9379,7 +9372,7 @@ fn skip_punct_run(ts: Toks, code: I32) -> Toks {
       if(sig_head_is(remaining, code)) {
         widen_sum(sig_rest(remaining))[Toks | Punct_run_done]
       } else {
-        widen_sum({punct_run_done = remaining})[Toks | Punct_run_done]
+        widen_sum(Punct_run_done.mk(remaining))[Toks | Punct_run_done]
       }
     }
   , ts
@@ -9403,41 +9396,41 @@ fn canonical_starts_atom(ts: Toks) -> Bool {
   }
 }
 
-labels { ctp_expr: Toks & Bool };
+type { Ctp_expr: Toks & Bool }
 
-labels { ctp_chain: Toks };
+type { Ctp_chain: Toks }
 
-labels { ctp_arrow: Toks };
+type { Ctp_arrow: Toks }
 
-labels { ctp_atom: Toks };
+type { Ctp_atom: Toks }
 
-labels { ctp_return: Canonical_type & Toks };
+type { Ctp_return: Canonical_type & Toks }
 
-labels { ctp_chain_return: Canonical_type & Toks & Bool };
+type { Ctp_chain_return: Canonical_type & Toks & Bool }
 
 type Ctp_task_shape = Ctp_expr | Ctp_chain | Ctp_arrow | Ctp_atom | Ctp_return | Ctp_chain_return;
 
-labels { ctp_task: Ctp_task_shape };
+type { Ctp_task: Ctp_task_shape }
 
-labels { ctc_done: . };
+type { Ctc_done: . }
 
-labels { ctp_head_canonical: Canonical_type };
+type { Ctp_head_canonical: Canonical_type }
 
-labels { ctp_head_exact: Exact_type_head & Alias_refs };
+type { Ctp_head_exact: Exact_type_head & Alias_refs }
 
 type Ctp_head = Ctp_head_canonical | Ctp_head_exact;
 
 rec {
-  labels { ctc_prefix: Canonical_binders & Type_env & Ctp_cont };
-  labels { ctc_expr_chain: Bool & Ctp_cont };
-  labels { ctc_expr_arrow: Canonical_type & Ctp_cont };
-  labels { ctc_arrow_atom: Ctp_cont };
-  labels { ctc_arrow_rhs: Canonical_type & Ctp_cont };
-  labels { ctc_chain_first: (. | Bool) & Ctp_cont };
-  labels { ctc_chain_item: Bool & Canonical_types & Ctp_cont };
-  labels { ctc_paren: Ctp_cont };
-  labels { ctc_app_arg: Ctp_head & Canonical_types & Ctp_cont };
-  labels { ctc_alias_return: Type_env & Toks & Ctp_cont & Type_dependencies };
+  type { Ctc_prefix: Canonical_binders & Type_env & Ctp_cont };
+  type { Ctc_expr_chain: Bool & Ctp_cont };
+  type { Ctc_expr_arrow: Canonical_type & Ctp_cont };
+  type { Ctc_arrow_atom: Ctp_cont };
+  type { Ctc_arrow_rhs: Canonical_type & Ctp_cont };
+  type { Ctc_chain_first: (. | Bool) & Ctp_cont };
+  type { Ctc_chain_item: Bool & Canonical_types & Ctp_cont };
+  type { Ctc_paren: Ctp_cont };
+  type { Ctc_app_arg: Ctp_head & Canonical_types & Ctp_cont };
+  type { Ctc_alias_return: Type_env & Toks & Ctp_cont & Type_dependencies };
   type Ctp_cont_shape =
     | Ctc_done
     | Ctc_prefix
@@ -9450,26 +9443,26 @@ rec {
     | Ctc_paren
     | Ctc_app_arg
     | Ctc_alias_return;
-  labels { ctp_cont: Ctp_cont_shape }
+  type { Ctp_cont: Ctp_cont_shape }
 }
 
-labels { ctp_state: Ctp_task & Ctp_cont & Type_env };
+type { Ctp_state: Ctp_task & Ctp_cont & Type_env }
 
-labels { ctp_ok: Canonical_type & Toks & Type_env };
+type { Ctp_ok: Canonical_type & Toks & Type_env }
 
-labels { ctp_bad: Diag };
+type { Ctp_bad: Diag }
 
 type Canonical_type_result = Ctp_ok | Ctp_bad;
 
 fn mk_ctp_state(task: Ctp_task, cont: Ctp_cont, env: Type_env) -> Ctp_state {
-  {ctp_state = (task, (cont, env))}
+  Ctp_state.mk((task, (cont, env)))
 }
 
 fn ctp_parse_expr_with_chain(ts: Toks, allow_chain: Bool, cont: Ctp_cont, env: Type_env) ->
   Ctp_state | Canonical_type_result
    {
   widen_sum(mk_ctp_state(
-  , {ctp_task = widen_sum({ctp_expr = (ts, allow_chain)})[Ctp_task_shape]}
+  , Ctp_task.mk(widen_sum(Ctp_expr.mk((ts, allow_chain)))[Ctp_task_shape])
   , cont
   , env
   ))[Ctp_state | Canonical_type_result]
@@ -9480,17 +9473,17 @@ fn ctp_parse_expr(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canoni
 }
 
 fn ctp_parse_chain(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
-  widen_sum(mk_ctp_state({ctp_task = widen_sum({ctp_chain = ts})[Ctp_task_shape]}, cont, env))[| Ctp_state
+  widen_sum(mk_ctp_state(Ctp_task.mk(widen_sum(Ctp_chain.mk(ts))[Ctp_task_shape]), cont, env))[| Ctp_state
   | Canonical_type_result]
 }
 
 fn ctp_parse_arrow(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
-  widen_sum(mk_ctp_state({ctp_task = widen_sum({ctp_arrow = ts})[Ctp_task_shape]}, cont, env))[| Ctp_state
+  widen_sum(mk_ctp_state(Ctp_task.mk(widen_sum(Ctp_arrow.mk(ts))[Ctp_task_shape]), cont, env))[| Ctp_state
   | Canonical_type_result]
 }
 
 fn ctp_parse_atom(ts: Toks, cont: Ctp_cont, env: Type_env) -> Ctp_state | Canonical_type_result {
-  widen_sum(mk_ctp_state({ctp_task = widen_sum({ctp_atom = ts})[Ctp_task_shape]}, cont, env))[| Ctp_state
+  widen_sum(mk_ctp_state(Ctp_task.mk(widen_sum(Ctp_atom.mk(ts))[Ctp_task_shape]), cont, env))[| Ctp_state
   | Canonical_type_result]
 }
 
@@ -9498,7 +9491,7 @@ fn ctp_return_type(t: Canonical_type, rest: Toks, cont: Ctp_cont, env: Type_env)
   Ctp_state | Canonical_type_result
    {
   widen_sum(mk_ctp_state(
-  , {ctp_task = widen_sum({ctp_return = (t, rest)})[Ctp_task_shape]}
+  , Ctp_task.mk(widen_sum(Ctp_return.mk((t, rest)))[Ctp_task_shape])
   , cont
   , env
   ))[Ctp_state | Canonical_type_result]
@@ -9508,14 +9501,14 @@ fn ctp_return_chain(t: Canonical_type, rest: Toks, chain: Bool, cont: Ctp_cont, 
   Ctp_state | Canonical_type_result
    {
   widen_sum(mk_ctp_state(
-  , {ctp_task = widen_sum({ctp_chain_return = (t, (rest, chain))})[Ctp_task_shape]}
+  , Ctp_task.mk(widen_sum(Ctp_chain_return.mk((t, (rest, chain))))[Ctp_task_shape])
   , cont
   , env
   ))[Ctp_state | Canonical_type_result]
 }
 
 fn canonical_parse_failure(detail: String) -> Ctp_state | Canonical_type_result {
-  widen_sum(widen_sum({ctp_bad = canonical_parse_diag(detail)})[Canonical_type_result])[| Ctp_state
+  widen_sum(widen_sum(Ctp_bad.mk(canonical_parse_diag(detail)))[Canonical_type_result])[| Ctp_state
   | Canonical_type_result]
 }
 
@@ -9577,7 +9570,7 @@ fn continue_chain(
           if(canonical_starts_atom(after)) {
             ctp_parse_atom(
             , after
-            , {ctp_cont = widen_sum({ctc_chain_item = (product, (reversed, cont))})[Ctp_cont_shape]}
+            , Ctp_cont.mk(widen_sum(Ctc_chain_item.mk((product, (reversed, cont))))[Ctp_cont_shape])
             , env
             )
           } else {
@@ -9593,11 +9586,11 @@ fn continue_chain(
 }
 
 fn ctp_head_canonical(head: Canonical_type) -> Ctp_head {
-  widen_sum({ctp_head_canonical = head})[Ctp_head]
+  widen_sum(Ctp_head_canonical.mk(head))[Ctp_head]
 }
 
 fn ctp_head_exact(head: Exact_type_head, aliases: Alias_refs) -> Ctp_head {
-  widen_sum({ctp_head_exact = (head, aliases)})[Ctp_head]
+  widen_sum(Ctp_head_exact.mk((head, aliases)))[Ctp_head]
 }
 
 fn type_substs_for_alias(binders: Binders, reversed_args: Canonical_types) -> Type_substs | Diag {
@@ -9741,10 +9734,10 @@ fn start_alias_expansion(
                             );
                           ctp_parse_expr(
                           , tyalias_body(alias)
-                          , {ctp_cont = widen_sum({ctc_alias_return = (
+                          , Ctp_cont.mk(widen_sum(Ctc_alias_return.mk((
                             , saved
                             , (caller_rest, (parent, preserved_dependencies))
-                            )})[Ctp_cont_shape]}
+                            )))[Ctp_cont_shape])
                           , alias_env
                           )
                         }
@@ -9758,7 +9751,7 @@ fn start_alias_expansion(
                     }
                   }
                 , .(diag: Diag) {
-                    widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+                    widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
                     | Canonical_type_result]
                   }
                 )
@@ -9768,7 +9761,7 @@ fn start_alias_expansion(
         }
       }
     , .(diag: Diag) {
-        widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+        widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
         | Canonical_type_result]
       }
     )
@@ -9788,7 +9781,7 @@ fn canonical_application_return(
         ctp_return_type(Canonical_application_ok.get(ok), rest, parent, env)
       }
     , .(bad: Canonical_application_bad) {
-        widen_sum(widen_sum({ctp_bad = Canonical_application_bad.get(bad)})[Canonical_type_result])[| Ctp_state
+        widen_sum(widen_sum(Ctp_bad.mk(Canonical_application_bad.get(bad)))[Canonical_type_result])[| Ctp_state
         | Canonical_type_result]
       }
     )
@@ -9863,7 +9856,7 @@ fn continue_type_head(head: Ctp_head, rest: Toks, parent: Ctp_cont, env: Type_en
     } else {
       ctp_parse_expr(
       , args0
-      , {ctp_cont = widen_sum({ctc_app_arg = (head, (canonical_types_nil(), parent))})[Ctp_cont_shape]}
+      , Ctp_cont.mk(widen_sum(Ctc_app_arg.mk((head, (canonical_types_nil(), parent))))[Ctp_cont_shape])
       , env
       )
     }
@@ -9946,14 +9939,14 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                       if(eq_i32(binders_len(bs), 0[I32])) {
                         ctp_parse_chain(
                         , ts
-                        , {ctp_cont = widen_sum({ctc_expr_chain = (allow_chain, cont)})[Ctp_cont_shape]}
+                        , Ctp_cont.mk(widen_sum(Ctc_expr_chain.mk((allow_chain, cont)))[Ctp_cont_shape])
                         , env
                         )
                       } else match(Canonical_binders_result.get(canonicalize_binders(bs, env))) {
                         .(renamed: Canonical_binders, extended: Type_env) {
                           ctp_parse_expr(
                           , after
-                          , {ctp_cont = widen_sum({ctc_prefix = (renamed, (env, cont))})[Ctp_cont_shape]}
+                          , Ctp_cont.mk(widen_sum(Ctc_prefix.mk((renamed, (env, cont))))[Ctp_cont_shape])
                           , extended
                           )
                         }
@@ -9976,7 +9969,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                   } else if(canonical_starts_atom(after)) {
                     ctp_parse_arrow(
                     , after
-                    , {ctp_cont = widen_sum({ctc_chain_first = (widen_sum(product)[. | Bool], cont)})[Ctp_cont_shape]}
+                    , Ctp_cont.mk(widen_sum(Ctc_chain_first.mk((widen_sum(product)[. | Bool], cont)))[Ctp_cont_shape])
                     , env
                     )
                   } else {
@@ -9992,7 +9985,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
               , .(_none: .) {
                   ctp_parse_arrow(
                   , ts
-                  , {ctp_cont = widen_sum({ctc_chain_first = (widen_sum(())[. | Bool], cont)})[Ctp_cont_shape]}
+                  , Ctp_cont.mk(widen_sum(Ctc_chain_first.mk((widen_sum(())[. | Bool], cont)))[Ctp_cont_shape])
                   , env
                   )
                 }
@@ -10002,7 +9995,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
         , .(arrow: Ctp_arrow) {
             ctp_parse_atom(
             , Ctp_arrow.get(arrow)
-            , {ctp_cont = widen_sum({ctc_arrow_atom = cont})[Ctp_cont_shape]}
+            , Ctp_cont.mk(widen_sum(Ctc_arrow_atom.mk(cont))[Ctp_cont_shape])
             , env
             )
           }
@@ -10015,7 +10008,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
             } else if(sig_head_is(ts, 40[I32])) {
               ctp_parse_expr(
               , sig_rest(ts)
-              , {ctp_cont = widen_sum({ctc_paren = cont})[Ctp_cont_shape]}
+              , Ctp_cont.mk(widen_sum(Ctc_paren.mk(cont))[Ctp_cont_shape])
               , env
               )
             } else match(read_type_path(ts)) {
@@ -10031,7 +10024,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                             continue_type_head(ctp_head_canonical(bound), rest, cont, env)
                           }
                         , .(diag: Diag) {
-                            widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+                            widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
                             | Canonical_type_result]
                           }
                         , .(_not_bound: .) {
@@ -10060,7 +10053,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                                         )
                                       }
                                     , .(bad: Exact_type_head_bad) {
-                                        widen_sum(widen_sum({ctp_bad = Exact_type_head_bad.get(bad)})[Canonical_type_result])[| Ctp_state
+                                        widen_sum(widen_sum(Ctp_bad.mk(Exact_type_head_bad.get(bad)))[Canonical_type_result])[| Ctp_state
                                         | Canonical_type_result]
                                       }
                                     )
@@ -10084,7 +10077,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                 match(Ctp_cont.get(cont)) {
                   (
                   , .(_done: Ctc_done) {
-                      widen_sum(widen_sum({ctp_ok = (value, (rest, env))})[Canonical_type_result])[| Ctp_state
+                      widen_sum(widen_sum(Ctp_ok.mk((value, (rest, env))))[Canonical_type_result])[| Ctp_state
                       | Canonical_type_result]
                     }
                   , .(prefix: Ctc_prefix) {
@@ -10101,7 +10094,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                                 )
                               }
                             , .(diag: Diag) {
-                                widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+                                widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
                                 | Canonical_type_result]
                               }
                             )
@@ -10119,7 +10112,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                             (
                             , .(arrow: Canonical_type) { ctp_return_type(arrow, rest, parent, env) }
                             , .(diag: Diag) {
-                                widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+                                widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
                                 | Canonical_type_result]
                               }
                             )
@@ -10135,7 +10128,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                             ctp_parse_expr_with_chain(
                             , rhs
                             , .f[Bool]
-                            , {ctp_cont = widen_sum({ctc_arrow_rhs = (value, parent)})[Ctp_cont_shape]}
+                            , Ctp_cont.mk(widen_sum(Ctc_arrow_rhs.mk((value, parent)))[Ctp_cont_shape])
                             , env
                             )
                           }
@@ -10150,7 +10143,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                             (
                             , .(arrow: Canonical_type) { ctp_return_type(arrow, rest, parent, env) }
                             , .(diag: Diag) {
-                                widen_sum(widen_sum({ctp_bad = diag})[Canonical_type_result])[| Ctp_state
+                                widen_sum(widen_sum(Ctp_bad.mk(diag))[Canonical_type_result])[| Ctp_state
                                 | Canonical_type_result]
                               }
                             )
@@ -10228,7 +10221,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                           } else {
                             ctp_parse_expr(
                             , next
-                            , {ctp_cont = widen_sum({ctc_app_arg = (head, (args1, parent))})[Ctp_cont_shape]}
+                            , Ctp_cont.mk(widen_sum(Ctc_app_arg.mk((head, (args1, parent))))[Ctp_cont_shape])
                             , env
                             )
                           }
@@ -10284,7 +10277,7 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                               ctp_parse_expr_with_chain(
                               , rhs
                               , .f[Bool]
-                              , {ctp_cont = widen_sum({ctc_expr_arrow = (value, parent)})[Ctp_cont_shape]}
+                              , Ctp_cont.mk(widen_sum(Ctc_expr_arrow.mk((value, parent)))[Ctp_cont_shape])
                               , env
                               )
                             }
@@ -10338,18 +10331,18 @@ fn parse_canonical_type(ts: Toks, env: Type_env) -> Canonical_type_result {
   loop(
   , ctp_step
   , mk_ctp_state(
-    , {ctp_task = widen_sum({ctp_expr = (ts, .t[Bool])})[Ctp_task_shape]}
-    , {ctp_cont = widen_sum({ctc_done=})[Ctp_cont_shape]}
+    , Ctp_task.mk(widen_sum(Ctp_expr.mk((ts, .t[Bool])))[Ctp_task_shape])
+    , Ctp_cont.mk(widen_sum(Ctc_done.mk(()))[Ctp_cont_shape])
     , env
     )
   )
 }
 
-labels { parsed_host_group: Canonical_type & Toks & Type_env };
+type { Parsed_host_group: Canonical_type & Toks & Type_env }
 
 type Parsed_host_group_result = Parsed_host_group | Diag;
 
-labels { host_group_parse_state: Toks & Canonical_types & Type_env };
+type { Host_group_parse_state: Toks & Canonical_types & Type_env }
 
 fn host_signature_subject(id: Host_id) -> String {
   string_concat(
@@ -10446,7 +10439,7 @@ fn canonical_group_slots(domain: Canonical_type) -> I32 {
 }
 
 fn host_group_success(reversed: Canonical_types, rest: Toks, env: Type_env) -> Parsed_host_group_result {
-  widen_sum({parsed_host_group = (fold_canonical_chain(reversed, .t[Bool]), rest, env)})[Parsed_host_group_result]
+  widen_sum(Parsed_host_group.mk((fold_canonical_chain(reversed, .t[Bool]), rest, env)))[Parsed_host_group_result]
 }
 
 fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parsed_host_group_result {
@@ -10483,11 +10476,11 @@ fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parse
                                     let next_reversed =
                                       canonical_types_cons(parameter_type, reversed);
                                     if(sig_head_is(after_type, 44[I32])) {
-                                      widen_sum({host_group_parse_state = (
+                                      widen_sum(Host_group_parse_state.mk((
                                       , after_type
                                       , next_reversed
                                       , next_env
-                                      )})[Host_group_parse_state | Parsed_host_group_result]
+                                      )))[Host_group_parse_state | Parsed_host_group_result]
                                     } else if(sig_head_is(after_type, 41[I32])) {
                                       widen_sum(host_group_success(
                                       , next_reversed
@@ -10528,7 +10521,7 @@ fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parse
           }
         }
       }
-    , {host_group_parse_state = (sig_rest(ts), canonical_types_nil(), initial)}
+    , Host_group_parse_state.mk((sig_rest(ts), canonical_types_nil(), initial))
     )
   } else {
     widen_sum(signature_diag(subject, "expected a value-parameter group"[String]))[Parsed_host_group_result]
@@ -10578,24 +10571,24 @@ fn group_slots_prepend_type_stages(count: I32, reversed: Group_slots) -> Group_s
   )
 }
 
-labels { canonical_stage: Canonical_binders & Canonical_type & I32 };
+type { Canonical_stage: Canonical_binders & Canonical_type & I32 }
 
-labels { canonical_stages: List[Canonical_stage] };
+type { Canonical_stages: List[Canonical_stage] }
 
-fn canonical_stages_nil() -> Canonical_stages { {canonical_stages = nil[Canonical_stage]} }
+fn canonical_stages_nil() -> Canonical_stages { Canonical_stages.mk(nil[Canonical_stage]) }
 
 fn canonical_stages_cons(binders: Canonical_binders, domain: Canonical_type, rest: Canonical_stages) -> Canonical_stages {
-  {canonical_stages = cons[Canonical_stage](
-  , {canonical_stage = (binders, (domain, canonical_group_slots(domain)))}
+  Canonical_stages.mk(cons[Canonical_stage](
+  , Canonical_stage.mk((binders, (domain, canonical_group_slots(domain))))
   , Canonical_stages.get(rest)
-  )}
+  ))
 }
 
 fn un_canonical_stages(stages: Canonical_stages) -> . | (Canonical_stage & Canonical_stages) {
   match(uncons[Canonical_stage](Canonical_stages.get(stages))) {
     (
     , .(head: Canonical_stage, tail: List[Canonical_stage]) {
-        widen_sum((head, {canonical_stages = tail}))[. | (Canonical_stage & Canonical_stages)]
+        widen_sum((head, Canonical_stages.mk(tail)))[. | (Canonical_stage & Canonical_stages)]
       }
     , .(_empty: .) { widen_sum(())[. | (Canonical_stage & Canonical_stages)] }
     )
@@ -10681,15 +10674,15 @@ fn canonical_signature_render(reversed_stages: Canonical_stages, result: Canonic
   )
 }
 
-labels { derived_hostfn: Runtime_hostfn & Type_dependencies };
+type { Derived_hostfn: Runtime_hostfn & Type_dependencies }
 
 type Derived_hostfn_result = Derived_hostfn | Diag;
 
-labels { canonical_signature: Canonical_render & Group_slots & Group_slots & Type_dependencies };
+type { Canonical_signature: Canonical_render & Group_slots & Group_slots & Type_dependencies }
 
 type Canonical_signature_result = Canonical_signature | Diag;
 
-labels { host_signature_state: Toks & Type_env & Canonical_stages };
+type { Host_signature_state: Toks & Type_env & Canonical_stages }
 
 fn finish_signature(
 , reversed_stages: Canonical_stages
@@ -10727,14 +10720,14 @@ fn finish_signature(
         }
       }
     , (
-      , {canonical_stages = reverse(Canonical_stages.get(reversed_stages))}
+      , Canonical_stages.mk(reverse(Canonical_stages.get(reversed_stages)))
       , group_slots_nil()
       , type_dependencies_nil()
       )
     );
   match(metadata) {
     .(reversed_groups: Group_slots, dependencies: Type_dependencies) {
-      {canonical_signature = (
+      Canonical_signature.mk((
       , canonical_signature_render(reversed_stages, canonical_forall(trailing_binders, result))
       , group_slots_reverse(reversed_groups)
       , runtime_groups_from_reversed_stages(
@@ -10745,7 +10738,7 @@ fn finish_signature(
           )
         )
       , type_dependencies_union(dependencies, canonical_type_dependencies(result))
-      )}
+      ))
     }
   }
 }
@@ -10761,10 +10754,10 @@ fn project_signature(id: Host_id, signature: Canonical_signature) -> Derived_hos
       match(render_canonical_type(render)) {
         (
         , .(rendered: String) {
-            widen_sum({derived_hostfn = (
+            widen_sum(Derived_hostfn.mk((
             , mk_runtime_hostfn(mk_hostfn(mk_host_fn(id, rendered), groups), runtime)
             , dependencies
-            )})[Derived_hostfn_result]
+            )))[Derived_hostfn_result]
           }
         , .(diag: Diag) { widen_sum(diag)[Derived_hostfn_result] }
         )
@@ -10894,17 +10887,17 @@ fn parse_source_signature(
                                             , canonical_unit()
                                             ))[Host_signature_state | Canonical_signature_result]
                                           } else if(sig_head_is(after_group, 91[I32])) {
-                                            widen_sum({host_signature_state = (
+                                            widen_sum(Host_signature_state.mk((
                                             , after_group
                                             , next_env
                                             , stages
-                                            )})[Host_signature_state | Canonical_signature_result]
+                                            )))[Host_signature_state | Canonical_signature_result]
                                           } else if(sig_head_is(after_group, 40[I32])) {
-                                            widen_sum({host_signature_state = (
+                                            widen_sum(Host_signature_state.mk((
                                             , after_group
                                             , next_env
                                             , stages
-                                            )})[Host_signature_state | Canonical_signature_result]
+                                            )))[Host_signature_state | Canonical_signature_result]
                                           } else {
                                             widen_sum(signature_diag(
                                             , subject
@@ -10974,7 +10967,7 @@ fn parse_source_signature(
         }
       }
     }
-  , {host_signature_state = (host_header_tokens(header), initial_env, canonical_stages_nil())}
+  , Host_signature_state.mk((host_header_tokens(header), initial_env, canonical_stages_nil()))
   )
 }
 
@@ -10997,7 +10990,7 @@ fn derive_hostfn_header(modules: Modules, types: Host_types, module: Module, hea
   }
 }
 
-labels { source_hostfn_search: Host_headers & (. | (Runtime_hostfn & Type_dependencies)) };
+type { Source_hostfn_search: Host_headers & (. | (Runtime_hostfn & Type_dependencies)) }
 
 fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Module, name: String) -> Derived_hostfn_result {
   let id = mk_host_id(module_name(module), name);
@@ -11036,7 +11029,7 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
                                           , prior_dependencies
                                           , dependencies
                                           )) {
-                                            widen_sum({source_hostfn_search = (rest, found)})[| Source_hostfn_search
+                                            widen_sum(Source_hostfn_search.mk((rest, found)))[| Source_hostfn_search
                                             | Derived_hostfn_result]
                                           } else {
                                             widen_sum(conflicting_host_function(id))[| Source_hostfn_search
@@ -11056,11 +11049,11 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
                                     }
                                   }
                                 , .(_none: .) {
-                                    widen_sum({source_hostfn_search = (
+                                    widen_sum(Source_hostfn_search.mk((
                                     , rest
                                     , widen_sum((runtime_hostfn, dependencies))[| .
                                       | (Runtime_hostfn & Type_dependencies)]
-                                    )})[Source_hostfn_search | Derived_hostfn_result]
+                                    )))[Source_hostfn_search | Derived_hostfn_result]
                                   }
                                 )
                               }
@@ -11073,11 +11066,11 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
                       )
                     }
                   } else {
-                    widen_sum({source_hostfn_search = (rest, found)})[| Source_hostfn_search
+                    widen_sum(Source_hostfn_search.mk((rest, found)))[| Source_hostfn_search
                     | Derived_hostfn_result]
                   }
                 } else {
-                  widen_sum({source_hostfn_search = (rest, found)})[| Source_hostfn_search
+                  widen_sum(Source_hostfn_search.mk((rest, found)))[| Source_hostfn_search
                   | Derived_hostfn_result]
                 }
               }
@@ -11085,7 +11078,7 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
                 match(found) {
                   (
                   , .(runtime_hostfn: Runtime_hostfn, dependencies: Type_dependencies) {
-                      widen_sum({derived_hostfn = (runtime_hostfn, dependencies)})[| Source_hostfn_search
+                      widen_sum(Derived_hostfn.mk((runtime_hostfn, dependencies)))[| Source_hostfn_search
                       | Derived_hostfn_result]
                     }
                   , .(_missing: .) {
@@ -11102,10 +11095,10 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
         }
       }
     }
-  , {source_hostfn_search = (
+  , Source_hostfn_search.mk((
     , module_host_headers(module)
     , widen_sum(())[. | (Runtime_hostfn & Type_dependencies)]
-    )}
+    ))
   )
 }
 
@@ -11193,7 +11186,7 @@ fn direct_host_type_at(context: Type_context, owner: String, name: String) -> Di
   }
 }
 
-labels { hostfn_selection: Runtime_hostfns & Host_types };
+type { Hostfn_selection: Runtime_hostfns & Host_types }
 
 type Hostfn_selection_result = Hostfn_selection | Diag;
 
@@ -11205,14 +11198,14 @@ fn selection_add(
   match(Hostfn_selection.get(selection)) {
     .(hostfns: Runtime_hostfns, selected_types: Host_types) {
       let hostfn = runtime_hostfn_public(runtime_hostfn);
-      {hostfn_selection = (
+      Hostfn_selection.mk((
       , if(runtime_hostfns_has(hostfns, hostfn_descriptor(hostfn))) {
           hostfns
         } else {
           runtime_hostfns_cons(runtime_hostfn, hostfns)
         }
       , host_types_union_exact(selected_types, dependencies)
-      )}
+      ))
     }
   }
 }
@@ -11273,7 +11266,7 @@ fn missing_import_item_diag(consumer: String, name: String, provider: String) ->
   ))
 }
 
-labels { imports_valid: . };
+type { Imports_valid: . }
 
 type Imports_validation = Imports_valid | Diag;
 
@@ -11446,7 +11439,7 @@ fn validate_module_imports(module: Module, modules: Modules) -> Imports_validati
               }
             }
           }
-        , .(_empty: .) { widen_sum({imports_valid=})[Imports | Imports_validation] }
+        , .(_empty: .) { widen_sum(Imports_valid.mk(()))[Imports | Imports_validation] }
         )
       }
     }
@@ -11470,7 +11463,7 @@ fn validate_module_alias_targets(module: Module, modules: Modules) -> Imports_va
               )
             }
           }
-        , .(_empty: .) { widen_sum({imports_valid=})[Aliases | Imports_validation] }
+        , .(_empty: .) { widen_sum(Imports_valid.mk(()))[Aliases | Imports_validation] }
         )
       }
     }
@@ -11500,7 +11493,7 @@ fn validate_package_imports(modules: Modules) -> Imports_validation {
               )
             }
           }
-        , .(_empty: .) { widen_sum({imports_valid=})[Modules | Imports_validation] }
+        , .(_empty: .) { widen_sum(Imports_valid.mk(()))[Modules | Imports_validation] }
         )
       }
     }
@@ -11759,7 +11752,7 @@ fn validate_module_value_binding_origins(module: Module, index: Value_binding_or
                     match(add_module_alias_origins(consumer, module_aliases(module), with_imports)) {
                       (
                       , .(_valid: Value_binding_origins) {
-                          widen_sum({imports_valid=})[Imports_validation]
+                          widen_sum(Imports_valid.mk(()))[Imports_validation]
                         }
                       , .(diag: Diag) { widen_sum(diag)[Imports_validation] }
                       )
@@ -11794,7 +11787,7 @@ fn validate_package_value_binding_origins(modules: Modules) -> Imports_validatio
                     )
                   }
                 }
-              , .(_empty: .) { widen_sum({imports_valid=})[Modules | Imports_validation] }
+              , .(_empty: .) { widen_sum(Imports_valid.mk(()))[Modules | Imports_validation] }
               )
             }
           }
@@ -11898,7 +11891,7 @@ fn derive_package_runtime_hostfns(modules: Modules, types: Host_types) -> Hostfn
         }
       }
     }
-  , (modules, {hostfn_selection = (runtime_hostfns_nil(), host_types_nil())})
+  , (modules, Hostfn_selection.mk((runtime_hostfns_nil(), host_types_nil())))
   )
 }
 
@@ -12146,7 +12139,7 @@ fn validate_bridge_type_dependencies(
   }
 }
 
-labels { contract_selection: Host_types & Host_fn_bindings };
+type { Contract_selection: Host_types & Host_fn_bindings }
 
 type Contract_selection_result = Contract_selection | Diag;
 
@@ -12248,7 +12241,7 @@ fn select_bridge_module_contract(
                 }
               }
             , .(_empty: .) {
-                widen_sum({contract_selection = (selected_types, selected_functions)})[| (& Host_headers
+                widen_sum(Contract_selection.mk((selected_types, selected_functions)))[| (& Host_headers
                 & Host_types
                 & Host_fn_bindings)
                 | Contract_selection_result]
@@ -12448,7 +12441,7 @@ fn drop_colon(ts: Toks) -> Toks {
 
 /// Wraps a group copy's `(reversed-copied, remaining-tokens,
 /// top-level-item-count)`.
-labels { group_copy: Toks & Toks & I32 };
+type { Group_copy: Toks & Toks & I32 }
 
 // Copy one balanced `open … close` group (inclusive) onto the reversed
 // accumulator. Repeated top-level commas do not create empty items.
@@ -12492,7 +12485,7 @@ fn copy_group_run(ts: Toks, open: I32, close: I32, acc0: Toks) -> Toks & Toks & 
                     depth
                   };
                 if(eq_i32(d1, 0[I32])) {
-                  widen_sum({group_copy = (toks_cons(t, p, acc), (rest, item_count1))})[| (& Toks
+                  widen_sum(Group_copy.mk((toks_cons(t, p, acc), (rest, item_count1))))[| (& Toks
                   & I32
                   & Toks
                   & I32
@@ -12508,7 +12501,7 @@ fn copy_group_run(ts: Toks, open: I32, close: I32, acc0: Toks) -> Toks & Toks & 
                 }
               }
             , .(_e: .) {
-                widen_sum({group_copy = (acc, (cur, item_count))})[| (Toks & I32 & Toks & I32 & Bool)
+                widen_sum(Group_copy.mk((acc, (cur, item_count))))[| (Toks & I32 & Toks & I32 & Bool)
                 | Group_copy]
               }
             )
@@ -12524,7 +12517,7 @@ fn copy_group_run(ts: Toks, open: I32, close: I32, acc0: Toks) -> Toks & Toks & 
 
 /// Wraps the universal-run split's `(universal-run, remaining-tokens,
 /// binder-count, valid)`.
-labels { uni_split: Toks & Toks & I32 & Bool };
+type { Uni_split: Toks & Toks & I32 & Bool }
 
 // Copy the leading `[...]` binder runs verbatim; the remainder starts at
 // the existential runs or the `:`.
@@ -12540,7 +12533,7 @@ fn take_binder_runs(header: Toks) -> Toks & Toks & I32 & Bool {
                   widen_sum((after, (acc1, add_i32(count, group_count))))[| (Toks & Toks & I32)
                   | Uni_split]
                 } else {
-                  widen_sum({uni_split = (toks_rev(acc), (cur, (count, .f[Bool])))})[| (& Toks
+                  widen_sum(Uni_split.mk((toks_rev(acc), (cur, (count, .f[Bool])))))[| (& Toks
                   & Toks
                   & I32)
                   | Uni_split]
@@ -12548,7 +12541,7 @@ fn take_binder_runs(header: Toks) -> Toks & Toks & I32 & Bool {
               }
             }
           } else {
-            widen_sum({uni_split = (toks_rev(acc), (cur, (count, .t[Bool])))})[| (Toks & Toks & I32)
+            widen_sum(Uni_split.mk((toks_rev(acc), (cur, (count, .t[Bool])))))[| (Toks & Toks & I32)
             | Uni_split]
           }
         }
@@ -12564,7 +12557,7 @@ fn take_binder_runs(header: Toks) -> Toks & Toks & I32 & Bool {
 // supplied public value-group sizes. Binder and balanced-group scanners own
 // each public stage boundary. Once the public inventory is exhausted, the
 // nonempty result suffix stays opaque.
-labels { adapter_runtime_groups_state: Toks & Group_slots & Group_slots };
+type { Adapter_runtime_groups_state: Toks & Group_slots & Group_slots }
 
 type Adapter_runtime_groups_step = Adapter_runtime_groups_state | Group_slots | Diag;
 
@@ -12602,7 +12595,7 @@ fn adapter_runtime_groups(binding: Host_fn_binding) -> Group_slots | Diag {
                                           if(toks_empty(after_arrow)) {
                                             adapter_runtime_groups_bad(host_fn_id(descriptor))
                                           } else {
-                                            widen_sum({adapter_runtime_groups_state = (
+                                            widen_sum(Adapter_runtime_groups_state.mk((
                                             , after_arrow
                                             , (
                                               , rest
@@ -12614,7 +12607,7 @@ fn adapter_runtime_groups(binding: Host_fn_binding) -> Group_slots | Diag {
                                                   )
                                                 )
                                               )
-                                            )})[Adapter_runtime_groups_step]
+                                            )))[Adapter_runtime_groups_step]
                                           }
                                         }
                                       , .(_missing_arrow: .) {
@@ -12645,7 +12638,7 @@ fn adapter_runtime_groups(binding: Host_fn_binding) -> Group_slots | Diag {
                 }
               }
             }
-          , {adapter_runtime_groups_state = (signature, (public_groups, group_slots_nil()))}
+          , Adapter_runtime_groups_state.mk((signature, (public_groups, group_slots_nil())))
           )
         }
       , .(_lex_error: Lex_err) {
@@ -12697,7 +12690,7 @@ fn adapter_hostfn_value(adapter: Host_adapter, descriptor: Host_fn) -> Value | D
 }
 
 /// Wraps the existential-names split `(names, remaining-tokens)`.
-labels { exi_split: Pnames & Toks };
+type { Exi_split: Pnames & Toks }
 
 // Collect the `<Name>` runs' binder names; the remainder starts at `:`.
 fn take_existential_names(ts0: Toks) -> Pnames & Toks {
@@ -12717,22 +12710,22 @@ fn take_existential_names(ts0: Toks) -> Pnames & Toks {
                         | Exi_split]
                       }
                     , .(_n: Tk_num) {
-                        widen_sum({exi_split = (acc, cur)})[(Toks & Pnames) | Exi_split]
+                        widen_sum(Exi_split.mk((acc, cur)))[(Toks & Pnames) | Exi_split]
                       }
                     , .(_st: Tk_str) {
-                        widen_sum({exi_split = (acc, cur)})[(Toks & Pnames) | Exi_split]
+                        widen_sum(Exi_split.mk((acc, cur)))[(Toks & Pnames) | Exi_split]
                       }
                     , .(_pc: Tk_punct) {
-                        widen_sum({exi_split = (acc, cur)})[(Toks & Pnames) | Exi_split]
+                        widen_sum(Exi_split.mk((acc, cur)))[(Toks & Pnames) | Exi_split]
                       }
                     )
                   }
                 }
-              , .(_e: .) { widen_sum({exi_split = (acc, cur)})[(Toks & Pnames) | Exi_split] }
+              , .(_e: .) { widen_sum(Exi_split.mk((acc, cur)))[(Toks & Pnames) | Exi_split] }
               )
             }
           } else {
-            widen_sum({exi_split = (acc, cur)})[(Toks & Pnames) | Exi_split]
+            widen_sum(Exi_split.mk((acc, cur)))[(Toks & Pnames) | Exi_split]
           }
         }
       }
@@ -12751,7 +12744,7 @@ fn existential_source_binders(names: Pnames) -> Binders {
           match(un_pnames(remaining)) {
             (
             , .(name: String, rest: Pnames) {
-                widen_sum((rest, binders_cons({binder_info = (name, 0[I32])}, reversed)))[| (& Pnames
+                widen_sum((rest, binders_cons(Binder_info.mk((name, 0[I32])), reversed)))[| (& Pnames
                 & Binders)
                 | Binders]
               }
@@ -13006,10 +12999,10 @@ fn build_member_signature(
                         , subject
                         , o
                         , source_universals
-                        , {canonical_binders = append(
+                        , Canonical_binders.mk(append(
                           , Canonical_binders.get(universals)
                           , Canonical_binders.get(existential_binders)
-                          )}
+                          ))
                         , payload_tokens
                         , payload_env
                         )
@@ -13066,36 +13059,34 @@ fn build_alias_signature(
 // =====================================================================
 // The export listing — the surface's names and signatures
 // =====================================================================
-fn mk_export_info(name: String, sig: String) -> Export_info {
-  Export_info.seal_export_info((name, sig))
-}
+fn mk_export_info(name: String, sig: String) -> Export_info { Export_info.mk((name, sig)) }
 
 /// The entry's module-qualified name.
 pub fn export_info_name(e: Export_info) -> String {
-  match(Export_info.open_export_info(e)) {
+  match(Export_info.get(e)) {
     .(n: String, _s: String) { n }
   }
 }
 
 /// The entry's canonical signature rendering.
 pub fn export_info_sig(e: Export_info) -> String {
-  match(Export_info.open_export_info(e)) {
+  match(Export_info.get(e)) {
     .(_n: String, s: String) { s }
   }
 }
 
-fn export_infos_nil() -> Export_infos { Export_infos.seal_export_infos(nil[Export_info]) }
+fn export_infos_nil() -> Export_infos { Export_infos.mk(nil[Export_info]) }
 
 fn export_infos_cons(head: Export_info, tail: Export_infos) -> Export_infos {
-  Export_infos.seal_export_infos(cons(head, Export_infos.open_export_infos(tail)))
+  Export_infos.mk(cons(head, Export_infos.get(tail)))
 }
 
 /// One-step destructor on an export listing.
 pub fn un_export_infos(es: Export_infos) -> . | (Export_info & Export_infos) {
-  match(uncons(Export_infos.open_export_infos(es))) {
+  match(uncons(Export_infos.get(es))) {
     (
     , .(h: Export_info, t: List[Export_info]) {
-        widen_sum((h, Export_infos.seal_export_infos(t)))[. | (Export_info & Export_infos)]
+        widen_sum((h, Export_infos.mk(t)))[. | (Export_info & Export_infos)]
       }
     , .(_e: .) { widen_sum(())[. | (Export_info & Export_infos)] }
     )
@@ -13216,7 +13207,7 @@ fn export_owner_missing(owner: String) -> Diag {
   ))
 }
 
-labels { fn_export_rows_state: Gdecls & Export_infos };
+type { Fn_export_rows_state: Gdecls & Export_infos }
 
 type Fn_export_rows_step = Fn_export_rows_state | Export_infos | Diag;
 
@@ -13249,13 +13240,13 @@ fn canonical_fn_export_rows(modules: Modules, types: Host_types, bridge: Bridge,
                         )) {
                           (
                           , .(signature: String) {
-                              widen_sum({fn_export_rows_state = (
+                              widen_sum(Fn_export_rows_state.mk((
                               , rest
                               , export_infos_cons(
                                 , mk_export_info(gdecl_qualified(g), signature)
                                 , acc
                                 )
-                              )})[Fn_export_rows_step]
+                              )))[Fn_export_rows_step]
                             }
                           , .(diag: Diag) { widen_sum(diag)[Fn_export_rows_step] }
                           )
@@ -13267,7 +13258,7 @@ fn canonical_fn_export_rows(modules: Modules, types: Host_types, bridge: Bridge,
                     )
                   }
                 } else {
-                  widen_sum({fn_export_rows_state = (rest, acc)})[Fn_export_rows_step]
+                  widen_sum(Fn_export_rows_state.mk((rest, acc)))[Fn_export_rows_step]
                 }
               }
             , .(_empty: .) { widen_sum(acc)[Fn_export_rows_step] }
@@ -13276,7 +13267,7 @@ fn canonical_fn_export_rows(modules: Modules, types: Host_types, bridge: Bridge,
         }
       }
     }
-  , {fn_export_rows_state = (gs, export_infos_nil())}
+  , Fn_export_rows_state.mk((gs, export_infos_nil()))
   )
 }
 
@@ -13342,7 +13333,7 @@ fn canonical_member_row(
   }
 }
 
-labels { member_export_rows_state: Omembers & Export_infos };
+type { Member_export_rows_state: Omembers & Export_infos }
 
 type Member_export_rows_step = Member_export_rows_state | Export_infos | Diag;
 
@@ -13368,7 +13359,7 @@ fn canonical_member_export_rows(
                       match(canonical_member_row(modules, types, bridge, o, .t[Bool], with_ctor)) {
                         (
                         , .(with_projector: Export_infos) {
-                            widen_sum({member_export_rows_state = (rest, with_projector)})[Member_export_rows_step]
+                            widen_sum(Member_export_rows_state.mk((rest, with_projector)))[Member_export_rows_step]
                           }
                         , .(diag: Diag) { widen_sum(diag)[Member_export_rows_step] }
                         )
@@ -13384,7 +13375,7 @@ fn canonical_member_export_rows(
         }
       }
     }
-  , {member_export_rows_state = (members, fn_rows)}
+  , Member_export_rows_state.mk((members, fn_rows))
   )
 }
 
@@ -13578,7 +13569,7 @@ fn param_kinds_exact_eq(left: Param_kinds, right: Param_kinds) -> Bool {
   if(param_kinds_prefix_eq(left, right)) { param_kinds_prefix_eq(right, left) } else { .f[Bool] }
 }
 
-labels { identity_alias_member: Origin_terminal & Member_decl };
+type { Identity_alias_member: Origin_terminal & Member_decl }
 
 fn identity_alias_member_owner(resolved: Identity_alias_member) -> String {
   match(Identity_alias_member.get(resolved)) {
@@ -13600,7 +13591,7 @@ fn identity_alias_member_terminal(resolved: Identity_alias_member) -> Origin_ter
   }
 }
 
-labels { identity_alias_resolution: Identity_alias_member & Alias_refs };
+type { Identity_alias_resolution: Identity_alias_member & Alias_refs }
 
 // The terminal alias catalog reuses the loader's artifact-local exact-key
 // trie. Catalog construction below resolves every alias once and member lookup
@@ -13709,7 +13700,7 @@ fn identity_alias_terminal_member(terminal: Origin_terminal) -> . | Identity_ali
         )) {
           (
           , .(member: Member_decl) {
-              widen_sum({identity_alias_member = (terminal, member)})[. | Identity_alias_member]
+              widen_sum(Identity_alias_member.mk((terminal, member)))[. | Identity_alias_member]
             }
           , .(_missing: .) { widen_sum(())[. | Identity_alias_member] }
           )
@@ -13767,7 +13758,7 @@ fn identity_alias_full_resolution(
               (
               , .(member: Identity_alias_member) {
                   (
-                  , widen_sum({identity_alias_resolution = (member, refs)})[| .
+                  , widen_sum(Identity_alias_resolution.mk((member, refs)))[| .
                     | Identity_alias_resolution]
                   , refs
                   )
@@ -13803,7 +13794,7 @@ fn identity_alias_terminal_resolution(
   }
 }
 
-labels { identity_alias_build_pair: Identity_alias_catalog & Alias_refs };
+type { Identity_alias_build_pair: Identity_alias_catalog & Alias_refs }
 
 fn identity_alias_catalog_for_module(
 , owner: Module
@@ -13864,7 +13855,7 @@ fn identity_alias_catalog_for_module(
                 }
               }
             , .(_empty: .) {
-                widen_sum({identity_alias_build_pair = (catalog, processed)})[| (& Tyaliases
+                widen_sum(Identity_alias_build_pair.mk((catalog, processed)))[| (& Tyaliases
                 & Identity_alias_catalog
                 & Alias_refs)
                 | Identity_alias_build_pair]
@@ -13909,7 +13900,7 @@ fn identity_alias_catalog_for_modules(
                   }
                 }
               , .(_empty: .) {
-                  widen_sum({identity_alias_build_pair = (catalog, processed)})[| (& Modules
+                  widen_sum(Identity_alias_build_pair.mk((catalog, processed)))[| (& Modules
                   & Identity_alias_catalog
                   & Alias_refs)
                   | Identity_alias_build_pair]
@@ -14407,7 +14398,7 @@ fn validate_visible_type_binding_origins(module: Module, index: Exact_type_index
               )) {
                 (
                 , .(_valid: Validated_type_spellings) {
-                    widen_sum({imports_valid=})[Imports_validation]
+                    widen_sum(Imports_valid.mk(()))[Imports_validation]
                   }
                 , .(diag: Diag) { widen_sum(diag)[Imports_validation] }
                 )
@@ -14621,13 +14612,13 @@ fn ambiguous_export_diag(name: String, candidates: Pnames) -> Diag {
 //
 // `instantiate` presents a loaded image at the host-expected existential
 // interface. `dyn_load_prime` provides one **universal** such interface,
-// `Loaded = exists P. Surface(P)`: the representation `P` of a loaded
+// `Loaded = exists P. Surface[P]`: the representation `P` of a loaded
 // guest value is hidden behind the nominal boundary, and the surface is a
 // **record** of the operations a host needs to use a `P` — one labeled
-// field per operation, accessed by name (`surf.?{lookup}`; see
+// field per operation, accessed by name (`surf.>select { Lookup.get[P] }`; see
 // `docs/guides/products.md`). Row polymorphism lets a host
-// helper demand only the fields it uses: `fn f[P, R](surf: Lookup(P) &
-// Apply(P) & R)`.
+// helper demand only the fields it uses: `fn f[P][R](surf: Lookup[P] &
+// Apply[P] & R)`.
 //
 // Every fallible operation returns value-or-`Diag`, so a failure says
 // what went wrong — the absent or ambiguous export by name, the stuck
@@ -14647,66 +14638,66 @@ fn ambiguous_export_diag(name: String, candidates: Pnames) -> Diag {
 // runtime `P` IS `Value` (the universal representation), so the pack is a
 // no-op and the surface entries are the loader's own closures.
 /// Defines the lookup operation: the named export's already-evaluated value.
-pub labels { lookup[P]: String -> (P | Diag) };
+pub type { Lookup[P]: String -> (P | Diag) }
 
 /// Defines the apply operation: apply a loaded closure to a loaded value.
-pub labels { apply[P]: (P & P) -> (P | Diag) };
+pub type { Apply[P]: (P & P) -> (P | Diag) }
 
 /// Defines the explicit-budget apply operation.
-pub labels { apply_fuel[P]: (P & P & I32) -> (P | Diag) };
+pub type { Apply_fuel[P]: (P & P & I32) -> (P | Diag) }
 
 /// Defines the unit value (what a zero-param export is applied to).
-pub labels { unit_in[P]: P };
+pub type { Unit_in[P]: P }
 
 /// Defines the host-i32 in-marshal.
-pub labels { i32_in[P]: I32 -> P };
+pub type { I32_in[P]: I32 -> P }
 
 /// Defines the host-i32 out-marshal.
-pub labels { i32_out[P]: P -> (I32 | Diag) };
+pub type { I32_out[P]: P -> (I32 | Diag) }
 
 /// Defines the host-f64 in-marshal.
-pub labels { f64_in[P]: F64 -> P };
+pub type { F64_in[P]: F64 -> P }
 
 /// Defines the host-f64 out-marshal.
-pub labels { f64_out[P]: P -> (F64 | Diag) };
+pub type { F64_out[P]: P -> (F64 | Diag) }
 
 /// Defines the host-string in-marshal.
-pub labels { str_in[P]: String -> P };
+pub type { Str_in[P]: String -> P }
 
 /// Defines the host-string out-marshal.
-pub labels { str_out[P]: P -> (String | Diag) };
+pub type { Str_out[P]: P -> (String | Diag) }
 
 /// Defines the host-bool in-marshal.
-pub labels { bool_in[P]: Bool -> P };
+pub type { Bool_in[P]: Bool -> P }
 
 /// Defines the host-bool out-marshal.
-pub labels { bool_out[P]: P -> (Bool | Diag) };
+pub type { Bool_out[P]: P -> (Bool | Diag) }
 
 /// Defines the product constructor (fold multi-param arguments with it).
-pub labels { pair_in[P]: (P & P) -> P };
+pub type { Pair_in[P]: (P & P) -> P }
 
 /// Defines the product decomposition.
-pub labels { pair_out[P]: P -> ((P & P) | Diag) };
+pub type { Pair_out[P]: P -> ((P & P) | Diag) }
 
 /// Defines the left sum injection.
-pub labels { left_in[P]: P -> P };
+pub type { Left_in[P]: P -> P }
 
 /// Defines the right sum injection.
-pub labels { right_in[P]: P -> P };
+pub type { Right_in[P]: P -> P }
 
 /// Defines the sum-arm test: whether a sum value is the left injection.
-pub labels { sum_is_left[P]: P -> (Bool | Diag) };
+pub type { Sum_is_left[P]: P -> (Bool | Diag) }
 
 /// Defines the sum-payload projection.
-pub labels { sum_payload[P]: P -> (P | Diag) };
+pub type { Sum_payload[P]: P -> (P | Diag) }
 
 /// Defines the host-capability injection: mints a guest-callable value from
 /// an exact descriptor offered by the adapter and its separate public group
 /// inventory. A missing or mismatched descriptor is diagnosed immediately.
-pub labels { hostfn_in[P]: Host_fn -> (P | Diag) };
+pub type { Hostfn_in[P]: Host_fn -> (P | Diag) }
 
 /// Defines the surface's export listing (names + canonical signatures).
-pub labels { exports: Export_infos };
+pub type { Exports: Export_infos }
 
 /// The record of operations a host performs over a loaded guest value at
 /// the hidden type `P` — one labeled field per operation.
@@ -14735,7 +14726,7 @@ pub type Surface[P] =
 
 /// A loaded, instantiated package: an existential hiding the representation
 /// `P` (the existential witness the host never sees) behind the surface record.
-pub labels { loaded <P> : Surface[P] };
+pub type { Loaded <P>: Surface[P] }
 
 // =====================================================================
 // Binding the chain once — the instantiation environment
@@ -14842,7 +14833,7 @@ fn eval_chain(
 // The concrete surface over `Value`
 // =====================================================================
 //
-// These closures realize `Surface(Value)`; packing them as `Surface(P)`
+// These closures realize `Surface(Value)`; packing them as `Surface[P]`
 // is the no-op existential pack. The host capabilities and the bound
 // environment are captured, so an export's host effects dispatch through
 // the capabilities the host supplied at `instantiate`.
@@ -15040,39 +15031,41 @@ fn value_surface(
 , im: Image
 , env: Env
 ) -> Surface[Value] {
-  {
-  , lookup = .(name: String) -> Value | Diag { env_export(im, env, name) }
-  , apply = .(pair: Value & Value) -> Value | Diag {
+  record {
+    Lookup.mk(.(name: String) -> Value | Diag { env_export(im, env, name) });
+    Apply.mk(.(pair: Value & Value) -> Value | Diag {
       match(pair) {
         .(f: Value, a: Value) { apply_diag(call, make_lit, test_bool, f, a, default_fuel()) }
       }
-    }
-  , apply_fuel = .(triple: Value & Value & I32) -> Value | Diag {
+    });
+    Apply_fuel.mk(.(triple: Value & Value & I32) -> Value | Diag {
       match(triple) {
         .(f: Value, a: Value, fuel: I32) { apply_diag(call, make_lit, test_bool, f, a, fuel) }
       }
-    }
-  , unit_in = vunit()
-  , i32_in = .(n: I32) -> Value { vhost(scalar_of_i32(n)) }
-  , i32_out = .(v: Value) -> I32 | Diag { surf_i32_out(v) }
-  , f64_in = .(n: F64) -> Value { vhost(scalar_of_f64(n)) }
-  , f64_out = .(v: Value) -> F64 | Diag { surf_f64_out(v) }
-  , str_in = .(s: String) -> Value { vhost(scalar_of_str(s)) }
-  , str_out = .(v: Value) -> String | Diag { surf_str_out(v) }
-  , bool_in = .(b: Bool) -> Value { vhost(scalar_of_bool(b)) }
-  , bool_out = .(v: Value) -> Bool | Diag { surf_bool_out(v) }
-  , pair_in = .(prod: Value & Value) -> Value {
+    });
+    Unit_in.mk(vunit());
+    I32_in.mk(.(n: I32) -> Value { vhost(scalar_of_i32(n)) });
+    I32_out.mk(.(v: Value) -> I32 | Diag { surf_i32_out(v) });
+    F64_in.mk(.(n: F64) -> Value { vhost(scalar_of_f64(n)) });
+    F64_out.mk(.(v: Value) -> F64 | Diag { surf_f64_out(v) });
+    Str_in.mk(.(s: String) -> Value { vhost(scalar_of_str(s)) });
+    Str_out.mk(.(v: Value) -> String | Diag { surf_str_out(v) });
+    Bool_in.mk(.(b: Bool) -> Value { vhost(scalar_of_bool(b)) });
+    Bool_out.mk(.(v: Value) -> Bool | Diag { surf_bool_out(v) });
+    Pair_in.mk(.(prod: Value & Value) -> Value {
       match(prod) {
         .(a: Value, b: Value) { vproduct(a, b) }
       }
-    }
-  , pair_out = .(v: Value) -> (Value & Value) | Diag { surf_pair_out(v) }
-  , left_in = .(v: Value) -> Value { vleft(v) }
-  , right_in = .(v: Value) -> Value { vright(v) }
-  , sum_is_left = .(v: Value) -> Bool | Diag { surf_sum_is_left(v) }
-  , sum_payload = .(v: Value) -> Value | Diag { surf_sum_payload(v) }
-  , hostfn_in = .(descriptor: Host_fn) -> Value | Diag { adapter_hostfn_value(adapter, descriptor) }
-  , exports = image_exports(im)
+    });
+    Pair_out.mk(.(v: Value) -> (Value & Value) | Diag { surf_pair_out(v) });
+    Left_in.mk(.(v: Value) -> Value { vleft(v) });
+    Right_in.mk(.(v: Value) -> Value { vright(v) });
+    Sum_is_left.mk(.(v: Value) -> Bool | Diag { surf_sum_is_left(v) });
+    Sum_payload.mk(.(v: Value) -> Value | Diag { surf_sum_payload(v) });
+    Hostfn_in.mk(.(descriptor: Host_fn) -> Value | Diag {
+      adapter_hostfn_value(adapter, descriptor)
+    });
+    Exports.mk(image_exports(im))
   }
 }
 
@@ -15145,31 +15138,31 @@ pub fn instantiate(
 // the bodies stay trusted exactly as a compiled artifact's are.
 /// Defines one expected export entry: its (possibly qualified) name and
 /// the canonical signature text the host expects.
-pub labels { expect: String & String };
+pub type { Expect: String & String }
 
 /// Builds an expected-export entry, e.g.
 /// `mk_expect("pid/controller.step", "(n{pid.State} & h{host.F64}) -> n{pid.State}")`.
-pub fn mk_expect(name: String, sig: String) -> Expect { {expect = (name, sig)} }
+pub fn mk_expect(name: String, sig: String) -> Expect { Expect.mk((name, sig)) }
 
 /// One-step destructor on an expected-export entry.
 pub fn un_expect(e: Expect) -> String & String { Expect.get(e) }
 
 /// A host contract: a cons-list of the exported entries the host expects.
-pub labels { contract: List[Expect] };
+pub type { Contract: List[Expect] }
 
 /// The empty contract.
-pub fn contract_nil() -> Contract { {contract = nil[Expect]} }
+pub fn contract_nil() -> Contract { Contract.mk(nil[Expect]) }
 
 /// Prepends one expected entry to a contract.
 pub fn contract_cons(head: Expect, tail: Contract) -> Contract {
-  {contract = cons(head, Contract.get(tail))}
+  Contract.mk(cons(head, Contract.get(tail)))
 }
 
 /// One-step destructor on a contract.
 pub fn un_contract(c: Contract) -> . | (Expect & Contract) {
   match(uncons(Contract.get(c))) {
     (
-    , .(h: Expect, t: List[Expect]) { widen_sum((h, {contract = t}))[. | (Expect & Contract)] }
+    , .(h: Expect, t: List[Expect]) { widen_sum((h, Contract.mk(t)))[. | (Expect & Contract)] }
     , .(_e: .) { widen_sum(())[. | (Expect & Contract)] }
     )
   }

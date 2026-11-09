@@ -1,0 +1,10 @@
+module lar/main;
+
+import lar(I32, String);
+import macros/row_macros(macro select);
+
+type { Foo: I32; Bar: String }
+
+fn bad(row: Foo & Bar) -> String & I32 {
+  row.>select { Foo.get; Bar.get }
+}

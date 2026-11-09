@@ -3,15 +3,13 @@
 //! Given a (URI, position, includeDeclaration) from the client:
 //!
 //! 1. Resolve the URI to a module path and find the typed binder at the
-//!    cursor. Surface labels use their generated nominal identity, so local
-//!    declarations and package-wide uses share the same set.
+//!    cursor. Ordinary nominal declarations and package-wide type uses
+//!    share their exact type identity.
 //! 2. Walk every file in the
 //!    package's position index for entries that
 //!    resolve to the "same" binder (matched by structural equality of
 //!    the [`ResolvedBinder`] key fields).
-//! 3. If a live label overlay has no typed position yet, fall back to its
-//!    module-local declaration/reuse index.
-//! 4. Return the matching spans as `Location[]`, sorted stably by
+//! 3. Return the matching spans as `Location[]`, sorted stably by
 //!    file path then span start offset.
 //!
 //! **Binder equality.**
@@ -38,9 +36,7 @@ use lsp_types::{Location, Position, Range, Uri};
 
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::diagnostics::path_to_uri;
-use crate::lsp::label_reuse::{
-    LabelReuseSnapshot, snapshot_for, typed_label_positions_are_current,
-};
+use crate::lsp::live_syntax::{LiveSyntaxSnapshot, snapshot_for, typed_positions_are_current};
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::util::{smallest_containing_span, uri_to_canonical};
 use crate::pass::typecheck_full::ResolvedBinder;
@@ -49,14 +45,14 @@ use crate::span::Span;
 /// Handle one `textDocument/references` request.
 ///
 /// Returns `None` (→ JSON `null`) when the cursor isn't on a
-/// resolvable binder or label reuse; returns `Some([])` when a binder is found
+/// resolvable binder; returns `Some([])` when a binder is found
 /// but no other references exist.
 pub fn handle_references(
     uri: &Uri,
     position: &Position,
     include_declaration: bool,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     package_root: &std::path::Path,
 ) -> Option<Vec<Location>> {
     let canonical = uri_to_canonical(uri)?;
@@ -95,76 +91,18 @@ pub fn handle_references(
         );
     }
 
-    let label_binding = syntax.index.and_then(|index| index.binding_at(byte_offset));
-    let typed_label_positions_are_current =
-        typed_label_positions_are_current(canonical.as_path(), byte_offset, analysis, syntax);
+    if !typed_positions_are_current(canonical.as_path(), analysis, syntax) {
+        return None;
+    }
 
-    // Find the binder at the cursor.
-    let cursor_entry = smallest_containing_span(
+    let (_, cursor_binder) = smallest_containing_span(
         byte_offset,
         analysis
             .position_index
             .binders_iter()
             .filter(|((mp, _), _)| mp == module_path)
             .map(|((_, span), binder)| (*span, binder)),
-    );
-    let cursor_binder = cursor_entry.map(|(_, binder)| binder);
-
-    // A live overlay may be newer than `analysis`. When its cursor is on a
-    // local label declaration/reuse, use a typed binder only if that binder
-    // names the same generated nominal the current surface spelling mints.
-    // Merely occupying the same byte range is not evidence that a stale
-    // position entry still denotes this label.
-    let cursor_binder = match (label_binding.as_ref(), cursor_binder) {
-        _ if !typed_label_positions_are_current => None,
-        (
-            Some(binding),
-            Some(
-                binder @ ResolvedBinder::Newtype {
-                    module_path: owner,
-                    name,
-                },
-            ),
-        ) if typed_label_positions_are_current
-            && owner == module_path
-            && name == &crate::ast::mint_label_newtype_name(&binding.name) =>
-        {
-            Some(binder)
-        }
-        (Some(_), _) => None,
-        (None, binder) => binder,
-    };
-
-    // A successful typed analysis gives every source label spelling its
-    // canonical generated-newtype identity, so declarations, local uses, and
-    // imported uses share one package-wide reference set. The local label
-    // index remains the fallback for a live overlay that has no matching typed
-    // position yet.
-    let Some(cursor_binder) = cursor_binder else {
-        let binding = label_binding?;
-        let locations = binding
-            .occurrences
-            .into_iter()
-            .filter(|span| include_declaration || *span != binding.declaration_span)
-            .map(|span| {
-                let lsp_range = line_index.to_range(span);
-                Location::new(
-                    uri.clone(),
-                    Range {
-                        start: Position {
-                            line: lsp_range.start.line,
-                            character: lsp_range.start.character,
-                        },
-                        end: Position {
-                            line: lsp_range.end.line,
-                            character: lsp_range.end.character,
-                        },
-                    },
-                )
-            })
-            .collect();
-        return Some(locations);
-    };
+    )?;
     // The cursor module qualifies local and type-parameter identities.
     let key = binder_key(cursor_binder, module_path);
     let declaration_site = analysis
@@ -203,9 +141,9 @@ pub fn handle_references(
         }
     }
 
-    // A generated label's constructor and projector share the label token
-    // with its generated nominal declaration. Their semantic declaration
-    // sites therefore cannot also occupy the one-binder-per-span position
+    // Implicit nominal members share their owner's declaration token.
+    // Their semantic declaration sites therefore cannot also occupy the
+    // one-binder-per-span position
     // map. Include that site when its source position is published by this
     // analysis shard; a declaration retained only for focused remote
     // goto-definition must not widen a focused references result.
@@ -552,10 +490,8 @@ mod tests {
         LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,
@@ -587,183 +523,54 @@ mod tests {
     }
 
     #[test]
-    fn references_distinguish_label_declaration_from_reuse() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
+    fn broken_live_overlay_does_not_authorize_stale_typed_references() {
+        let analyzed_source = "module pkg/main;\nfn f() -> . { run() }\n";
+        let live_source = format!("{analyzed_source}\"");
+        assert!(crate::pass::parser::parse_module_file(&live_source).is_err());
+        let start = analyzed_source.find("run").expect("ordinary reference") as u32;
         let analysis = make_analysis_refs(vec![(
             "pkg/main",
-            Span::new(0, 1),
-            ResolvedBinder::Intrinsic {
-                name: "__absurd__".to_owned(),
-            },
-            source,
-        )]);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-        let pos = Position {
-            line: 2,
-            character: 15,
-        };
-        let package_root = test_file_path("/tmp");
-
-        let with_declaration = handle_references(&uri, &pos, true, &analysis, None, &package_root)
-            .expect("label binding");
-        assert_eq!(with_declaration.len(), 2);
-        assert_eq!(with_declaration[0].range.start.line, 1);
-        assert_eq!(with_declaration[1].range.start.line, 2);
-
-        let references_only = handle_references(&uri, &pos, false, &analysis, None, &package_root)
-            .expect("label binding");
-        assert_eq!(references_only.len(), 1);
-        assert_eq!(references_only[0].range.start.line, 2);
-
-        let declaration_pos = Position {
-            line: 1,
-            character: 9,
-        };
-        let uses_only = handle_references(
-            &uri,
-            &declaration_pos,
-            false,
-            &analysis,
-            None,
-            &package_root,
-        )
-        .expect("label binding from its declaration");
-        assert_eq!(uses_only.len(), 1);
-        assert_eq!(uses_only[0].range.start.line, 2);
-    }
-
-    #[test]
-    fn shifted_live_label_overlay_rejects_same_identity_stale_typed_span() {
-        let analyzed_source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let live_source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = {  field: _, other: . };\n";
-        let stale_start = analyzed_source.rfind("field").expect("stale reuse marker") as u32;
-        let stale_span = Span::new(stale_start, stale_start + "field".len() as u32);
-        let analysis = make_analysis_refs(vec![(
-            "pkg/main",
-            stale_span,
-            ResolvedBinder::Newtype {
+            Span::new(start, start + 3),
+            ResolvedBinder::Fn {
                 module_path: "pkg/main".to_owned(),
-                name: crate::ast::mint_label_newtype_name("field"),
+                name: "run".to_owned(),
             },
             analyzed_source,
         )]);
-        let parsed = crate::pass::parser::parse(live_source).expect("parse live overlay");
-        let overlay_index =
-            crate::lsp::label_reuse::LabelReuseIndex::from_module(&parsed, live_source);
-        let overlay = LabelReuseSnapshot {
-            source: live_source,
-            index: Some(&overlay_index),
-        };
+        let cursor = LineIndex::new(analyzed_source).to_position(start);
         let uri = test_file_uri("/tmp/pkg/main.kio");
-        let live_start = live_source.rfind("field").expect("live reuse marker") as u32;
-        assert_eq!(live_start, stale_start + 1);
-        let cursor = LineIndex::new(live_source).to_position(live_start);
         let position = Position {
             line: cursor.line,
             character: cursor.character,
         };
-
-        let locations = handle_references(
+        let current = handle_references(
             &uri,
             &position,
             true,
             &analysis,
-            Some(overlay),
+            None,
             &test_file_path("/tmp"),
         )
-        .expect("the live label binding remains resolvable");
-
-        assert_eq!(locations.len(), 2);
-        assert_eq!(locations[0].range.start.line, 1);
-        assert_eq!(locations[1].range.start.line, 2);
-    }
-
-    #[test]
-    fn shifted_expression_label_overlay_never_uses_stale_typed_span() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { {field=()} }\n";
-        let live_source = "module pkg/main;\nfn f() -> . { { field=()} }\n";
-        let stale_start = analyzed_source.find("field").expect("stale label") as u32;
-        let stale_span = Span::new(stale_start, stale_start + "field".len() as u32);
-        let analysis = make_analysis_refs(vec![(
-            "pkg/main",
-            stale_span,
-            ResolvedBinder::Newtype {
-                module_path: "pkg/main".to_owned(),
-                name: crate::ast::mint_label_newtype_name("field"),
-            },
-            analyzed_source,
-        )]);
-        let parsed = crate::pass::parser::parse(live_source).expect("parse live overlay");
-        let overlay_index =
-            crate::lsp::label_reuse::LabelReuseIndex::from_module(&parsed, live_source);
-        let overlay = LabelReuseSnapshot {
-            source: live_source,
-            index: Some(&overlay_index),
+        .expect("the analyzed ordinary reference is indexed");
+        assert!(
+            !current.is_empty(),
+            "the current-source control must find the indexed reference"
+        );
+        let overlay = LiveSyntaxSnapshot {
+            source: &live_source,
+            parsed: false,
         };
-        let live_start = live_source.find("field").expect("live label") as u32;
-        assert_eq!(live_start, stale_start + 1);
-        let cursor = LineIndex::new(live_source).to_position(live_start);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-
         assert!(
             handle_references(
                 &uri,
-                &Position {
-                    line: cursor.line,
-                    character: cursor.character,
-                },
+                &position,
                 true,
                 &analysis,
                 Some(overlay),
-                &test_file_path("/tmp"),
+                &test_file_path("/tmp")
             )
             .is_none(),
-            "stale package-wide label facts must wait for fresh analysis"
-        );
-    }
-
-    #[test]
-    fn broken_live_overlay_never_uses_same_span_stale_label_identity() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { {field=()} }\n";
-        let live_source = "module pkg/main;\nfn f() -> . { {other=()} \n";
-        let label_start = analyzed_source.find("field").expect("analyzed label") as u32;
-        assert_eq!(
-            label_start,
-            live_source.find("other").expect("live label") as u32
-        );
-        let analysis = make_analysis_refs(vec![(
-            "pkg/main",
-            Span::new(label_start, label_start + "field".len() as u32),
-            ResolvedBinder::Newtype {
-                module_path: "pkg/main".to_owned(),
-                name: crate::ast::mint_label_newtype_name("field"),
-            },
-            analyzed_source,
-        )]);
-        let overlay = LabelReuseSnapshot {
-            source: live_source,
-            index: None,
-        };
-        let cursor = LineIndex::new(live_source).to_position(label_start);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-
-        assert!(
-            handle_references(
-                &uri,
-                &Position {
-                    line: cursor.line,
-                    character: cursor.character,
-                },
-                true,
-                &analysis,
-                Some(overlay),
-                &test_file_path("/tmp"),
-            )
-            .is_none(),
-            "an unparseable changed overlay cannot authenticate an old typed label"
+            "an unparseable changed overlay cannot authenticate typed references"
         );
     }
 

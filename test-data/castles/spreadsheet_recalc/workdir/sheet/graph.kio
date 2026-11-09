@@ -39,7 +39,7 @@ pub fn dependents_of(s: Sheet, a: Addr) -> List[Addr] {
 }
 
 rec(loop) fn deps_onto(s: Sheet, todo: List[Addr], acc: Deps) -> Deps {
-  match(todo.>List.unpack) {
+  match(todo.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) { recur deps_onto(s, rest, put(acc, a, dependents_of(s, a))) }
     , .(_empty: .) { acc }
@@ -54,7 +54,7 @@ pub fn deps_of(deps: Deps, a: Addr) -> List[Addr] { get_or(deps, a, nil[Addr]) }
 fn deg_of(degs: Degs, a: Addr) -> I32 { get_or(degs, a, 0) }
 
 rec(loop) fn degs_onto(s: Sheet, cyc: List[Addr], todo: List[Addr], acc: Degs) -> Degs {
-  match(todo.>List.unpack) {
+  match(todo.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         let live =
@@ -76,7 +76,7 @@ rec(loop) fn degs_onto(s: Sheet, cyc: List[Addr], todo: List[Addr], acc: Degs) -
 pub fn build_degs(s: Sheet, cyc: List[Addr]) -> Degs { degs_onto(s, cyc, all_addrs(), empty[I32]) }
 
 rec(loop) fn walk(s: Sheet, frontier: List[Addr], seen: List[Addr], target: Addr) -> Bool {
-  match(frontier.>List.unpack) {
+  match(frontier.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         if(addr_eq(a, target)) {
@@ -108,7 +108,7 @@ pub fn cycle_cells(s: Sheet) -> List[Addr] {
 rec(loop) fn release(dependents: List[Addr], degs: Degs, cyc: List[Addr], ready: List[Addr]) ->
   Degs & List[Addr]
    {
-  match(dependents.>List.unpack) {
+  match(dependents.>List.get) {
     (
     , .(d: Addr, rest: List[Addr]) {
         if(mem(cyc, d)) {
@@ -129,7 +129,7 @@ rec(loop) fn release(dependents: List[Addr], degs: Degs, cyc: List[Addr], ready:
 }
 
 rec(loop) fn kahn(deps: Deps, degs: Degs, queue: List[Addr], cyc: List[Addr], out: List[Addr]) -> List[Addr] {
-  match(queue.>List.unpack) {
+  match(queue.>List.get) {
     (
     , .(a: Addr, rest: List[Addr]) {
         let .(degs2: Degs, freed: List[Addr]) = release(deps_of(deps, a), degs, cyc, nil[Addr]);

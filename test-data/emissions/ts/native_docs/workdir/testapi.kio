@@ -8,13 +8,13 @@ host type String role(str);
 host type Box[A];
 
 /// NEWTYPE-DOC Token.
-pub newtype Token : . { pub constructor make_token; pub projector read_token }
+pub type { Token: . { pub mk; pub get } }
 
 /// OPAQUE-DOC Opaque.
-pub newtype Opaque : . { pub constructor make_opaque; projector read_opaque }
+pub type { Opaque: . { pub mk; get } }
 
 /// GENERIC-DOC Wrapper.
-pub newtype Wrapper[A] : A { pub constructor wrap; pub projector unwrap }
+pub type { Wrapper[A]: A { pub mk; pub get } }
 
 /// EXISTENTIAL-DOC Packed.
-pub newtype Packed <T> : T { pub constructor pack; pub projector unpack }
+pub type { Packed <T>: T { pub mk; pub get } }

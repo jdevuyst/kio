@@ -14,9 +14,9 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels System = { name: String, variables: I32, original: m.Matrix };
+pub type System = { Name: String; Variables: I32; Original: m.Matrix };
 
-pub labels Read_result = { loaded: System } | { input_error: String } | { finished: . };
+pub type Read_result = { Loaded: System } | { Input_error: String } | { Finished: . };
 
 fn read_integer() -> I32 | String {
   match(io.read_ascii_line()) {
@@ -74,9 +74,10 @@ fn contents(name: String, count: I32, variables: I32) -> Read_result {
   let width = a.add_i32(variables, 1);
   match(values(a.mul_i32(count, width), c.nil[_])) {
     .(flat: m.Row) {
-      {loaded = {name, variables, original = rows(flat, width, c.nil[_])}}.>widen_sum
+      Loaded.mk((Name.mk(name), Variables.mk(variables), Original.mk(rows(flat, width, c.nil[_]))))
+        .>widen_sum
     };
-    .(error: String) { {input_error = error}.>widen_sum }
+    .(error: String) { Input_error.mk(error).>widen_sum }
   }
 }
 
@@ -85,18 +86,18 @@ fn dimensions(name: String) -> Read_result {
     .(count: I32) {
       match(dimension()) {
         .(variables: I32) { contents(name, count, variables) };
-        .(error: String) { {input_error = error}.>widen_sum }
+        .(error: String) { Input_error.mk(error).>widen_sum }
       }
     };
-    .(error: String) { {input_error = error}.>widen_sum }
+    .(error: String) { Input_error.mk(error).>widen_sum }
   }
 }
 
 pub fn next() -> Read_result {
   match(io.read_ascii_line()) {
     .(name: String) {
-      if(text.string_eq(name, "END")) { {finished=}.>widen_sum } else { dimensions(name) }
+      if(text.string_eq(name, "END")) { Finished.mk(()).>widen_sum } else { dimensions(name) }
     };
-    .() { {input_error = "missing END marker"}.>widen_sum }
+    .() { Input_error.mk("missing END marker").>widen_sum }
   }
 }

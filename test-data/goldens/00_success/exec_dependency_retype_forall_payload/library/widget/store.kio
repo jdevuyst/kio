@@ -2,7 +2,7 @@ module store;
 
 host type I32 role(i32);
 
-pub newtype Dict : [A] A -> A { pub constructor mk; pub projector un }
+pub type { Dict: [A] A -> A { pub mk; pub get } }
 
 pub fn poly_id[A](x: A) -> A { x }
 

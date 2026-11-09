@@ -1577,7 +1577,7 @@ fn render_export_driver(
             let packed = facade_type_selector("Packed");
             let opener = java_forall_stage("e2;**q*fpb0;fb0;b2;b1;");
             format!(r#"    int[] openings = {{0}};
-    host.observePacked = value -> {types_ns}.{packed}.readPacked(value).<Integer>advance().apply(new {opener}<Integer, Integer>() {{
+    host.observePacked = value -> {types_ns}.{packed}.get(value).<Integer>advance().apply(new {opener}<Integer, Integer>() {{
       @Override public <U> Shapes.Fn1<Shapes.Product<U, Shapes.Fn1<U, Integer>>, Integer> advance() {{
         return pair -> {{ openings[0]++; return pair.right().apply(pair.left()); }};
       }}
@@ -1599,15 +1599,15 @@ fn render_export_driver(
     Shapes.Fn1<Integer, String> toText = value -> {{ integers.add(value); return "v:" + value; }};
     Shapes.Fn1<String, Integer> toInteger = value -> {{ texts.add(value); return value.length(); }};
     var dict = {main_ns}.echoFunctor({main_ns}.boxFunctor());
-    var first = {main_ns}.applyFunctor(dict, toText, {box_handle}.mkBox(new Shapes.Product<>(42, new Shapes.Unit())));
-    if (!{box_handle}.unBox(first).left().equals("v:42")) throw new AssertionError("functor integer input");
-    var second = {main_ns}.applyFunctor(dict, toInteger, {box_handle}.mkBox(new Shapes.Product<>("apple", new Shapes.Unit())));
-    if ({box_handle}.unBox(second).left() != 5) throw new AssertionError("functor text input");
-    var map = {functor_handle}.fmap(dict);
-    var third = map.<Integer>advance().<String>advance().apply(new Shapes.Product<>(toText, {box_handle}.mkBox(new Shapes.Product<>(7, new Shapes.Unit()))));
-    if (!{box_handle}.unBox(third).left().equals("v:7")) throw new AssertionError("projected functor integer input");
-    var fourth = map.<String>advance().<Integer>advance().apply(new Shapes.Product<>(toInteger, {box_handle}.mkBox(new Shapes.Product<>("pear", new Shapes.Unit()))));
-    if ({box_handle}.unBox(fourth).left() != 4) throw new AssertionError("projected functor text input");
+    var first = {main_ns}.applyFunctor(dict, toText, {box_handle}.mk(new Shapes.Product<>(42, new Shapes.Unit())));
+    if (!{box_handle}.get(first).left().equals("v:42")) throw new AssertionError("functor integer input");
+    var second = {main_ns}.applyFunctor(dict, toInteger, {box_handle}.mk(new Shapes.Product<>("apple", new Shapes.Unit())));
+    if ({box_handle}.get(second).left() != 5) throw new AssertionError("functor text input");
+    var map = {functor_handle}.get(dict);
+    var third = map.<Integer>advance().<String>advance().apply(new Shapes.Product<>(toText, {box_handle}.mk(new Shapes.Product<>(7, new Shapes.Unit()))));
+    if (!{box_handle}.get(third).left().equals("v:7")) throw new AssertionError("projected functor integer input");
+    var fourth = map.<String>advance().<Integer>advance().apply(new Shapes.Product<>(toInteger, {box_handle}.mk(new Shapes.Product<>("pear", new Shapes.Unit()))));
+    if ({box_handle}.get(fourth).left() != 4) throw new AssertionError("projected functor text input");
     var constructorMap = new {outer_stage}<{box_marker}, {box_marker}>() {{
       @Override public <A> {inner_stage}<A, Shapes.Apply1<{box_marker}, A>, {box_marker}> advance() {{
         return new {inner_stage}<A, Shapes.Apply1<{box_marker}, A>, {box_marker}>() {{
@@ -1617,9 +1617,9 @@ fn render_export_driver(
         }};
       }}
     }};
-    var reconstructed = {functor_handle}.mkFunctor(constructorMap);
-    var fifth = {main_ns}.applyFunctor(reconstructed, toText, {box_handle}.mkBox(new Shapes.Product<>(19, new Shapes.Unit())));
-    if (!{box_handle}.unBox(fifth).left().equals("v:19")) throw new AssertionError("reconstructed functor integer input");
+    var reconstructed = {functor_handle}.mk(constructorMap);
+    var fifth = {main_ns}.applyFunctor(reconstructed, toText, {box_handle}.mk(new Shapes.Product<>(19, new Shapes.Unit())));
+    if (!{box_handle}.get(fifth).left().equals("v:19")) throw new AssertionError("reconstructed functor integer input");
     if (!integers.equals(java.util.List.of(42, 7, 19)) || !texts.equals(java.util.List.of("apple", "pear"))) throw new AssertionError("functor callback events");
     System.out.println("functor dictionary ok");
 "#
@@ -1731,7 +1731,7 @@ fn render_export_driver(
             let wrapped = facade_type_selector("Wrapped");
             let nominal_type = java_newtype_type("testapi/main", "Wrapped", host_types, &[&selected_i32]);
             format!(r#"
-    var nominal = {main_ns}.{wrapped}.mkWrapped(new {selected_i32}(37));
+    var nominal = {main_ns}.{wrapped}.mk(new {selected_i32}(37));
     var host = {storage}.<{nominal_type}>fromNative(new KioRunnerBox<>(nominal));
     System.out.println({main_ns}.read(host).value());
     var kio = {main_ns}.make(new {selected_i32}(61));
@@ -1767,7 +1767,7 @@ fn render_export_driver(
     System.out.println({main_ns}.call(host, new {selected_i32}(43)).value());
     if (calls[0] != 2) throw new AssertionError("opaque callback count changed");
     System.out.println({main_ns}.call({main_ns}.makeCallable(), new {selected_i32}(47)).value());
-    var nominal = {main_ns}.{wrapped}.mkWrapped(new Shapes.Product<>(new {selected_i32}(41), new {selected_i32}(43)));
+    var nominal = {main_ns}.{wrapped}.mk(new Shapes.Product<>(new {selected_i32}(41), new {selected_i32}(43)));
     var boxed = {storage}.<{nominal_type}>fromNative(new KioRunnerBox<>(nominal));
     for (var value : java.util.List.of({main_ns}.readNominal(boxed), {main_ns}.readNominal({main_ns}.makeNominal()))) System.out.println(value.left().value() + " " + value.right().value());
 "#)
@@ -1901,8 +1901,8 @@ fn render_export_driver(
                      System.out.println(\"api.child function\");\n\
                      {api_ns}.{child_module}.value();\n\
                      System.out.println(\"api/child module\");\n\
-                     var child = {api_ns}.{child_type}.makeChild(30);\n\
-                     {api_ns}.{child_type}.readChild(child);\n\
+                     var child = {api_ns}.{child_type}.mk(30);\n\
+                     {api_ns}.{child_type}.get(child);\n\
                      System.out.println(\"api.Child type\");\n"
             )
         }
@@ -1937,7 +1937,7 @@ fn render_export_driver(
             "    System.out.println((String) {main_ns}.applyVia(v -> \"via: \" + (String) v, \"apply\"));\n    System.out.println((Integer) {main_ns}.applyVia(v -> (Integer) v + 8, 7));\n"
         ),
         ExportDriver::NewtypeScalarRoundtrip => format!(
-            "    var wrapped = {main_ns}.{wrap}.mkWrap(7);\n    var bumped = {main_ns}.bump(wrapped);\n    System.out.println(bumped.value());\n",
+            "    var wrapped = {main_ns}.{wrap}.mk(7);\n    var bumped = {main_ns}.bump(wrapped);\n    System.out.println(bumped.value());\n",
             wrap = facade_type_selector("Wrap"),
         ),
         ExportDriver::NewtypeIgnoredArgumentRoundtrip => {
@@ -1945,9 +1945,9 @@ fn render_export_driver(
         }
         ExportDriver::RecursiveNewtypeBoundary => format!(
             "    var payload = {main_ns}.basePayload();\n\
-             \x20   var root = {main_ns}.{root}.makeRoot(payload);\n\
+             \x20   var root = {main_ns}.{root}.mk(payload);\n\
              \x20   var kept = {main_ns}.keep(root);\n\
-             \x20   var projected = {main_ns}.{root}.readRoot(kept);\n\
+             \x20   var projected = {main_ns}.{root}.get(kept);\n\
              \x20   System.out.println({main_ns}.acceptPayload(projected));\n"
         ),
         ExportDriver::NewtypeVisibilityFacade => {
@@ -1961,59 +1961,59 @@ fn render_export_driver(
              \x20   System.out.println({types_ns}.readA(a).value());\n\
              \x20   var b = {types_ns}.makeB(new {selected_i32}(22));\n\
              \x20   System.out.println({types_ns}.readB(b).value());\n\
-             \x20   var c = {types_ns}.{constructor_only}.makeConstructorOnly(new {selected_i32}(33));\n\
+             \x20   var c = {types_ns}.{constructor_only}.mk(new {selected_i32}(33));\n\
              \x20   System.out.println({types_ns}.readConstructorOnlyValue(c).value());\n\
              \x20   var p = {types_ns}.makeProjectorOnlyValue(new {selected_i32}(44));\n\
-             \x20   System.out.println({types_ns}.{projector_only}.readProjectorOnly(p).value());\n\
-             \x20   var d = {types_ns}.{both_public}.makeBothPublic(new {selected_i32}(55));\n\
-             \x20   System.out.println({types_ns}.{both_public}.readBothPublic(d).value());\n\
+             \x20   System.out.println({types_ns}.{projector_only}.get(p).value());\n\
+             \x20   var d = {types_ns}.{both_public}.mk(new {selected_i32}(55));\n\
+             \x20   System.out.println({types_ns}.{both_public}.get(d).value());\n\
              \x20   if ({types_ns}.{opaque_a} == null || {types_ns}.{opaque_b} == null) throw new AssertionError(\"opaque newtype handles must be nameable\");\n\
              \x20   var leftShared = {left_ns}.make(new {selected_i32}(66));\n\
-             \x20   var outL = {left_ns}.{shared}.readShared({left_ns}.{shared}.makeShared({left_ns}.read(leftShared)));\n\
+             \x20   var outL = {left_ns}.{shared}.get({left_ns}.{shared}.mk({left_ns}.read(leftShared)));\n\
              \x20   System.out.println(outL.value());\n\
              \x20   var rightShared = {right_ns}.make(new {selected_i32}(77));\n\
-             \x20   var outR = {right_ns}.{shared}.readShared({right_ns}.{shared}.makeShared({right_ns}.read(rightShared)));\n\
+             \x20   var outR = {right_ns}.{shared}.get({right_ns}.{shared}.mk({right_ns}.read(rightShared)));\n\
              \x20   System.out.println(outR.value());\n\
-             \x20   var cp = {types_ns}.{constructor_pair}.makeConstructorPair(new Shapes.Product<>(new {selected_i32}(81), new {selected_i32}(82)));\n\
+             \x20   var cp = {types_ns}.{constructor_pair}.mk(new Shapes.Product<>(new {selected_i32}(81), new {selected_i32}(82)));\n\
              \x20   var cpOut = {types_ns}.readConstructorPairValue(cp);\n\
              \x20   System.out.println(cpOut.left().value() + \" \" + cpOut.right().value());\n\
              \x20   var pp = {types_ns}.makeProjectorPairValue(cpOut);\n\
-             \x20   var ppOut = {types_ns}.{projector_pair}.readProjectorPair(pp);\n\
+             \x20   var ppOut = {types_ns}.{projector_pair}.get(pp);\n\
              \x20   System.out.println(ppOut.left().value() + \" \" + ppOut.right().value());\n\
-             \x20   var cg = {types_ns}.{constructor_generic}.makeConstructorGeneric(85);\n\
+             \x20   var cg = {types_ns}.{constructor_generic}.mk(85);\n\
              \x20   System.out.println({types_ns}.readConstructorGenericValue(cg));\n\
              \x20   var pg = {types_ns}.makeProjectorGenericValue(86);\n\
-             \x20   System.out.println({types_ns}.{projector_generic}.readProjectorGeneric(pg));\n\
-             \x20   var packed = {types_ns}.{packed_function}.makePackedFunction(pair -> new {selected_i32}(pair.left().value() + pair.right().value()));\n\
-             \x20   System.out.println({types_ns}.{packed_function}.readPackedFunction(packed).apply(cpOut).value());\n\
+             \x20   System.out.println({types_ns}.{projector_generic}.get(pg));\n\
+             \x20   var packed = {types_ns}.{packed_function}.mk(pair -> new {selected_i32}(pair.left().value() + pair.right().value()));\n\
+             \x20   System.out.println({types_ns}.{packed_function}.get(packed).apply(cpOut).value());\n\
              \x20   var existentialUnit = {types_ns}.makeExistentialUnitValue();\n\
              \x20   // Java lambdas cannot implement these generic SAM methods.\n\
              \x20   var openUnit = new {unit_opener}<Object>() {{\n\
              \x20     @Override public <U> Shapes.Fn1<U, Object> advance() {{ return value -> 89; }}\n\
              \x20   }};\n\
-             \x20   Object openedUnit = {types_ns}.{existential_unit}.readExistentialUnit(existentialUnit).<Object>advance().apply(openUnit);\n\
+             \x20   Object openedUnit = {types_ns}.{existential_unit}.get(existentialUnit).<Object>advance().apply(openUnit);\n\
              \x20   System.out.println(openedUnit);\n\
              \x20   var existentialEmpty = {types_ns}.makeExistentialEmptyValue();\n\
              \x20   var openEmpty = new {empty_opener}<Shapes.Fn1<Shapes.Unit, Object>>() {{\n\
              \x20     @Override public <U> Shapes.Fn1<Shapes.Unit, Object> advance() {{ return _unit -> 90; }}\n\
              \x20   }};\n\
-             \x20   Object openedEmpty = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty).<Object>advance().apply(openEmpty);\n\
+             \x20   Object openedEmpty = {types_ns}.{existential_empty}.get(existentialEmpty).<Object>advance().apply(openEmpty);\n\
              \x20   System.out.println(openedEmpty);\n\
              \x20   var rbPayload = {types_ns}.recursiveBothBasePayload();\n\
-             \x20   var rb = {types_ns}.{recursive_both}.makeRecursiveBoth(rbPayload);\n\
-             \x20   System.out.println({types_ns}.recursiveBothPayloadIsBase({types_ns}.{recursive_both}.readRecursiveBoth(rb)).value());\n\
+             \x20   var rb = {types_ns}.{recursive_both}.mk(rbPayload);\n\
+             \x20   System.out.println({types_ns}.recursiveBothPayloadIsBase({types_ns}.{recursive_both}.get(rb)).value());\n\
              \x20   var rcPayload = {types_ns}.recursiveConstructorBasePayload();\n\
-             \x20   var rc = {types_ns}.{recursive_constructor}.makeRecursiveConstructor(rcPayload);\n\
+             \x20   var rc = {types_ns}.{recursive_constructor}.mk(rcPayload);\n\
              \x20   System.out.println({types_ns}.recursiveConstructorPayloadIsBase({types_ns}.readRecursiveConstructorValue(rc)).value());\n\
              \x20   var rp = {types_ns}.makeRecursiveProjectorBase();\n\
-             \x20   System.out.println({types_ns}.recursiveProjectorPayloadIsBase({types_ns}.{recursive_projector}.readRecursiveProjector(rp)).value());\n\
+             \x20   System.out.println({types_ns}.recursiveProjectorPayloadIsBase({types_ns}.{recursive_projector}.get(rp)).value());\n\
              \x20   var inputs = new java.util.ArrayList<Integer>();\n\
              \x20   var spread = new {spread}<{selected_i32}, {selected_i32}>() {{\n\
              \x20     @Override public <A> Shapes.Fn1<Shapes.Product<{selected_i32}, A>, {selected_i32}> advance() {{ return pair -> {{ inputs.add(pair.left().value()); return new {selected_i32}(pair.left().value() + 3); }}; }}\n\
              \x20   }};\n\
-             \x20   var constructed = {types_ns}.{constructor_spread}.makeConstructorSpread(spread);\n\
+             \x20   var constructed = {types_ns}.{constructor_spread}.mk(spread);\n\
              \x20   if ({types_ns}.invokeConstructorSpreadI32(constructed, new {selected_i32}(101)).value() != 104 || {types_ns}.invokeConstructorSpreadUnit(constructed, new {selected_i32}(102)).value() != 105 || !inputs.equals(java.util.List.of(101, 102))) throw new AssertionError(\"constructor callback changed\");\n\
-             \x20   var projected = {types_ns}.{projector_spread}.readProjectorSpread({types_ns}.makeProjectorSpreadValue());\n\
+             \x20   var projected = {types_ns}.{projector_spread}.get({types_ns}.makeProjectorSpreadValue());\n\
              \x20   if (projected.<{selected_i32}>advance().apply(new Shapes.Product<>(new {selected_i32}(111), new {selected_i32}(1))).value() != 111 || projected.<Shapes.Unit>advance().apply(new Shapes.Product<>(new {selected_i32}(112), new Shapes.Unit())).value() != 112) throw new AssertionError(\"projector callback changed\");\n\
              \x20   int[] opens = {{0, 0}};\n\
              \x20   var openSpread = new {spread_opener}<Integer>() {{\n\
@@ -2022,7 +2022,7 @@ fn render_export_driver(
              \x20   var openRecursive = new {recursive_opener}<{recursive_existential_type}, Integer>() {{\n\
              \x20     @Override public <U> Shapes.Fn1<Shapes.Fn1<U, {recursive_existential_type}>, Integer> advance() {{ return payload -> {{ opens[1]++; return 92; }}; }}\n\
              \x20   }};\n\
-             \x20   if ({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue()).<Integer>advance().apply(openSpread) != 91 || {types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue()).<Integer>advance().apply(openRecursive) != 92 || opens[0] != 1 || opens[1] != 1) throw new AssertionError(\"existential continuation count changed\");\n"
+             \x20   if ({types_ns}.{existential_spread}.get({types_ns}.makeExistentialSpreadValue()).<Integer>advance().apply(openSpread) != 91 || {types_ns}.{recursive_existential_function}.get({types_ns}.makeRecursiveExistentialFunctionValue()).<Integer>advance().apply(openRecursive) != 92 || opens[0] != 1 || opens[1] != 1) throw new AssertionError(\"existential continuation count changed\");\n"
             )
         }
         // `make(String, I32, I32) -> Outer`, where the exact public
@@ -2039,12 +2039,12 @@ fn render_export_driver(
              \x20   System.out.println({root_ns}.wordApi.readWord_());\n\
              \x20   System.out.println({root_ns}.wordApi._readWord_());\n\
              \x20   System.out.println({root_ns}.wordApi.readWord__());\n\
-             \x20   var boxed = {root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(55);\n\
-             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed));\n\
+             \x20   var boxed = {root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.mk(55);\n\
+             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.get(boxed));\n\
              \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.keepWord(66));\n\
-             \x20   var pair = {root_ns}.wordApi.keepPair(new Shapes.Product<>({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(77), {root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.wrapWord(88)));\n\
-             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(pair.left()));\n\
-             \x20   System.out.println({root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.unwrapWord(pair.right()));\n"
+             \x20   var pair = {root_ns}.wordApi.keepPair(new Shapes.Product<>({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.mk(77), {root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.mk(88)));\n\
+             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.get(pair.left()));\n\
+             \x20   System.out.println({root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.get(pair.right()));\n"
         ),
         ExportDriver::CompoundInputOnce => format!(
             r#"    var direct = {main_ns}.direct();
@@ -2083,7 +2083,7 @@ fn render_export_driver(
 "#
         ),
         ExportDriver::TypeRoundtrip => format!(
-            "    var boxed = {types_ns}.{pair}.mkPair(new Shapes.Product<>(\"export-type-left\", \"export-type-right\"));\n    var outp = {types_ns}.{pair}.unPair(boxed);\n    System.out.println(outp.left());\n    System.out.println(outp.right());\n"
+            "    var boxed = {types_ns}.{pair}.mk(new Shapes.Product<>(\"export-type-left\", \"export-type-right\"));\n    var outp = {types_ns}.{pair}.get(boxed);\n    System.out.println(outp.left());\n    System.out.println(outp.right());\n"
         ),
         ExportDriver::Main { .. } | ExportDriver::Coexist => return None,
     };
@@ -2745,11 +2745,7 @@ mod tests {
         )
         .expect("driver");
         assert!(body.contains("pkg.testapi.KioModule_types.makeA"));
-        assert!(
-            body.contains(
-                "pkg.testapi.KioModule_types.KioType_ConstructorOnly.makeConstructorOnly"
-            )
-        );
+        assert!(body.contains("pkg.testapi.KioModule_types.KioType_ConstructorOnly.mk"));
         assert_eq!(
             java_structural_type("Product", &["A", "B", "C"]),
             "Shapes.Product<A, Shapes.Product<B, C>>"
@@ -2781,12 +2777,12 @@ mod tests {
             "pkg.wordApi.readWord_()",
             "pkg.wordApi._readWord_()",
             "pkg.wordApi.readWord__()",
-            "KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(55)",
-            "KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
+            "KioModule_wordNodes.KioType__uWordBox_u_u.mk(55)",
+            "KioModule_wordNodes.KioType__uWordBox_u_u.get(boxed)",
             "KioModule_wordNodes.keepWord(66)",
             "wordApi.keepPair(",
-            "unwrapWord(pair.left())",
-            "unwrapWord(pair.right())",
+            "get(pair.left())",
+            "get(pair.right())",
         ] {
             assert!(body.contains(literal), "{body}");
         }

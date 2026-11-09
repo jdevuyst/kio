@@ -1,6 +1,6 @@
 module main;
 
-newtype Marker : . { constructor mark; projector unmark }
+type { Marker: . { mk; get } }
 
 fn from_marker[A](_marker: Marker) -> A -> A {
   .(value: A) -> A { value }

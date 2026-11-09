@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Dyn-load regression (existential CPS projection): a guest declaring an
-# existential newtype (`labels { boxed <U> : I32 & U }`) whose projector
+# existential nominal type `Boxed` whose projector
 # call must erase to the CPS form — `(λv. λk. k v) payload` — so the
 # emitted curried second application delivers the payload to the
 # continuation. Covers both the immediately-applied and the let-bound

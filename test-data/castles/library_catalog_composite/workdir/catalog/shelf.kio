@@ -2,10 +2,11 @@ module catalog/shelf;
 
 import catalog/domain as dom;
 import catalog/domain(Book, Book_index, Failure, Hold_list, Hold_rec);
-import catalog/domain({copies_out}, {copies_total}, {held_call});
+import catalog/domain(Copies_out, Copies_total, Held_call);
 import dict/dict as dict;
 import list/list as list;
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
@@ -21,16 +22,18 @@ pub fn find(books: Book_index, call: I32) -> Book_result {
   }
 }
 
-pub fn is_available(entry: Book) -> Bool { lt_i32(entry.?{copies_out}, entry.?{copies_total}) }
+pub fn is_available(entry: Book) -> Bool {
+  lt_i32(entry.>select { Copies_out.get }, entry.>select { Copies_total.get })
+}
 
 pub fn take_copy(entry: Book) -> Book {
-  let .(out: I32) = add_i32(entry.?{copies_out}, 1);
-  entry.!{copies_out = out}
+  let .(out: I32) = add_i32(entry.>select { Copies_out.get }, 1);
+  entry.>with { Copies_out.mk(out) }
 }
 
 pub fn put_copy(entry: Book) -> Book {
-  let .(out: I32) = sub_i32(entry.?{copies_out}, 1);
-  entry.!{copies_out = out}
+  let .(out: I32) = sub_i32(entry.>select { Copies_out.get }, 1);
+  entry.>with { Copies_out.mk(out) }
 }
 
 pub fn save(books: Book_index, call: I32, entry: Book) -> Book_index {
@@ -38,7 +41,12 @@ pub fn save(books: Book_index, call: I32, entry: Book) -> Book_index {
 }
 
 pub fn hold_count(holds: Hold_list, call: I32) -> I32 {
-  list.length(list.filter(.(booked: Hold_rec) { eq_i32(booked.?{held_call}, call) }, holds))
+  list.length(list.filter(
+  , .(booked: Hold_rec) {
+      eq_i32(booked.>select { Held_call.get }, call)
+    }
+  , holds
+  ))
 }
 
 pub fn title_count(books: Book_index) -> I32 { dict.size(books) }
@@ -49,7 +57,7 @@ pub fn copies_out(books: Book_index) -> I32 {
   , 0
   , .(step: I32 & I32 & Book) {
       let .(running: I32, _call: I32, entry: Book) = step;
-      add_i32(running, entry.?{copies_out})
+      add_i32(running, entry.>select { Copies_out.get })
     }
   )
 }

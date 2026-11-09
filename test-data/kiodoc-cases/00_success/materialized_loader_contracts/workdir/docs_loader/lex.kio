@@ -81,10 +81,10 @@ fn char_str(src: String, pos: I32) -> String { string_slice(src, pos, add_i32(po
 // Lex_err — a lexical error at a source offset
 // =====================================================================
 /// Defines a lexical error: a message and the byte offset it points at.
-pub labels { lex_err: String & I32 };
+pub type { Lex_err: String & I32 }
 
 /// Builds a lexical error from its message and byte offset.
-pub fn mk_lex_err(message: String, pos: I32) -> Lex_err { {lex_err = (message, pos)} }
+pub fn mk_lex_err(message: String, pos: I32) -> Lex_err { Lex_err.mk((message, pos)) }
 
 /// The lexical error's message.
 pub fn lex_err_message(e: Lex_err) -> String {
@@ -187,10 +187,10 @@ fn toks_reverse(ts: Toks) -> Toks {
 // type and the `widen_sum` choice unambiguous. The scan unwraps the
 // marker once the loop returns.
 /// Wraps a scan's final position so the exit arm differs from the `I32` continue arm.
-labels { endp: I32 };
+type { Endp: I32 }
 
 /// Wraps a string-scan's final `(position, content)` so the exit arm differs from the continue arm.
-labels { strp: I32 & String };
+type { Strp: I32 & String }
 
 // =====================================================================
 // Scan a word — advance while `is_word_cont` holds
@@ -209,14 +209,14 @@ fn scan_word_end(src: String, start: I32, len: I32) -> I32 {
               if(is_word_cont(c)) {
                 widen_sum(add_i32(pos, 1[I32]))[I32 | Endp]
               } else {
-                widen_sum({endp = pos})[I32 | Endp]
+                widen_sum(Endp.mk(pos))[I32 | Endp]
               }
             }
-          , .(_e: .) { widen_sum({endp = pos})[I32 | Endp] }
+          , .(_e: .) { widen_sum(Endp.mk(pos))[I32 | Endp] }
           )
         }
       } else {
-        widen_sum({endp = pos})[I32 | Endp]
+        widen_sum(Endp.mk(pos))[I32 | Endp]
       }
     }
   , start
@@ -333,15 +333,15 @@ fn scan_number_end(src: String, start: I32, len: I32) -> I32 {
                   } else match(exp_digit_pos(src, pos, len, c, phase)) {
                     (
                     , .(dp: I32) { widen_sum((dp, 2[I32]))[(I32 & I32) | Endp] }
-                    , .(_stop: .) { widen_sum({endp = pos})[(I32 & I32) | Endp] }
+                    , .(_stop: .) { widen_sum(Endp.mk(pos))[(I32 & I32) | Endp] }
                     )
                   }
                 }
-              , .(_e: .) { widen_sum({endp = pos})[(I32 & I32) | Endp] }
+              , .(_e: .) { widen_sum(Endp.mk(pos))[(I32 & I32) | Endp] }
               )
             }
           } else {
-            widen_sum({endp = pos})[(I32 & I32) | Endp]
+            widen_sum(Endp.mk(pos))[(I32 & I32) | Endp]
           }
         }
       }
@@ -520,7 +520,7 @@ fn scan_str(src: String, start: I32, len: I32) -> (I32 & String) | Lex_err {
                 (
                 , .(c: I32) {
                     if(eq_i32(c, c_quote())) {
-                      widen_sum({strp = (add_i32(pos, 1[I32]), acc)})[| (I32 & String)
+                      widen_sum(Strp.mk((add_i32(pos, 1[I32]), acc)))[| (I32 & String)
                       | Strp
                       | Lex_err]
                     } else if(eq_i32(c, c_backslash())) {
@@ -573,16 +573,16 @@ fn skip_line(src: String, start: I32, len: I32) -> I32 {
           (
           , .(c: I32) {
               if(eq_i32(c, c_nl())) {
-                widen_sum({endp = pos})[I32 | Endp]
+                widen_sum(Endp.mk(pos))[I32 | Endp]
               } else {
                 widen_sum(add_i32(pos, 1[I32]))[I32 | Endp]
               }
             }
-          , .(_e: .) { widen_sum({endp = pos})[I32 | Endp] }
+          , .(_e: .) { widen_sum(Endp.mk(pos))[I32 | Endp] }
           )
         }
       } else {
-        widen_sum({endp = pos})[I32 | Endp]
+        widen_sum(Endp.mk(pos))[I32 | Endp]
       }
     }
   , start
@@ -657,7 +657,7 @@ fn drop_seps(text: String) -> String {
                   | Strp]
                 }
               }
-            , .(_e: .) { widen_sum({strp = (pos, acc)})[(I32 & String) | Strp] }
+            , .(_e: .) { widen_sum(Strp.mk((pos, acc)))[(I32 & String) | Strp] }
             )
           }
         }

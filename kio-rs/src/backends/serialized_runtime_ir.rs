@@ -1297,7 +1297,7 @@ fn runtime_items(
             .collect(),
         Item::RecGroup(_, ext) => match *ext {},
         Item::LiteralAlias(_, ext) => match *ext {},
-        Item::Labels(_, ext) | Item::LabelForward(_, ext) => match *ext {},
+        Item::Labels(_, ext) => match *ext {},
         Item::Equiv(_, ext) => match *ext {},
         Item::Macro(_, ext) => match *ext {},
         Item::Op(_, ext) | Item::VariadicOperator(_, ext) => match *ext {},
@@ -1499,7 +1499,6 @@ fn runtime_qualified_type(
                 body: Box::new(runtime_qualified_type(package, body, &nested_scope)),
             }
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -2078,14 +2077,11 @@ fn runtime_expr_expected(
         }
         Expr::Path { ext, .. } | Expr::Call { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
+            match *ext {}
+        }
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
     }
@@ -2179,7 +2175,7 @@ mod tests {
             PathBuf::from("x/main.kio"),
             parse(
                 "module x/main; host type N; \
-             pub newtype Box[A] : A { pub constructor make; pub projector get; }; \
+             pub type { Box[A]: A { pub mk; pub get; }; }; \
              pub fn keep[A](value: Box[A]) -> Box[A] { value } \
              pub fn apply(callback: [A] A -> A, value: N) -> N { callback[N]( value) }",
             )
@@ -2234,15 +2230,15 @@ mod tests {
             (
                 "x/left.kio",
                 "module x/left; host type H; type Alias = .; \
-             newtype Mark : . { constructor make; projector get; }; \
-             rec { newtype Tree : . | Forest { constructor make; projector get; }; \
-             newtype Forest : . | Tree { constructor make; projector get; }; } \
+             type { Mark: . { mk; get; }; }; \
+             rec { type { Tree: . | Forest { mk; get; }; }; \
+             type { Forest: . | Tree { mk; get; }; }; } \
              fn unit() -> . { () }",
             ),
             (
                 "x/right.kio",
                 "module x/right; \
-             newtype Mark : . { constructor make; projector get; };",
+             type { Mark: . { mk; get; }; };",
             ),
         ]));
         let inventory: serde_json::Value =
@@ -2478,22 +2474,22 @@ mod tests {
         let package = routed(&full_prime_modules(&[
             (
                 "lib/core.kio",
-                "module lib/core; pub newtype Token : . { pub constructor make; pub projector read }",
+                "module lib/core; pub type { Token: . { pub mk; pub get ; }; }",
             ),
             (
                 "lib.kio",
-                "module lib; pub newtype Token : . { pub constructor make; pub projector read }",
+                "module lib; pub type { Token: . { pub mk; pub get ; }; }",
             ),
             (
                 "api.kio",
                 "module api;
                  import lib/core as lib;
                  import lib(Token);
-                 pub newtype Wrapped[Param] <Hidden> : lib.Token & Token & Param & Hidden {
-                   pub constructor wrap; pub projector unwrap
-                 }
+                 pub type { Wrapped[Param] <Hidden>: lib.Token & Token & Param & Hidden {
+                   pub mk; pub get
+                 ; }; }
                  pub fn make[Param][Hidden](a: lib.Token, b: Token, p: Param, h: Hidden)
-                   -> Wrapped[Param] { Wrapped.wrap((a, b, p, h)) }",
+                   -> Wrapped[Param] { Wrapped.mk((a, b, p, h)) }",
             ),
         ]));
         let module = &package.module("api").unwrap().module;
@@ -2506,15 +2502,11 @@ mod tests {
             })
             .unwrap();
         let constructor =
-            super::super::reconstruct::newtype_member_scheme(&package, "api", declaration, "wrap")
+            super::super::reconstruct::newtype_member_scheme(&package, "api", declaration, "mk")
                 .unwrap();
-        let projector = super::super::reconstruct::newtype_member_scheme(
-            &package,
-            "api",
-            declaration,
-            "unwrap",
-        )
-        .unwrap();
+        let projector =
+            super::super::reconstruct::newtype_member_scheme(&package, "api", declaration, "get")
+                .unwrap();
         let boundary_constructor =
             super::super::boundary_facade::prepare_newtype_constructor_boundary_callable(
                 &package, "api", "Wrapped",
@@ -2702,31 +2694,97 @@ mod tests {
         .expect("serialize canonical newtype")
     }
 
-    fn generated_field_rhs_collision_source() -> (String, String) {
-        let mut collision = "field_rhs_s0_e0_i0".to_owned();
-        for _ in 0..8 {
-            let source = format!(
-                "module x/main; \
-                 host type I32 role(i32); \
-                 labels Pair_fields = {{ first: I32, second: I32 }}; \
-                 type Pair = First & Second; \
-                 fn t({collision}: I32, _kg0: I32, row: Pair) -> Pair {{ \
-                   row.!{{first = _kg0, second = {collision}}} \
-                 }}"
-            );
-            let start = source.find("row.!{").expect("field update start") as u32;
-            let end = start
-                + source[start as usize..]
-                    .find('}')
-                    .expect("field update end") as u32
-                + 1;
-            let next = format!("field_rhs_s{start}_e{end}_i0");
-            if next == collision {
-                return (source, collision);
+    // These tests consume the canonical authored row macros, not materialized dependencies.
+    fn full_prime_row(src: &str) -> crate::prime::typer::ValidatedPrimePackage {
+        full_prime_modules(&[
+            (
+                "macro_util.kio",
+                include_str!("../../../test-data/poc/macros/workdir/macro_util.kio"),
+            ),
+            (
+                "row_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/row_macros.kio"),
+            ),
+            ("x/main.kio", src),
+        ])
+    }
+
+    // Expression-level call-site order for these fixtures: let/seq values before bodies,
+    // call arguments before the host call site, and tuple items in order.
+    // Local callees are checked separately; this is not a runtime evaluator.
+    // A deferred unary projector is admitted only after checking its complete body.
+    fn ordered_host_call_sites(value: &serde_json::Value, names: &mut Vec<String>) {
+        if let serde_json::Value::Array(values) = value {
+            for value in values {
+                ordered_host_call_sites(value, names);
             }
-            collision = next;
+            return;
         }
-        panic!("field-update span/name fixed point did not converge")
+        let map = value.as_object().expect("runtime expression object");
+        assert_eq!(map.len(), 1, "unexpected runtime expression: {value:#}");
+        let (tag, node) = map.iter().next().unwrap();
+        match tag.as_str() {
+            "Let" | "Seq" => {
+                ordered_host_call_sites(&node["value"], names);
+                ordered_host_call_sites(&node["body"], names);
+            }
+            "LowHostCall" => {
+                ordered_host_call_sites(&node["args"], names);
+                names.push(node["name"].as_str().expect("host name").to_owned());
+            }
+            "LowModuleCall" | "LowQualifiedModuleCall" | "LowClosureCall" => {
+                ordered_host_call_sites(&node["args"], names)
+            }
+            "LowIndirectCall" => {
+                ordered_host_call_sites(&node["callee"], names);
+                ordered_host_call_sites(&node["args"], names);
+            }
+            "LowTypeApplication" => ordered_host_call_sites(&node["callee"], names),
+            "FnExpr" => {
+                assert_eq!(
+                    node["sig"]["groups"],
+                    serde_json::json!([{ "Value": { "len": 1 } }]),
+                    "projector wrapper has exactly one unary value stage"
+                );
+                let params = node["sig"]["params"].as_array().expect("lambda parameters");
+                assert_eq!(
+                    params.len(),
+                    1,
+                    "only a unary projector wrapper is admitted"
+                );
+                let param = params[0]["Value"]["name"]
+                    .as_str()
+                    .expect("projector wrapper value parameter");
+                let body = node["body"].as_object().expect("projector wrapper body");
+                assert_eq!(body.len(), 1, "projector wrapper has one expression");
+                let projection = body
+                    .get("LowNewtypeProj")
+                    .expect("only an effect-free projector wrapper is admitted");
+                assert_eq!(
+                    projection["target"],
+                    serde_json::json!({ "LowBoundRef": { "name": param } }),
+                    "the projector must read exactly its own parameter"
+                );
+            }
+            "EnrichedTuple" => ordered_host_call_sites(&node["items"], names),
+            "EnrichedProject" | "EnrichedFieldGet" | "LowNewtypeProj" => {
+                ordered_host_call_sites(&node["target"], names)
+            }
+            "LowQualifiedNewtypeMember" | "LowNewtypeCtor" | "EnrichedInject" => {
+                ordered_host_call_sites(&node["payload"], names)
+            }
+            "Unit"
+            | "StrLit"
+            | "IntLit"
+            | "FloatLit"
+            | "BoolLit"
+            | "LowBoundRef"
+            | "LowHostFnValueRef"
+            | "LowModuleFnValueRef" => {}
+            _ => panic!(
+                "unexpected deferred, branching, or unsupported runtime expression: {value:#}"
+            ),
+        }
     }
 
     fn prime_expr_any(expr: &Expr<Prime>, predicate: &impl Fn(&Expr<Prime>) -> bool) -> bool {
@@ -2756,10 +2814,7 @@ mod tests {
             | Expr::BoolLit { .. } => false,
             Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
 
-            | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
 
@@ -2836,7 +2891,7 @@ mod tests {
     fn monomorphic_calls_need_no_typed_stage_plan() {
         let package = routed(&full_prime(
             "module x/main; \
-             newtype N : . { constructor make; projector get; }; \
+             type { N: . { mk; get; }; }; \
              fn local(f: N -> N, value: N) -> N { f(value) } \
              fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
         ));
@@ -2881,7 +2936,7 @@ mod tests {
     fn specialization_plans_retain_concrete_escaping_callable_contracts() {
         let prime = full_prime(
             "module x/main; \
-             newtype N : . { constructor make; projector get; }; \
+             type { N: . { mk; get; }; }; \
              fn id[A](value: A) -> A { value } \
              fn generic() -> [A] A -> A { id } \
              fn direct() -> N -> N { id[N] } \
@@ -3023,7 +3078,7 @@ mod tests {
     fn private_value_plans_cover_closures_type_stages_and_nominal_payloads() {
         let prime = full_prime(
             "module x/main; \
-             newtype Box[T] : T { constructor make; projector get; }; \
+             type { Box[T]: T { mk; get; }; }; \
              fn hold[A](value: A) -> . -> A { .(_unit) { value } } \
              fn apply[A](function: [B] B -> B, value: A) -> A { function[A]( value) }",
         );
@@ -3091,11 +3146,11 @@ mod tests {
     fn serialized_cps_projector_carries_exact_continuation_runtime_shape() {
         let package = routed(&full_prime(
             "module x/main; \
-             newtype Pair <Left> <Right> : Left & Right { \
-               constructor make_pair; projector open_pair; \
-             }; \
+             type { Pair <Left> <Right>: Left & Right { \
+               mk; get; \
+             ; }; }; \
              fn consume(pair: Pair) -> . { \
-               Pair.open_pair(pair)(.[Left][Right](_payload: Left & Right) { () }) \
+               Pair.get(pair)(.[Left][Right](_payload: Left & Right) { () }) \
              }",
         ));
 
@@ -3109,8 +3164,15 @@ mod tests {
 
     #[test]
     fn field_update_generated_binder_does_not_capture_later_rhs() {
-        let (source, collision) = generated_field_rhs_collision_source();
-        let full = full_prime(&source);
+        let full = full_prime_row(
+            "module x/main; import row_macros(macro with_); \
+             host type I32 role(i32); host fn effect_i32(x: I32) -> I32; \
+             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
+             type Pair = First & Second; \
+             fn t(_kg0: I32, row: Pair) -> Pair { \
+               row.>with_ { First.mk(effect_i32(_kg0)); Second.mk(_kg0) } \
+             }",
+        );
         let module = full.module("x/main").expect("module").module();
         let def = module
             .items
@@ -3121,35 +3183,58 @@ mod tests {
             })
             .expect("fn t");
         assert!(
-            !prime_expr_any(&def.body, &|expr| {
-                matches!(expr, Expr::Let { name, .. } if name == &collision)
-            }),
-            "the generated first-RHS binder captured the same-named parameter: {:#?}",
+            prime_expr_any(
+                &def.body,
+                &|expr| matches!(expr, Expr::Let { name, .. } if name.starts_with("_kg"))
+            ),
+            "canonical with_ must fire generated checked-term binding: {:#?}",
             def.body
         );
         assert!(
-            !prime_expr_any(&def.body, &|expr| {
-                matches!(expr, Expr::Let { name, .. } if name == "_kg0")
-            }),
-            "the generated binder allocator reused its occupied first candidate: {:#?}",
+            !prime_expr_any(
+                &def.body,
+                &|expr| matches!(expr, Expr::Let { name, .. } if name == "_kg0")
+            ),
+            "generated binder captured the occupied parameter: {:#?}",
+            def.body
+        );
+        let references = std::cell::Cell::new(0);
+        prime_expr_any(&def.body, &|expr| {
+            if matches!(expr, Expr::Path { segments, .. } if segments.len() == 1 && segments[0].name == "_kg0")
+            {
+                references.set(references.get() + 1);
+            }
+            false
+        });
+        assert!(
+            references.get() >= 2,
+            "both written replacement expressions must retain the occupied parameter: {:#?}",
             def.body
         );
         assert!(
             prime_expr_any(&def.body, &|expr| {
-                matches!(expr, Expr::Path { segments, .. } if segments.len() == 1 && segments[0].name == collision)
+                let Expr::Call { callee, args, .. } = expr else {
+                    return false;
+                };
+                let Expr::Path { segments, .. } = callee.as_ref() else {
+                    return false;
+                };
+                segments.len() == 2
+                    && segments[0].name == "Second"
+                    && segments[1].name == "mk"
+                    && matches!(args.as_slice(), [crate::ast::CallArg::Value(Expr::Path { segments, .. })] if segments.len() == 1 && segments[0].name == "_kg0")
             }),
-            "the later RHS lost its reference to the same-named parameter: {:#?}",
+            "the second replacement must still call Second.mk with the original parameter: {:#?}",
             def.body
         );
-
-        let (emitted, prime) = emitted_prime(&full);
-        assert!(emitted.contains(&format!("{collision}: I32")));
-        assert!(!emitted.contains(&format!("let {collision} =")));
-        assert!(!emitted.contains("let _kg0 ="));
-        assert_eq!(
-            canonical_body(&routed(&full), "t"),
-            canonical_body(&routed(&prime), "t")
-        );
+        let (_, prime) = emitted_prime(&full);
+        let emitted = emit_module(full.module("x/main").expect("module"));
+        assert!(emitted.contains("_kg0: I32") && !emitted.contains("let _kg0 ="));
+        let direct = canonical_body(&routed(&full), "t");
+        assert_eq!(direct, canonical_body(&routed(&prime), "t"));
+        let mut calls = Vec::new();
+        ordered_host_call_sites(&direct, &mut calls);
+        assert_eq!(calls, ["effect_i32"]);
     }
 
     #[test]
@@ -3158,14 +3243,14 @@ mod tests {
             "module x/main; \
              host type Str role(str); \
              host fn id[A](value: A) -> A; \
-             newtype A : Str { constructor mk_a; projector un_a; }; \
-             newtype Named : A { constructor mk_named; projector un_named; }; \
-             newtype Box[T] : T { constructor mk_box; projector un_box; }; \
-             newtype Applied[*F][T] : F[T] { constructor mk_applied; projector un_applied; }; \
-             newtype Ranked : [A] A -> A { constructor mk_ranked; projector un_ranked; }; \
-             newtype Shadow[T] : [A] T -> A { constructor mk_shadow; projector un_shadow; }; \
-             newtype Same[T] : T & ([T] T -> T) { constructor mk_same; projector un_same; }; \
-             newtype Capture[T] : [A] A -> T { constructor mk_capture; projector un_capture; }; \
+             type { A: Str { mk; get; }; }; \
+             type { Named: A { mk; get; }; }; \
+             type { Box[T]: T { mk; get; }; }; \
+             type { Applied[*F][T]: F[T] { mk; get; }; }; \
+             type { Ranked: [A] A -> A { mk; get; }; }; \
+             type { Shadow[T]: [A] T -> A { mk; get; }; }; \
+             type { Same[T]: T & ([T] T -> T) { mk; get; }; }; \
+             type { Capture[T]: [A] A -> T { mk; get; }; }; \
              fn t(value: Str) -> Str { id(value) }",
         );
         let (_emitted, prime) = emitted_prime(&full);
@@ -3254,9 +3339,9 @@ mod tests {
     fn newtype_member_visibility_is_serialized() {
         let package = routed(&full_prime(
             "module x/main; \
-             pub newtype Opaque : . { constructor hide; projector hidden; }; \
-             pub newtype Split : . { pub constructor make; projector unmake; }; \
-             pub newtype Readable : . { constructor wrap; pub projector read; };",
+             pub type { Opaque: . { mk; get; }; }; \
+             pub type { Split: . { pub mk; get; }; }; \
+             pub type { Readable: . { mk; pub get; }; };",
         ));
 
         let opaque = canonical_newtype(&package, "Opaque");
@@ -3278,14 +3363,14 @@ mod tests {
             (
                 "left.kio",
                 "module left; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round(value: Token) -> Token; \
                  pub fn via(value: Token) -> Token { round(value) }",
             ),
             (
                 "right.kio",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round(value: Token) -> Token; \
                  pub fn via(value: Token) -> Token { round(value) }",
             ),
@@ -3325,29 +3410,38 @@ mod tests {
 
     #[test]
     fn full_and_prime_routes_canonicalize_nested_later_argument_call() {
-        let full = full_prime(
-            "module x/main; \
+        let full = full_prime_row(
+            "module x/main; import row_macros(macro select); \
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
-             labels Pair_fields = { first: I32, second: I32 }; \
+             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
              type Pair = First & Second; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(row: Pair) -> I32 { \
-               pick_second(row.?{first}, sub_i32(row.?{second}, 1[I32])) \
+               pick_second(row.>select { First.get }, sub_i32(row.>select { Second.get }, 1[I32])) \
              }",
         );
-        let (emitted, prime) = emitted_prime(&full);
+        let (_, prime) = emitted_prime(&full);
+        let emitted = emit_module(full.module("x/main").expect("module"));
         assert!(
             emitted.contains("let _kp"),
-            "expected Kio' emission to introduce an administrative let:\n{emitted}"
+            "nested call must fire an administrative binding:\n{emitted}"
         );
-
-        let direct = routed(&full);
-        let round_tripped = routed(&prime);
         assert_eq!(
-            canonical_body(&direct, "t"),
-            canonical_body(&round_tripped, "t")
+            canonical_body(&alpha_revalidated_route(&full), "t"),
+            canonical_body(&alpha_revalidated_route(&prime), "t")
         );
+        for package in [routed(&full), routed(&prime)] {
+            let mut calls = Vec::new();
+            ordered_host_call_sites(&canonical_body(&package, "t"), &mut calls);
+            assert_eq!(calls, ["sub_i32"]);
+            let mut callee_calls = Vec::new();
+            ordered_host_call_sites(&canonical_body(&package, "pick_second"), &mut callee_calls);
+            assert!(
+                callee_calls.is_empty(),
+                "local callee must not hide a host call"
+            );
+        }
     }
 
     #[test]
@@ -3398,7 +3492,7 @@ mod tests {
                  import x/dep as d; \
                  import x/types as types; \
                  type Actual = types.Other; \
-                 newtype Token : . { constructor mk_token; projector un_token; }; \
+                 type { Token: . { mk; get; }; }; \
                  fn first(_left: Token, _right: Token) -> d.Flag { d.true_flag() } \
                  fn invoke(f: d.Flag -> d.Flag, value: d.Flag) -> d.Flag { f(value) } \
                  fn local_id(value: d.Flag) -> d.Flag { value } \
@@ -3472,57 +3566,89 @@ mod tests {
         );
     }
 
+    // Both inputs receive ordinary Prime alpha normalization and independent checking.
+    // Keep the separate checks on the actual routes below: this comparison
+    // does not claim the unnormalized optimizer emits the same private lets.
+    fn alpha_revalidated_route(
+        package: &crate::prime::typer::ValidatedPrimePackage,
+    ) -> Package<Routed> {
+        let checked = PrimePipeline::typecheck(package.package())
+            .expect("alpha-normalized Prime remains independently valid");
+        routed(&checked)
+    }
+
     #[test]
     fn full_and_prime_routes_associate_bound_record_value_chain() {
-        let full = full_prime(
-            "module x/main; \
+        let full = full_prime_row(
+            "module x/main; import row_macros(macro record_, macro select); \
              host type I32 role(i32); \
-             host fn effect_i32(value: I32) -> I32; \
-             labels Pair_fields = { first: I32, second: I32 }; \
+             host fn effect_first(value: I32) -> I32; \
+             host fn effect_second(value: I32) -> I32; \
+             host fn effect_total(value: I32) -> I32; \
+             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
              type Pair = First & Second; \
-             labels Result_fields = { stored: Pair, repeated: Pair, total: I32 }; \
+             type { Stored: Pair { mk; get }; Repeated: Pair { mk; get }; Total: I32 { mk; get }; } \
              type Result = Stored & Repeated & Total; \
              fn pick_second(first: I32, second: I32) -> I32 { second } \
              fn collision(_kp0: I32, row: Pair) -> I32 { \
-               pick_second(row.?{first}, _kp0) \
+               pick_second(row.>select { First.get }, _kp0) \
              } \
              fn t(x: I32) -> Result { \
-               let row = { \
-                 first = effect_i32(x), \
-                 second = effect_i32(x) \
-               }; \
-               { stored = row, repeated = row, total = collision(effect_i32(x), row) } \
+               let row = record_ { First.mk(effect_first(x)); Second.mk(effect_second(x)) }; \
+               record_ { Stored.mk(row); Repeated.mk(row); Total.mk(collision(effect_total(x), row)) } \
              }",
         );
-        let (emitted, prime) = emitted_prime(&full);
-        let first_generated_field_binding = emitted
+        let (_, prime) = emitted_prime(&full);
+        let emitted = emit_module(full.module("x/main").expect("module"));
+        let t_source = emitted.split_once("fn t(").expect("fn t emitted").1;
+        let collision_source = emitted
+            .split_once("fn collision(")
+            .expect("fn collision emitted")
+            .1
+            .split_once("fn t(")
+            .expect("t follows collision")
+            .0;
+        assert!(
+            t_source.contains("let row ="),
+            "the reused row remains explicitly bound:\n{t_source}"
+        );
+        let generated_record = t_source
             .find("let _kg")
-            .expect("effectful record field should introduce a let");
-        let row_binding = emitted
+            .expect("record_ must introduce a generated binding in t");
+        let row_binding = t_source
             .find("let row =")
-            .expect("row binding should survive");
+            .expect("the reused row remains explicitly bound");
         assert!(
-            emitted.matches("let _kg").count() >= 3,
-            "expected both bound-record fields and the later field to hoist:\n{emitted}"
+            generated_record < row_binding,
+            "the first record's generated binding must precede row: {t_source}"
         );
         assert!(
-            first_generated_field_binding < row_binding,
-            "Kio' value-chain hoist did not precede the row binding:\n{emitted}"
+            collision_source.contains("let _kp1 =") && !collision_source.contains("let _kp0 ="),
+            "call-prelude binder must skip the occupied _kp0 parameter:\n{emitted}"
         );
-        assert!(
-            emitted.contains("let _kp1 =") && !emitted.contains("let _kp0 ="),
-            "Kio' call-prelude temp captured the legal `_kp0` parameter:\n{emitted}"
-        );
-
         let direct = routed(&full);
         let round_tripped = routed(&prime);
-        assert_eq!(
-            canonical_body(&direct, "t"),
-            canonical_body(&round_tripped, "t")
-        );
         assert_eq!(
             canonical_body(&direct, "collision"),
             canonical_body(&round_tripped, "collision")
         );
+        assert_eq!(
+            canonical_body(&alpha_revalidated_route(&full), "t"),
+            canonical_body(&alpha_revalidated_route(&prime), "t")
+        );
+        for package in [&direct, &round_tripped] {
+            for name in ["collision", "pick_second"] {
+                let mut callee_calls = Vec::new();
+                ordered_host_call_sites(&canonical_body(package, name), &mut callee_calls);
+                assert!(callee_calls.is_empty(), "{name} must not hide a host call");
+            }
+            let mut calls = Vec::new();
+            ordered_host_call_sites(&canonical_body(package, "t"), &mut calls);
+            assert_eq!(
+                calls,
+                ["effect_first", "effect_second", "effect_total"],
+                "each written effect must occur once and in source order"
+            );
+        }
     }
 }

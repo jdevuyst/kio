@@ -1,10 +1,10 @@
 #!/bin/sh
-# Pin canonical `kio fmt` output for `newtype` shapes:
-# - Nullary newtype (no type params, plain payload).
-# - Single-param newtype (head stays inline).
-# - Two-param newtype.
-# - Recursive newtype using `rec` for self-reference.
-# Member lists pair a constructor with a projector.
+# Pin canonical `kio fmt` output for explicit nominal declaration shapes:
+# - Nullary nominal (no type params, plain payload).
+# - Single-param nominal (head stays inline).
+# - Two-param nominal.
+# - Recursive nominal using `rec` for self-reference.
+# Member lists pair the fixed mk and get roles.
 set -u
 work=$(mktemp -d) || exit
 trap 'rm -rf "$work"' EXIT INT TERM HUP

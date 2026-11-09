@@ -4,188 +4,110 @@ import __intrinsics__;
 
 import testapi(I32);
 
-newtype Hidden_payload : I32 { constructor mk_hidden_payload; projector un_hidden_payload }
+type { Hidden_payload: I32 { mk; get } }
 
-pub newtype Opaque_a : Hidden_payload { constructor mk_opaque_a; projector un_opaque_a }
+pub type { Opaque_a: Hidden_payload { mk; get } }
 
-pub newtype Opaque_b : Hidden_payload { constructor mk_opaque_b; projector un_opaque_b }
+pub type { Opaque_b: Hidden_payload { mk; get } }
 
-pub newtype Constructor_only : I32 {
-  pub constructor make_constructor_only;
-  projector read_constructor_only
-  }
+pub type { Constructor_only: I32 { pub mk; get } }
 
-pub newtype Projector_only : I32 {
-  constructor make_projector_only;
-  pub projector read_projector_only
-  }
+pub type { Projector_only: I32 { mk; pub get } }
 
-pub newtype Both_public : I32 { pub constructor make_both_public; pub projector read_both_public }
+pub type { Both_public: I32 { pub mk; pub get } }
 
-pub newtype Constructor_pair : I32 & I32 {
-  pub constructor make_constructor_pair;
-  projector read_constructor_pair
-  }
+pub type { Constructor_pair: I32 & I32 { pub mk; get } }
 
-pub newtype Projector_pair : I32 & I32 {
-  constructor make_projector_pair;
-  pub projector read_projector_pair
-  }
+pub type { Projector_pair: I32 & I32 { mk; pub get } }
 
-pub newtype Constructor_generic[A] : A {
-  pub constructor make_constructor_generic;
-  projector read_constructor_generic
-  }
+pub type { Constructor_generic[A]: A { pub mk; get } }
 
-pub newtype Projector_generic[A] : A {
-  constructor make_projector_generic;
-  pub projector read_projector_generic
-  }
+pub type { Projector_generic[A]: A { mk; pub get } }
 
-pub newtype Packed_function : (I32 & I32) -> I32 {
-  pub constructor make_packed_function;
-  pub projector read_packed_function
-  }
+pub type { Packed_function: (I32 & I32) -> I32 { pub mk; pub get } }
 
-pub newtype Constructor_spread : [A] (I32 & A) -> I32 {
-  pub constructor make_constructor_spread;
-  projector read_constructor_spread
-  }
+pub type { Constructor_spread: [A] (I32 & A) -> I32 { pub mk; get } }
 
-pub newtype Projector_spread : [A] (I32 & A) -> I32 {
-  constructor make_projector_spread;
-  pub projector read_projector_spread
-  }
+pub type { Projector_spread: [A] (I32 & A) -> I32 { mk; pub get } }
 
-pub newtype Existential_spread <U> : [A] (U & A) -> U {
-  constructor make_existential_spread;
-  pub projector read_existential_spread
-  }
+pub type { Existential_spread <U>: [A] (U & A) -> U { mk; pub get } }
 
-pub newtype Existential_unit <U> : U {
-  constructor make_existential_unit;
-  pub projector read_existential_unit
-  }
+pub type { Existential_unit <U>: U { mk; pub get } }
 
 pub type Erased_unit[A] = .;
 
-pub newtype Existential_empty <U> : Erased_unit[U] {
-  constructor make_existential_empty;
-  pub projector read_existential_empty
-  }
+pub type { Existential_empty <U>: Erased_unit[U] { mk; pub get } }
 
-pub rec newtype Recursive_existential_function <U> : U -> Recursive_existential_function {
-  constructor make_recursive_existential_function;
-  pub projector read_recursive_existential_function
-  }
+pub rec type {
+  Recursive_existential_function <U>: U -> Recursive_existential_function { mk; pub get }
+}
 
-pub rec newtype Recursive_both : . | Recursive_both {
-  pub constructor make_recursive_both;
-  pub projector read_recursive_both
-  }
+pub rec type { Recursive_both: . | Recursive_both { pub mk; pub get } }
 
-pub rec newtype Recursive_constructor : . | Recursive_constructor {
-  pub constructor make_recursive_constructor;
-  projector read_recursive_constructor
-  }
+pub rec type { Recursive_constructor: . | Recursive_constructor { pub mk; get } }
 
-pub rec newtype Recursive_projector : . | Recursive_projector {
-  constructor make_recursive_projector;
-  pub projector read_recursive_projector
-  }
+pub rec type { Recursive_projector: . | Recursive_projector { mk; pub get } }
 
 rec {
-  pub newtype Atomic_cycle_inner : . | Visible_cycle_outer {
-    pub constructor make_atomic_cycle_inner;
-    projector read_atomic_cycle_inner
-    };
-  pub newtype Visible_cycle_outer : Atomic_cycle_inner {
-    pub constructor make_visible_cycle_outer;
-    pub projector read_visible_cycle_outer
-    }
+  pub type { Atomic_cycle_inner: . | Visible_cycle_outer { pub mk; get } };
+  pub type { Visible_cycle_outer: Atomic_cycle_inner { pub mk; pub get } }
 }
 
-pub newtype Comptime_bool : ! | . {
-  pub constructor make_atomic_comptime_inner;
-  projector read_atomic_comptime_inner
-  }
+pub type { Comptime_bool: ! | . { pub mk; get } }
 
-pub newtype Visible_comptime_outer : Comptime_bool {
-  pub constructor make_visible_comptime_outer;
-  pub projector read_visible_comptime_outer
-  }
+pub type { Visible_comptime_outer: Comptime_bool { pub mk; pub get } }
 
-pub fn make_a(value: I32) -> Opaque_a {
-  Opaque_a.mk_opaque_a(Hidden_payload.mk_hidden_payload(value))
-}
+pub fn make_a(value: I32) -> Opaque_a { Opaque_a.mk(Hidden_payload.mk(value)) }
 
-pub fn read_a(value: Opaque_a) -> I32 {
-  Hidden_payload.un_hidden_payload(Opaque_a.un_opaque_a(value))
-}
+pub fn read_a(value: Opaque_a) -> I32 { Hidden_payload.get(Opaque_a.get(value)) }
 
-pub fn make_b(value: I32) -> Opaque_b {
-  Opaque_b.mk_opaque_b(Hidden_payload.mk_hidden_payload(value))
-}
+pub fn make_b(value: I32) -> Opaque_b { Opaque_b.mk(Hidden_payload.mk(value)) }
 
-pub fn read_b(value: Opaque_b) -> I32 {
-  Hidden_payload.un_hidden_payload(Opaque_b.un_opaque_b(value))
-}
+pub fn read_b(value: Opaque_b) -> I32 { Hidden_payload.get(Opaque_b.get(value)) }
 
-pub fn read_constructor_only_value(value: Constructor_only) -> I32 {
-  Constructor_only.read_constructor_only(value)
-}
+pub fn read_constructor_only_value(value: Constructor_only) -> I32 { Constructor_only.get(value) }
 
-pub fn make_projector_only_value(value: I32) -> Projector_only {
-  Projector_only.make_projector_only(value)
-}
+pub fn make_projector_only_value(value: I32) -> Projector_only { Projector_only.mk(value) }
 
 pub fn read_constructor_pair_value(value: Constructor_pair) -> I32 & I32 {
-  Constructor_pair.read_constructor_pair(value)
+  Constructor_pair.get(value)
 }
 
-pub fn make_projector_pair_value(value: I32 & I32) -> Projector_pair {
-  Projector_pair.make_projector_pair(value)
-}
+pub fn make_projector_pair_value(value: I32 & I32) -> Projector_pair { Projector_pair.mk(value) }
 
 pub fn read_constructor_generic_value[A](value: Constructor_generic[A]) -> A {
-  Constructor_generic.read_constructor_generic[A](value)
+  Constructor_generic.get[A](value)
 }
 
 pub fn make_projector_generic_value[A](value: A) -> Projector_generic[A] {
-  Projector_generic.make_projector_generic[A](value)
+  Projector_generic.mk[A](value)
 }
 
 pub fn invoke_constructor_spread_i32(value: Constructor_spread, seed: I32) -> I32 {
-  Constructor_spread.read_constructor_spread(value)[I32](__pair__[I32][I32](seed, 7[I32]))
+  Constructor_spread.get(value)[I32](__pair__[I32][I32](seed, 7[I32]))
 }
 
 pub fn invoke_constructor_spread_unit(value: Constructor_spread, seed: I32) -> I32 {
-  Constructor_spread.read_constructor_spread(value)[.](__pair__[I32][.](seed, ()))
+  Constructor_spread.get(value)[.](__pair__[I32][.](seed, ()))
 }
 
 pub fn make_projector_spread_value() -> Projector_spread {
-  Projector_spread.make_projector_spread(.[A](value: I32 & A) -> I32 { __fst__[I32][A](value) })
+  Projector_spread.mk(.[A](value: I32 & A) -> I32 { __fst__[I32][A](value) })
 }
 
 pub fn make_existential_spread_value() -> Existential_spread {
-  Existential_spread.make_existential_spread[I32](.[A](value: I32 & A) -> I32 {
-    __fst__[I32][A](value)
-  })
+  Existential_spread.mk[I32](.[A](value: I32 & A) -> I32 { __fst__[I32][A](value) })
 }
 
 pub fn make_recursive_existential_function_value() -> Recursive_existential_function {
-  Recursive_existential_function.make_recursive_existential_function[!](.(value: !) -> Recursive_existential_function {
+  Recursive_existential_function.mk[!](.(value: !) -> Recursive_existential_function {
     __absurd__[Recursive_existential_function](value)
   })
 }
 
-pub fn make_existential_unit_value() -> Existential_unit {
-  Existential_unit.make_existential_unit(())
-}
+pub fn make_existential_unit_value() -> Existential_unit { Existential_unit.mk(()) }
 
-pub fn make_existential_empty_value() -> Existential_empty {
-  Existential_empty.make_existential_empty[I32](())
-}
+pub fn make_existential_empty_value() -> Existential_empty { Existential_empty.mk[I32](()) }
 
 pub fn recursive_both_base_payload() -> . | Recursive_both { __left__[.][Recursive_both](()) }
 
@@ -202,7 +124,7 @@ pub fn recursive_constructor_base_payload() -> . | Recursive_constructor {
 }
 
 pub fn read_recursive_constructor_value(value: Recursive_constructor) -> . | Recursive_constructor {
-  Recursive_constructor.read_recursive_constructor(value)
+  Recursive_constructor.get(value)
 }
 
 pub fn recursive_constructor_payload_is_base(value: . | Recursive_constructor) -> I32 {
@@ -214,11 +136,11 @@ pub fn recursive_constructor_payload_is_base(value: . | Recursive_constructor) -
 }
 
 pub fn make_recursive_projector_value(value: . | Recursive_projector) -> Recursive_projector {
-  Recursive_projector.make_recursive_projector(value)
+  Recursive_projector.mk(value)
 }
 
 pub fn make_recursive_projector_base() -> Recursive_projector {
-  Recursive_projector.make_recursive_projector(__left__[.][Recursive_projector](()))
+  Recursive_projector.mk(__left__[.][Recursive_projector](()))
 }
 
 pub fn recursive_projector_payload_is_base(value: . | Recursive_projector) -> I32 {
@@ -230,9 +152,9 @@ pub fn recursive_projector_payload_is_base(value: . | Recursive_projector) -> I3
 }
 
 pub fn make_visible_cycle_outer_base() -> Visible_cycle_outer {
-  Visible_cycle_outer.make_visible_cycle_outer(Atomic_cycle_inner.make_atomic_cycle_inner(__left__[.][Visible_cycle_outer](())))
+  Visible_cycle_outer.mk(Atomic_cycle_inner.mk(__left__[.][Visible_cycle_outer](())))
 }
 
 pub fn make_visible_comptime_outer_base() -> Visible_comptime_outer {
-  Visible_comptime_outer.make_visible_comptime_outer(Comptime_bool.make_atomic_comptime_inner(__right__[!][.](())))
+  Visible_comptime_outer.mk(Comptime_bool.mk(__right__[!][.](())))
 }

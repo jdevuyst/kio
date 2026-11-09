@@ -1,5 +1,5 @@
 module main;
 
-labels { foo: . };
+type { Foo: .; };
 
 type Bad = foo;

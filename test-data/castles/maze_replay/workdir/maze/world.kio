@@ -12,15 +12,15 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 
-/// A cell is one of three kinds. The labels generate the nominal `Wall`
+/// A cell is one of three kinds. The declaration introduces the nominal `Wall`
 /// / `Item` / `Open` types and the `Cell` sum over them.
-pub labels Cell = { wall: . } | { item: . } | { open: . };
+pub type Cell = { Wall: . } | { Item: . } | { Open: . };
 
-pub fn wall_cell() -> Cell { ({wall=}.>widen_sum)[Cell] }
+pub fn wall_cell() -> Cell { (Wall.mk(()).>widen_sum)[Cell] }
 
-pub fn item_cell() -> Cell { ({item=}.>widen_sum)[Cell] }
+pub fn item_cell() -> Cell { (Item.mk(()).>widen_sum)[Cell] }
 
-pub fn open_cell() -> Cell { ({open=}.>widen_sum)[Cell] }
+pub fn open_cell() -> Cell { (Open.mk(()).>widen_sum)[Cell] }
 
 /// Logical conjunction over `Bool`.
 pub fn and(a: Bool, b: Bool) -> Bool {

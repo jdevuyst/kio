@@ -8,9 +8,9 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 // A binary `Tree(A)` and a one-hole `Zip(A)` zipper context over it.
-rec newtype Tree[A] : . | (A & Tree[A] & Tree[A]) { pub constructor mk_tree; pub projector un_tree }
+rec type { Tree[A]: . | (A & Tree[A] & Tree[A]) { pub mk; pub get } }
 
-rec newtype Zip[A] : . | (A & Tree[A] & Zip[A]) { pub constructor mk_zip; pub projector un_zip }
+rec type { Zip[A]: . | (A & Tree[A] & Zip[A]) { pub mk; pub get } }
 
 // A polymorphic newtype whose carrier is a **bare product of two
 // type-constructor applications** that both mention the binder `A` —
@@ -19,25 +19,25 @@ rec newtype Zip[A] : . | (A & Tree[A] & Zip[A]) { pub constructor mk_zip; pub pr
 // distinct nested type constructor (`Tree` / `Zip`). The shape is
 // otherwise unexercised by the golden corpus, so this case is its
 // regression coverage.
-newtype Done[A] : Tree[A] & Zip[A] { pub constructor mk_done; pub projector un_done }
+type { Done[A]: Tree[A] & Zip[A] { pub mk; pub get } }
 
-fn leaf[A]() -> Tree[A] { Tree.mk_tree(widen_sum(())[. | (A & Tree[A] & Tree[A])]) }
+fn leaf[A]() -> Tree[A] { Tree.mk(widen_sum(())[. | (A & Tree[A] & Tree[A])]) }
 
 fn node[A](v: A, l: Tree[A], r: Tree[A]) -> Tree[A] {
-  Tree.mk_tree(widen_sum((v, l, r))[. | (A & Tree[A] & Tree[A])])
+  Tree.mk(widen_sum((v, l, r))[. | (A & Tree[A] & Tree[A])])
 }
 
-fn top[A]() -> Zip[A] { Zip.mk_zip(widen_sum(())[. | (A & Tree[A] & Zip[A])]) }
+fn top[A]() -> Zip[A] { Zip.mk(widen_sum(())[. | (A & Tree[A] & Zip[A])]) }
 
-fn focus[A](t: Tree[A], z: Zip[A]) -> Done[A] { Done.mk_done((t, z)) }
+fn focus[A](t: Tree[A], z: Zip[A]) -> Done[A] { Done.mk((t, z)) }
 
 // Destructure the `Done` through its projector — the nested-product
 // match binder `(t, _z)` over the bare-product carrier — then read the
 // focused tree's root value.
 fn root_val(d: Done[I32]) -> I32 {
-  match(d.>Done.un_done) {
+  match(d.>Done.get) {
     .(t: Tree[I32], _z: Zip[I32]) {
-      match(t.>Tree.un_tree) {
+      match(t.>Tree.get) {
         (.(v: I32, _l: Tree[I32], _r: Tree[I32]) { v }, .(_e: .) { 0 })
       }
     }

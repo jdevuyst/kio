@@ -17,5 +17,5 @@ fn helper() { () }
 /// A type alias.
 pub type MyAlias = .;
 
-/// A wrapper newtype — its declaration header is [`@signature Wrapped`].
-pub newtype Wrapped : . { pub constructor mk_wrapped; pub projector un_wrapped; };
+/// A nominal wrapper — its declaration header is [`@signature Wrapped`].
+pub type { Wrapped: . { pub mk; pub get; }; };

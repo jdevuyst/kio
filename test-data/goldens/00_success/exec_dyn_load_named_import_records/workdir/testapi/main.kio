@@ -9,7 +9,6 @@ import loader(
 , mk_import_as
 , un_import
 , un_load_outcome
-, {import}
 );
 import loader/scan(load_package);
 import macros/match(macro match);
@@ -42,7 +41,7 @@ pub fn main() {
   show(mk_import("same"[String], "origin"[String]));
   show(mk_import_as("local"[String], "source"[String], "origin"[String]));
   show(mk_import_as("Selected"[String], "Number"[String], "origin"[String]));
-  let raw = {import = ("raw"[String], "source"[String], "origin"[String])};
+  let raw = Import.mk(("raw"[String], "source"[String], "origin"[String]));
   show(raw);
   match(Import.get(raw)) {
     .(local: String, original: String, provider: String) {

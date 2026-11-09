@@ -1,5 +1,5 @@
 module main;
 
-newtype Box : . { constructor mk; projector get }
+type { Box: . { mk; get } }
 
 macro demo : . -> . { impl Box.mk }

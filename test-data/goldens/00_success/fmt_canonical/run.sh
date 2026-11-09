@@ -1,13 +1,13 @@
 #!/bin/sh
 # Pins canonical `kio fmt` output for a single .kio file that
 # exercises every module-level construct: every `import` shape, every
-# top-level item kind (fn / type / literal / newtype, with and without
+# top-level item kind (fn / alias / nominal declaration, with and without
 # `pub`, with and without type parameters), every type form (path,
 # unit, bottom, sum, product, function, rec), and every value form
 # (call, let with and without annotation, fn with and without return,
 # dotted-path callee, mixed type/value args, every literal kind).
 #
-# Strategy: workdir/fmt_canonical/main.kio is the deliberately-minified single-line
+# Strategy: workdir/fmt_canonical/main.kio is the deliberately noncanonical
 # input — kept tracked in that form so a regression that mis-formats
 # is visible in expected.stdout, not in workdir/. The test copies it to a
 # matching path in a scratch directory so `kio fmt` (which rewrites in place)

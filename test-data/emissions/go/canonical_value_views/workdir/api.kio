@@ -18,29 +18,29 @@ host fn created();
 
 host fn tick();
 
-pub newtype Secret : Number & Count { constructor hide; projector reveal }
+pub type { Secret: Number & Count { mk; get } }
 
-pub newtype Outer : Secret { pub constructor wrap; pub projector unwrap }
+pub type { Outer: Secret { pub mk; pub get } }
 
-pub newtype Packed <U> : Secret & U { pub constructor pack; pub projector open }
+pub type { Packed <U>: Secret & U { pub mk; pub get } }
 
-pub labels Tagged = { secret_slot: Secret };
+pub type Tagged = { Secret_slot: Secret };
 
-pub fn through_outer(value: Outer) -> Secret { value.>Outer.unwrap }
+pub fn through_outer(value: Outer) -> Secret { value.>Outer.get }
 
-pub fn labelled(value: Secret) -> Secret_slot { {secret_slot = value} }
+pub fn labelled(value: Secret) -> Secret_slot { Secret_slot.mk(value) }
 
-pub fn field(value: Secret_slot & .) -> Secret { value.?{secret_slot} }
+pub fn field(value: Secret_slot & .) -> Secret { let .(slot, _) = value; slot.>Secret_slot.get }
 
-pub fn make_packed(value: Secret) -> Packed { Packed.pack[.]((value, ())) }
+pub fn make_packed(value: Secret) -> Packed { Packed.mk[.]((value, ())) }
 
 pub fn open_packed(value: Packed) -> Secret {
-  (value.>Packed.open)(.[U](secret: Secret, payload: U) { secret })
+  (value.>Packed.get)(.[U](secret: Secret, payload: U) { secret })
 }
 
-pub fn make_secret(number: Number, count: Count) -> Secret { Secret.hide((number, count)) }
+pub fn make_secret(number: Number, count: Count) -> Secret { Secret.mk((number, count)) }
 
-pub fn read_secret(value: Secret) -> Number & Count { value.>Secret.reveal }
+pub fn read_secret(value: Secret) -> Number & Count { value.>Secret.get }
 
 pub fn pair(value: Number & Count) -> Number & Count { value }
 

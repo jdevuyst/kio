@@ -11,6 +11,7 @@ module query/eval;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import query/fixtures as fixtures;
 import query/list as list;
@@ -26,17 +27,29 @@ import testapi/iter(loop);
 /// A comparison is counted whenever the engine asks how two data values
 /// relate - a predicate leaf, a join-key test, a sort-key test, or a
 /// group-key probe - whether or not the row carried the column.
-pub labels Stats = { st_scanned: I32, st_compares: I32 };
+pub type Stats = { St_scanned: I32; St_compares: I32 };
 
-pub fn stats_zero() -> Stats { {st_scanned = 0, st_compares = 0} }
+pub fn stats_zero() -> Stats { (St_scanned.mk(0), St_compares.mk(0)) }
 
-pub fn stats_scanned(s: Stats) -> I32 { s.?{st_scanned} }
+pub fn stats_scanned(s: Stats) -> I32 {
+  s.>select { St_scanned.get }
+}
 
-pub fn stats_compares(s: Stats) -> I32 { s.?{st_compares} }
+pub fn stats_compares(s: Stats) -> I32 {
+  s.>select { St_compares.get }
+}
 
-fn scanned(s: Stats, n: I32) -> Stats { s.!{st_scanned = add_i32(s.?{st_scanned}, n)} }
+fn scanned(s: Stats, n: I32) -> Stats {
+  s.>with {
+    St_scanned.mk(add_i32(s.>select { St_scanned.get }, n))
+  }
+}
 
-fn compared(s: Stats, n: I32) -> Stats { s.!{st_compares = add_i32(s.?{st_compares}, n)} }
+fn compared(s: Stats, n: I32) -> Stats {
+  s.>with {
+    St_compares.mk(add_i32(s.>select { St_compares.get }, n))
+  }
+}
 
 fn both(a: Bool, b: Bool) -> Bool {
   if(a) { b } else { .f }
@@ -98,7 +111,7 @@ fn test_columns(row: rel.Row, left: schema.Col, o: plan.Cmp_op, right: schema.Co
 /// comparison count a property of the predicate's shape rather than of
 /// the order its rows happen to arrive in.
 rec(loop) fn eval_pred(row: rel.Row, p: plan.Pred, st: Stats) -> Bool & Stats {
-  match(p.>plan.Pred.un_pred) {
+  match(p.>plan.Pred.get) {
     (
     , .(c: plan.Lit_col, o: plan.Lit_op, n: plan.Lit_num) {
         (
@@ -131,7 +144,7 @@ rec(loop) fn eval_pred(row: rel.Row, p: plan.Pred, st: Stats) -> Bool & Stats {
 }
 
 rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table & Stats {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(keep: Bool, st1: Stats) = eval_pred(r, p, st);
@@ -144,7 +157,7 @@ rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table 
 }
 
 rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> rel.Table & Stats {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(tail: rel.Table, st1: Stats) = recur(cont) project_rows(cols, rest, st);
@@ -176,7 +189,7 @@ fn keys_match(left: rel.Row, right: rel.Row, lkey: schema.Col, rkey: schema.Col)
 rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
   rel.Table & Stats
    {
-  match(rs.>list.List.un_list) {
+  match(rs.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let hit = keys_match(l, r, lkey, rkey);
@@ -196,7 +209,7 @@ rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schem
 rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
   rel.Table & Stats
    {
-  match(ls.>list.List.un_list) {
+  match(ls.>list.List.get) {
     (
     , .(l: rel.Row, rest: rel.Table) {
         let .(hits: rel.Table, st1: Stats) = join_probe(l, rs, lkey, rkey, st);
@@ -242,7 +255,7 @@ fn sorts_before(a: rel.Row, b: rel.Row, key: schema.Col, d: plan.Dir) -> Bool {
 rec(loop) fn insert_row(r: rel.Row, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
   rel.Table & Stats
    {
-  match(sorted.>list.List.un_list) {
+  match(sorted.>list.List.get) {
     (
     , .(h: rel.Row, rest: rel.Table) {
         let first = sorts_before(r, h, key, d);
@@ -264,7 +277,7 @@ rec(loop) fn insert_row(r: rel.Row, key: schema.Col, d: plan.Dir, sorted: rel.Ta
 rec(loop) fn sort_rows(rows: rel.Table, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
   rel.Table & Stats
    {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(next: rel.Table, st1: Stats) = insert_row(r, key, d, sorted, st);
@@ -277,19 +290,24 @@ rec(loop) fn sort_rows(rows: rel.Table, key: schema.Col, d: plan.Dir, sorted: re
 
 /// What a grouping accumulates per key. `GroupSum` adds a column's
 /// integer reading; `GroupCount` adds one per row.
-labels Agg = { agg_col: schema.Col } | { agg_rows: . };
+type Agg = { Agg_col: schema.Col } | { Agg_rows: . };
 
-labels Group = { g_key: I32, g_acc: I32 };
+type Group = { G_key: I32; G_acc: I32 };
 
-fn summing(c: schema.Col) -> Agg { ({agg_col = c}.>widen_sum)[Agg] }
+fn summing(c: schema.Col) -> Agg { (Agg_col.mk(c).>widen_sum)[Agg] }
 
-fn counting() -> Agg { ({agg_rows=}.>widen_sum)[Agg] }
+fn counting() -> Agg { (Agg_rows.mk(()).>widen_sum)[Agg] }
 
-fn group(key: I32, acc: I32) -> Group { {g_key = key, g_acc = acc} }
+fn group(key: I32, acc: I32) -> Group { (G_key.mk(key), G_acc.mk(acc)) }
 
 fn delta_of(row: rel.Row, a: Agg) -> I32 {
   match(a) {
-    (.(c: Agg_col) { int_or_zero(rel.row_int(row, c.?{agg_col})) }, .(_c: Agg_rows) { 1 })
+    (
+    , .(c: Agg_col) {
+        int_or_zero(rel.row_int(row, c.>select { Agg_col.get }))
+      }
+    , .(_c: Agg_rows) { 1 }
+    )
   }
 }
 
@@ -300,12 +318,12 @@ fn delta_of(row: rel.Row, a: Agg) -> I32 {
 rec(loop) fn bump(groups: list.List[Group], key: I32, delta: I32, st: Stats) ->
   list.List[Group] & Stats
    {
-  match(groups.>list.List.un_list) {
+  match(groups.>list.List.get) {
     (
     , .(g: Group, rest: list.List[Group]) {
         let st1 = compared(st, 1);
-        if(eq_i32(g.?{g_key}, key)) {
-          (list.cons(group(key, add_i32(g.?{g_acc}, delta)), rest), st1)
+        if(eq_i32(g.>select { G_key.get }, key)) {
+          (list.cons(group(key, add_i32(g.>select { G_acc.get }, delta)), rest), st1)
         } else {
           let .(tail: list.List[Group], st2: Stats) = recur(cont) bump(rest, key, delta, st1);
           (list.cons(g, tail), st2)
@@ -323,7 +341,7 @@ rec(loop) fn group_rows(
 , groups: list.List[Group]
 , st: Stats
 ) -> list.List[Group] & Stats {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(next: list.List[Group], st1: Stats) =
@@ -336,13 +354,13 @@ rec(loop) fn group_rows(
 }
 
 rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List[Group]) -> rel.Table {
-  match(groups.>list.List.un_list) {
+  match(groups.>list.List.get) {
     (
     , .(g: Group, rest: list.List[Group]) {
         list.cons(
         , list.of2(
-          , rel.cell(key, value.int_val(g.?{g_key}))
-          , rel.cell(agg, value.int_val(g.?{g_acc}))
+          , rel.cell(key, value.int_val(g.>select { G_key.get }))
+          , rel.cell(agg, value.int_val(g.>select { G_acc.get }))
           )
         , recur(cont) groups_to_table(key, agg, rest)
         )
@@ -356,7 +374,7 @@ rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List
 /// work on their relations - so the tree is consumed bottom-up and the
 /// stats accumulate in the order the work actually happened.
 pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
-  match(p.>plan.Plan.un_plan) {
+  match(p.>plan.Plan.get) {
     (
     , .(n: plan.Scan_table) {
         let t = plan.scan_table_of(n);

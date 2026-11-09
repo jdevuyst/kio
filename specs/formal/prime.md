@@ -78,8 +78,8 @@ CPS projector (§ 2.4).
 
 A **named type** `N` is one of:
 
-- A `newtype` declaration head, parameterized over zero or more `α`s, with a payload `Payload[α₁]...[αₙ]`. Its payload may refer to its own head only when the declaration is written `rec newtype`, or to sibling heads when it is a member of a written `rec { ... }` type group. The head carries two members: a constructor `N.c` and a projector `N.p` (see § 3).
-- A `type` declaration head, parameterized over zero or more `α`s. A reference supplies exactly one argument per declared parameter; a bare or undersaturated parametric alias is ill-formed and cannot retain residual alias binders. Exact-arity references substitute their arguments and unfold the body structurally for type formation and equality. An alias introduces neither a nominal boundary nor a term-level constructor or reduction rule. When every edge of an alias chain is instead the fully saturated positional application of its next head, with the same binder kinds, the alias may qualify the terminal `newtype`'s existing constructor and projector; it does not mint members of its own. There is no singleton `rec type`; an alias may participate in a mutual group only when every cycle reaches a sibling nominal head and the alias-only subgraph is acyclic.
+- A nominal `type` declaration head, parameterized over zero or more `α`s, with a payload `Payload[α₁]...[αₙ]`. Its payload may refer to its own head only when the declaration is written `rec type { N: ... }`, or to sibling heads when it is a member of a written `rec { ... }` type group. The head carries two members: a constructor `N.mk` and a projector `N.get` (see § 3).
+- A transparent `type` alias head, parameterized over zero or more `α`s. A reference supplies exactly one argument per declared parameter; a bare or undersaturated parametric alias is ill-formed and cannot retain residual alias binders. Exact-arity references substitute their arguments and unfold the body structurally for type formation and equality. An alias introduces neither a nominal boundary nor a term-level constructor or reduction rule. When every edge of an alias chain is instead the fully saturated positional application of its next head, with the same binder kinds, the alias may qualify the terminal `newtype`'s existing constructor and projector; it does not mint members of its own. A singleton recursive alias is not admitted; an alias may participate in a mutual group only when every cycle reaches a sibling nominal head and the alias-only subgraph is acyclic.
 - A `host type` declaration head. A roleless host type may have zero or more kind-`*` parameters; a role-bearing host type is nullary. It is an opaque nominal identity: neither typing nor reduction introspects a host representation (see § 1.2).
 
 ### 1.2. Terms
@@ -115,7 +115,7 @@ e ::=
   | e₁ ; e₂                    (statement-form expression statement;
                                   e₁ must have type ., and e₂ is
                                   the rest of the enclosing block)
-  | N.c | N.p                  (constructor / projector member of
+  | N.mk | N.get                  (constructor / projector member of
                                   a terminal `newtype`, optionally
                                   qualified through an identity alias)
   | __left__ | __right__ | __either__
@@ -127,7 +127,7 @@ e ::=
   | h                          (host item — opaque)
 ```
 
-The grammar elides the `module` / `import` boilerplate and the public-private contour. From the typer's perspective, a Kio' module is a sequence of top-level `fn` / `type` / `newtype` / `rec newtype` / `rec { ... }` / `host type` / `host fn` declarations processed top-to-bottom under [order-sensitive visibility](../prime.md#order-sensitive-visibility). A `host type` / `host fn` is an opaque, signature-only declaration: it adds a name to scope (a `host type` as an opaque nominal type, a `host fn` as a value of its declared type — the `h` term above) but has no body to type-check. The typer checks that its signature types are well-formed, that every `host type` parameter has kind `*`, and that a role-bearing `host type` has arity zero; type parameters are admitted only on a roleless host type.
+The grammar elides the `module` / `import` boilerplate and the public-private contour. From the typer's perspective, a Kio' module is a sequence of top-level `fn` / `type` / `rec type` / `rec { ... }` / `host type` / `host fn` declarations processed top-to-bottom under [order-sensitive visibility](../prime.md#order-sensitive-visibility). A `host type` / `host fn` is an opaque, signature-only declaration: it adds a name to scope (a `host type` as an opaque nominal type, a `host fn` as a value of its declared type — the `h` term above) but has no body to type-check. The typer checks that its signature types are well-formed, that every `host type` parameter has kind `*`, and that a role-bearing `host type` has arity zero; type parameters are admitted only on a roleless host type.
 
 ### 1.3. Top-level declarations
 
@@ -146,13 +146,13 @@ SigGroup ::=
 TopDecl ::=
     pub? pure? fn x SigGroup+ (-> R)? { e }
   | pub? type N[ᾱ] = T;
-  | pub? newtype N[ᾱ] <β̄> : Payload { pub? constructor c; pub? projector p }
-  | pub? rec newtype N[ᾱ] <β̄> : Payload { pub? constructor c; pub? projector p }
+  | pub? type { N[ᾱ] <β̄> : Payload { pub? mk; pub? get; }; }
+  | pub? rec type { N[ᾱ] <β̄> : Payload { pub? mk; pub? get; }; }
   | rec { RecTypeDecl RecTypeDecl+ }
 
 RecTypeDecl ::=
     pub? type N[ᾱ] = T;
-  | pub? newtype N[ᾱ] <β̄> : Payload { pub? constructor c; pub? projector p }
+  | pub? type { N[ᾱ] <β̄> : Payload { pub? mk; pub? get; }; }
 ```
 
 Every newtype has both members; their order is immaterial. Only their
@@ -186,11 +186,11 @@ The presentation puts `pub` before `pure`; concrete syntax accepts either order 
 
 ### 1.4. Explicit recursive scopes and the newtype boundary
 
-A `rec newtype N` declaration checks its payload under the incoming context extended by exactly `N`'s head. A `rec { D₁ ... Dₙ }` group first extends the incoming context with every member head, then checks every member body in that shared context. When the scope closes, its heads extend the ordinary source-ordered context for following declarations. An unmarked `newtype` or `type` declaration is checked before its own head extends the context and sees no later head.
+A `rec type { N: ... }` declaration checks its payload under the incoming context extended by exactly `N`'s head. A `rec { D₁ ... Dₙ }` group first extends the incoming context with every member head, then checks every member body in that shared context. When the scope closes, its heads extend the ordinary source-ordered context for following declarations. An unmarked nominal or alias declaration is checked before its own head extends the context and sees no later head.
 
-Let `G(D̄)` be the directed graph whose vertices are the heads written in a type group and whose edges are exact type references between those heads, after transparent-alias paths are followed. A group is well formed only when it has at least two members and `G(D̄)` is one cyclic strongly connected component. The alias-induced subgraph is acyclic, so every cycle crosses a `newtype` head. A one-member, acyclic, multi-component, helper-containing, or alias-only group is rejected. For `rec newtype N`, the payload must contain a path back to `N`; otherwise the marker is redundant.
+Let `G(D̄)` be the directed graph whose vertices are the heads written in a type group and whose edges are exact type references between those heads, after transparent-alias paths are followed. A group is well formed only when it has at least two members and `G(D̄)` is one cyclic strongly connected component. The alias-induced subgraph is acyclic, so every cycle crosses a `newtype` head. A one-member, acyclic, multi-component, helper-containing, or alias-only group is rejected. For `rec type { N: ... }`, the payload must contain a path back to `N`; otherwise the marker is redundant.
 
-Each `newtype` declaration is an **iso-recursive boundary** — from the typing rules' perspective, `N[α]` is **not** equal to its one-step unfold `Payload[α]`. Crossing the boundary in values uses the newtype's declared constructor and projector explicitly. Transparent group-member aliases only provide finite paths to those nominal knots.
+Each nominal declaration is an **iso-recursive boundary** — from the typing rules' perspective, `N[α]` is **not** equal to its one-step unfold `Payload[α]`. Crossing the boundary in values uses the newtype's declared constructor and projector explicitly. Transparent group-member aliases only provide finite paths to those nominal knots.
 
 **Recursive-component positivity.** The check called strict positivity in the prose contract uses the composed-variance rule of § 2.5: every recursive use site must have variance `+` or `0` from the payload root. An arrow domain reverses variance, so two reversals compose to `+`; the rule is not a blanket prohibition on occurrences beneath an arrow domain. The check includes paths through transparent group-member aliases and composes through nested newtype parameters over the complete written component.
 
@@ -212,7 +212,7 @@ Contexts `Γ` carry both type and value bindings:
 
 Module checking additionally carries a finite declaration map `Π` from each resolved top-level value identity in scope to one of `pure-fn`, `ordinary-fn`, `host-fn`, `intrinsic`, or `newtype-member`. Local term binders are deliberately absent from `Π`: the function-purity rule constrains declaration references, not values received through parameters or `let` bindings.
 
-The newtype-binding form `N[α₁]...[αₙ] := { payload: Payload, constructor: c, projector: p }` records the `newtype`'s shape so the constructor / projector typing rules can reach it. An ordinary declaration adds it after its payload is checked; a recursive singleton or group predeclares the applicable head set as described in § 1.4 and completes each binding after checking the bodies.
+The newtype-binding form `N[α₁]...[αₙ] := { payload: Payload, constructor: mk, projector: get }` records the `newtype`'s shape so the constructor / projector typing rules can reach it. An ordinary declaration adds it after its payload is checked; a recursive singleton or group predeclares the applicable head set as described in § 1.4 and completes each binding after checking the bodies.
 
 ### 2.2. Term typing rules
 
@@ -316,22 +316,22 @@ in [`elaboration.md` § Function application](elaboration.md#5-function-applicat
 
 ### 2.3. `newtype` constructor and projector
 
-Given a `newtype` declaration:
+Given an explicit nominal declaration:
 
 ```text
-newtype N[α₁]...[αₘ] : Payload[α] { constructor c; projector p; };
+type { N[α₁]...[αₘ]: Payload[α] { mk; get; }; };
 ```
 
-the constructor `N.c` and projector `N.p` are typed by:
+the constructor `N.mk` and projector `N.get` are typed by:
 
 ```text
-(N[α₁]...[αₘ] := { payload: Payload, constructor: c, projector: p } in Γ)
+(N[α₁]...[αₘ] := { payload: Payload, constructor: mk, projector: get } in Γ)
 ─────────────────────────────────────────────────────────────────────────  T-NewtypeC
-Γ ⊢ N.c : ∀α₁ ... αₘ. (Payload[α]) → N[α₁]...[αₘ]
+Γ ⊢ N.mk : ∀α₁ ... αₘ. (Payload[α]) → N[α₁]...[αₘ]
 
-(N[α₁]...[αₘ] := { payload: Payload, constructor: c, projector: p } in Γ)
+(N[α₁]...[αₘ] := { payload: Payload, constructor: mk, projector: get } in Γ)
 ─────────────────────────────────────────────────────────────────────────  T-NewtypeP
-Γ ⊢ N.p : ∀α₁ ... αₘ. (N[α₁]...[αₘ]) → Payload[α]
+Γ ⊢ N.get : ∀α₁ ... αₘ. (N[α₁]...[αₘ]) → Payload[α]
 ```
 
 These displayed schemes are for a newtype without existential binders. With
@@ -340,15 +340,15 @@ existential payload binders `β̄`, its constructor instead has scheme
 but they do not appear in the result nominal. Its projector has the CPS
 scheme in § 2.4, not the direct-return T-NewtypeP scheme above.
 
-The `Payload[α]` may mention only type heads in its lexical context: earlier declarations and imports, plus the exact head set of an enclosing explicit recursive singleton or group. Each newtype's nominal name is itself an iso-recursive boundary, so `N[α]` ↔ `Payload[α]` is **not** equated by the typing rules. To cross the boundary in values, apply the constructor / projector explicitly (T-App on `N.c` or `N.p`). The reduction relation (§ 3) makes wrap-then-unwrap reduce, formalizing the iso-recursive law at the value level.
+The `Payload[α]` may mention only type heads in its lexical context: earlier declarations and imports, plus the exact head set of an enclosing explicit recursive singleton or group. Each newtype's nominal name is itself an iso-recursive boundary, so `N[α]` ↔ `Payload[α]` is **not** equated by the typing rules. To cross the boundary in values, apply the constructor / projector explicitly (T-App on `N.mk` or `N.get`). The reduction relation (§ 3) makes wrap-then-unwrap reduce, formalizing the iso-recursive law at the value level.
 
-Write `A ⇝id N` when an in-scope alias `A` reaches `newtype N` through a
+Write `A ⇝id N` when an in-scope alias `A` reaches nominal `N` through a
 finite chain in which every declaration has the same binder kinds and every
 body is the fully saturated positional application of the next head:
 `A[α₁]…[αₘ] = B[α₁]…[αₘ]`. Cycles, missing targets, partial applications,
 reordered arguments, and structural or otherwise transformed bodies do not
-establish this relation. If `A ⇝id N`, `A.c` and `A.p` are alternate qualified
-paths to the exact terms `N.c` and `N.p`, with the schemes above. The alias
+establish this relation. If `A ⇝id N`, `A.mk` and `A.get` are alternate qualified
+paths to the exact terms `N.mk` and `N.get`, with the schemes above. The alias
 head must be visible at the written source position and the terminal member
 must independently be visible from that use site. The head occurrence retains
 `A`'s declaration identity while the member occurrence retains the terminal
@@ -389,17 +389,17 @@ binders range over arbitrary types, and calls use the standard `apply_scheme`
 with positional substitution. The concrete Boolean role check precedes that
 ordinary scheme; it does not constrain a generic `α`.
 
-**Existentials live inside `newtype`.** Kio' has no separate existential introduction or elimination intrinsic. The `newtype`-declared existential binder run (see § 1.3 and [`../prime.md` § Existential introduction and elimination](../prime.md#existential-introduction-and-elimination)) is the only existential-introducing construct; the newtype's CPS projector
+**Existentials live inside nominal declarations.** Kio' has no separate existential introduction or elimination intrinsic. The nominal declaration’s existential binder run (see § 1.3 and [`../prime.md` § Existential introduction and elimination](../prime.md#existential-introduction-and-elimination)) is the only existential-introducing construct; the newtype's CPS projector
 
 ```text
-N.p : ∀α₁ … αₘ. (N[α₁]…[αₘ]) → ∀ρ. (∀β₁ … βₙ. (Payload[α][β]) → ρ) → ρ
+N.get : ∀α₁ … αₘ. (N[α₁]…[αₘ]) → ∀ρ. (∀β₁ … βₙ. (Payload[α][β]) → ρ) → ρ
 ```
 
 is the only elimination form. The continuation's `∀β₁ … βₙ.` binders are System F universals scoping the existential witnesses — the body type cannot leak into `ρ` by ordinary scope rules, so no separate skolemization machinery is needed.
 
 ### 2.5. Strict positivity
 
-Strict positivity is stated as a side condition on `newtype` declarations. Let `αᵢ` be the i-th type-parameter of a parametric `newtype` `N[α₁]...[αₘ]`. The **variance** of `αᵢ` in `N`'s payload is computed by mutual fixpoint over the finite set of nominal declarations reachable through written type references:
+Strict positivity is stated as a side condition on nominal declarations. Let `αᵢ` be the i-th type-parameter of a parametric nominal `N[α₁]...[αₘ]`. The **variance** of `αᵢ` in `N`'s payload is computed by mutual fixpoint over the finite set of nominal declarations reachable through written type references:
 
 ```text
 Variance v ::=  0       (parameter is unused / phantom)
@@ -450,7 +450,7 @@ Zero is absorbing on either side of composition because an unused parameter
 cannot acquire an occurrence through nesting. Invariance applies only when
 both composed positions are nonzero.
 
-Strict positivity is a property of one **explicit recursive component**, not of an unrelated declaration in the module. The singleton component for `rec newtype N` contains `N`. A bare group already denotes exactly one SCC under the written-head reference graph from § 1.4; transparent aliases contribute finite paths but no alias-only cycle. The strict-positivity side condition on a `newtype` declaration `N` in that component is then:
+Strict positivity is a property of one **explicit recursive component**, not of an unrelated declaration in the module. The singleton component for `rec type { N: ... }` contains `N`. A bare group already denotes exactly one SCC under the written-head reference graph from § 1.4; transparent aliases contribute finite paths but no alias-only cycle. The strict-positivity side condition on a nominal declaration `N` in that component is then:
 
 > For every occurrence in `N`'s payload that reaches a nominal member `M` of the explicit component (including through a transparent member alias), the **total variance obtained by composing all enclosing positions**, from the occurrence to the payload root, is `+` or `0`.
 
@@ -569,11 +569,11 @@ __either__[A][B][C](__right__[A][B](b), fl, fr)  →  fr(b)                 (ι-
 __fst__[A][B](__pair__[A][B](a, b))    →  a                               (ι-Fst)
 __snd__[A][B](__pair__[A][B](a, b))    →  b                               (ι-Snd)
 
-N.p[T̄](N.c[T̄](v))                          →  v                               (ι-Newtype)
+N.get[T̄](N.mk[T̄](v))                          →  v                               (ι-Newtype)
                                               (where N has no existentials and
                                               T̄ matches both sides)
 
-N.p[T̄](N.c[T̄][Ū](v)) → Λρ. λ(k: ∀β̄. Payload[T̄][β̄] → ρ). k[Ū](v)   (ι-NewtypeExists)
+N.get[T̄](N.mk[T̄][Ū](v)) → Λρ. λ(k: ∀β̄. Payload[T̄][β̄] → ρ). k[Ū](v)   (ι-NewtypeExists)
                        (where Ū are N's existential witnesses and ρ is fresh)
 
 __if_then_else__[B][A](.t[B], t, e)       →  t(())                              (ι-IfTrue)
@@ -702,13 +702,13 @@ operator
 ```text
 Φ_N(X)(Ū, C̄) =
   { e ∈ SN at N[Ū] |
-    whenever e →* N.c[Ū](payload),
+    whenever e →* N.mk[Ū](payload),
     payload belongs to ⟦Payload_N⟧ with parameters (Ū, C̄)
     and recursive heads interpreted by X }
 ```
 
 This is not an equation identifying the nominal type with its payload.
-The `N.c` boundary is part of `Φ_N`; opaque inhabitants of `N[Ū]` remain
+The `N.mk` boundary is part of `Φ_N`; opaque inhabitants of `N[Ū]` remain
 admissible neutrals. For an existential payload, each reachable constructor
 additionally has witness types. Its payload condition requires that **there
 exist** candidate interpretations at those witness types under which the

@@ -3,17 +3,17 @@ module testapi/main;
 import lib/core as lib;
 import testapi/io as io;
 
-newtype Wrapper : lib.Token -> lib.Token { constructor wrap; projector unwrap }
+type { Wrapper: lib.Token -> lib.Token { mk; get } }
 
 fn make() -> Wrapper {
   io.print("construct\n");
-  Wrapper.wrap(.(value) { io.print("call\n"); value })
+  Wrapper.mk(.(value) { io.print("call\n"); value })
 }
 
-fn read(value: Wrapper) -> lib.Token -> lib.Token { io.print("project\n"); value.>Wrapper.unwrap }
+fn read(value: Wrapper) -> lib.Token -> lib.Token { io.print("project\n"); value.>Wrapper.get }
 
 pub fn main() {
   let callback = read(make());
-  callback(lib.Token.make(())).>lib.Token.read;
+  callback(lib.Token.mk(())).>lib.Token.get;
   io.print("nominal identity\n")
 }

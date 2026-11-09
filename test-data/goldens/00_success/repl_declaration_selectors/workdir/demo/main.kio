@@ -1,7 +1,7 @@
 module demo/main;
 
 import demo/ops as arithmetic;
-import demo/ops(choose, field, op _ (=) _, op _ + _, varop [* *], {field});
+import demo/ops(Field, choose, field, op _ (=) _, op _ + _, varop [* *]);
 import demo/other as other;
 
 pub fn use() {
@@ -10,7 +10,7 @@ pub fn use() {
   [* equal, arithmetic.empty() *]
 }
 
-pub fn label_use() { {field=}.?{field} }
+pub fn alias_use() { Field.get(Field.mk(())) }
 
 pub fn function_use() { field() }
 

@@ -5,7 +5,7 @@ import host/a(Value);
 
 pub type Value_alias = h.Value;
 
-pub newtype Box : Value_alias { pub constructor mk_box; pub projector un_box }
+pub type { Box: Value_alias { pub mk; pub get } }
 
 pub type Box_alias = Box;
 

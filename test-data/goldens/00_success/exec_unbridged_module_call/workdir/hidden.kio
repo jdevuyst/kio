@@ -1,6 +1,6 @@
 module hidden;
 
-pub newtype Hidden_pair : . & . { pub constructor make_hidden_pair; pub projector read_hidden_pair }
+pub type { Hidden_pair: . & . { pub mk; pub get } }
 
 pub fn hidden_pair(value: . & .) -> . & . { value }
 

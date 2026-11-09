@@ -133,7 +133,6 @@ impl<T> EvalRef<T> {
             .map_err(Self)
     }
 
-    #[cfg(any(feature = "surface", test))]
     pub(crate) fn ptr_eq(left: &Self, right: &Self) -> bool {
         Arc::ptr_eq(&left.0, &right.0)
     }
@@ -201,7 +200,12 @@ enum NodeKind {
     CheckedNode(CheckedTermNode),
     Env(EnvFrame),
     Type(EvalAstType),
+    ReflectedType(ReflectedType),
+    TypeCursor(reflection_bindings::TypeCursor),
+    TypeEnvironment(reflection_bindings::TypeEnvironment),
+    OpenedScheme(reflection_bindings::OpenedScheme),
     Source(EvalAstExpr),
+    Signature(EvalAstSignature),
     Kind(crate::ast::Kind),
     ReplayType(Type<PrePrime>),
     ReplayExpr(Expr<PrePrime>),
@@ -228,7 +232,12 @@ fn release<T: Reclaim>(value: T) {
             NodeKind::CheckedNode(node) => node.reclaim(&mut pending),
             NodeKind::Env(env) => env.reclaim(&mut pending),
             NodeKind::Type(ty) => ty.reclaim(&mut pending),
+            NodeKind::ReflectedType(ty) => ty.reclaim(&mut pending),
+            NodeKind::TypeCursor(cursor) => cursor.reclaim(&mut pending),
+            NodeKind::TypeEnvironment(env) => env.reclaim(&mut pending),
+            NodeKind::OpenedScheme(owner) => owner.reclaim(&mut pending),
             NodeKind::Source(expr) => expr.reclaim(&mut pending),
+            NodeKind::Signature(sig) => sig.reclaim(&mut pending),
             NodeKind::Kind(kind) => kind.reclaim(&mut pending),
             NodeKind::ReplayType(ty) => ty.reclaim(&mut pending),
             NodeKind::ReplayExpr(expr) => expr.reclaim(&mut pending),
@@ -262,7 +271,12 @@ node!(CheckedTerm, Checked);
 node!(CheckedTermNode, CheckedNode);
 node!(EnvFrame, Env);
 node!(EvalAstType, Type);
+node!(ReflectedType, ReflectedType);
+node!(reflection_bindings::TypeCursor, TypeCursor);
+node!(reflection_bindings::TypeEnvironment, TypeEnvironment);
+node!(reflection_bindings::OpenedScheme, OpenedScheme);
 node!(EvalAstExpr, Source);
+node!(EvalAstSignature, Signature);
 node!(crate::ast::Kind, Kind);
 node!(Type<PrePrime>, ReplayType);
 node!(Expr<PrePrime>, ReplayExpr);
@@ -310,7 +324,6 @@ impl Reclaim for Value {
             | Value::FloatAtom(..)
             | Value::StrAtom(_)
             | Value::ReflTypeArity(_)
-            | Value::ReflTypeVar { .. }
             | Value::ReflTypeName { .. }
             | Value::DiagnosticText(_)
             | Value::Primitive(_)
@@ -322,7 +335,12 @@ impl Reclaim for Value {
 
     fn reclaim(self, pending: &mut Vec<Node>) {
         match self {
-            Value::ReflType(ty) => shared(ty.ty, pending),
+            Value::ReflType(ty) => ty.enqueue(pending),
+            Value::ReflTypeVar(variable) => {
+                if let reflection_bindings::VariableMeaning::Opened(owner) = variable.meaning {
+                    shared(owner, pending);
+                }
+            }
             Value::CheckedTerm(term) => shared(term, pending),
             Value::EvalClosure { function, captured } => {
                 shared(function, pending);
@@ -344,6 +362,10 @@ impl Reclaim for Value {
                 shared(value, pending);
                 shared(body, pending);
             }
+            Value::StuckType(callee, argument) => {
+                shared(callee, pending);
+                argument.enqueue(pending);
+            }
             Value::Stuck(callee, args) => {
                 shared(callee, pending);
                 shared(args, pending);
@@ -354,7 +376,6 @@ impl Reclaim for Value {
             | Value::FloatAtom(..)
             | Value::StrAtom(_)
             | Value::ReflTypeArity(_)
-            | Value::ReflTypeVar { .. }
             | Value::ReflTypeName { .. }
             | Value::DiagnosticText(_)
             | Value::Primitive(_)
@@ -386,7 +407,7 @@ impl Reclaim for EvalFunction {
 impl Reclaim for CheckedTerm {
     fn reclaim(self, pending: &mut Vec<Node>) {
         shared(self.node, pending);
-        shared(self.ty.ty, pending);
+        self.ty.enqueue(pending);
     }
 }
 
@@ -438,6 +459,7 @@ impl Reclaim for EvalExpr {
             Self::Const(value) => {
                 pending.push(value.into());
             }
+            Self::TypeValue(_) => {}
             Self::Local(..) => {}
             Self::Atom(..) => {}
             Self::FnRef { function, .. } => {
@@ -470,7 +492,7 @@ impl Reclaim for EvalExpr {
                     shared(child, pending);
                 }
             }
-            Self::TypeApplication { callee } => {
+            Self::TypeApplication { callee, .. } => {
                 shared(callee, pending);
             }
             Self::CallAtom { args, .. } => {
@@ -688,11 +710,9 @@ impl Reclaim for CheckedTermNode {
             }
             Self::TermCall {
                 fn_value,
-                params,
                 arg_packet,
             } => {
                 shared(fn_value, pending);
-                pending.extend(params.into_iter().map(Node::from));
                 shared(arg_packet, pending);
             }
             Self::TermTypeApp { fn_value, arg } => {
@@ -783,6 +803,12 @@ impl Reclaim for crate::ast::Kind {
     }
 }
 
+impl Reclaim for EvalAstSignature {
+    fn reclaim(self, pending: &mut Vec<Node>) {
+        signature(self, pending);
+    }
+}
+
 impl Reclaim for Signature<PrePrime> {
     fn reclaim(self, pending: &mut Vec<Node>) {
         signature(self, pending);
@@ -808,9 +834,7 @@ macro_rules! reclaim_ast {
                         pending.extend(param.kind.map(|kind| Node::from(*kind)));
                         pending.push((*body).into());
                     }
-                    Type::LabelSugar { ext, .. }
-                    | Type::Infer { ext, .. }
-                    | Type::Goal { ext, .. } => match ext {},
+                    Type::Infer { ext, .. } | Type::Goal { ext, .. } => match ext {},
                 }
             }
         }
@@ -853,11 +877,8 @@ macro_rules! reclaim_ast {
                         pending.extend(($annotation)(annotation).map(Node::from));
                     }
                     Expr::RecCall { ext, .. }
-                    | Expr::RowLet { ext, .. }
                     | Expr::Tuple { ext, .. }
                     | Expr::FnPlaceholder { ext, .. }
-                    | Expr::LabelValue { ext, .. }
-                    | Expr::Elaborator { ext, .. }
                     | Expr::RecOrder { ext, .. }
                     | Expr::RecQuote { ext, .. }
                     | Expr::UserMacro { ext, .. }
@@ -890,6 +911,53 @@ macro_rules! reclaim_ast {
 }
 reclaim_ast!(EvalPhase, |annotation: Option<EvalAstType>| annotation);
 reclaim_ast!(PrePrime, Some);
+
+impl Reclaim for ReflectedType {
+    fn reclaim(self, pending: &mut Vec<Node>) {
+        shared(self.ty, pending);
+        if let Some(cursor) = self.cursor {
+            shared(cursor, pending);
+        }
+        if let Some(environment) = self.environment.0 {
+            shared(environment, pending);
+        }
+    }
+}
+
+impl Reclaim for reflection_bindings::TypeCursor {
+    fn reclaim(self, pending: &mut Vec<Node>) {
+        if let Some(parent) = self.parent {
+            shared(parent, pending);
+        }
+    }
+}
+
+impl Reclaim for reflection_bindings::TypeEnvironment {
+    fn reclaim(self, pending: &mut Vec<Node>) {
+        if let Some(parent) = self.parent {
+            shared(parent, pending);
+        }
+        if let reflection_bindings::VariableMeaning::Opened(owner) = self.variable.meaning {
+            shared(owner, pending);
+        }
+    }
+}
+
+impl Reclaim for reflection_bindings::OpenedScheme {
+    fn reclaim(self, pending: &mut Vec<Node>) {
+        match self {
+            Self::Complete(ty) => ty.enqueue(pending),
+            #[cfg(feature = "surface")]
+            Self::Symbolic { environment, .. } => {
+                if let Some(environment) = environment.0 {
+                    shared(environment, pending);
+                }
+            }
+            #[cfg(test)]
+            Self::Incomplete => {}
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -955,7 +1023,10 @@ mod tests {
             let mut expression = EvalRef::new(EvalExpr::Unit);
             let leaf = expression.downgrade();
             for _ in 0..30_000 {
-                expression = EvalRef::new(EvalExpr::TypeApplication { callee: expression });
+                expression = EvalRef::new(EvalExpr::TypeApplication {
+                    callee: expression,
+                    argument: EvalTypeTemplate::unit(),
+                });
             }
             let root = expression.downgrade();
             drop(expression);

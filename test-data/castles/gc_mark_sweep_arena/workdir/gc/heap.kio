@@ -33,7 +33,7 @@ pub literal tag_box = 4;
 /// A heap image: the arena plus the roots the collector starts from.
 /// Both are host arrays, so every phase rewrites them in place and the
 /// image value itself never has to be rebuilt.
-pub labels Image = { heap_cells: Array[I32], heap_roots: Array[I32] };
+pub type Image = { Heap_cells: Array[I32]; Heap_roots: Array[I32] };
 
 pub fn top(cells: Array[I32]) -> I32 { array_len(cells) }
 

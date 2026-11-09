@@ -4,6 +4,7 @@ import list/core as c;
 import list/list as l;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import rs/field as f;
 import rs/input as input;
 import rs/polynomial as p;
@@ -30,7 +31,14 @@ fn samples(values: s.Word) -> String { l.to_string(s.show, values) }
 fn matches_message(message: p.Polynomial, word: s.Word) -> Bool {
   l.foldl(
   , .(ok, sample) {
-      if(ok) { f.equal(p.horner(message, sample.?{s.coordinate}), sample.?{s.value}) } else { .f }
+      if(ok) {
+        f.equal(
+        , p.horner(message, sample.>select { s.Coordinate.get })
+        , sample.>select { s.Value.get }
+        )
+      } else {
+        .f
+      }
     }
   , .t
   , word
@@ -40,7 +48,11 @@ fn matches_message(message: p.Polynomial, word: s.Word) -> Bool {
 fn altered_erasure(message: p.Polynomial, erased: s.Word) {
   match(c.head(erased)) {
     .(sample: s.Sample) {
-      let changed = {s.coordinate = sample.?{s.coordinate}, s.value = f.add(sample.?{s.value}, 1)};
+      let changed =
+        (
+        , s.Coordinate.mk(sample.>select { s.Coordinate.get })
+        , s.Value.mk(f.add(sample.>select { s.Value.get }, 1))
+        );
       let .(caught: Bool) = if(matches_message(message, c.singleton(changed))) { .f } else { .t };
       line("  altered erased symbol rejected = ", yes_no(caught))
     };
@@ -49,20 +61,29 @@ fn altered_erasure(message: p.Polynomial, erased: s.Word) {
 }
 
 fn accepted(frame: input.Frame, decoded: recovery.Decoded) -> Bool {
-  let message = frame.?{input.message};
-  let encoded = s.encode(message, frame.?{input.coordinates});
-  let repaired = decoded.?{recovery.repaired};
-  let erased = decoded.?{recovery.erased};
+  let message = frame.>select { input.Message.get };
+  let encoded = s.encode(message, frame.>select { input.Coordinates.get });
+  let repaired = decoded.>select { recovery.Repaired.get };
+  let erased = decoded.>select { recovery.Erased.get };
   line("  encoded = ", samples(encoded));
-  line("  recovered coefficients = ", integers(decoded.?{recovery.coefficients}));
+  line("  recovered coefficients = ", integers(decoded.>select { recovery.Coefficients.get }));
   line("  erased symbols recovered = ", samples(erased));
   line("  repaired = ", samples(repaired));
-  line("  surviving evaluations checked = ", fmt.int_to_string(decoded.?{recovery.verified}));
+  line(
+  , "  surviving evaluations checked = "
+  , fmt.int_to_string(decoded.>select { recovery.Verified.get })
+  );
   line(
   , "  surplus evaluations checked = "
-  , fmt.int_to_string(a.sub_i32(decoded.?{recovery.verified}, frame.?{input.dimension}))
+  , fmt.int_to_string(a.sub_i32(
+    , decoded.>select { recovery.Verified.get }
+    , frame.>select { input.Dimension.get }
+    ))
   );
-  line("  message restored = ", yes_no(p.equal(message, decoded.?{recovery.coefficients})));
+  line(
+  , "  message restored = "
+  , yes_no(p.equal(message, decoded.>select { recovery.Coefficients.get }))
+  );
   line("  codeword restored = ", yes_no(p.equal(s.values(encoded), s.values(repaired))));
   line("  erased evaluations verified = ", yes_no(matches_message(message, erased)));
   altered_erasure(message, erased);
@@ -71,33 +92,41 @@ fn accepted(frame: input.Frame, decoded: recovery.Decoded) -> Bool {
 }
 
 pub fn run(frame: input.Frame) -> Bool {
-  line("frame ", frame.?{input.name});
+  line("frame ", frame.>select { input.Name.get });
   line(
   , "  F17 code: k="
   , text.string_concat(
-    , fmt.int_to_string(frame.?{input.dimension})
-    , text.string_concat(" n=", fmt.int_to_string(l.length(frame.?{input.coordinates})))
+    , fmt.int_to_string(frame.>select { input.Dimension.get })
+    , text.string_concat(
+      , " n="
+      , fmt.int_to_string(l.length(frame.>select { input.Coordinates.get }))
+      )
     )
   );
-  line("  message coefficients = ", integers(frame.?{input.message}));
-  line("  evaluation coordinates = ", integers(frame.?{input.coordinates}));
-  line("  received = ", samples(frame.?{input.received}));
+  line("  message coefficients = ", integers(frame.>select { input.Message.get }));
+  line("  evaluation coordinates = ", integers(frame.>select { input.Coordinates.get }));
+  line("  received = ", samples(frame.>select { input.Received.get }));
   let message_valid =
     l.foldl(
     , .(ok, value) {
         if(ok) { f.valid(value) } else { .f }
       }
     , .t[Bool]
-    , frame.?{input.message}
+    , frame.>select { input.Message.get }
     );
   if(message_valid) {
     match(recovery.decode(
-    , frame.?{input.dimension}
-    , frame.?{input.coordinates}
-    , frame.?{input.received}
+    , frame.>select { input.Dimension.get }
+    , frame.>select { input.Coordinates.get }
+    , frame.>select { input.Received.get }
     )) {
-      .(result: recovery.Accepted) { accepted(frame, result.?{recovery.accepted}) };
-      .(result: recovery.Rejected) { line("  rejected: ", result.?{recovery.rejected}); .f }
+      .(result: recovery.Accepted) {
+        accepted(frame, result.>select { recovery.Accepted.get })
+      };
+      .(result: recovery.Rejected) {
+        line("  rejected: ", result.>select { recovery.Rejected.get });
+        .f
+      }
     }
   } else {
     line("  rejected: ", "message coefficient outside F17");

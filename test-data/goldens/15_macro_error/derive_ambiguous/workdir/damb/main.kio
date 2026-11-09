@@ -2,19 +2,16 @@ module damb/main;
 
 import macros/derive(macro derive);
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
-  pub constructor mk_monad;
-  pub projector bind
-  }
+pub type { Monad[*F]: [A][B] (F[A] & (A -> F[B])) -> F[B] { pub mk; pub get } }
 
 fn box_monad_a() -> Monad[Box] {
-  Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
+  Monad.mk(.[A][B](m, k) { k(Box.get(m)) })
 }
 
 fn box_monad_b() -> Monad[Box] {
-  Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
+  Monad.mk(.[A][B](m, k) { k(Box.get(m)) })
 }
 
 // Two candidates both produce `Monad[Box]` and both unify with the

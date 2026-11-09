@@ -2,12 +2,12 @@ module main;
 
 import macros/sequence(macro do);
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-newtype Other[A] : A { constructor other; projector unother }
+type { Other[A]: A { mk; get } }
 
-fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 fn run() -> Other[.] {
-  do(bind) { Other.other(()) }
+  do(bind) { Other.mk(()) }
 }

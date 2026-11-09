@@ -14,6 +14,9 @@ kept-forward
 kept-forward
 kept-reverse
 kept-reverse
+whole forward ok
+whole reverse ok
+whole direct ok
 sequence receiver
 sequence first
 sequence first second

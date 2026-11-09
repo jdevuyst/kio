@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::ast::{CallArg, ElaboratorCall, Expr, Item, Module, OpChainKind, Surface};
+use crate::ast::{CallArg, Expr, Item, Module, OpChainKind, Surface};
 use crate::pass::surface_registry::ResolvedBlockDeclaration;
 use crate::pass::typecheck_full::{PositionIndex, ResolvedBinder};
 
@@ -102,7 +102,6 @@ pub(crate) fn record_module(
             | Item::LiteralAlias(_, _)
             | Item::Newtype(_)
             | Item::Labels(_, _)
-            | Item::LabelForward(_, _)
             | Item::Macro(_, _)
             | Item::TypeRecGroup(_)
             | Item::HostType(_)
@@ -186,23 +185,11 @@ pub(crate) fn record_module(
                 push_args(&mut pending, args);
             }
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),
-            Expr::Let { value, body, .. }
-            | Expr::RowLet { value, body, .. }
-            | Expr::Seq { value, body, .. } => {
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
                 pending.push(value);
                 pending.push(body);
             }
             Expr::Tuple { items, .. } => pending.extend(items),
-            Expr::LabelValue { labels, .. } => {
-                pending.extend(labels.iter().map(|label| &label.value))
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    pending.extend(base.receiver());
-                    pending.extend(updates.iter().map(|update| &update.value));
-                }
-            },
             Expr::OpChain { kind, .. } => match kind {
                 OpChainKind::Normal { slots, .. } => pending.extend(slots),
                 OpChainKind::Variadic { elements, .. } => pending.extend(elements),

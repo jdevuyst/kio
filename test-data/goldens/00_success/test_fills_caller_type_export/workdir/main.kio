@@ -1,0 +1,19 @@
+module main;
+
+import __comptime__;
+
+pure fn duplicate_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _type: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (__intrinsic_pair__(ct, value, value), fills) }
+
+macro duplicate : [A] A -> (A & A) { impl(fills) duplicate_impl }
+
+fn duplicate_caller[A](value: A) -> A & A { duplicate(value) }
+
+equiv caller_result() {
+  duplicate_caller(());
+  ((), ())
+}

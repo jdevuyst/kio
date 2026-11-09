@@ -26,31 +26,30 @@ tree, with the grouped product in its first slot. Order and grouping matter to
 ordinary type equality. Library [spine macros](docs/poc/macros.md#two-source-to-target-palettes)
 perform explicit structural transformations.
 
-**Row-typed record, row, field, label.** Row-typed records use ordinary products of
-nominal field wrappers. A `labels` declaration introduces lowercase label
-syntax, such as `{name = value}`, and its generated nominal type `Name`.
-The label selects a field; `Name` identifies its wrapper type; field access
-returns the payload. A *row* describes this field-oriented use of product
+**Row-typed record, row, field.** Row-typed records use ordinary products of
+nominal field wrappers. A declaration such as `type { Name: String; }`
+introduces the field type `Name`, whose `mk` and `get` members construct and
+project its payload. A *row* describes this field-oriented use of product
 structure, rather than a separate type kind or runtime container. An empty row
 is `()`; a one-field row can have type `Name` alone. `Name & .` retains a
 second, Unit component. In `Name & R`, the row tail `R` is an ordinary type
 variable: this is Kio's *row polymorphism*. It does not introduce unordered
-type equality. Construction and update have a specific
-[expected-order checking rule](specs/language.md#labels); other rearrangements
-require explicit operations. Labels also give sum alternatives distinct nominal
-payload types. See [rows and records](docs/guides/products.md) and
-[named sum branches](docs/guides/sums.md#when-branches-need-names).
+type equality. Library `record` and `with` macros require a target and can
+reorder an exact product to it; `record_` and `with_` derive their result order
+from their inputs. `select` applies explicitly supplied functions to matching
+fields. Other rearrangements require explicit operations. Nominal
+types can also distinguish sum alternatives. See [rows and records](docs/guides/products.md)
+and [named sum branches](docs/guides/sums.md#when-branches-need-names).
 
-**Nominal type, newtype, constructor, projector.** A `newtype` declaration
-introduces a distinct type identity around a payload. Its declared value
-constructors wrap payloads, and its projectors expose them through the declared
-interface. An existential projector passes its hidden payload type to a
-continuation so it cannot escape its scope. A transparent `type` alias names
-an existing type without creating a nominal identity. A *type constructor*
-instead takes type arguments to produce a type: `Box[A]` names a type, while
-`Box.mk_box[A](value)` constructs a value when `mk_box` is the declared member.
-Kinds describe the accepted type arguments, including higher-kinded parameters.
-See [declarations](docs/guides/declarations.md),
+**Nominal type, constructor, projector.** A nominal entry in a `type` declaration
+introduces a distinct type identity around a payload. Its `mk` member wraps a
+payload and its `get` member projects it. An existential projector passes its
+hidden payload type to a continuation so it cannot escape its scope. A
+transparent `type` alias names an existing type without creating a nominal
+identity. A *type constructor* instead takes type arguments to produce a type:
+`Box[A]` names a type, while `Box.mk[A](value)` constructs a value. Kinds
+describe the accepted type arguments, including higher-kinded parameters. See
+[declarations](docs/guides/declarations.md),
 [higher-kinded types](docs/guides/higher-kinded-types.md), and
 [existentials](specs/language.md#existential-type-binders).
 
@@ -78,7 +77,7 @@ See
 
 **Kio, Kio', surface, core.** Kio is the full language. Kio' (pronounced
 "Kio prime") is its explicit semantic subset, also called the *core*.
-Surface forms such as tuples, label operations and macro calls are translated
+Surface forms such as tuples, compact type declarations and macro calls are translated
 to that shared subset. A file's Kio' syntax, a compiler AST's Prime shape,
 successful type validation, and successful dynamic loading are different
 claims. In particular, the

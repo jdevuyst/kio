@@ -2,7 +2,7 @@ module macros;
 
 import __comptime__;
 
-pub newtype Box[A] : A { constructor mk_box; projector un_box }
+pub type { Box[A]: A { mk; get } }
 
 pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, a: __Type__, _value: __Checked_term__) ->
   __Checked_term__ & __Fill_ctx__

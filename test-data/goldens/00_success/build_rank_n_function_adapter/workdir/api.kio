@@ -1,9 +1,9 @@
 module api;
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { constructor functor; projector map }
+type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { mk; get } }
 
 fn box_functor() -> Functor[Box] {
-  Functor.functor(.[A][B](step, value) { Box.box(step(Box.unbox(value))) })
+  Functor.mk(.[A][B](step, value) { Box.mk(step(Box.get(value))) })
 }

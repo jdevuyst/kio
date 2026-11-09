@@ -9,16 +9,16 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub rec newtype Node : String & lists.List[Node] { constructor make; projector open }
+pub rec type { Node: String & lists.List[Node] { mk; get } }
 
-pub fn branch(name: String, children: lists.List[Node]) -> Node { Node.make((name, children)) }
+pub fn branch(name: String, children: lists.List[Node]) -> Node { Node.mk((name, children)) }
 
 pub fn leaf(name: String) -> Node { branch(name, lists.nil[_]) }
 
-pub fn name(node: Node) -> String { let .(title, _children) = Node.open(node); title }
+pub fn name(node: Node) -> String { let .(title, _children) = Node.get(node); title }
 
 pub fn children(node: Node) -> lists.List[Node] {
-  let .(_title, descendants) = Node.open(node);
+  let .(_title, descendants) = Node.get(node);
   descendants
 }
 

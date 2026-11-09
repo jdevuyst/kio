@@ -57,13 +57,15 @@ macro make : . {
 }
 
 // elab outer
-newtype Box : . {
-  constructor create;
-  projector read
-  // constructor tail
+type {
+  Box: . {
+    mk;
+    get
+    // constructor tail
 
-  // newtype close
+    // newtype close
   }
+}
 
 // newtype outer
 op _ + _ {
@@ -118,13 +120,17 @@ v(1) {
 v(2) {
   with {
     module api {
-      pub rec newtype Fresh : . | Fresh {
-        pub constructor make;
-        pub projector read
-        // member tail
+      pub rec type {
+        Fresh:
+          . | Fresh
+          {
+            pub mk;
+            pub get
+            // member tail
 
-        // member close
-        }
+            // member close
+          }
+      }
     }
   };
   breaking {

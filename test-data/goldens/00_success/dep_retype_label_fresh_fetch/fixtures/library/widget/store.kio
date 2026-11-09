@@ -1,7 +1,7 @@
 module store;
 
-pub labels { foo: . };
+pub type { Foo: . { pub mk; pub get } }
 
-pub labels Later = { foo: _ };
+pub type Later = Foo;
 
-pub fn accept_later(value: Later) { value.?{foo} }
+pub fn accept_later(value: Later) { Foo.get(value) }

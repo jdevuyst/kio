@@ -1,5 +1,5 @@
 module store;
 
-pub newtype Node : Later { pub constructor mk_node; pub projector get_node }
+pub type { Node: Later { pub mk; pub get; }; };
 
-pub newtype Later : . { pub constructor mk_later; pub projector get_later }
+pub type { Later: . { pub mk; pub get; }; };

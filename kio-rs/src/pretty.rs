@@ -20,7 +20,7 @@
 //! combinators) and renders it with [`crate::doc::render`] at the
 //! canonical 100-column budget. [`comma_list`](crate::doc::comma_list)
 //! drives the width-driven A1 break for every comma-separated list
-//! (parameter lists, member lists, call args, tuples, label sugar,
+//! (parameter lists, member lists, call args, tuples,
 //! macro / `equiv` arm lists, etc.) — flat when it fits, leading-
 //! comma multi-line when it doesn't or when an inner unconditional
 //! break cascades out. [`align`](crate::doc::align) pins continuation
@@ -36,10 +36,9 @@
 use crate::ast::FnPurityExt;
 use crate::ast::{
     BridgeBlock, BridgeGlobSegment, BuildBlock, BuildBlockCache, CallArg, CallStage,
-    DependencyFile, DocComment, ElaboratorCall, Equiv, Expr, FieldAccessLabel, FieldUpdateLabel,
-    FnDef, HostFn, HostFnParam, HostType, Import, ImportItem, ImportKind, Item, LabelForward,
-    LabelSugarLabel, Labels, LiteralAlias, LiteralAliasValue, LockFile, Module, ModulePath,
-    Newtype, Op, OpBody, OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef,
+    DependencyFile, DocComment, Equiv, Expr, FnDef, HostFn, HostFnParam, HostType, Import,
+    ImportItem, ImportKind, Item, Labels, LiteralAlias, LiteralAliasValue, LockFile, Module,
+    ModulePath, Newtype, Op, OpBody, OpPart, PackageFile, Signature, SignatureGroupRef,
     SignatureParam, SourceBlock, SourceOrigin, Surface, TargetBlock, Type, TypeAlias, TypeParam,
     VariadicOperator,
 };
@@ -197,7 +196,6 @@ pub fn pretty_item_type(item: &Item) -> Option<String> {
         Item::TypeAlias(_)
         | Item::LiteralAlias(_, _)
         | Item::Labels(_, _)
-        | Item::LabelForward(_, _)
         | Item::Newtype(_)
         | Item::Op(_, _)
         | Item::VariadicOperator(_, _)
@@ -231,9 +229,7 @@ fn host_fn_signature(h: &HostFn) -> Signature {
 
 /// Render a Surface-phase [`Type`] to its canonical surface form.
 ///
-/// Unlike [`crate::pass::typecheck_core::display_type`] — which requires a
-/// post-label-elab phase (`TypeLabelSugar = Never`) — this renders a
-/// `Type<Surface>` directly, so it can show a type read straight off
+/// This renders a `Type<Surface>` directly, so it can show a type read straight off
 /// a parsed declaration's signature. Used by `kio repl`'s `:t` to
 /// print a function's declared type.
 pub fn pretty_type(ty: &Type) -> String {
@@ -266,7 +262,7 @@ fn strip_item_doc(item: &Item) -> Item {
         Item::LiteralAlias(l, _) => l.doc = None,
         Item::Newtype(n) => n.doc = None,
         Item::Labels(t, _) => t.doc = None,
-        Item::LabelForward(t, _) => t.doc = None,
+
         Item::Op(o, _) => o.doc = None,
         Item::VariadicOperator(f, _) => f.doc = None,
         Item::Macro(s, _) => s.doc = None,
@@ -569,7 +565,6 @@ fn import_item_display(item: &crate::ast::ImportItem) -> String {
                 |alias| format!("{prefix}{name} as {}", alias.local),
             )
         }
-        ImportItem::Label { name, .. } => format!("{{{name}}}"),
         ImportItem::OperatorPattern { grammar, alias, .. } => {
             let mut rendered = grammar.render();
             if let Some(alias) = alias {
@@ -589,14 +584,13 @@ fn doc_item(item: &Item) -> Doc {
     if let Item::TypeAlias(alias) = item {
         return doc_type_alias_with_terminator(alias, true);
     }
+    if let Item::Labels(labels, _) = item {
+        return doc_labels_with_terminator(labels, labels.type_alias_name.is_some());
+    }
     let body = doc_item_entry(item);
     if matches!(
         item,
-        Item::LiteralAlias(..)
-            | Item::Labels(..)
-            | Item::LabelForward(..)
-            | Item::HostType(_)
-            | Item::HostFn(_)
+        Item::LiteralAlias(..) | Item::HostType(_) | Item::HostFn(_)
     ) {
         concat(body, text(";"))
     } else {
@@ -611,7 +605,7 @@ fn doc_item_entry(item: &Item) -> Doc {
         Item::LiteralAlias(a, _) => doc_literal_alias(a),
         Item::Newtype(d) => doc_newtype(d),
         Item::Labels(d, _) => doc_labels(d),
-        Item::LabelForward(d, _) => doc_label_forward(d),
+
         Item::Equiv(e, _) => doc_equiv(e),
         Item::Macro(s, _) => doc_macro_item(s),
         Item::RecGroup(g, _) => doc_rec_group(g),
@@ -1000,27 +994,6 @@ fn doc_type_alias_with_terminator(a: &TypeAlias, terminated: bool) -> Doc {
     ])
 }
 
-fn doc_label_forward(forward: &LabelForward) -> Doc {
-    let doc_prefix = forward
-        .doc
-        .as_ref()
-        .map(doc_doc_comment)
-        .unwrap_or_else(empty);
-    let head = text(format!("type {{{}}} =", forward.name));
-    let declaration = if has_comments(&forward.body_trivia) {
-        concat(
-            head,
-            doc_compact_declaration_body(&forward.body_trivia, text(forward.target.clone())),
-        )
-    } else {
-        group(concat_all([
-            head,
-            nest(2, concat(line(), text(format!("{{{}}}", forward.target)))),
-        ]))
-    };
-    concat_all([doc_prefix, doc_vis(&forward.vis), declaration])
-}
-
 fn doc_literal_alias(a: &LiteralAlias) -> Doc {
     let doc_prefix = a.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let pubword = doc_vis(&a.vis);
@@ -1054,86 +1027,29 @@ fn doc_literal_alias_value(value: &LiteralAliasValue) -> Doc {
 }
 
 fn doc_newtype(d: &Newtype) -> Doc {
-    let doc_prefix = d.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
-    let pubword = doc_vis(&d.vis);
-    let recword = if d.rec_span.is_some() {
-        text("rec ")
-    } else {
-        empty()
+    let entry = crate::ast::LabelEntry {
+        name: d.name.clone(),
+        name_span: d.name_span,
+        type_params: d.type_params.clone(),
+        existential_params: d.existential_params.clone(),
+        payload: d.payload.clone(),
+        members: Some(crate::ast::NominalMembers {
+            constructor: d.constructor.clone(),
+            projector: d.projector.clone(),
+            trailing_trivia: d.meta.trailing_trivia.clone(),
+        }),
+        meta: crate::ast::Meta::new(d.meta.span),
     };
-    let head = concat_all([pubword, recword, text(format!("newtype {}", d.name))]);
-    let params = if d.type_params.is_empty() {
-        empty()
-    } else {
-        doc_type_params(&d.type_params)
-    };
-    // Constructor and projector retain their comments when canonical order
-    // differs from source order.
-    let cons_pub = doc_vis(&d.constructor.vis);
-    let proj_pub = doc_vis(&d.projector.vis);
-    let cons_doc = concat_all([
-        doc_inline_leading_trivia(&d.constructor.leading_trivia),
-        cons_pub,
-        text("constructor "),
-        text(d.constructor.name.clone()),
-    ]);
-    let proj_doc = concat_all([
-        doc_inline_leading_trivia(&d.projector.leading_trivia),
-        proj_pub,
-        text("projector "),
-        text(d.projector.name.clone()),
-    ]);
-    let members_trailing = d.meta.trailing_trivia.as_slice();
-    let dangling = has_comments(members_trailing);
-    let inline_after_open = concat_all([
-        text(" "),
-        cons_doc.clone(),
-        text("; "),
-        proj_doc.clone(),
-        text(" }"),
-    ]);
-    let mut broken_parts: Vec<Doc> = vec![hardline(), cons_doc, text(";"), hardline(), proj_doc];
-    if dangling {
-        broken_parts.push(hardline());
-        broken_parts.push(doc_trailing_comments(members_trailing));
-    }
-    broken_parts.push(hardline());
-    broken_parts.push(text("}"));
-    let broken_after_open = nest(2, concat_all(broken_parts));
-    let after_open = if dangling {
-        broken_after_open
-    } else {
-        group(flat_alt(inline_after_open, broken_after_open))
-    };
-    // Existential binders live on the newtype header: emit them as
-    // whitespace-separated `<U> <V>` atoms between the universal
-    // parameter list and the `:`.
-    let existentials = if d.existential_params.is_empty() {
-        empty()
-    } else {
-        concat(text(" "), doc_existential_params(&d.existential_params))
-    };
-    // Width-driven flat-or-broken for the payload type — when
-    // it's a chain that's too wide, break to the leading-operator
-    // multi-line layout. The trail is ` {` (the member-list
-    // opener); when the payload breaks, `{` lands on its own line
-    // at the same +2 indent as the chain items. The member list
-    // body itself is width-driven inside `after_open`.
-    let payload_part = doc_chain_body_layout(
-        &d.payload,
-        doc_type(&d.payload),
-        " : ",
-        " :",
-        text(" {"),
-        text("{"),
-    );
     concat_all([
-        doc_prefix,
-        head,
-        params,
-        existentials,
-        payload_part,
-        after_open,
+        d.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty),
+        doc_vis(&d.vis),
+        if d.rec_span.is_some() {
+            text("rec ")
+        } else {
+            empty()
+        },
+        text("type "),
+        doc_labels_arm(&[entry]),
     ])
 }
 
@@ -1285,129 +1201,236 @@ fn doc_equiv(e: &Equiv) -> Doc {
 }
 
 fn doc_labels(d: &Labels) -> Doc {
-    let doc_prefix = d.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
-    let pubword = doc_vis(&d.vis);
-    let recword = if d.rec_span.is_some() {
-        text("rec ")
-    } else {
-        empty()
-    };
-    let mut head: Vec<Doc> = vec![doc_prefix, pubword, recword, text("labels")];
+    doc_labels_with_terminator(d, false)
+}
+
+fn doc_labels_with_terminator(d: &Labels, terminated: bool) -> Doc {
+    let mut head = vec![
+        d.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty),
+        doc_vis(&d.vis),
+        if d.rec_span.is_some() {
+            text("rec ")
+        } else {
+            empty()
+        },
+        text("type "),
+    ];
     if let Some(name) = &d.type_alias_name {
-        head.push(text(format!(" {name}")));
-        if !d.type_alias_params.is_empty() {
-            head.push(doc_type_params(&d.type_alias_params));
-        }
-        head.push(text(" ="));
+        head.push(text(name.clone()));
+        head.push(doc_type_params(&d.type_alias_params));
+        let rhs = d.type_alias_rhs.as_ref().expect("named compact RHS");
+        let body = doc_nominal_rhs(
+            rhs,
+            d.type_alias_arms.as_deref().expect("named compact groups"),
+        );
+        let terminator = if terminated { text(";") } else { empty() };
+        let flat = concat_all([text(" = "), body.clone(), terminator.clone()]);
+        head.push(
+            if matches!(
+                rhs,
+                crate::ast::NominalRhs::Product(..) | crate::ast::NominalRhs::Sum(..)
+            ) {
+                group(flat_alt(
+                    flat,
+                    nest(
+                        2,
+                        concat_all([
+                            text(" ="),
+                            hardline(),
+                            body,
+                            if terminated { hardline() } else { empty() },
+                            terminator,
+                        ]),
+                    ),
+                ))
+            } else {
+                flat
+            },
+        );
+    } else {
+        head.push(doc_labels_arm(&d.entries));
     }
-    let arms: Vec<&[crate::ast::LabelEntry]> = d
-        .type_alias_arms
-        .as_ref()
-        .map(|arms| arms.iter().map(|arm| arm.entries.as_slice()).collect())
-        .unwrap_or_else(|| vec![d.entries.as_slice()]);
-    let any_entry_comments = arms.iter().flat_map(|entries| entries.iter()).any(|entry| {
+    concat_all(head)
+}
+
+fn doc_nominal_rhs(rhs: &crate::ast::NominalRhs, arms: &[crate::ast::LabelsArm]) -> Doc {
+    use crate::ast::NominalRhs;
+    match rhs {
+        NominalRhs::Group(index) => doc_labels_arm(&arms[*index].entries),
+        NominalRhs::Type(ty) => {
+            if matches!(
+                ty,
+                Type::Function { .. }
+                    | Type::Forall { .. }
+                    | Type::Product { .. }
+                    | Type::Sum { .. }
+            ) {
+                concat_all([text("("), doc_type(ty), text(")")])
+            } else {
+                doc_type(ty)
+            }
+        }
+        NominalRhs::Product(..) => doc_nominal_chain(rhs, arms, ChainOp::Amp),
+        NominalRhs::Sum(..) => doc_nominal_chain(rhs, arms, ChainOp::Pipe),
+        NominalRhs::Grouped(inner, meta) => concat_all([
+            doc_inline_leading_trivia(&meta.leading_trivia),
+            text("("),
+            doc_nominal_rhs(inner, arms),
+            if has_comments(&meta.trailing_trivia) {
+                concat_all([
+                    hardline(),
+                    doc_trailing_comments(&meta.trailing_trivia),
+                    hardline(),
+                ])
+            } else {
+                empty()
+            },
+            text(")"),
+        ]),
+    }
+}
+
+fn doc_nominal_chain(
+    rhs: &crate::ast::NominalRhs,
+    arms: &[crate::ast::LabelsArm],
+    op: ChainOp,
+) -> Doc {
+    use crate::ast::NominalRhs;
+    let mut docs = Vec::new();
+    let mut trailing = Vec::new();
+    let mut current = rhs;
+    loop {
+        let (left, right, meta) = match (current, op) {
+            (NominalRhs::Product(left, right, meta), ChainOp::Amp)
+            | (NominalRhs::Sum(left, right, meta), ChainOp::Pipe) => (left, right, meta),
+            _ => {
+                docs.push(doc_nominal_rhs(current, arms));
+                break;
+            }
+        };
+        docs.push(concat_all([
+            doc_inline_leading_trivia(&meta.leading_trivia),
+            doc_nominal_rhs(left, arms),
+        ]));
+        if has_comments(&meta.trailing_trivia) {
+            trailing.push(doc_trailing_comments(&meta.trailing_trivia));
+        }
+        current = right;
+    }
+    if !trailing.is_empty() {
+        let last = docs.pop().expect("chain operands");
+        docs.push(concat_all(std::iter::once(last).chain(
+            trailing.into_iter().rev().flat_map(|doc| [hardline(), doc]),
+        )));
+    }
+    let flat = join(text(op.separator()), docs.clone());
+    let broken = join(
+        hardline(),
+        docs.into_iter().map(|doc| concat(text(op.prefix()), doc)),
+    );
+    group(flat_alt(flat, broken))
+}
+
+fn doc_labels_arm(entries: &[crate::ast::LabelEntry]) -> Doc {
+    let comments = entries.iter().any(|entry| {
         has_comments(&entry.meta.leading_trivia) || has_comments(&entry.meta.trailing_trivia)
     });
-    let body = if arms.iter().all(|entries| entries.is_empty()) {
-        text(" {}")
-    } else if arms.len() == 1 && arms[0].len() == 1 && !any_entry_comments {
-        concat_all([text(" { "), doc_label_entry(&arms[0][0]), text(" }")])
-    } else if any_entry_comments {
-        // Any captured comment forces the multi-line layout so each
-        // comment can sit on its own line above its entry; a trailing
-        // comment on the last entry sits below it before the `}`.
-        let mut rendered_arms: Vec<Doc> = Vec::new();
-        for entries in arms {
-            rendered_arms.push(broken_comma_list(
-                text("{"),
-                entries.iter().map(|entry| {
-                    (
-                        doc_inline_leading_trivia(&entry.meta.leading_trivia),
-                        doc_label_entry(entry),
-                    )
-                }),
-                entries.last().map_or_else(empty, |entry| {
-                    doc_trailing_comments(&entry.meta.trailing_trivia)
-                }),
-                text("}"),
-            ));
+    let flat = concat_all([
+        text("{ "),
+        join(
+            text(" "),
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| doc_label_entry(entry, index + 1 < entries.len())),
+        ),
+        text(" }"),
+    ]);
+    let mut body = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        body.push(hardline());
+        body.push(doc_inline_leading_trivia(&entry.meta.leading_trivia));
+        body.push(doc_label_entry(entry, index + 1 < entries.len()));
+        if has_comments(&entry.meta.trailing_trivia) {
+            body.push(hardline());
+            body.push(doc_trailing_comments(&entry.meta.trailing_trivia));
         }
-        concat_all([text(" "), join(text(" | "), rendered_arms)])
+    }
+    let broken = concat_all([text("{"), nest(2, concat_all(body)), hardline(), text("}")]);
+    if comments {
+        broken
     } else {
-        // Width-driven. A single arm is a standard A1 comma list:
-        // flat ` { e1, e2 }` when it fits, else the leading-comma
-        // layout with the `{` kept on the introducing line — the
-        // same shape the comment-forced branch above produces, so
-        // both paths anchor a multi-line entry at its content
-        // column. Multi-arm alternation stays flat when it fits and
-        // otherwise breaks arm-per-line; each arm then makes its own
-        // width decision, with the `"| "` prefix mirrored as a
-        // nest(2) like a comma prefix.
-        let rendered_arms: Vec<Doc> = arms.iter().map(|entries| doc_labels_arm(entries)).collect();
-        if rendered_arms.len() == 1 {
-            let arm = rendered_arms.into_iter().next().unwrap_or_else(empty);
-            group(concat_all([text(" "), arm]))
-        } else {
-            let flat = concat_all([text(" "), join(text(" | "), rendered_arms.clone())]);
-            let mut broken_inner: Vec<Doc> = Vec::new();
-            for (index, arm) in rendered_arms.into_iter().enumerate() {
-                broken_inner.push(hardline());
-                if index > 0 {
-                    broken_inner.push(text("| "));
-                    broken_inner.push(nest(2, group(arm)));
-                } else {
-                    broken_inner.push(group(arm));
-                }
-            }
-            let broken = nest(2, concat_all(broken_inner));
-            group(flat_alt(flat, broken))
-        }
+        group(flat_alt(flat, broken))
+    }
+}
+
+fn doc_nominal_members(members: &crate::ast::NominalMembers) -> Doc {
+    let member = |value: &crate::ast::TypeMember| {
+        concat_all([
+            doc_inline_leading_trivia(&value.leading_trivia),
+            doc_vis(&value.vis),
+            text(value.name.clone()),
+        ])
     };
-    concat(concat_all(head), body)
+    let constructor = member(&members.constructor);
+    let projector = member(&members.projector);
+    let flat = concat_all([
+        text("{ "),
+        constructor.clone(),
+        text("; "),
+        projector.clone(),
+        text(" }"),
+    ]);
+    let mut body = vec![hardline(), constructor, text(";"), hardline(), projector];
+    if has_comments(&members.trailing_trivia) {
+        body.push(hardline());
+        body.push(doc_trailing_comments(&members.trailing_trivia));
+    }
+    let broken = concat_all([text("{"), nest(2, concat_all(body)), hardline(), text("}")]);
+    if has_comments(&members.constructor.leading_trivia)
+        || has_comments(&members.projector.leading_trivia)
+        || has_comments(&members.trailing_trivia)
+    {
+        broken
+    } else {
+        group(flat_alt(flat, broken))
+    }
 }
 
-/// One labels arm as an A1 comma list — flat `{ e1, e2 }` when the
-/// enclosing group fits, else the leading-comma layout with each
-/// entry nested at its content column (the same nest(2) mirror of
-/// the `", "` prefix as [`comma_list`]). Returned ungrouped so the
-/// caller decides the group boundary; the multi-arm broken layout groups
-/// each arm to let it break independently.
-fn doc_labels_arm(entries: &[crate::ast::LabelEntry]) -> Doc {
-    let entries: Vec<Doc> = entries.iter().map(doc_label_entry).collect();
-    if entries.len() <= 1 {
-        // A1: 0 or 1 items always single-line, no width check.
-        return concat_all([text("{ "), join(text(", "), entries), text(" }")]);
-    }
-    let flat = concat_all([text("{ "), join(text(", "), entries.clone()), text(" }")]);
-    let broken = broken_comma_list(
-        text("{"),
-        entries.into_iter().map(|entry| (empty(), entry)),
-        empty(),
-        text("}"),
-    );
-    flat_alt(flat, broken)
-}
-
-// Render one label entry (without any leading `, ` or trivia). The
-// entry's payload, type-params, and existential binders make their
-// own width-driven decisions; the separator widens to ` : ` when
-// existential params are present so the binder list (`<U> <V>`) reads
-// as a distinct phrase from the payload-introducing `:`.
-fn doc_label_entry(entry: &crate::ast::LabelEntry) -> Doc {
-    let mut parts: Vec<Doc> = vec![text(entry.name.clone())];
-    if !entry.type_params.is_empty() {
-        parts.push(doc_type_params(&entry.type_params));
-    }
+fn doc_label_entry(entry: &crate::ast::LabelEntry, terminated: bool) -> Doc {
+    let mut parts = vec![
+        text(entry.name.clone()),
+        doc_type_params(&entry.type_params),
+    ];
     if !entry.existential_params.is_empty() {
         parts.push(text(" "));
         parts.push(doc_existential_params(&entry.existential_params));
     }
-    parts.push(text(if entry.existential_params.is_empty() {
-        ": "
+    let payload = doc_type(&entry.payload);
+    let body = if let Some(members) = &entry.members {
+        let suffix = concat_all([
+            doc_nominal_members(members),
+            if terminated { text(";") } else { empty() },
+        ]);
+        doc_chain_body_layout(
+            &entry.payload,
+            payload,
+            ": ",
+            ":",
+            concat(text(" "), suffix.clone()),
+            suffix,
+        )
+    } else if terminated {
+        doc_chain_body_layout(&entry.payload, payload, ": ", ":", text(";"), text(";"))
+    } else if matches!(entry.payload, Type::Product { .. } | Type::Sum { .. }) {
+        group(flat_alt(
+            concat(text(": "), payload.clone()),
+            nest(2, concat_all([text(":"), hardline(), payload])),
+        ))
     } else {
-        " : "
-    }));
-    parts.push(doc_type(&entry.payload));
+        concat(text(": "), payload)
+    };
+    parts.push(body);
     concat_all(parts)
 }
 
@@ -1876,31 +1899,10 @@ fn doc_type_core(t: &Type) -> Doc {
             let items = flatten_chain(t, ChainOp::Pipe);
             doc_chain(items, ChainOp::Pipe)
         }
-        Type::LabelSugar { labels, .. } => {
-            let label_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = labels
-                .iter()
-                .map(|l| l.meta.leading_trivia.clone())
-                .collect();
-            doc_label_sugar(labels, &label_trivia)
-        }
         Type::Forall { .. } => doc_forall_type(t),
         Type::Infer { .. } => text("_".to_owned()),
         Type::Goal { ext, .. } => match *ext {},
     }
-}
-
-fn doc_label_sugar(labels: &[LabelSugarLabel], label_trivia: &[Vec<Trivia>]) -> Doc {
-    let label_docs: Vec<Doc> = labels
-        .iter()
-        .map(|label| {
-            let head = text(label.label.clone());
-            match &label.payload {
-                None => head,
-                Some(payload) => concat(head, concat(text(": "), doc_type(payload))),
-            }
-        })
-        .collect();
-    doc_comma_list_with_trivia(text("{"), label_docs, label_trivia, &[], text("}"))
 }
 
 // ---- expressions -------------------------------------------------------
@@ -1989,13 +1991,6 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             &meta.leading_trivia,
             &[],
         ),
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            meta,
-            ..
-        } => doc_row_let(entries, value, body, &meta.leading_trivia, &[]),
         Expr::Seq {
             occurrence: _,
             value,
@@ -2052,56 +2047,6 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                 false,
             )
         }
-        Expr::LabelValue { labels, .. } => {
-            let label_docs: Vec<Doc> = labels
-                .iter()
-                .map(|label| doc_label_payload(&label.label, &label.value))
-                .collect();
-            let label_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = labels
-                .iter()
-                .map(|label| label.meta.leading_trivia.clone())
-                .collect();
-            let last_trailing = labels
-                .last()
-                .map(|label| label.meta.trailing_trivia.as_slice())
-                .unwrap_or(&[]);
-            doc_comma_list_with_trivia(
-                text("{"),
-                label_docs,
-                &label_trivia,
-                last_trailing,
-                text("}"),
-            )
-        }
-        Expr::Elaborator {
-            call,
-            source_trivia,
-            ..
-        } => match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => {
-                doc_field_access(receiver, labels, delimited_closing(source_trivia))
-            }
-            ElaboratorCall::FieldUpdate { base, updates } => match base.receiver() {
-                Some(receiver) => {
-                    doc_field_update(receiver, updates, delimited_closing(source_trivia))
-                }
-                None => doc_comma_list_with_trivia(
-                    text("{"),
-                    updates
-                        .iter()
-                        .map(|update| {
-                            doc_label_payload(&update.label, update.construction_payload())
-                        })
-                        .collect(),
-                    &updates
-                        .iter()
-                        .map(|update| update.meta.leading_trivia.clone())
-                        .collect::<Vec<_>>(),
-                    delimited_closing(source_trivia),
-                    text("}"),
-                ),
-            },
-        },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { name, stages, .. } => doc_call_stages(text(name.clone()), stages),
         Expr::BlockCall {
@@ -2177,31 +2122,6 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                             text("let "),
                             doc_neutral_let_binder(name, ty.as_ref(), pattern.as_ref()),
                             text(if *bind { " <- " } else { " = " }),
-                            doc_expr_with_own_meta_trivia(value),
-                            if has_comments(&meta.trailing_trivia) {
-                                concat(hardline(), doc_inline_leading_trivia(&meta.trailing_trivia))
-                            } else {
-                                empty()
-                            },
-                        ]),
-                        crate::ast::NeutralItem::RowBinding {
-                            entries,
-                            value,
-                            meta,
-                        } => concat_all([
-                            doc_inline_leading_trivia(&meta.leading_trivia),
-                            doc_comma_list_with_trivia(
-                                text("let .({"),
-                                entries.iter().map(doc_row_let_entry).collect(),
-                                &entries
-                                    .iter()
-                                    .map(|entry| entry.meta.leading_trivia.clone())
-                                    .collect::<Vec<_>>(),
-                                entries
-                                    .last()
-                                    .map_or(&[], |entry| entry.meta.trailing_trivia.as_slice()),
-                                text("}) = "),
-                            ),
                             doc_expr_with_own_meta_trivia(value),
                             if has_comments(&meta.trailing_trivia) {
                                 concat(hardline(), doc_inline_leading_trivia(&meta.trailing_trivia))
@@ -2698,18 +2618,6 @@ fn expr_symbol_edges(expr: &Expr) -> (bool, bool) {
         Expr::Ufcs { receiver, .. } if !operator_expr_needs_grouping(receiver) => {
             (expr_symbol_edges(receiver).0, false)
         }
-        Expr::Elaborator { call, .. } => {
-            let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
-                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
-            };
-            (
-                receiver.is_some_and(|receiver| {
-                    !operator_expr_needs_grouping(receiver) && expr_symbol_edges(receiver).0
-                }),
-                false,
-            )
-        }
         _ => (false, false),
     }
 }
@@ -2912,17 +2820,6 @@ fn exposes_operator_boundary_inner<'a>(
             && !expr_boundary_has_comments(receiver, true, false) =>
         {
             exposes_operator_boundary(receiver, boundary, cache)
-        }
-        Expr::Elaborator { call, .. } if !matches!(boundary, OperatorBoundary::RightClaim(_)) => {
-            let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
-                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
-            };
-            receiver.is_some_and(|receiver| {
-                !operator_expr_needs_grouping(receiver)
-                    && !expr_boundary_has_comments(receiver, true, true)
-                    && exposes_operator_boundary(receiver, boundary, cache)
-            })
         }
         Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, slots },
@@ -3139,7 +3036,6 @@ fn doc_expr_for_call_splice_arg(e: &Expr) -> Doc {
             | Expr::IntLit { .. }
             | Expr::FloatLit { .. }
             | Expr::Tuple { .. }
-            | Expr::LabelValue { .. }
     );
     doc_expr_grouped_boundary(e, !bare || call_splice_arg_starts_with_dot(e), true, true)
 }
@@ -3154,79 +3050,8 @@ fn call_splice_arg_starts_with_dot(expr: &Expr) -> bool {
                 && !has_comments(&callee.meta().trailing_trivia)
                 && call_splice_arg_starts_with_dot(callee)
         }
-        Expr::Elaborator { call, .. } => {
-            let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
-                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
-            };
-            receiver.is_some_and(|receiver| {
-                !matches!(receiver, Expr::OpChain { .. })
-                    && !has_comments(&receiver.meta().leading_trivia)
-                    && !has_comments(&receiver.meta().trailing_trivia)
-                    && call_splice_arg_starts_with_dot(receiver)
-            })
-        }
         _ => false,
     }
-}
-
-fn doc_field_access(receiver: &Expr, labels: &[FieldAccessLabel], closing: &[Trivia]) -> Doc {
-    let label_docs: Vec<Doc> = labels
-        .iter()
-        .map(|label| text(label.label.clone()))
-        .collect();
-    let label_trivia: Vec<Vec<Trivia>> = labels
-        .iter()
-        .map(|label| label.meta.leading_trivia.clone())
-        .collect();
-    concat(
-        doc_expr_for_postfix_receiver(receiver),
-        doc_comma_list_with_trivia(text(".?{"), label_docs, &label_trivia, closing, text("}")),
-    )
-}
-
-fn doc_field_update(receiver: &Expr, updates: &[FieldUpdateLabel], closing: &[Trivia]) -> Doc {
-    let update_docs: Vec<Doc> = updates
-        .iter()
-        .map(|update| doc_label_payload(&update.label, &update.value))
-        .collect();
-    let update_trivia: Vec<Vec<Trivia>> = updates
-        .iter()
-        .map(|update| update.meta.leading_trivia.clone())
-        .collect();
-    concat(
-        doc_expr_for_postfix_receiver(receiver),
-        doc_comma_list_with_trivia(text(".!{"), update_docs, &update_trivia, closing, text("}")),
-    )
-}
-
-fn doc_label_payload(label: &str, value: &Expr) -> Doc {
-    let boundary_comments =
-        has_comments(&value.meta().leading_trivia) || has_comments(&value.meta().trailing_trivia);
-    if !boundary_comments
-        && matches!(value, Expr::Unit { source_trivia, .. }
-            if !has_comments(delimited_closing(source_trivia)))
-    {
-        text(format!("{label}="))
-    } else if !boundary_comments && expr_is_bare_label_payload(label, value) {
-        text(label.to_owned())
-    } else {
-        concat(
-            text(format!("{label} = ")),
-            doc_expr_grouped_boundary(value, false, true, true),
-        )
-    }
-}
-
-fn expr_is_bare_label_payload(label: &str, value: &Expr) -> bool {
-    let Expr::Path { segments, .. } = value else {
-        return false;
-    };
-    segments.len() == 1 && segments[0].as_str() == last_label_segment(label)
-}
-
-fn last_label_segment(label: &str) -> &str {
-    label.rsplit('.').next().unwrap_or(label)
 }
 
 /// Render a neutral let-binder: an identifier (or `_`), or an
@@ -3335,64 +3160,6 @@ fn doc_let(
         &doc_expr_statement_value,
         &|body| doc_expr_with_outer_trivia(body, trailing_trivia),
     )
-}
-
-fn doc_row_let(
-    entries: &[RowLetEntry],
-    value: &Expr,
-    body: &Expr,
-    leading_trivia: &[Trivia],
-    trailing_trivia: &[Trivia],
-) -> Doc {
-    let entry_docs: Vec<Doc> = entries.iter().map(doc_row_let_entry).collect();
-    let entry_trivia: Vec<Vec<Trivia>> = entries
-        .iter()
-        .map(|entry| entry.meta.leading_trivia.clone())
-        .collect();
-    let entry_last_trailing = entries
-        .last()
-        .map(|entry| entry.meta.trailing_trivia.as_slice())
-        .unwrap_or(&[]);
-    let binder_doc = doc_comma_list_with_trivia(
-        text("let .({"),
-        entry_docs,
-        &entry_trivia,
-        entry_last_trailing,
-        text("})"),
-    );
-    let value_leading_trivia = value.meta().leading_trivia.as_slice();
-    let value_expr = doc_expr_statement_value(value);
-    let value_and_semi = if has_comments(value_leading_trivia) {
-        nest(
-            2,
-            concat_all([
-                hardline(),
-                doc_inline_leading_trivia(value_leading_trivia),
-                value_expr,
-                text(";"),
-            ]),
-        )
-    } else {
-        let flat = concat_all([text(" "), value_expr.clone(), text(";")]);
-        let broken = nest(2, concat_all([hardline(), value_expr, text(";")]));
-        group(flat_alt(flat, broken))
-    };
-    concat_all([
-        doc_inline_leading_trivia(leading_trivia),
-        binder_doc,
-        text(" ="),
-        value_and_semi,
-        line(),
-        doc_expr_with_outer_trivia(body, trailing_trivia),
-    ])
-}
-
-fn doc_row_let_entry(entry: &RowLetEntry) -> Doc {
-    if entry.alias_explicit || entry.local != last_label_segment(&entry.label) {
-        text(format!("{} as {}", entry.label, entry.local))
-    } else {
-        text(entry.label.clone())
-    }
 }
 
 fn doc_let_pattern(
@@ -3523,7 +3290,7 @@ fn doc_seq_with(
 }
 
 /// Pretty-print an `Expr` whose `meta.leading_trivia` the caller has
-/// already emitted. For `Let` / `RowLet` / `Seq` this re-enters the
+/// already emitted. For `Let` / `Seq` this re-enters the
 /// statement printer with empty leading trivia so the meta-trivia
 /// doesn't double-emit; for all other variants this is the same as
 /// [`doc_expr`] (those arms don't read meta-trivia).
@@ -3537,12 +3304,6 @@ fn doc_expr_no_own_trivia(e: &Expr) -> Doc {
             body,
             ..
         } => doc_let(name, ty.as_ref(), pattern.as_ref(), value, body, &[], &[]),
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            ..
-        } => doc_row_let(entries, value, body, &[], &[]),
         Expr::Seq {
             occurrence: _,
             value,
@@ -3581,12 +3342,6 @@ fn doc_expr_with_outer_trivia(e: &Expr, outer: &[Trivia]) -> Doc {
             leading,
             &trailing,
         ),
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            ..
-        } => doc_row_let(entries, value, body, leading, &trailing),
         Expr::Seq { value, body, .. } => doc_seq(value, body, leading, &trailing),
         _ => concat_all([
             doc_inline_leading_trivia(leading),
@@ -3674,8 +3429,8 @@ fn delimited_closing(trivia: &Option<Box<DelimitedTrivia>>) -> &[Trivia] {
 /// the standard width-driven [`comma_list`].
 ///
 /// `item_trivia` must be parallel to `items`; the parser captures
-/// real trivia for surface forms (calls, tuples, label-value
-/// sugar) and synthesized sites use empty vectors. `last_trailing`
+/// real trivia for surface calls and tuples; synthesized sites use empty
+/// vectors. `last_trailing`
 /// is the trailing run the parser stashed on the last element's
 /// `meta` (empty for an empty list or no trailing comment).
 fn doc_comma_list_with_trivia(
@@ -4516,25 +4271,25 @@ mod tests {
     fn semicolon_owners_preserve_outer_terminators_and_nested_separators() {
         let source = "module m;
             fn id(x: .) -> . { x };
-            newtype Box : . { ; constructor make; projector take; };
+            type { Box : . { ; mk; get; }; };
             op _ + _ { ; impl add; };
             varop [% %] { ; foldl step initial; finalize finish; };
             macro identity : . -> . { ; captures id; impl identity_impl; };
             host type Text role(str) { owned };
             type Alias = .;
-            labels Choice = { left: . } | { right: . };
+            type Choice = { Left: . } | { Right: . };
             rec(loop) { ; fn first(x: .) -> . { x }; fn second(x: .) -> . { x }; };
-            rec { ; type Left = Right; newtype Right : Left { constructor make; projector take }; };";
+            rec { ; type Left = Right; type { Right : Left { mk; get }; }; };";
         let formatted = roundtrip(source);
         for expected in [
             "fn id(x: .) { x }\n",
-            "newtype Box : . { constructor make; projector take }\n",
+            "type { Box: . { mk; get } }\n",
             "op _ + _ { impl add }\n",
             "varop [% %] { foldl step initial; finalize finish }\n",
             "macro identity : . -> . { captures id; impl identity_impl }\n",
             "host type Text role(str) { owned };",
             "type Alias = .;",
-            "labels Choice = { left: . } | { right: . };",
+            "type Choice = { Left: . } | { Right: . };",
             "fn first(x: .) { x };\n",
             "type Left = Right;\n",
         ] {
@@ -4602,7 +4357,7 @@ mod tests {
     fn removed_outer_semicolon_comments_stay_outside_declaration_bodies() {
         let formatted = roundtrip(
             "module m;
-            newtype Box : . { constructor make; projector take; }
+            type { Box : . { mk; get; }; }
             // before outer token
             ; // after outer token
             type Alias = .;
@@ -4711,7 +4466,6 @@ mod tests {
                 ".(whole: (x: Int, y: Int))",
                 "let .(whole: (x: Int, y: Int)) =",
             ),
-            (".({foo as x})", "let .({foo as x}) ="),
         ] {
             let source = format!("module m; fn run() {{ let {binder} = value; () }}");
             let formatted = roundtrip(&source);
@@ -4735,17 +4489,11 @@ mod tests {
 
     #[test]
     fn removed_let_forms_are_not_binding_aliases() {
-        for binder in [
-            "x: Int",
-            "(x, y)",
-            "whole: (x: Int, y: Int)",
-            "<U> x",
-            ".(.{foo})",
-        ] {
+        for binder in ["x: Int", "(x, y)", "whole: (x: Int, y: Int)", "<U> x"] {
             let source = format!("module m; fn run() {{ let {binder} = value; () }}");
             assert!(parse(&source).is_err(), "{source}");
         }
-        for binder in ["x", "(x, y)", "{foo}"] {
+        for binder in ["x", "(x, y)"] {
             let source = format!("module m; fn run() {{ .{binder} = value; () }}");
             assert!(parse(&source).is_err(), "{source}");
         }
@@ -4753,7 +4501,7 @@ mod tests {
 
     #[test]
     fn import_grammar_import_a1_comments() {
-        let source = "module c; // provider comment\nimport z( // list comment\n , zebra, // item comment\n alpha, {field}, op _ + _); import a as alias;";
+        let source = "module c; // provider comment\nimport z( // list comment\n , zebra, // item comment\n alpha, Field, op _ + _); import a as alias;";
         let module = crate::pass::parser::parse(source).expect("consumer grammar");
         let formatted = pretty_module(&module);
         assert!(
@@ -4842,8 +4590,8 @@ import z( // opening selection
     zebra
   , // alpha comment
     alpha
-  , { // label comment
-      field}
+  , // type comment
+    Field
   , op _ // operator comment
       + _
   // list closer
@@ -4853,8 +4601,7 @@ import a as a;
         let module = parse(source).unwrap();
         let formatted = pretty_module(&module);
         assert!(
-            formatted
-                .contains("import a as a;\n// statement\nimport z(\n// alpha comment\n, alpha"),
+            formatted.contains("import a as a;\n// statement\nimport z(\n// type comment\n, Field"),
             "{formatted}"
         );
         assert!(
@@ -4866,7 +4613,7 @@ import a as a;
             "{formatted}"
         );
         assert!(
-            formatted.contains("// label comment\n, {field}"),
+            formatted.contains("// alpha comment\n, alpha"),
             "{formatted}"
         );
         assert!(formatted.contains("\n// list closer\n);"), "{formatted}");
@@ -4876,7 +4623,7 @@ import a as a;
             "alpha comment",
             "zebra comment",
             "operator comment",
-            "label comment",
+            "type comment",
             "list closer",
         ] {
             assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
@@ -4992,11 +4739,6 @@ import p( // opening selection
                 "op _ + _, op ___ < _ >",
                 "a + ((b < k >).>f)",
                 "a + (b < k >.>f)",
-            ),
-            (
-                "op _ + _, op ___ < _ >",
-                "a + ((b < k >).?{field})",
-                "a + (b < k >.?{field})",
             ),
             (
                 "op _ + ___, op ___ < _ >, op _ * _",
@@ -5147,10 +4889,6 @@ import p( // opening selection
             ("do(bind) { run() }", "do(bind) { run() }"),
             ("do(bind) { run(); wait() }", "do(bind) { run(); wait() }"),
             ("scope { let x = run(); x }", "scope { let x = run(); x }"),
-            (
-                "choose(ready) { {field = value} } otherwise { other }",
-                "choose(ready) { {field = value} } otherwise { other }",
-            ),
         ] {
             let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
             let Item::FnDef(function) = &parsed.items[0] else {
@@ -5508,7 +5246,6 @@ import p( // opening selection
             "(first, second)",
             "(single)",
             "(single: .)",
-            "({field})",
             "(<Hidden> packet // closing\n)",
             "(<Hidden> (first: Hidden, second: . // inner closing\n) // closing\n)",
         ] {
@@ -5763,40 +5500,6 @@ import p( // opening selection
     }
 
     #[test]
-    fn construction_carrier_renders_only_its_written_payload() {
-        let module = parse("module x; fn f() { receiver.!{alias.entry = compute()} }")
-            .expect("source update");
-        let mut expression = function_body(&module, "f").clone();
-        let Expr::Elaborator {
-            call: ElaboratorCall::FieldUpdate { base, updates },
-            ..
-        } = &mut expression
-        else {
-            panic!("parsed field update")
-        };
-        *base = crate::ast::FieldUpdateBase::Construction;
-        let update = &mut updates[0];
-        let span = update.meta.span;
-        update.value = Expr::synth_call(
-            Expr::Path {
-                occurrence: (),
-                segments: ["alias", "Item", "mk"]
-                    .map(|name| crate::ast::PathSegment::new(name.to_owned(), span))
-                    .to_vec(),
-                meta: crate::ast::Meta::new(span),
-                ext: (),
-            },
-            vec![CallArg::Value(update.value.clone())],
-            span,
-        );
-        let rendered = render(&doc_expr(&expression), WIDTH);
-        assert_eq!(rendered, "{alias.entry = compute()}");
-        let reparsed = roundtrip(&format!("module x; fn f() {{ {rendered} }}"));
-        assert!(reparsed.contains("{alias.entry = compute()}"));
-        assert!(!reparsed.contains(".mk"));
-    }
-
-    #[test]
     fn nested_module_path() {
         roundtrip("module pkg/utils/string;");
     }
@@ -5807,8 +5510,8 @@ import p( // opening selection
             "module x; \
              pure pub fn f() -> . { () } \
              pub type T = .; \
-             pub newtype N : . { pub constructor mk_n; pub projector un_n; }; \
-             pub labels L = { a: . }; \
+             pub type { N : . { pub mk; pub get; }; }; \
+             pub type L = { A: . }; \
              pub macro checked : [A] A -> A { impl checked_impl; }; \
              pub op _ + _ { impl plus; }; \
              pub varop [* *] { foldr append empty; }; \
@@ -5816,8 +5519,8 @@ import p( // opening selection
         );
         assert!(pp.contains("pub pure fn f() {"));
         assert!(pp.contains("pub type T = .;"));
-        assert!(pp.contains("pub newtype N : ."));
-        assert!(pp.contains("pub labels L ="));
+        assert!(pp.contains("pub type { N: ."));
+        assert!(pp.contains("pub type L ="));
         assert!(pp.contains("pub macro checked :"));
         assert!(pp.contains("pub op _ + _ { impl plus }"));
         assert!(pp.contains("pub varop [* *] { foldr append empty }"));
@@ -6063,8 +5766,8 @@ macro demo : Box[
     }
 
     #[test]
-    fn import_selective_label_namespace() {
-        roundtrip("module x; import pkg/mod(Item, item, {item});");
+    fn import_selective_type_and_value_names() {
+        roundtrip("module x; import pkg/mod(Item, item, Field);");
     }
 
     #[test]
@@ -6161,7 +5864,7 @@ macro demo : Box[
     #[test]
     fn op_call_symbol_word_keeps_internal_punctuation() {
         let output = roundtrip(
-            "module x; newtype A : . { constructor mk_a; projector un_a; }; \
+            "module x; type { A : . { mk; get; }; }; \
              fn cat(a: A, b: A) -> A { a } \
              op _ &&++ _ { impl cat; }; \
              fn main(x: A, y: A) -> A { x&&++y }",
@@ -6425,16 +6128,14 @@ macro demo : Box[
 
     #[test]
     fn newtype_nullary() {
-        roundtrip(
-            "module x; newtype Celsius : . { pub constructor mk_celsius; pub projector to_unit; };",
-        );
+        roundtrip("module x; type { Celsius : . { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_recursive() {
         roundtrip(
-            "module x; rec newtype List[A] : (. | (A & List[A])) { \
-             pub constructor cons; pub projector un_list; };",
+            "module x; rec type { List[A] : (. | (A & List[A])) { \
+             pub mk; pub get; }; };",
         );
     }
 
@@ -6443,8 +6144,8 @@ macro demo : Box[
         // Existential binders live in the newtype header, emitted as
         // `<U>` atoms between the universal-parameter list and `:`.
         roundtrip(
-            "module x; newtype Pack[A] <U> : (A & U) { \
-             pub constructor mk_pack; pub projector un_pack; };",
+            "module x; type { Pack[A] <U> : (A & U) { \
+             pub mk; pub get; }; };",
         );
     }
 
@@ -6452,25 +6153,25 @@ macro demo : Box[
     fn newtype_with_multi_existential_header_roundtrip() {
         // Multi-binder existential header — whitespace-separated atoms.
         roundtrip(
-            "module x; newtype Box <A> <B> : (A & B) { \
-             pub constructor mk_box; pub projector un_box; };",
+            "module x; type { Box <A> <B> : (A & B) { \
+             pub mk; pub get; }; };",
         );
     }
 
     #[test]
     fn newtype_member_comments_follow_canonical_member_order() {
         let pp = roundtrip(
-            "module x; newtype Box : . { \
+            "module x; type { Box : . { \
              // projector comment\n\
-             projector get; \
+             get; \
              // constructor comment\n\
-             constructor mk; \
-             };",
+             mk; \
+             }; };",
         );
         let constructor_comment = pp.find("// constructor comment").unwrap();
-        let constructor = pp.find("constructor mk;").unwrap();
+        let constructor = pp.find("mk;").unwrap();
         let projector_comment = pp.find("// projector comment").unwrap();
-        let projector = pp.find("projector get").unwrap();
+        let projector = pp.find("get").unwrap();
         assert!(
             constructor_comment < constructor
                 && constructor < projector_comment
@@ -6482,108 +6183,89 @@ macro demo : Box[
     // ---- labels -------------------------------------------------------
 
     #[test]
-    fn label_forward_round_trip_preserves_visibility_and_exact_path() {
-        let formatted = roundtrip("module x; pub(x) type { local } = { provider . original };");
-        assert!(formatted.contains("pub(x) type {local} = {provider.original};"));
-        assert!(!formatted.contains("newtype"));
+    fn ordinary_alias_round_trip_preserves_visibility_and_exact_path() {
+        let formatted = roundtrip("module x; pub(x) type Local = provider.Original;");
+        assert!(formatted.contains("pub(x) type Local = provider.Original;"));
     }
 
     #[test]
-    fn label_forward_interstitial_comments_survive_once_in_order() {
+    fn ordinary_alias_target_comments_survive_once_in_order() {
         let formatted = roundtrip(
-            "module x;\n/// Forwarded family.\npub type {\n// local binding\nlocal\n// after local\n} = {\n// target module\nprovider.\n// target label\noriginal\n// after target\n};",
+            "module x;\n/// Alias family.\npub type Local = (\n// target module\nprovider.\n// target type\nOriginal\n// after target\n);",
         );
-        let comments = [
-            "// local binding",
-            "// after local",
-            "// target module",
-            "// target label",
-            "// after target",
-        ];
         let mut previous = 0;
-        for comment in comments {
+        for comment in ["// target module", "// target type", "// after target"] {
             assert_eq!(formatted.matches(comment).count(), 1);
             let position = formatted.find(comment).expect("preserved comment");
             assert!(position >= previous);
             previous = position;
         }
-        assert_eq!(formatted.matches("/// Forwarded family.").count(), 1);
-        assert!(formatted.contains("pub type {local} = {"));
-        assert!(formatted.contains("provider.original"));
+        assert_eq!(formatted.matches("/// Alias family.").count(), 1);
+        assert!(formatted.contains("provider.Original"));
     }
 
     #[test]
-    fn label_forward_keeps_interior_doc_comments_separate_from_declaration_docs() {
-        for external_doc in ["", "/// External family documentation.\n"] {
+    fn ordinary_alias_keeps_body_comments_separate_from_declaration_docs() {
+        for external_doc in ["", "/// External alias documentation.\n"] {
             let source = format!(
-                "module x;\n{external_doc}type {{\n/// Interior binding note.\nlocal}} = {{provider.\n/// Interior target note.\noriginal}};"
+                "module x;\n{external_doc}type Local = (\n// Interior target note.\nprovider.Original &\n// Interior unit note.\n.);"
             );
             let parsed = parse(&source).expect("parse source");
-            let Item::LabelForward(before, ()) = &parsed.items[0] else {
-                panic!("expected label forwarding declaration");
+            let Item::TypeAlias(before) = &parsed.items[0] else {
+                panic!("expected ordinary alias");
             };
             assert_eq!(before.doc.is_some(), !external_doc.is_empty());
             let formatted = pretty_module(&parsed);
             let reparsed = parse(&formatted).expect("parse formatted declaration");
-            let Item::LabelForward(after, ()) = &reparsed.items[0] else {
-                panic!("expected label forwarding declaration after formatting");
+            let Item::TypeAlias(after) = &reparsed.items[0] else {
+                panic!("expected ordinary alias after formatting");
             };
             assert_eq!(
                 before.doc.as_ref().map(|doc| &doc.lines),
                 after.doc.as_ref().map(|doc| &doc.lines),
             );
-            let comment_bodies = |trivia: &[Trivia]| {
-                trivia
-                    .iter()
-                    .filter_map(|item| match item {
-                        Trivia::LineComment { text, .. } => Some((false, text.clone())),
-                        Trivia::DocCommentLine { text, .. } => Some((true, text.clone())),
-                        Trivia::Newline => None,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let before_comments = comment_bodies(&before.body_trivia);
-            assert_eq!(before_comments.len(), 2);
-            assert!(before_comments.iter().all(|(is_doc, _)| *is_doc));
-            assert_eq!(before_comments, comment_bodies(&after.body_trivia));
+            for note in ["// Interior target note.", "// Interior unit note."] {
+                assert_eq!(formatted.matches(note).count(), 1);
+            }
             assert_eq!(formatted, pretty_module(&reparsed));
         }
     }
 
     #[test]
-    fn labels_anonymous_round_trip() {
-        roundtrip("module x; labels { foo : . };");
+    fn compact_nominal_anonymous_round_trip() {
+        roundtrip("module x; type { Foo : . };");
     }
 
     #[test]
-    fn labels_anonymous_multi_round_trip() {
-        roundtrip("module x; labels { foo : ., bar : I32 };");
+    fn compact_nominal_anonymous_multi_round_trip() {
+        roundtrip("module x; type { Foo : .; Bar : I32 };");
     }
 
     #[test]
-    fn labels_named_round_trip() {
-        roundtrip("module x; labels T = { foo : . };");
+    fn compact_nominal_named_round_trip() {
+        roundtrip("module x; type T = { Foo : . };");
     }
 
     #[test]
-    fn labels_named_parametric_round_trip() {
-        roundtrip("module x; labels T[A] = { foo[A] : A };");
+    fn compact_nominal_named_parametric_round_trip() {
+        roundtrip("module x; type T[A] = { Foo[A] : A };");
     }
 
     #[test]
-    fn labels_reuse_marker_round_trip() {
+    fn nominal_rhs_references_round_trip() {
         roundtrip(
-            "module x; labels { value[*F][A] : F[A] }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
+            "module x; type { Value[*F][A]: F[A]; }; \
+             type Choice[*G][B] = Value[G][B] & { Other: .; };",
         );
     }
 
     #[test]
-    fn labels_pub_round_trip() {
-        roundtrip("module x; pub labels { foo : I32, bar : Bool };");
+    fn compact_nominal_pub_round_trip() {
+        roundtrip("module x; pub type { Foo : I32; Bar : Bool };");
     }
 
     #[test]
-    fn label_declaration_headers_preserve_comments() {
+    fn nominal_declaration_headers_preserve_comments() {
         let source = include_str!(
             "../../test-data/goldens/00_success/fmt_label_declaration_comments/workdir/main.kio"
         );
@@ -6594,10 +6276,10 @@ macro demo : Box[
         assert_eq!(parsed_structure(source), parsed_structure(expected));
 
         for declaration in [
-            "labels // 1\n{ field // 2\n: // 3\n. } // 4\n;",
-            "pub labels // 1\nChoice // 2\n[// 3\nA // 4\n] // 5\n= // 6\n{ first // 7\n[// 8\nB // 9\n] // 10\n< // 11\nHidden // 12\n> // 13\n: // 14\n(B & Hidden) // 15\n} // 16\n| // 17\n{ second: // 18\n_ // 19\n} // 20\n;",
-            "rec labels // 1\n{ list[A] // 2\n: // 3\n(. | (A & List[A])) };",
-            "rec { /// Labels documentation.\npub labels // 1\nChoice = // 2\n{ field // 3\n: // 4\n. }; }",
+            "type // 1\n{ Field // 2\n: // 3\n. } // 4\n;",
+            "pub type // 1\nChoice // 2\n[// 3\nA // 4\n] // 5\n= // 6\n{ First // 7\n[// 8\nB // 9\n] // 10\n< // 11\nHidden // 12\n> // 13\n: // 14\n(B & Hidden) // 15\n} // 16\n| // 17\n(// 18\nSecond // 19\n) // 20\n;",
+            "rec type // 1\n{ List[A] // 2\n: // 3\n(. | (A & List[A])) };",
+            "rec { /// Labels documentation.\npub type // 1\nChoice = // 2\n{ Field // 3\n: // 4\n. }; }",
         ] {
             let source = format!("module m; {declaration}");
             let printed = roundtrip(&source);
@@ -6619,12 +6301,6 @@ macro demo : Box[
                 parsed_structure(&printed),
                 "{source}"
             );
-            if declaration.contains("second:") {
-                assert!(
-                    printed.contains("second: _"),
-                    "reuse marker stays ungrouped: {printed}"
-                );
-            }
             let lazy = crate::pass::parser::parse_lazy(&source)
                 .unwrap()
                 .force_all()
@@ -6634,7 +6310,44 @@ macro demo : Box[
     }
 
     #[test]
-    fn label_payload_comments_survive_shortening_and_expression_boundaries() {
+    fn nominal_rhs_separator_comments_preserve_operand_order() {
+        let comments = |source: &str| {
+            let (tokens, trailing) = crate::pass::lexer::lex_with_trailing(source).unwrap();
+            tokens
+                .into_iter()
+                .flat_map(|token| token.leading_trivia)
+                .chain(trailing)
+                .filter_map(|trivia| match trivia {
+                    Trivia::LineComment { text, .. } => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        for op in ["&", "|"] {
+            for rhs in [
+                "// 1\nOP // 2\n{ // 3\nFirst: . } // 4\nOP // 5\nOP // 6\nExisting // 7\nOP // 8\n{ // 9\nLast: . } // 10\nOP // 11\nOP // 12\n",
+                "Existing // 1\nOP // 2\n(// 3\n{ Middle: . } // 4\nOP // 5\n{ Last: . } // 6\n) // 7\nOP // 8\nFinal // 9\nOP // 10\n",
+                "// 1\nOP // 2\n{ // 3\nOnly: . } // 4\nOP // 5\n",
+            ] {
+                let source = format!("module m; type Choice = {};", rhs.replace("OP", op));
+                let formatted = roundtrip(&source);
+                assert_eq!(
+                    comments(&source),
+                    comments(&formatted),
+                    "{source}\n{formatted}"
+                );
+                assert_eq!(parsed_structure(&source), parsed_structure(&formatted));
+                let lazy = crate::pass::parser::parse_lazy(&source)
+                    .unwrap()
+                    .force_all()
+                    .unwrap();
+                assert_eq!(pretty_module(&lazy), formatted);
+            }
+        }
+    }
+
+    #[test]
+    fn call_argument_comments_survive_expression_boundaries() {
         let comments = |source: &str| {
             source
                 .lines()
@@ -6644,112 +6357,89 @@ macro demo : Box[
                 })
                 .collect::<Vec<_>>()
         };
-        for owner in ["", "row.!"] {
-            for payload in [
-                "(// before unit\n)",
-                "(() // after unit\n)",
-                "// before unit\n()",
-                "(// before shorthand\nready)",
-                "(ready // after shorthand\n)",
-                "// before shorthand\nready",
-                "// before value\nother",
-                "(other // after value\n)",
-                "(// before value\nother // after value\n)",
-                "((// before inner\nother // after inner\n) // after outer\n)",
-                "(call(// call argument\nother) // after call\n)",
-                "(.() { // function body\n() } // after function\n)",
-                "{nested = (// nested unit\n)}",
-            ] {
-                for (prefix, suffix) in [("", ""), ("", ", next = ()"), ("first = (), ", "")] {
-                    let source = format!(
-                        "module x; fn f() {{ {owner}{{{prefix}ready = {payload}{suffix}}} }}"
-                    );
-                    let printed = roundtrip(&source);
-                    assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
-                    assert_eq!(
-                        parsed_structure(&printed),
-                        parsed_structure(&source),
-                        "comments changed the payload structure: {source}\n{printed}",
-                    );
-                }
+        for payload in [
+            "(// before unit\n)",
+            "(() // after unit\n)",
+            "// before unit\n()",
+            "(// before value\nready)",
+            "(ready // after value\n)",
+            "// before value\nready",
+            "// before value\nother",
+            "(other // after value\n)",
+            "(// before value\nother // after value\n)",
+            "((// before inner\nother // after inner\n) // after outer\n)",
+            "(call(// call argument\nother) // after call\n)",
+            "(.() { // function body\n() } // after function\n)",
+        ] {
+            for (prefix, suffix) in [("", ""), ("", ", next"), ("first, ", "")] {
+                let source = format!("module x; fn f() {{ consume({prefix}{payload}{suffix}) }}");
+                let printed = roundtrip(&source);
+                assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
+                assert_eq!(
+                    parsed_structure(&printed),
+                    parsed_structure(&source),
+                    "comments changed the argument structure: {source}\n{printed}"
+                );
             }
-            for (payload, expected) in [
-                ("()", "ready="),
-                ("ready", "ready"),
-                ("other", "ready = other"),
-                ("qualified.ready", "ready = qualified.ready"),
-            ] {
-                let source = format!("module x; fn f() {{ {owner}{{ready = {payload}}} }}");
-                assert!(roundtrip(&source).contains(&format!("{owner}{{{expected}}}")));
-            }
-            let source = format!("module x; fn f() {{ {owner}{{qualified.ready = ready}} }}");
-            assert!(roundtrip(&source).contains(&format!("{owner}{{qualified.ready}}")));
         }
     }
 
     #[test]
-    fn label_access_and_row_let_keep_closing_comments() {
+    fn call_arguments_keep_closing_comments() {
         for entries in ["ready", "ready, other", "ready,"] {
-            for body in [
-                format!("row.?{{{entries} // close\n}}"),
-                format!("let .({{{entries} // close\n}}) = row; ready"),
-            ] {
-                let source = format!("module x; fn f() {{ {body} }}");
-                let printed = roundtrip(&source);
-                assert_eq!(
-                    printed.matches("// close").count(),
-                    1,
-                    "{source}\n{printed}"
-                );
-                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
-            }
+            let body = format!("target({entries} // close\n)");
+            let source = format!("module x; fn f() {{ {body} }}");
+            let printed = roundtrip(&source);
+            assert_eq!(
+                printed.matches("// close").count(),
+                1,
+                "{source}\n{printed}"
+            );
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
         }
     }
 
     #[test]
-    fn empty_label_lists_keep_inside_and_outside_comments_distinct() {
-        for operator in ["?", "!"] {
-            let expression = format!("row.{operator}{{ // inside\n}}");
-            for body in [
-                expression.clone(),
-                format!("({expression} // outside\n)"),
-                format!("({expression} // outside\n).?{{ready}}"),
-                format!("call({expression})"),
-                format!("{{nested = {expression}}}"),
-            ] {
-                let source = format!("module x; fn f() {{ {body} }}");
-                let printed = roundtrip(&source);
-                assert_eq!(
-                    printed.matches("// inside").count(),
-                    1,
+    fn empty_brace_unit_keeps_inside_and_outside_comments_distinct() {
+        let expression = "{ // inside\n}";
+        for body in [
+            expression.to_owned(),
+            format!("({expression} // outside\n)"),
+            format!("call({expression})"),
+            format!("({expression}, value)"),
+        ] {
+            let source = format!("module x; fn f() {{ {body} }}");
+            let printed = roundtrip(&source);
+            assert_eq!(
+                printed.matches("// inside").count(),
+                1,
+                "{source}\n{printed}"
+            );
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+            let inside = printed.find("// inside").unwrap();
+            let open = printed[..inside].rfind('(').expect("unit opener");
+            let close = inside + printed[inside..].find(')').expect("unit closer");
+            assert!(open < inside && inside < close, "{source}\n{printed}");
+            if source.contains("// outside") {
+                assert_eq!(printed.matches("// outside").count(), 1);
+                assert!(
+                    close < printed.find("// outside").unwrap(),
                     "{source}\n{printed}"
                 );
-                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
-                let open = printed.find(&format!(".{operator}{{")).unwrap();
-                let close = open + printed[open..].find('}').unwrap();
-                let inside = printed.find("// inside").unwrap();
-                assert!(open < inside && inside < close, "{source}\n{printed}");
-                if source.contains("// outside") {
-                    assert_eq!(printed.matches("// outside").count(), 1);
-                    assert!(
-                        close < printed.find("// outside").unwrap(),
-                        "{source}\n{printed}"
-                    );
-                }
             }
-            let source = format!("module x; fn f() {{ row.{operator}{{}} }}");
-            assert!(roundtrip(&source).contains(&format!("row.{operator}{{}}")));
         }
+        assert_eq!(
+            roundtrip("module x; fn f() { {} }"),
+            "module x;\n\nfn f() { () }\n"
+        );
     }
 
     #[test]
-    fn label_header_comments_hoist_once_in_source_order() {
+    fn qualified_path_comments_hoist_once_in_source_order() {
         let path = "m // before dot\n. // before segment\nready";
         for body in [
-            format!("{{{path} // before equals\n= other}}"),
-            format!("row.!{{{path} // before equals\n= other}}"),
-            format!("row.?{{{path} // closing\n}}"),
-            format!("let .({{{path} // before as\nas // after as\nx // closing\n}}) = row; x"),
+            format!("{path} // before call\n()"),
+            format!("call({path} // before close\n)"),
         ] {
             let source = format!("module x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
@@ -6766,17 +6456,11 @@ macro demo : Box[
     }
 
     #[test]
-    fn field_splice_and_row_let_boundaries_keep_comments_in_order() {
-        let binding = "let .({ready // inner close\n} // outer close\n) // equals\n= row; ready";
-        let mut bodies = vec![binding.to_owned(), format!("flow {{ {binding} }}")];
-        for operator in ["?", "!"] {
-            for fields in ["", "ready"] {
-                bodies.push(format!(
-                    "row // receiver\n.{operator} // opener\n{{{fields} // closer\n}}"
-                ));
-            }
-        }
-        bodies.push("row // first receiver\n.? // first opener\n{ready} // next receiver\n.! // next opener\n{ready}".to_owned());
+    fn ufcs_splice_boundaries_keep_comments_in_order() {
+        let bodies = [
+            "row // receiver\n.> // callee\nselect",
+            "row // first receiver\n.> // first callee\nselect // next receiver\n.> // next callee\nfinish",
+        ];
         for body in bodies {
             let source = format!("module x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
@@ -6793,14 +6477,14 @@ macro demo : Box[
     }
 
     #[test]
-    fn labels_recursive_round_trip() {
-        roundtrip("module x; rec labels { list[A] : (. | (A & List[A])) };");
+    fn compact_nominal_recursive_round_trip() {
+        roundtrip("module x; rec type { List[A] : (. | (A & List[A])) };");
     }
 
     #[test]
     fn recursive_type_group_round_trip() {
         let formatted = roundtrip(
-            "module x; rec { pub type A = B; pub newtype B : A { pub constructor mk_b; pub projector un_b; }; }",
+            "module x; rec { pub type A = B; pub type { B : A { pub mk; pub get; }; }; }",
         );
         assert!(formatted.contains("rec {\n  pub type A = B;"));
     }
@@ -6826,7 +6510,7 @@ macro demo : Box[
             "module m; /// Host docs.\nhost pub // modifier\nfn f[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
             "module m; host fn f( // leading\n, value // colon\n: // type\n. // first comma\n, // repeated\n, next: . , // trailing\n);".to_owned(),
             "module m; host fn f[ // opening\n* // kind\nF // closing\n]( // empty\n);".to_owned(),
-            "module m; /// Labels docs.\npub // modifier\nrec labels List = {nil: .} | {cons: List};".to_owned(),
+            "module m; /// Labels docs.\npub // modifier\nrec type List = {Nil: .} | {Cons: List};".to_owned(),
             "module m; /// Literal docs.\npub // modifier\nliteral // name\nanswer // equals\n= // value\n42 // terminator\n;".to_owned(),
         ] {
             let printed = roundtrip(&source);
@@ -6956,7 +6640,7 @@ macro demo : Box[
              /// Alias docs.\n\
              pub type A = B;\n\
              /// Nominal docs.\n\
-             pub newtype B : A { pub constructor mk_b; pub projector un_b; };\n\
+             pub type { B : A { pub mk; pub get; }; };\n\
              // group-trailing context\n\
              }",
         );
@@ -7018,14 +6702,14 @@ macro demo : Box[
     fn ordinary_and_marked_type_names_round_trip_identically() {
         let output = roundtrip(
             "module x; type Alias[A] = A; type _Alias[_A] = _A; \
-             newtype Box[B] : B { constructor mk_box; projector un_box; }; \
-             newtype _Box[_B] : _B { constructor mk_marked; projector un_marked; }; \
+             type { Box[B] : B { mk; get; }; }; \
+             type { _Box[_B] : _B { mk; get; }; }; \
              fn id[T](x: T) -> T { x } \
              fn marked[_A](x: _A) -> _A { id[_A](x) }",
         );
         for retained in [
             "type _Alias[_A] = _A;",
-            "newtype _Box[_B] : _B",
+            "type { _Box[_B]: _B",
             "fn marked[_A](x: _A) -> _A",
             "id[_A](x)",
         ] {
@@ -7216,7 +6900,7 @@ macro demo : Box[
                 format!("fn f() {{ g[{ty}] }}"),
                 format!("type T = ({ty} & .);"),
                 format!("type T = (. & {ty});"),
-                format!("newtype T : {ty} {{ constructor make; projector take }}"),
+                format!("type {{ T : {ty} {{ mk; get }}; }}"),
             ] {
                 let source = format!("module x; {declaration}");
                 let printed = roundtrip(&source);
@@ -7317,7 +7001,7 @@ macro demo : Box[
                 format!("fn f(value: {ty}) {{ () }}"),
                 format!("host fn f(value: {ty});"),
                 format!("host fn f() -> {ty};"),
-                format!("newtype T : {ty} {{ constructor make; projector take }}"),
+                format!("type {{ T : {ty} {{ mk; get }}; }}"),
             ] {
                 let source = format!("module x; {declaration}");
                 let printed = roundtrip(&source);
@@ -7354,10 +7038,10 @@ macro demo : Box[
             "host type T // first\n[// second\nA // third\n] // last\n;",
             "host type T // first\nrole // second\n(// third\nstr // fourth\n) // last\n;",
             "host type T role(str) // first\n{ // second\nowned // third\n} // last\n;",
-            "newtype // first\nT // second\n[A] // third\n: // fourth\nA // last\n{ constructor make; projector take }",
-            "pub // first\nnewtype T[// second\nA // third\n] <// fourth\nB // fifth\n> // sixth\n: // seventh\n(A & B) // last\n{ constructor make; projector take }",
-            "newtype T : . { pub // first\nconstructor // second\nmake; pub // third\nprojector // last\ntake }",
-            "newtype T : . { pub(// first\nx // second\n) // third\nconstructor // fourth\nmake; projector // last\ntake }",
+            "type // first\n{ T // second\n[A] // third\n: // fourth\nA // last\n{ mk; get }; }",
+            "pub // first\ntype { T[// second\nA // third\n] <// fourth\nB // fifth\n> // sixth\n: // seventh\n(A & B) // last\n{ mk; get }; }",
+            "type { T : . { pub // first\n// second\nmk; pub // third\n// last\nget }; }",
+            "type { T : . { pub(// first\nx // second\n) // third\n// fourth\nmk; // last\nget }; }",
         ] {
             let source = format!("module x;\n/// Type documentation.\n{declaration}");
             let printed = roundtrip(&source);
@@ -7376,7 +7060,7 @@ macro demo : Box[
         for declaration in [
             "host type // first\nT // second\nrole(// third\nstr // last\n)",
             "host type T[// first\nA // last\n]",
-            "pub newtype // first\nT : // second\n. // third\n{ pub // fourth\nconstructor // fifth\nmake; pub projector // last\ntake }",
+            "pub type // first\n{ T : // second\n. // third\n{ pub // fourth\n// fifth\nmk; pub // last\nget }; }",
             "type T = [// first\nA] A // second\n-> // last\nA",
         ] {
             let source = format!(
@@ -7411,9 +7095,9 @@ macro demo : Box[
         let source = "signature app v(1); v(1) { with { module api {\n\
             rec {\n\
             /// First member.\n\
-            pub newtype A : . | B { pub constructor make_a; pub projector take_a };\n\
+            pub type { A : . | B { pub mk; pub get }; };\n\
             /// Second member.\n\
-            pub newtype B : . | A { pub constructor make_b; pub projector take_b }\n\
+            pub type { B : . | A { pub mk; pub get }; }\n\
             } } }; nonbreaking { add { api.A; api.B } } }";
         let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
         let printed = crate::sig::emit_signature_file(&parsed);
@@ -7445,9 +7129,9 @@ macro demo : Box[
     #[cfg(all(feature = "surface", feature = "cli"))]
     fn signature_newtype_docs_do_not_restore_private_facts() {
         let declaration = "/// Public documentation.\n\
-            pub newtype T <Hidden> : Hidden {\n\
-            // private constructor comment\nconstructor secret;\n\
-            // private projector comment\nprojector secret_out }";
+            pub type { T <Hidden> : Hidden {\n\
+            // private constructor comment\nmk;\n\
+            // private projector comment\nget }; }";
         let module = parse(&format!("module api; {declaration}")).unwrap();
         let Item::Newtype(newtype) = &module.items[0] else {
             panic!("fixture declares a newtype");
@@ -7456,8 +7140,10 @@ macro demo : Box[
         assert!(projected.doc.is_none());
         assert!(projected.existential_params.is_empty());
         assert!(matches!(projected.payload, Type::Unit { .. }));
-        assert_eq!(projected.constructor.name, "sig_private_constructor");
-        assert_eq!(projected.projector.name, "sig_private_projector");
+        assert_eq!(projected.constructor.name, "mk");
+        assert_eq!(projected.constructor.vis, crate::ast::Visibility::Private);
+        assert_eq!(projected.projector.name, "get");
+        assert_eq!(projected.projector.vis, crate::ast::Visibility::Private);
         assert!(projected.constructor.leading_trivia.is_empty());
         assert!(projected.projector.leading_trivia.is_empty());
 
@@ -7473,7 +7159,8 @@ macro demo : Box[
         );
         for omitted in [
             "Hidden",
-            "secret",
+            "pub mk",
+            "pub get",
             "private constructor comment",
             "private projector comment",
         ] {
@@ -7703,22 +7390,156 @@ macro demo : Box[
 
     #[test]
     fn newtype_wide_chain_payload_breaks_to_leading_op_layout() {
-        // A newtype payload that's a wide `|` chain breaks to the
+        // A nominal payload that's a wide `|` chain breaks to the
         // leading-operator layout: `:` ends the head's line, the
         // chain items at +2, `{` lands on its own line at the same
         // indent before the member-list block.
-        let src = "module x; newtype Token : Int_lit_token_a_pretty_long_name \
+        let src = "module x; type { Token : Int_lit_token_a_pretty_long_name \
                    | String_lit_token_b_also_pretty_long_indeed | Bool_lit_token_c_lengthy_too \
-                   | Float_lit_token_d_yet_more { pub constructor mk_token; pub projector un_token; };";
+                   | Float_lit_token_d_yet_more { pub mk; pub get; }; };";
         let pp = roundtrip(src);
+        assert_eq!(parsed_structure(src), parsed_structure(&pp));
         assert!(
-            pp.contains("newtype Token :\n  | Int_lit_token_a_pretty_long_name"),
+            pp.contains("Token:\n    | Int_lit_token_a_pretty_long_name"),
             "expected leading-op break for first chain item; got:\n{pp}"
         );
         assert!(
-            pp.contains("\n  {"),
+            pp.contains("\n    { pub mk; pub get }\n}"),
             "expected `{{` on its own line at +2; got:\n{pp}"
         );
+    }
+
+    #[test]
+    fn nominal_payload_chain_layout_preserves_members_and_separators() {
+        for op in ["&", "|"] {
+            let payload = format!(
+                "First_payload_type_with_a_deliberately_long_name {op} Second_payload_type_with_another_long_name {op} Third_payload_type_with_a_long_name"
+            );
+            for members in ["", " { pub mk; get; }"] {
+                for nonfinal in [false, true] {
+                    let following = if nonfinal { "; Next: ." } else { "" };
+                    let source =
+                        format!("module x; type {{ Token: {payload}{members}{following}; }};");
+                    let printed = roundtrip(&source);
+                    assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+                    assert!(
+                        printed.contains(&format!("  Token:\n    {op} First_payload")),
+                        "{printed}"
+                    );
+                    assert!(
+                        printed.contains(&format!("\n    {op} Second_payload")),
+                        "{printed}"
+                    );
+                    assert!(
+                        printed.contains(&format!("\n    {op} Third_payload")),
+                        "{printed}"
+                    );
+                    assert_eq!(
+                        printed.matches("mk").count(),
+                        usize::from(!members.is_empty())
+                    );
+                    assert_eq!(
+                        printed.matches("get").count(),
+                        usize::from(!members.is_empty())
+                    );
+                    assert_eq!(
+                        printed.matches(';').count(),
+                        1 + usize::from(!members.is_empty()) + usize::from(nonfinal),
+                        "{printed}"
+                    );
+                    if members.is_empty() {
+                        let ending = if nonfinal {
+                            "\n    ;\n  Next: .\n}\n"
+                        } else {
+                            "_long_name\n}\n"
+                        };
+                        assert!(printed.ends_with(ending), "{printed}");
+                    } else {
+                        let suffix = if nonfinal {
+                            " { pub mk; get };\n  Next: ."
+                        } else {
+                            " { pub mk; get }\n}"
+                        };
+                        assert!(printed.contains(&format!("\n   {suffix}")), "{printed}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nominal_payload_chain_comments_preserve_order_and_structure() {
+        let source = "module x; type { // entry\n\
+            Token: First_payload_type_with_a_deliberately_long_name // first payload\n\
+            | Second_payload_type_with_another_long_name // last payload\n\
+            { // before mk\n\
+            pub mk // after mk\n\
+            ; // before get\n\
+            get // after get\n\
+            } // before separator\n\
+            ; // next entry\n\
+            Next: . // after next\n\
+            };";
+        let printed = roundtrip(source);
+        assert_eq!(parsed_structure(source), parsed_structure(&printed));
+        let comments = |text: &str| {
+            text.lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, body)| body.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(comments(source), comments(&printed), "{printed}");
+        assert_eq!(printed.matches(';').count(), 3, "{printed}");
+        assert!(printed.contains("  Token:\n"), "{printed}");
+        assert!(printed.contains("\n    {\n"), "{printed}");
+    }
+
+    #[test]
+    fn nominal_payload_member_boundary_comments_survive_each_declaration_shape() {
+        for payload in [".", "A & B", "[A] A -> A", "Box[.]"] {
+            for declaration in [
+                format!("type {{ Token: {payload} // payload boundary\n{{ mk; get }} }}"),
+                format!("type {{ Token: {payload} // payload boundary\n{{ mk; get }}; Other: . }}"),
+                format!("type {{ Other: .; Token: {payload} // payload boundary\n{{ mk; get }} }}"),
+                format!(
+                    "type Choice = {{ Token: {payload} // payload boundary\n{{ mk; get }} }} | {{ Other: . }};"
+                ),
+            ] {
+                let source = format!("module x; {declaration}");
+                let printed = roundtrip(&source);
+                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+                assert_eq!(
+                    printed.matches("// payload boundary").count(),
+                    1,
+                    "{printed}"
+                );
+                let boundary = printed.find("// payload boundary").unwrap();
+                let members = printed.find("{ mk; get }").expect("explicit member body");
+                assert!(boundary < members, "{printed}");
+            }
+        }
+    }
+
+    #[test]
+    fn named_nominal_rhs_wide_payloads_preserve_compact_groups() {
+        for op in ["&", "|"] {
+            let source = format!(
+                "module x; type Choice[A] = {{ First: First_payload_type_with_a_deliberately_long_name {op} Second_payload_type_with_another_long_name {op} Third_payload_type_with_a_long_name {{ mk; pub get; }}; Another: A; }} | (Existing & {{ Last: .; }});"
+            );
+            let printed = roundtrip(&source);
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+            assert!(
+                printed.contains(&format!("First:\n      {op} First_payload")),
+                "{printed}"
+            );
+            assert_eq!(printed.matches("type Choice[A]").count(), 1, "{printed}");
+            assert_eq!(printed.matches("mk;").count(), 1, "{printed}");
+            assert_eq!(printed.matches("pub get").count(), 1, "{printed}");
+            assert_eq!(printed.matches(';').count(), 4, "{printed}");
+            assert!(printed.contains("(Existing & { Last: . })"), "{printed}");
+        }
     }
 
     #[test]
@@ -7760,8 +7581,8 @@ macro demo : Box[
     #[test]
     fn newtype_short_payload_stays_inline() {
         let pp = roundtrip(
-            "module x; newtype Pair[A][B] : (A & B) \
-             { pub constructor mk_pair; pub projector un_pair; };",
+            "module x; type { Pair[A][B] : (A & B) \
+             { pub mk; pub get; }; };",
         );
         assert!(
             pp.contains(": A & B {"),
@@ -7840,11 +7661,11 @@ macro demo : Box[
     }
 
     #[test]
-    fn block_label_value_prefix_keeps_required_grouping() {
-        let output = roundtrip("module x; fn f() -> . { do({field = value}) { final_value } }");
+    fn block_unit_prefix_keeps_required_grouping() {
+        let output = roundtrip("module x; fn f() -> . { do({}) { final_value } }");
         assert!(
-            output.contains("do({field = value}) {"),
-            "label-value receiver lost its disambiguating parentheses:\n{output}"
+            output.contains("do(()) {"),
+            "unit prefix lost its disambiguating parentheses:\n{output}"
         );
     }
 
@@ -7854,8 +7675,6 @@ macro demo : Box[
             "factory // boundary\n(())",
             "(// boundary\nfactory)(())",
             "factory(()) // boundary\n(())",
-            "record // boundary\n.?{field}",
-            "record // boundary\n.!{field = value}",
             "factory // boundary\n(()).>select",
             "(// boundary\nreceiver).>select",
             "(// boundary\nreceiver).>select.>finish",
@@ -8039,8 +7858,6 @@ macro demo : Box[
                 ".t[Bool](())",
                 ".() { .() { () } }()()",
                 "(.() { () } // callee\n)()",
-                "(.() { () }.?{field})(())",
-                "(.() { () }.!{field = value})(())",
             ] {
                 let source = format!("module x; fn f() {{ fit(id{splice}({argument})) }}");
                 let printed = roundtrip(&source);
@@ -8081,31 +7898,6 @@ macro demo : Box[
             output.contains("[% form_left, form_right %].>context_callee"),
             "structural variadic receiver retained unnecessary parentheses:\n{output}"
         );
-    }
-
-    #[test]
-    fn operator_field_receiver_keeps_required_grouping() {
-        let output = roundtrip(
-            "module x; \
-             fn prefix_impl(value: Formtype) -> Formtype { value } \
-             op - __ { impl prefix_impl; }; \
-             varop [% %] { foldr form_push form_empty; }; \
-             fn normal_access() -> . { (- form_value).?{form_field} } \
-             fn normal_update() -> . { (- form_value).!{form_field = form_replacement} } \
-             fn variadic_access() -> . { ([% form_left, form_right %]).?{form_field} } \
-             fn variadic_update() -> . { ([% form_left, form_right %]).!{form_field = form_replacement} }",
-        );
-        for expected in [
-            "(- form_value).?{form_field}",
-            "(- form_value).!{form_field = form_replacement}",
-            "[% form_left, form_right %].?{form_field}",
-            "[% form_left, form_right %].!{form_field = form_replacement}",
-        ] {
-            assert!(
-                output.contains(expected),
-                "operator field receiver has incorrect grouping for `{expected}`:\n{output}"
-            );
-        }
     }
 
     #[test]
@@ -8337,14 +8129,6 @@ macro demo : Box[
                 "fn f() {\n  (\n    g()\n    // callee\n    )()\n}",
             ),
             (
-                "fn f(){ (g() // receiver\n).?{value} }",
-                "fn f() {\n  (\n    g()\n    // receiver\n    ).?{value}\n}",
-            ),
-            (
-                "fn f(){ (g() // receiver\n).!{value = x} }",
-                "fn f() {\n  (\n    g()\n    // receiver\n    ).!{value = x}\n}",
-            ),
-            (
                 "fn f(){ (g() // inner\n) // step\n.>use }",
                 "fn f() {\n  g()\n    // inner\n\n    // step\n    .>use\n}",
             ),
@@ -8392,7 +8176,7 @@ macro demo : Box[
             "type // first\nT = // second\n.;",
             "host // first\nfn // second\nf();",
             "fn f() { (g // first\n) // second\n() }",
-            "fn f() { row.?{m // first\n. // second\nfield} }",
+            "fn f() { m // first\n. // second\nfield() }",
             "type T = A // first\n-> // second\nB;",
             "import // first\nm // second\nas alias;",
             "op _ + // first\n_ { impl // second\nadd }",
@@ -8477,7 +8261,6 @@ macro demo : Box[
             "fn f(){ let _ = g() // 1\n; () }",
             "fn f(){ let .(x: .) = g() // 1\n; x }",
             "fn f(){ let .(x, y) = g() // 1\n; x }",
-            "fn f(){ let .({field as x}) = g() // 1\n; x }",
             "fn f(){ let .(<Hidden> payload) = g() // 1\n; payload }",
             "fn f(){ let .x. = g() // 1\n; x1 }",
         ] {
@@ -8571,7 +8354,6 @@ macro demo : Box[
             "fn f() // 1\n[A] // 2\n( // 3\nx: A) { x }",
             "fn f() { .( // 1\nx // 2\n: // 3\n. // 4\n) { x } }",
             "fn f(){ ( // 1\ng() // 2\n)() }",
-            "fn f(){ ( // 1\ng() // 2\n).?{value} }",
             "fn f(){ ( // 1\n)( // 2\n) }",
             "fn f(){ (g() // 1\n); () }",
             "fn f(){ let .(a, b) = (g() // 1\n); (a // 2\n) // 3\n}",
@@ -9382,54 +9164,45 @@ fn f() -> . {
         );
     }
 
-    /// The width-driven `labels` arm is the same A1 comma list as
-    /// every other list: a too-wide arm breaks to the leading-comma
-    /// layout with the `{` kept on the introducing line, and a
-    /// multi-line entry anchors at its content column — the entry's
-    /// broken payload items sit at +2 from the entry's own start,
-    /// not at the comma column. Regression: the arm used to flat-
-    /// join its entries with no broken layout, hanging the whole
-    /// arm on the next line and leaving a wide payload to break
-    /// mid-line anchored two columns left of the entry.
+    /// A wide compact group uses indented semicolon entries and keeps
+    /// its opening brace on the declaration line.
     #[test]
-    fn labels_wide_arm_breaks_to_leading_comma_at_content_column() {
-        let src = "module x;\n\
-                   labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh], second_label: I32 };\n";
+    fn compact_nominal_wide_group_uses_indented_semicolon_entries() {
+        let src = "module x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
-            "module x;\n\
-             \n\
-             labels Wide = {\n\
-             , first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]\n\
-             , second_label: I32\n\
-             };\n"
+            r#"module x;
+
+type Wide = {
+  First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh];
+  Second_label: I32
+};
+"#
         );
     }
 
-    /// The width-driven and comment-forced `labels` layouts agree:
-    /// the same declaration with and without an entry comment
-    /// renders identically apart from the comment line itself.
+    /// Width-driven and comment-forced compact layouts differ only by the comment.
     #[test]
-    fn labels_width_and_comment_paths_agree() {
-        let plain = "module x;\n\
-                     labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh], second_label: I32 };\n";
-        let commented = "module x;\n\
-                         labels Wide = {\n\
-                         \x20 // keep me\n\
-                         \x20 , first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]\n\
-                         \x20 , second_label: I32\n\
-                         \x20 };\n";
+    fn compact_nominal_width_and_comment_paths_agree() {
+        let plain = "module x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
+        let commented = r#"module x;
+type Wide = {
+  // keep me
+  First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh];
+  Second_label: I32;
+};
+"#;
         let plain_pp = roundtrip(plain);
         let commented_pp = roundtrip(commented);
         assert!(
-            commented_pp.contains("\n// keep me\n"),
+            commented_pp.contains("\n  // keep me\n"),
             "entry comment survived: {commented_pp}"
         );
         assert_eq!(
-            commented_pp.replace("// keep me\n", ""),
+            commented_pp.replace("  // keep me\n", ""),
             plain_pp,
-            "labels layouts diverge once the comment line is removed"
+            "compact layouts diverge once the comment line is removed"
         );
     }
 
@@ -10151,5 +9924,98 @@ fn f() -> . {
             pp.contains(&format!("\"{value}\"")),
             "long URL should stay one chunk; got:\n{pp}"
         );
+    }
+}
+
+#[cfg(test)]
+mod nominal_format_tests {
+    #[test]
+    fn nominal_format_roundtrips_all_declaration_shapes() {
+        for declaration in [
+            "type { _Name: .; Age: .; }",
+            "pub type { Token[A]<X>: A & X { mk; pub get; }; }",
+            "type Result = { Success: .; } | (Name & Age);",
+            "type Result = (Name & Age) | { Failure: .; };",
+            "type Result = { Tag: .; } & (Existing | { Empty: .; });",
+            "type Result = (Name -> Age) | { Failure: .; };",
+            "type Result = ([A] A -> A) | { Failure: .; };",
+            "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };",
+            "rec type { Node: Node { mk; get; }; }",
+        ] {
+            let source = format!("module x; {declaration}");
+            let parsed = crate::pass::parser::parse(&source).unwrap();
+            let formatted = super::pretty_module(&parsed);
+            let reparsed = crate::pass::parser::parse(&formatted).unwrap_or_else(|error| {
+                panic!("formatted declaration failed: {formatted}\n{error:?}")
+            });
+            assert_eq!(super::pretty_module(&reparsed), formatted);
+            let lazy = crate::pass::parser::parse_lazy(&source)
+                .unwrap()
+                .force_all()
+                .unwrap();
+            assert_eq!(super::pretty_module(&lazy), formatted);
+        }
+    }
+
+    #[test]
+    fn nominal_rhs_chains_follow_the_type_chain_width_layout() {
+        let source = "module x; type Result = { Field: .; } & Alpha_payload_type & Beta_payload_type & Gamma_payload_type & Delta_payload_type & Epsilon_payload_type & Zeta_payload_type & Eta_payload_type & Theta_payload_type;";
+        let parsed = crate::pass::parser::parse(source).unwrap();
+        let formatted = super::pretty_module(&parsed);
+        assert!(
+            formatted.lines().all(|line| line.len() <= 100),
+            "{formatted}"
+        );
+        assert!(
+            formatted.contains("type Result =\n  & { Field: . }\n"),
+            "{formatted}"
+        );
+        assert!(formatted.ends_with("  ;\n"), "{formatted}");
+        let reparsed = crate::pass::parser::parse(&formatted).unwrap();
+        assert_eq!(super::pretty_module(&reparsed), formatted);
+    }
+
+    #[test]
+    fn nominal_rhs_group_comments_roundtrip_once() {
+        for (source, comments) in [
+            (
+                "module x; type Result = { First: .; } | // next-operand\n(Existing & { Other: .; });",
+                &["next-operand"][..],
+            ),
+            (
+                "module x; type Result = { First: .; } | (// group-body\nExisting & { Other: .; } // group-end\n);",
+                &["group-body", "group-end"][..],
+            ),
+        ] {
+            let parsed = crate::pass::parser::parse(source).unwrap();
+            let formatted = super::pretty_module(&parsed);
+            for comment in comments {
+                assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
+            }
+            let reparsed = crate::pass::parser::parse(&formatted).unwrap();
+            assert_eq!(super::pretty_module(&reparsed), formatted);
+        }
+    }
+
+    #[test]
+    fn nominal_format_preserves_comment_ownership() {
+        let source = "module x; pub type { // entry-start\n Token: . { // member-start\n pub // visibility\n get; // member-between\n mk; // member-end\n }; // entry-end\n }";
+        let formatted = super::pretty_module(&crate::pass::parser::parse(source).unwrap());
+        for comment in [
+            "entry-start",
+            "member-start",
+            "visibility",
+            "member-between",
+            "member-end",
+            "entry-end",
+        ] {
+            assert_eq!(
+                formatted.matches(comment).count(),
+                1,
+                "{comment} in {formatted}"
+            );
+        }
+        let reparsed = crate::pass::parser::parse(&formatted).unwrap();
+        assert_eq!(super::pretty_module(&reparsed), formatted);
     }
 }

@@ -1,10 +1,11 @@
 module render;
 
 import alphabet(Card);
-import alphabet({crossed}, {glyph}, {high}, {left}, {mnemonic}, {right});
+import alphabet(Crossed, Glyph, High, Left, Mnemonic, Right);
 import macros/control(macro if);
+import macros/row_macros(macro select);
+import message(Crossings_even, Has_vowel, Shapes_distinct);
 import message(Facts, Message);
-import message({crossings_even}, {has_vowel}, {shapes_distinct});
 import testapi(Bool, String);
 import testapi/io(print);
 
@@ -17,9 +18,9 @@ fn mark(flag: Bool) -> String {
 }
 
 fn shape_code(card: Card) -> String {
-  if(card.?{crossed}) {
-    if(card.?{high}) { "XH" } else { "X-" }
-  } else if(card.?{high}) {
+  if(card.>select { Crossed.get }) {
+    if(card.>select { High.get }) { "XH" } else { "X-" }
+  } else if(card.>select { High.get }) {
     "-H"
   } else {
     "--"
@@ -41,15 +42,15 @@ pub fn header() {
 }
 
 pub fn row(card: Card) {
-  print(card.?{glyph});
+  print(card.>select { Glyph.get });
   print(" | ");
-  print(card.?{left});
+  print(card.>select { Left.get });
   print(" / ");
-  print(card.?{right});
+  print(card.>select { Right.get });
   print(" | ");
-  print(mark(card.?{crossed}));
+  print(mark(card.>select { Crossed.get }));
   print(" | ");
-  print(card.?{mnemonic});
+  print(card.>select { Mnemonic.get });
   print("\n")
 }
 
@@ -68,7 +69,7 @@ pub fn footer(msg: Message, facts: Facts) {
   shape_gap(c8);
   shape_gap(c9);
   print("\n");
-  fact("contains a vowel     ", facts.?{has_vowel});
-  fact("even arm crossings   ", facts.?{crossings_even});
-  fact("neighbours distinct  ", facts.?{shapes_distinct})
+  fact("contains a vowel     ", facts.>select { Has_vowel.get });
+  fact("even arm crossings   ", facts.>select { Crossings_even.get });
+  fact("neighbours distinct  ", facts.>select { Shapes_distinct.get })
 }

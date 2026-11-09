@@ -94,16 +94,32 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 mod artifact;
+mod checked_bindings;
+pub(crate) use checked_bindings::CheckedSnapshotKey;
 mod checked_traversal;
 mod metrics;
 pub(crate) mod ownership;
 #[cfg(feature = "surface")]
+mod projected_observation;
+#[cfg(feature = "surface")]
 mod quoted_rec;
+mod reflection_bindings;
+pub(crate) use reflection_bindings::ReflectedSnapshotKey;
+pub use reflection_bindings::ReflectedVariable;
+pub(crate) use reflection_bindings::TypeChild;
+#[cfg(feature = "surface")]
+pub(crate) use reflection_bindings::{IncompleteOwner, TypeComparison, type_correspondence};
+#[cfg(feature = "surface")]
+pub(crate) use reflection_bindings::{ProjectedReflection, reflected_variables_correspond};
 mod render;
 mod replay;
 mod structural_recursion;
+mod type_arguments;
+use reflection_bindings::{ReflectionEnvironment, TypeCursor};
 mod type_traversal;
 pub use artifact::EvalArtifact;
+#[cfg(all(feature = "surface", feature = "cli"))]
+pub(crate) use artifact::eval_authenticated_in_type_scope;
 pub(crate) use artifact::{
     AuthenticatedEvalCtx, EvalArtifactInput, PreparedEvalModule, UserMacroEvalArtifactPair,
     eval_authenticated,
@@ -115,8 +131,9 @@ pub use ownership::EvalRef;
 pub(crate) use render::value_to_repl_string;
 pub use render::value_to_string;
 pub use structural_recursion::structural_recur_stuck_message;
+pub(crate) use structural_recursion::{ComptimeFault, comptime_fault, comptime_fault_message};
 use structural_recursion::{
-    StructuralRecurHelperGuard, StructuralRecurOperationState, structural_recur_fault,
+    EvalOperationState, StructuralRecurHelperGuard, structural_recur_fault,
 };
 #[cfg(test)]
 use structural_recursion::{fuel_measure, initial_fuel_measure};
@@ -129,10 +146,11 @@ use crate::ast::{
 use crate::comptime::ComptimeBuiltin;
 use crate::pass::resolve::Package;
 use crate::pass::substitute::PrePrime;
-use crate::pass::typecheck_core::{AliasCtx, InferFreeType, subst_type, type_equiv};
+use crate::pass::typecheck_core::{AliasCtx, InferFreeType, type_equiv};
 #[cfg(test)]
 use crate::pass::typecheck_full::Elaborations;
 use crate::span::Span;
+use type_arguments::{EvalTypeTemplate, collect_type_capture_slots, compile_type_template};
 use type_traversal::ReflectionTypeKey;
 
 type EvalPhase = UncheckedPrime;
@@ -224,15 +242,19 @@ impl EvalPrimitiveEnv {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ReflectedType {
     ty: EvalRef<EvalAstType>,
+    cursor: Option<EvalRef<TypeCursor>>,
+    environment: ReflectionEnvironment,
 }
 
 impl ReflectedType {
     pub fn new(ty: EvalAstType, message: &str) -> Result<Self, crate::error::Error> {
         InferFreeType::new(ty, message).map(|ty| Self {
             ty: EvalRef::new(ty.into_type()),
+            cursor: None,
+            environment: ReflectionEnvironment::default(),
         })
     }
 
@@ -240,15 +262,20 @@ impl ReflectedType {
         let ty = InferFreeType::new_trusted(ty).into_type();
         Self {
             ty: EvalRef::new(ty),
+            cursor: None,
+            environment: ReflectionEnvironment::default(),
         }
     }
 
     pub fn as_type(&self) -> &EvalAstType {
-        &self.ty
+        reflection_bindings::selected_type(&self.ty, self.cursor.as_deref())
     }
 
     pub fn into_type(self) -> EvalAstType {
-        EvalRef::try_unwrap(self.ty).unwrap_or_else(|ty| (*ty).clone())
+        if self.cursor.is_some() {
+            return type_traversal::clone_type(self.as_type());
+        }
+        EvalRef::try_unwrap(self.ty).unwrap_or_else(|ty| type_traversal::clone_type(&ty))
     }
 }
 
@@ -272,7 +299,7 @@ pub(crate) struct CheckedTermTemplateValueAdapter {
 #[cfg(feature = "surface")]
 #[derive(Debug, Clone)]
 pub(crate) struct CheckedTermTemplateSource {
-    pub(crate) ty: Type<UncheckedPrime>,
+    pub(crate) ty: ReflectedType,
     pub(crate) force_if_unused: bool,
 }
 
@@ -287,7 +314,7 @@ pub(crate) struct CheckedTermTemplateSlot {
 pub(crate) struct CheckedTermTemplatePiece {
     pub(crate) source_index: usize,
     pub(crate) source_slot: usize,
-    pub(crate) source_slot_tys: Vec<Type<UncheckedPrime>>,
+    pub(crate) source_slot_tys: Vec<ReflectedType>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,7 +343,6 @@ enum CheckedTermNode {
     },
     TermCall {
         fn_value: EvalRef<CheckedTerm>,
-        params: Vec<EvalAstType>,
         arg_packet: EvalRef<CheckedTerm>,
     },
     TermTypeApp {
@@ -365,29 +391,27 @@ enum CheckedTermNode {
     },
 }
 
-#[cfg(feature = "surface")]
 pub(crate) enum ProjectedTermConstruction {
     Pair {
         left: EvalRef<CheckedTerm>,
         right: EvalRef<CheckedTerm>,
     },
     ProductProjection {
-        left_ty: EvalAstType,
-        right_ty: EvalAstType,
+        left_ty: ReflectedType,
+        right_ty: ReflectedType,
         value: EvalRef<CheckedTerm>,
         left: bool,
     },
     Call {
         fn_value: EvalRef<CheckedTerm>,
-        params: Vec<EvalAstType>,
         arg_packet: EvalRef<CheckedTerm>,
     },
     Absurd {
         bottom_value: EvalRef<CheckedTerm>,
     },
     Either {
-        left_ty: EvalAstType,
-        right_ty: EvalAstType,
+        left_ty: ReflectedType,
+        right_ty: ReflectedType,
         value: EvalRef<CheckedTerm>,
         left_name: String,
         left_body: EvalRef<CheckedTerm>,
@@ -400,20 +424,22 @@ pub(crate) enum ProjectedTermConstruction {
         body: EvalRef<CheckedTerm>,
     },
     Fn {
-        sig: EvalAstSignature,
+        params: Vec<(String, ReflectedType)>,
+        span: Span,
         body: EvalRef<CheckedTerm>,
     },
     TypeFn {
-        param: TypeParam,
+        variable: ReflectedVariable,
+        span: Span,
         body: EvalRef<CheckedTerm>,
     },
     TypeApp {
         term: EvalRef<CheckedTerm>,
-        arg: EvalAstType,
+        arg: ReflectedType,
     },
     Injection {
-        left_ty: EvalAstType,
-        right_ty: EvalAstType,
+        left_ty: ReflectedType,
+        right_ty: ReflectedType,
         value: EvalRef<CheckedTerm>,
         left: bool,
     },
@@ -425,6 +451,13 @@ pub(crate) enum ProjectedTermConstruction {
 }
 
 impl CheckedTerm {
+    pub(crate) fn new_reflected(expr: EvalAstExpr, ty: ReflectedType) -> Self {
+        Self {
+            node: EvalRef::new(CheckedTermNode::Raw(expr)),
+            ty,
+        }
+    }
+
     pub fn new(expr: EvalAstExpr, ty: EvalAstType) -> Self {
         Self {
             node: EvalRef::new(CheckedTermNode::Raw(expr)),
@@ -433,15 +466,54 @@ impl CheckedTerm {
     }
 
     #[cfg(feature = "surface")]
+    #[cfg(test)]
     pub(crate) fn template_value(index: usize, ty: EvalAstType) -> Self {
         Self::from_node(CheckedTermNode::TemplateValue { index }, ty)
     }
 
     #[cfg(feature = "surface")]
-    pub(crate) fn from_projected(
+    pub(crate) fn template_value_reflected(index: usize, ty: ReflectedType) -> Self {
+        Self::from_reflected_node(CheckedTermNode::TemplateValue { index }, ty)
+    }
+
+    pub(crate) fn from_projected_reflected(
         construction: ProjectedTermConstruction,
-        result_ty: EvalAstType,
-    ) -> Self {
+        result_ty: ReflectedType,
+    ) -> Result<Self, crate::error::Error> {
+        if let ProjectedTermConstruction::TypeFn {
+            variable,
+            span,
+            body,
+        } = construction
+        {
+            return checked_bindings::close_forall(&body, &variable).map_err(|_| {
+                crate::error::Error::macro_error(
+                    span,
+                    "a quantified term result contains a parameter opened from another scheme",
+                )
+            });
+        }
+        let mut roots = vec![&result_ty];
+        match &construction {
+            ProjectedTermConstruction::ProductProjection {
+                left_ty, right_ty, ..
+            }
+            | ProjectedTermConstruction::Either {
+                left_ty, right_ty, ..
+            }
+            | ProjectedTermConstruction::Injection {
+                left_ty, right_ty, ..
+            } => {
+                roots.extend([left_ty, right_ty]);
+            }
+            ProjectedTermConstruction::Fn { params, .. } => {
+                roots.extend(params.iter().map(|(_, ty)| ty));
+            }
+            ProjectedTermConstruction::TypeApp { arg, .. } => roots.push(arg),
+            _ => {}
+        }
+        let mut types = reflection_bindings::ReflectionTypeBuilder::new(roots);
+        let result_ty = types.import(&result_ty).take();
         let node = match construction {
             ProjectedTermConstruction::Pair { left, right } => {
                 CheckedTermNode::IntrinsicPair { left, right }
@@ -453,22 +525,20 @@ impl CheckedTerm {
                 left,
             } => CheckedTermNode::IntrinsicProjection {
                 intrinsic: if left { "__fst__" } else { "__snd__" }.to_owned(),
-                left_ty,
-                right_ty,
+                left_ty: types.import(&left_ty).take(),
+                right_ty: types.import(&right_ty).take(),
                 value,
             },
             ProjectedTermConstruction::Call {
                 fn_value,
-                params,
                 arg_packet,
             } => CheckedTermNode::TermCall {
                 fn_value,
-                params,
                 arg_packet,
             },
             ProjectedTermConstruction::Absurd { bottom_value } => {
                 CheckedTermNode::IntrinsicAbsurd {
-                    result_ty: result_ty.clone(),
+                    result_ty: type_traversal::clone_type(&result_ty),
                     bottom_value,
                 }
             }
@@ -481,9 +551,9 @@ impl CheckedTerm {
                 right_name,
                 right_body,
             } => CheckedTermNode::IntrinsicEither {
-                left_ty,
-                right_ty,
-                result_ty: result_ty.clone(),
+                left_ty: types.import(&left_ty).take(),
+                right_ty: types.import(&right_ty).take(),
+                result_ty: type_traversal::clone_type(&result_ty),
                 value,
                 left_name,
                 left_body,
@@ -493,13 +563,30 @@ impl CheckedTerm {
             ProjectedTermConstruction::Let { name, value, body } => {
                 CheckedTermNode::TermLet { name, value, body }
             }
-            ProjectedTermConstruction::Fn { sig, body } => CheckedTermNode::TermFn { sig, body },
-            ProjectedTermConstruction::TypeFn { param, body } => {
-                return checked_term_type_fn(param, body);
+            ProjectedTermConstruction::Fn { params, span, body } => {
+                let len = params.len();
+                let sig = Signature::from_parts(
+                    params
+                        .into_iter()
+                        .map(|(name, ty)| {
+                            SignatureParam::Value(crate::ast::Param {
+                                name,
+                                ty: Some(types.import(&ty).take()),
+                                pattern: (),
+                                meta: crate::ast::Meta::new(span),
+                            })
+                        })
+                        .collect(),
+                    vec![crate::ast::SignatureGroupKind::Value { len }],
+                );
+                CheckedTermNode::TermFn { sig, body }
+            }
+            ProjectedTermConstruction::TypeFn { .. } => {
+                unreachable!("quantified projected terms use their retained live binder")
             }
             ProjectedTermConstruction::TypeApp { term, arg } => CheckedTermNode::TermTypeApp {
                 fn_value: term,
-                arg,
+                arg: types.import(&arg).take(),
             },
             ProjectedTermConstruction::Injection {
                 left_ty,
@@ -508,8 +595,8 @@ impl CheckedTerm {
                 left,
             } => CheckedTermNode::IntrinsicInjection {
                 intrinsic: if left { "__left__" } else { "__right__" }.to_owned(),
-                left_ty,
-                right_ty,
+                left_ty: types.import(&left_ty).take(),
+                right_ty: types.import(&right_ty).take(),
                 value,
             },
             ProjectedTermConstruction::IfThenElse {
@@ -517,18 +604,32 @@ impl CheckedTerm {
                 true_body,
                 false_body,
             } => CheckedTermNode::IntrinsicIfThenElse {
-                result_ty: result_ty.clone(),
+                result_ty: type_traversal::clone_type(&result_ty),
                 condition,
                 true_body,
                 false_body,
             },
         };
-        Self::from_node(node, result_ty)
+        Ok(Self::from_reflected_node(node, types.finish(result_ty)))
+    }
+
+    #[cfg(all(feature = "surface", test))]
+    pub(crate) fn from_projected(
+        construction: ProjectedTermConstruction,
+        result_ty: EvalAstType,
+    ) -> Self {
+        Self::from_projected_reflected(construction, ReflectedType::new_trusted(result_ty))
+            .expect("the projected test fixture has a valid construction")
     }
 
     #[cfg(feature = "surface")]
     pub(crate) fn local(name: String, ty: EvalAstType) -> Self {
         Self::from_node(CheckedTermNode::Local { name }, ty)
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn local_reflected(name: String, ty: ReflectedType) -> Self {
+        Self::from_reflected_node(CheckedTermNode::Local { name }, ty)
     }
 
     #[cfg(test)]
@@ -542,6 +643,13 @@ impl CheckedTerm {
         )
     }
 
+    fn from_reflected_node(node: CheckedTermNode, ty: ReflectedType) -> Self {
+        Self {
+            node: EvalRef::new(node),
+            ty,
+        }
+    }
+
     fn from_node(node: CheckedTermNode, ty: EvalAstType) -> Self {
         Self {
             node: EvalRef::new(node),
@@ -553,12 +661,29 @@ impl CheckedTerm {
         self.ty.as_type()
     }
 
+    pub(crate) fn reflected_type(&self) -> &ReflectedType {
+        &self.ty
+    }
+
     pub fn clone_expr(&self) -> EvalAstExpr {
-        checked_term_node_expr(&self.node)
+        let (expr, ty) = checked_bindings::materialized_parts(self);
+        drop(ownership::Owned::new(ty));
+        expr
     }
 
     pub fn clone_type(&self) -> EvalAstType {
-        self.ty.as_type().clone()
+        let aligned = self.align_for_materialization();
+        type_traversal::clone_type(aligned.ty())
+    }
+
+    /// Gives every type-bearing node and the result type one hygienic mapping.
+    /// Template slots and semantic references remain available to their consumers.
+    pub(crate) fn align_for_materialization(&self) -> Self {
+        checked_bindings::align_for_materialization(self)
+    }
+
+    pub(crate) fn align_for_export(&self, preferred: &[(String, ReflectedVariable)]) -> Self {
+        checked_bindings::align_for_export(self, preferred)
     }
 
     pub(crate) fn template_value_arity(&self) -> usize {
@@ -667,11 +792,11 @@ impl CheckedTerm {
         let source_term = |index: usize| {
             let source = &adapter.sources[index];
             match &names[index] {
-                Some(name) => CheckedTerm::from_node(
+                Some(name) => CheckedTerm::from_reflected_node(
                     CheckedTermNode::Local { name: name.clone() },
                     source.ty.clone(),
                 ),
-                None => CheckedTerm::template_value(index, source.ty.clone()),
+                None => CheckedTerm::template_value_reflected(index, source.ty.clone()),
             }
         };
         let replacements = adapter
@@ -683,7 +808,7 @@ impl CheckedTerm {
                     .iter()
                     .map(|piece| {
                         let source = EvalRef::new(source_term(piece.source_index));
-                        project_right_fold_product_slot(
+                        project_reflected_product_slot(
                             source,
                             &piece.source_slot_tys,
                             piece.source_slot,
@@ -699,11 +824,14 @@ impl CheckedTerm {
             let Some(name) = &names[index] else {
                 continue;
             };
-            let body_ty = body.clone_type();
-            body = CheckedTerm::from_node(
+            let body_ty = body.ty.clone();
+            body = CheckedTerm::from_reflected_node(
                 CheckedTermNode::TermLet {
                     name: name.clone(),
-                    value: EvalRef::new(CheckedTerm::template_value(index, source.ty.clone())),
+                    value: EvalRef::new(CheckedTerm::template_value_reflected(
+                        index,
+                        source.ty.clone(),
+                    )),
                     body: EvalRef::new(body),
                 },
                 body_ty,
@@ -718,8 +846,8 @@ impl CheckedTerm {
     /// continuation; selected calls already return its runtime result.
     pub(crate) fn adapt_lifted_terminal_callbacks(
         &self,
-        sources: &[Option<EvalAstType>],
-        runtime_result: EvalAstType,
+        sources: &[Option<ReflectedType>],
+        runtime_result: ReflectedType,
         continuation: EvalRef<CheckedTerm>,
     ) -> Self {
         #[cfg(test)]
@@ -734,7 +862,19 @@ impl CheckedTerm {
             runtime_result,
             continuation,
         };
-        adapter.tail(self).as_ref().clone()
+        let adapted = adapter.tail(self);
+        // Each tail result comes from the validated continuation, a selected
+        // runtime callback return, or the supplied runtime result. This checks
+        // the adapter's transformation; hidden node types are validated at
+        // their own construction and export boundaries.
+        assert!(
+            matches!(
+                reflection_bindings::semantic_type_equal(&adapted.ty, &adapter.runtime_result),
+                Ok(true)
+            ),
+            "authenticated recursive callback adaptation changed its runtime result type"
+        );
+        adapted.as_ref().clone()
     }
 }
 
@@ -824,7 +964,7 @@ struct RuntimeCallbackPair {
 #[cfg(feature = "surface")]
 #[derive(Clone)]
 struct RuntimeCallbackBinding {
-    ty: EvalAstType,
+    ty: ReflectedType,
     result: RuntimeCallbackResult,
 }
 
@@ -860,7 +1000,7 @@ impl RuntimeCallbackTransport {
                     )
                 });
                 Some(RuntimeCallbackBinding {
-                    ty: term.clone_type(),
+                    ty: term.ty.clone(),
                     result: self.result,
                 })
             }
@@ -870,22 +1010,30 @@ impl RuntimeCallbackTransport {
 
 #[cfg(feature = "surface")]
 struct RuntimeCallbackAdapter<'a> {
-    sources: &'a [Option<EvalAstType>],
+    sources: &'a [Option<ReflectedType>],
     aliases: HashMap<String, Option<RuntimeCallbackBinding>>,
     pairs: Vec<RuntimeCallbackPair>,
-    runtime_result: EvalAstType,
+    runtime_result: ReflectedType,
     continuation: EvalRef<CheckedTerm>,
 }
 
 #[cfg(feature = "surface")]
 impl RuntimeCallbackAdapter<'_> {
-    fn rebuilt(&self, node: CheckedTermNode, ty: EvalAstType) -> EvalRef<CheckedTerm> {
+    fn typed_field(term: &CheckedTerm, ty: &EvalAstType) -> ReflectedType {
+        ReflectedType::from_parts(
+            EvalRef::new(type_traversal::clone_type(ty)),
+            None,
+            term.ty.environment.clone(),
+        )
+    }
+
+    fn rebuilt(&self, node: CheckedTermNode, ty: ReflectedType) -> EvalRef<CheckedTerm> {
         #[cfg(test)]
         RUNTIME_CALLBACK_ADAPTER_WORK.with(|work| {
             let (fires, reused, rebuilt) = work.get();
             work.set((fires, reused, rebuilt + 1));
         });
-        EvalRef::new(CheckedTerm::from_node(node, ty))
+        EvalRef::new(CheckedTerm::from_reflected_node(node, ty))
     }
 
     fn materialize(
@@ -993,11 +1141,15 @@ impl RuntimeCallbackAdapter<'_> {
                 }
                 let left = self.materialize(changed_left, left);
                 let right = self.materialize(changed_right, right);
-                let ty = Type::Product {
-                    left: Box::new(left.clone_type()),
-                    right: Box::new(right.clone_type()),
+                let mut types =
+                    reflection_bindings::ReflectionTypeBuilder::new([&left.ty, &right.ty]);
+                let left_ty = types.import(&left.ty).take();
+                let right_ty = types.import(&right.ty).take();
+                let ty = types.finish(Type::Product {
+                    left: Box::new(left_ty),
+                    right: Box::new(right_ty),
                     meta: zero_meta(),
-                };
+                });
                 RuntimeCallbackTransport::rebuilt(
                     self.rebuilt(CheckedTermNode::IntrinsicPair { left, right }, ty),
                     result,
@@ -1011,11 +1163,13 @@ impl RuntimeCallbackAdapter<'_> {
                 let Some(value) = changed_value.changed else {
                     return RuntimeCallbackTransport::public();
                 };
-                let Type::Product { left, right, .. } = value.ty() else {
+                if !matches!(value.ty(), Type::Product { .. }) {
                     unreachable!(
                         "authenticated recursive callback projection lost its product type"
-                    )
-                };
+                    );
+                }
+                let left = value.ty.child(reflection_bindings::TypeChild::Left);
+                let right = value.ty.child(reflection_bindings::TypeChild::Right);
                 let selected = match result {
                     RuntimeCallbackResult::Product(id) => self.pair_result(id),
                     RuntimeCallbackResult::Public => RuntimeCallbackPair {
@@ -1027,8 +1181,8 @@ impl RuntimeCallbackAdapter<'_> {
                     ),
                 };
                 let (ty, result) = match intrinsic.as_str() {
-                    "__fst__" => (left.as_ref().clone(), selected.left),
-                    "__snd__" => (right.as_ref().clone(), selected.right),
+                    "__fst__" => (left.clone(), selected.left),
+                    "__snd__" => (right.clone(), selected.right),
                     _ => unreachable!(
                         "authenticated recursive callback projection changed intrinsic"
                     ),
@@ -1037,8 +1191,8 @@ impl RuntimeCallbackAdapter<'_> {
                     self.rebuilt(
                         CheckedTermNode::IntrinsicProjection {
                             intrinsic: intrinsic.clone(),
-                            left_ty: left.as_ref().clone(),
-                            right_ty: right.as_ref().clone(),
+                            left_ty: type_traversal::clone_type(left.as_type()),
+                            right_ty: type_traversal::clone_type(right.as_type()),
                             value,
                         },
                         ty,
@@ -1056,7 +1210,7 @@ impl RuntimeCallbackAdapter<'_> {
                 let result = changed_body.result;
                 let value = self.materialize(changed_value, value);
                 let body = self.materialize(changed_body, body);
-                let ty = body.clone_type();
+                let ty = body.ty.clone();
                 RuntimeCallbackTransport::rebuilt(
                     self.rebuilt(
                         CheckedTermNode::TermLet {
@@ -1101,14 +1255,13 @@ impl RuntimeCallbackAdapter<'_> {
                             sig: sig.clone(),
                             body,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
             }
             CheckedTermNode::TermCall {
                 fn_value,
-                params,
                 arg_packet,
             } => {
                 let changed_fn = self.transport(fn_value);
@@ -1129,10 +1282,9 @@ impl RuntimeCallbackAdapter<'_> {
                     self.rebuilt(
                         CheckedTermNode::TermCall {
                             fn_value,
-                            params: params.clone(),
                             arg_packet,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
@@ -1146,20 +1298,18 @@ impl RuntimeCallbackAdapter<'_> {
                 let Some(fn_value) = changed_fn.changed else {
                     return RuntimeCallbackTransport::public();
                 };
-                let Type::Forall { param, body, .. } = fn_value.ty() else {
+                let arg = Self::typed_field(term, arg);
+                let ty = fn_value.ty.instantiate_forall(&arg).unwrap_or_else(|| {
                     unreachable!(
                         "authenticated recursive callback type application lost its forall"
                     )
-                };
-                let ty = subst_type(body, &HashMap::from([(param.name.clone(), arg.clone())]));
+                });
+                let mut types = reflection_bindings::ReflectionTypeBuilder::new([&ty, &arg]);
+                let result_ty = types.import(&ty).take();
+                let arg = types.import(&arg).take();
+                let ty = types.finish(result_ty);
                 RuntimeCallbackTransport::rebuilt(
-                    self.rebuilt(
-                        CheckedTermNode::TermTypeApp {
-                            fn_value,
-                            arg: arg.clone(),
-                        },
-                        ty,
-                    ),
+                    self.rebuilt(CheckedTermNode::TermTypeApp { fn_value, arg }, ty),
                     result,
                 )
             }
@@ -1184,7 +1334,7 @@ impl RuntimeCallbackAdapter<'_> {
                             right_ty: right_ty.clone(),
                             value,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
@@ -1233,7 +1383,7 @@ impl RuntimeCallbackAdapter<'_> {
                             right_name: right_name.clone(),
                             right_body,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
@@ -1257,7 +1407,7 @@ impl RuntimeCallbackAdapter<'_> {
                             result_ty: result_ty.clone(),
                             bottom_value,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
@@ -1296,7 +1446,7 @@ impl RuntimeCallbackAdapter<'_> {
                             true_body,
                             false_body,
                         },
-                        term.clone_type(),
+                        term.ty.clone(),
                     ),
                     RuntimeCallbackResult::Public,
                 )
@@ -1308,18 +1458,12 @@ impl RuntimeCallbackAdapter<'_> {
     }
 
     fn ordinary_value(&self, value: EvalRef<CheckedTerm>) -> EvalRef<CheckedTerm> {
-        let Type::Function {
-            param,
-            abi_arity: 1,
-            ..
-        } = self.continuation.ty()
-        else {
+        let Type::Function { abi_arity: 1, .. } = self.continuation.ty() else {
             unreachable!("authenticated recursive continuation was not unary function-shaped")
         };
         self.rebuilt(
             CheckedTermNode::TermCall {
                 fn_value: self.continuation.clone(),
-                params: vec![param.as_ref().clone()],
                 arg_packet: value,
             },
             self.runtime_result.clone(),
@@ -1362,24 +1506,13 @@ impl RuntimeCallbackAdapter<'_> {
                 }
                 let fn_value = self.materialize(changed_fn, fn_value);
                 let arg_packet = self.materialize(changed_arg, arg_packet);
-                let Type::Function {
-                    param,
-                    ret,
-                    abi_arity,
-                    ..
-                } = fn_value.ty()
-                else {
-                    unreachable!("authenticated recursive callback became non-callable")
-                };
-                let params = Type::right_spine_take(param.as_ref(), *abi_arity)
-                    .into_iter()
-                    .cloned()
-                    .collect();
-                let ret = ret.as_ref().clone();
+                if !matches!(fn_value.ty(), Type::Function { .. }) {
+                    unreachable!("authenticated recursive callback became non-callable");
+                }
+                let ret = fn_value.ty.child(reflection_bindings::TypeChild::Right);
                 let call = self.rebuilt(
                     CheckedTermNode::TermCall {
                         fn_value,
-                        params,
                         arg_packet,
                     },
                     ret,
@@ -1397,7 +1530,7 @@ impl RuntimeCallbackAdapter<'_> {
                 let binding = changed_value.binding();
                 let body = self.with_alias(name, binding, |this| this.tail(body));
                 let value = self.materialize(changed_value, value);
-                let ty = body.clone_type();
+                let ty = body.ty.clone();
                 (
                     CheckedTermNode::TermLet {
                         name: name.clone(),
@@ -1426,18 +1559,29 @@ impl RuntimeCallbackAdapter<'_> {
                 let value = self.materialize(changed_value, value);
                 let left_body = self.with_alias(left_name, None, |this| this.tail(left_body));
                 let right_body = self.with_alias(right_name, None, |this| this.tail(right_body));
+                let left_ty = Self::typed_field(term, left_ty);
+                let right_ty = Self::typed_field(term, right_ty);
+                let mut types = reflection_bindings::ReflectionTypeBuilder::new([
+                    &left_ty,
+                    &right_ty,
+                    &self.runtime_result,
+                ]);
+                let left_ty = types.import(&left_ty).take();
+                let right_ty = types.import(&right_ty).take();
+                let result_ty = types.import(&self.runtime_result).take();
+                let ty = types.finish(type_traversal::clone_type(&result_ty));
                 (
                     CheckedTermNode::IntrinsicEither {
-                        left_ty: left_ty.clone(),
-                        right_ty: right_ty.clone(),
-                        result_ty: self.runtime_result.clone(),
+                        left_ty,
+                        right_ty,
+                        result_ty,
                         value,
                         left_name: left_name.clone(),
                         left_body,
                         right_name: right_name.clone(),
                         right_body,
                     },
-                    self.runtime_result.clone(),
+                    ty,
                 )
             }
             CheckedTermNode::IntrinsicIfThenElse {
@@ -1455,7 +1599,7 @@ impl RuntimeCallbackAdapter<'_> {
                 let condition = self.materialize(changed_condition, condition);
                 (
                     CheckedTermNode::IntrinsicIfThenElse {
-                        result_ty: self.runtime_result.clone(),
+                        result_ty: type_traversal::clone_type(self.runtime_result.as_type()),
                         condition,
                         true_body: self.tail(true_body),
                         false_body: self.tail(false_body),
@@ -1473,7 +1617,7 @@ impl RuntimeCallbackAdapter<'_> {
                 let bottom_value = self.materialize(changed_bottom, bottom_value);
                 (
                     CheckedTermNode::IntrinsicAbsurd {
-                        result_ty: self.runtime_result.clone(),
+                        result_ty: type_traversal::clone_type(self.runtime_result.as_type()),
                         bottom_value,
                     },
                     self.runtime_result.clone(),
@@ -1574,111 +1718,7 @@ fn replace_checked_term_template_values(
     term: &CheckedTerm,
     replacements: &[CheckedTerm],
 ) -> CheckedTerm {
-    let recurse = |child: &EvalRef<CheckedTerm>| {
-        EvalRef::new(replace_checked_term_template_values(child, replacements))
-    };
-    let node = match term.node.as_ref() {
-        CheckedTermNode::TemplateValue { index } => {
-            return replacements
-                .get(*index)
-                .unwrap_or_else(|| {
-                    panic!("checked-term template refers to missing ABI slot {index}")
-                })
-                .clone();
-        }
-        CheckedTermNode::Raw(expr) => CheckedTermNode::Raw(expr.clone()),
-        CheckedTermNode::Local { name } => CheckedTermNode::Local { name: name.clone() },
-        CheckedTermNode::TermLet { name, value, body } => CheckedTermNode::TermLet {
-            name: name.clone(),
-            value: recurse(value),
-            body: recurse(body),
-        },
-        CheckedTermNode::TermFn { sig, body } => CheckedTermNode::TermFn {
-            sig: sig.clone(),
-            body: recurse(body),
-        },
-        CheckedTermNode::TermCall {
-            fn_value,
-            params,
-            arg_packet,
-        } => CheckedTermNode::TermCall {
-            fn_value: recurse(fn_value),
-            params: params.clone(),
-            arg_packet: recurse(arg_packet),
-        },
-        CheckedTermNode::TermTypeApp { fn_value, arg } => CheckedTermNode::TermTypeApp {
-            fn_value: recurse(fn_value),
-            arg: arg.clone(),
-        },
-        CheckedTermNode::IntrinsicPair { left, right } => CheckedTermNode::IntrinsicPair {
-            left: recurse(left),
-            right: recurse(right),
-        },
-        CheckedTermNode::IntrinsicProjection {
-            intrinsic,
-            left_ty,
-            right_ty,
-            value,
-        } => CheckedTermNode::IntrinsicProjection {
-            intrinsic: intrinsic.clone(),
-            left_ty: left_ty.clone(),
-            right_ty: right_ty.clone(),
-            value: recurse(value),
-        },
-        CheckedTermNode::IntrinsicInjection {
-            intrinsic,
-            left_ty,
-            right_ty,
-            value,
-        } => CheckedTermNode::IntrinsicInjection {
-            intrinsic: intrinsic.clone(),
-            left_ty: left_ty.clone(),
-            right_ty: right_ty.clone(),
-            value: recurse(value),
-        },
-        CheckedTermNode::IntrinsicEither {
-            left_ty,
-            right_ty,
-            result_ty,
-            value,
-            left_name,
-            left_body,
-            right_name,
-            right_body,
-        } => CheckedTermNode::IntrinsicEither {
-            left_ty: left_ty.clone(),
-            right_ty: right_ty.clone(),
-            result_ty: result_ty.clone(),
-            value: recurse(value),
-            left_name: left_name.clone(),
-            left_body: recurse(left_body),
-            right_name: right_name.clone(),
-            right_body: recurse(right_body),
-        },
-        CheckedTermNode::IntrinsicAbsurd {
-            result_ty,
-            bottom_value,
-        } => CheckedTermNode::IntrinsicAbsurd {
-            result_ty: result_ty.clone(),
-            bottom_value: recurse(bottom_value),
-        },
-        CheckedTermNode::IntrinsicIfThenElse {
-            result_ty,
-            condition,
-            true_body,
-            false_body,
-        } => CheckedTermNode::IntrinsicIfThenElse {
-            result_ty: result_ty.clone(),
-            condition: recurse(condition),
-            true_body: recurse(true_body),
-            false_body: recurse(false_body),
-        },
-        CheckedTermNode::MacroError { kind, message } => CheckedTermNode::MacroError {
-            kind: *kind,
-            message: message.clone(),
-        },
-    };
-    CheckedTerm::from_node(node, term.clone_type())
+    checked_bindings::replace_templates(term, replacements)
 }
 
 fn collect_checked_term_type_binders(node: &CheckedTermNode, binders: &mut HashSet<String>) {
@@ -1713,6 +1753,7 @@ struct CheckedTermNameCanonicalizer<'a> {
     type_names: HashMap<String, Vec<String>>,
     value_counters: HashMap<String, usize>,
     type_counters: HashMap<String, usize>,
+    comparison_type_names: Option<HashSet<String>>,
 }
 
 struct CanonicalBinding {
@@ -1722,6 +1763,84 @@ struct CanonicalBinding {
 }
 
 impl CheckedTermNameCanonicalizer<'_> {
+    fn for_type_comparison(free_names: HashSet<String>) -> Self {
+        Self {
+            comparison_type_names: Some(free_names),
+            ..Self::default()
+        }
+    }
+
+    fn raw_expr(&mut self, source: &EvalAstExpr) -> EvalAstExpr {
+        let mut result = checked_traversal::clone_expr(source);
+        if self.comparison_type_names.is_none() {
+            return result;
+        }
+        enum Work<'a> {
+            Expr(&'a mut EvalAstExpr),
+            Leave(Vec<CanonicalBinding>),
+        }
+        let mut work = vec![Work::Expr(&mut result)];
+        while let Some(next) = work.pop() {
+            let expr = match next {
+                Work::Leave(bindings) => {
+                    self.pop_type_bindings(bindings);
+                    continue;
+                }
+                Work::Expr(expr) => expr,
+            };
+            let replace_type = |ty: &mut EvalAstType, names: &mut Self| {
+                let replacement = names.ty(ty);
+                drop(ownership::Owned::new(std::mem::replace(ty, replacement)));
+            };
+            match expr {
+                Expr::FnExpr {
+                    sig, ret_ty, body, ..
+                } => {
+                    let mut types = Vec::new();
+                    let replacement = self.signature(sig, &mut types, &mut Vec::new());
+                    drop(ownership::Owned::new(std::mem::replace(sig, replacement)));
+                    if let Some(ty) = ret_ty {
+                        replace_type(ty, self);
+                    }
+                    work.push(Work::Leave(types));
+                    work.push(Work::Expr(body));
+                }
+                Expr::Call { callee, args, .. } => {
+                    for arg in args.iter_mut().rev() {
+                        match arg {
+                            CallArg::Type(ty) => replace_type(ty, self),
+                            CallArg::Value(value) => work.push(Work::Expr(value)),
+                        }
+                    }
+                    work.push(Work::Expr(callee));
+                }
+                Expr::Let {
+                    ty, value, body, ..
+                } => {
+                    if let Some(ty) = ty {
+                        replace_type(ty, self);
+                    }
+                    work.push(Work::Expr(body));
+                    work.push(Work::Expr(value));
+                }
+                Expr::Seq { value, body, .. } => {
+                    work.push(Work::Expr(body));
+                    work.push(Work::Expr(value));
+                }
+                Expr::StrLit { annotation, .. }
+                | Expr::IntLit { annotation, .. }
+                | Expr::FloatLit { annotation, .. }
+                | Expr::BoolLit { annotation, .. } => {
+                    if let Some(ty) = annotation {
+                        replace_type(ty, self);
+                    }
+                }
+                _ => {}
+            }
+        }
+        result
+    }
+
     fn term(&mut self, term: &CheckedTerm) -> CheckedTerm {
         checked_traversal::canonicalize(term, self)
     }
@@ -1738,6 +1857,9 @@ impl CheckedTermNameCanonicalizer<'_> {
                 .map(|param| match param {
                     SignatureParam::Type(param) => {
                         let mut param = Self::type_param(param);
+                        if self.comparison_type_names.is_some() {
+                            param.span = zero_span();
+                        }
                         if let Some(binding) = self.push_type_name(&param.name) {
                             param.rename(binding.canonical.clone());
                             type_bindings.push(binding);
@@ -1802,15 +1924,16 @@ impl CheckedTermNameCanonicalizer<'_> {
                         }
                         Type::Unit { .. } | Type::Bottom { .. } => {}
                         Type::Forall { .. } => unreachable!("forall owns its binder frame"),
-                        Type::LabelSugar { ext, .. }
-                        | Type::Infer { ext, .. }
-                        | Type::Goal { ext, .. } => match *ext {},
+                        Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
                     }
                     continue;
                 }
                 Work::Forall(param, meta, binding) => {
                     let body = values.pop().expect("forall body was renamed").take();
                     let mut param = Self::type_param(param);
+                    if self.comparison_type_names.is_some() {
+                        param.span = zero_span();
+                    }
                     if let Some(binding) = &binding {
                         param.rename(binding.canonical.clone());
                     }
@@ -1869,9 +1992,7 @@ impl CheckedTermNameCanonicalizer<'_> {
                 Type::Unit { meta } => Type::Unit { meta: meta.clone() },
                 Type::Bottom { meta } => Type::Bottom { meta: meta.clone() },
                 Type::Forall { .. } => unreachable!("forall owns its binder frame"),
-                Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                    match *ext {}
-                }
+                Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
             };
             assert!(
                 ready.next().is_none(),
@@ -1897,10 +2018,32 @@ impl CheckedTermNameCanonicalizer<'_> {
     }
 
     fn push_value_name(&mut self, name: &str) -> Option<CanonicalBinding> {
+        if self.comparison_type_names.is_some() {
+            return None;
+        }
         Self::push_generated_name(name, &mut self.value_names, &mut self.value_counters, true)
     }
 
     fn push_type_name(&mut self, name: &str) -> Option<CanonicalBinding> {
+        if let Some(taken) = &mut self.comparison_type_names {
+            let counter = self.type_counters.entry(String::new()).or_default();
+            let canonical = loop {
+                let candidate = format!("__comparison_type_n{counter}__");
+                *counter += 1;
+                if !taken.contains(&candidate) {
+                    break candidate;
+                }
+            };
+            self.type_names
+                .entry(name.to_owned())
+                .or_default()
+                .push(canonical.clone());
+            return Some(CanonicalBinding {
+                original: name.to_owned(),
+                canonical,
+                pushed: true,
+            });
+        }
         Self::push_generated_name(name, &mut self.type_names, &mut self.type_counters, false)
     }
 
@@ -2012,10 +2155,6 @@ pub(crate) fn is_generated_checked_term_type_name(name: &str) -> bool {
     name.starts_with("_ct_") && generated_checked_term_prefix(name).is_some()
 }
 
-fn checked_term_node_expr(node: &CheckedTermNode) -> EvalAstExpr {
-    checked_traversal::materialize(node)
-}
-
 fn checked_term_node_expr_with(
     node: &CheckedTermNode,
     mut child: impl FnMut(&CheckedTerm) -> EvalAstExpr,
@@ -2046,15 +2185,10 @@ fn checked_term_node_expr_with(
         },
         CheckedTermNode::TermCall {
             fn_value,
-            params,
             arg_packet,
         } => {
             let (callee, mut args) = checked_call_callee_and_type_args(fn_value, &mut child);
-            args.extend(
-                project_packet(child(arg_packet), params)
-                    .into_iter()
-                    .map(CallArg::Value),
-            );
+            args.push(CallArg::Value(child(arg_packet)));
             Expr::synth_call(callee, args, zero_span())
         }
         CheckedTermNode::TermTypeApp { fn_value, arg } => Expr::synth_call(
@@ -2065,8 +2199,8 @@ fn checked_term_node_expr_with(
         CheckedTermNode::IntrinsicPair { left, right } => intrinsic_expr(
             "__pair__",
             vec![
-                CallArg::Type(left.clone_type()),
-                CallArg::Type(right.clone_type()),
+                CallArg::Type(type_traversal::clone_type(left.ty())),
+                CallArg::Type(type_traversal::clone_type(right.ty())),
                 CallArg::Value(child(left)),
                 CallArg::Value(child(right)),
             ],
@@ -2266,10 +2400,6 @@ fn path_expr_pre_prime(name: &str, span: Span) -> Expr<PrePrime> {
     }
 }
 
-fn checked_template_intrinsic_expr(name: &str, args: Vec<CallArg<PrePrime>>) -> Expr<PrePrime> {
-    crate::pass::typecheck_core::intrinsic_call(name, args, zero_span())
-}
-
 fn checked_template_intrinsic_expr_at(
     name: &str,
     args: Vec<CallArg<PrePrime>>,
@@ -2339,7 +2469,7 @@ pub enum Value {
     /// Reflected type-arity handle.
     ReflTypeArity(usize),
     /// Reflected type-variable handle.
-    ReflTypeVar { name: String, arity: usize },
+    ReflTypeVar(ReflectedVariable),
     /// Reflected nominal/path type head.
     ReflTypeName {
         segments: Vec<String>,
@@ -2426,10 +2556,11 @@ pub enum Value {
         value: EvalRef<Value>,
         body: EvalRef<Value>,
     },
-    /// A residual application: callee couldn't be reduced (it was an
-    /// `Atom` or another `Stuck`), so the args are kept as values
-    /// alongside.
+    /// A residual value application. Its arguments remain distinct from
+    /// the type operands of [`Value::StuckType`].
     Stuck(EvalRef<Value>, EvalRef<Vec<Value>>),
+    /// Opaque callees have no body that could justify erasing a type operand.
+    StuckType(EvalRef<Value>, ReflectedType),
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2449,6 +2580,7 @@ enum DataConstructorIdentity {
     MarkedComptimeProof(crate::pass::typecheck_core::apply::fills::MarkedComptimeProof),
     #[cfg(feature = "surface")]
     FillContext(crate::pass::typecheck_core::apply::fills::FillContext),
+    IncompleteObservation(ComptimeBuiltin),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2491,6 +2623,9 @@ impl PartialEq for DataConstructorIdentity {
             }
             #[cfg(feature = "surface")]
             (Self::FillContext(left), Self::FillContext(right)) => left.same_snapshot(right),
+            (Self::IncompleteObservation(left), Self::IncompleteObservation(right)) => {
+                left == right
+            }
             _ => false,
         }
     }
@@ -2552,6 +2687,13 @@ impl DataValue {
             ctor: "<fill-context>".to_owned(),
             identity: DataConstructorIdentity::FillContext(context),
             args: Vec::new().into(),
+        }
+    }
+
+    fn incomplete_observation(&self) -> Option<ComptimeBuiltin> {
+        match self.identity {
+            DataConstructorIdentity::IncompleteObservation(builtin) => Some(builtin),
+            _ => None,
         }
     }
 
@@ -2679,7 +2821,7 @@ fn structural_recur_data_public_eq(left: &Value, right: &Value) -> Option<bool> 
     }
 }
 
-#[cfg(feature = "surface")]
+#[cfg(all(test, feature = "surface"))]
 pub(crate) fn fresh_fills_capability_values() -> (Value, Value) {
     let (proof, context) = crate::pass::typecheck_core::apply::fills::fresh_capabilities();
     fills_capability_values(proof, context)
@@ -2739,7 +2881,7 @@ fn closed_projected_value(
     if let Some(ty) = value.closed_reflected() {
         return Some(Value::ReflType(ty.clone()));
     }
-    if let Some(candidate) = value.reflection_candidate(proof) {
+    if let Some((candidate, reflection)) = value.reflection_candidate(proof) {
         let ty = if candidate.identity_is_canonical {
             candidate.ty
         } else {
@@ -2757,7 +2899,7 @@ fn closed_projected_value(
             "a goal-free projected type must remain infer-free when reflected",
         )
         .ok()
-        .map(Value::ReflType);
+        .map(|ty| Value::ReflType(ty.with_lexical_bindings(reflection.lexical_bindings())));
     }
     value
         .closed_term()
@@ -2843,7 +2985,7 @@ pub struct SharedTypeViewCache {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TypeViewCacheKey {
-    ty: ReflectionTypeKey,
+    ty: reflection_bindings::ReflectedSnapshotKey,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2859,7 +3001,7 @@ impl SharedExactCallMemoCache {
 }
 
 const EXACT_CALL_MEMO_MAX_ENTRIES: usize = 8192;
-const EXACT_CALL_MEMO_KEY_BUDGET: usize = 96;
+pub(crate) const EXACT_CALL_MEMO_KEY_BUDGET: usize = 96;
 const EXACT_CALL_MEMO_RESULT_BUDGET: usize = 2048;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -2869,9 +3011,9 @@ enum EvalValueMemoKey {
     IntAtom(String, Option<String>),
     FloatAtom(String, Option<String>),
     StrAtom(String),
-    ReflType(ReflectionTypeKey),
+    ReflType(reflection_bindings::ReflectedSnapshotKey),
     ReflTypeArity(usize),
-    ReflTypeVar(String, usize),
+    ReflTypeVar(reflection_bindings::ReflectedSnapshotKey),
     ReflTypeName(Vec<String>, Vec<usize>),
     DiagnosticText(String),
     Primitive(ComptimeBuiltin),
@@ -2902,17 +3044,13 @@ impl ExactCallMemoKey {
             .chain(&self.args)
             .zip(other.captured.iter().chain(&other.args))
             .all(|(a, b)| match (a, b) {
-                (EvalValueMemoKey::ReflType(a), EvalValueMemoKey::ReflType(b)) => {
+                (EvalValueMemoKey::ReflType(a), EvalValueMemoKey::ReflType(b))
+                | (EvalValueMemoKey::ReflTypeVar(a), EvalValueMemoKey::ReflTypeVar(b)) => {
                     a.presentation_matches(b)
                 }
                 _ => true,
             })
     }
-}
-
-struct ExactCallMemoTicket {
-    key: ExactCallMemoKey,
-    reflected_binder_epoch: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -2950,6 +3088,7 @@ struct EvalParam {
 
 #[derive(Debug, Clone)]
 struct EvalParamGroup {
+    type_arity: Option<usize>,
     param_start: usize,
     param_count: usize,
     abi_arity: usize,
@@ -2964,8 +3103,26 @@ impl EvalFunction {
         self.abi_arity
     }
 
+    fn type_param_count(&self) -> usize {
+        self.value_groups
+            .iter()
+            .filter(|group| group.type_arity.is_some())
+            .count()
+    }
+
+    fn slot_arity(&self) -> usize {
+        self.abi_arity + self.type_param_count()
+    }
+
     fn params_are_abi_identity(&self) -> bool {
-        self.param_count() == self.abi_arity && self.params.iter().all(|param| param.abi_arity == 1)
+        self.type_param_count() == 0
+            && self.param_count() == self.abi_arity
+            && self.params.iter().all(|param| param.abi_arity == 1)
+    }
+
+    fn params_are_slot_identity(&self) -> bool {
+        self.param_count() == self.slot_arity()
+            && self.params.iter().all(|param| param.abi_arity == 1)
     }
 }
 
@@ -3014,7 +3171,8 @@ fn eval_function_cache_key_for_lambda(
         state.label_scope.as_deref().unwrap_or_default().as_bytes(),
     );
     for local in &state.locals {
-        write_eval_cache_frame(&mut hasher, local.as_bytes());
+        write_eval_cache_frame(&mut hasher, local.name.as_bytes());
+        write_eval_cache_frame(&mut hasher, &[u8::from(local.is_type)]);
     }
     for slot in captured_slots {
         write_eval_cache_frame(&mut hasher, &(*slot as u64).to_le_bytes());
@@ -3073,9 +3231,7 @@ fn values_memo_keys(values: &[Value], budget: &mut usize) -> Option<Vec<EvalValu
 }
 
 fn value_memo_key(value: &Value, budget: &mut usize) -> Option<EvalValueMemoKey> {
-    if let Value::ReflType(typ) = value {
-        type_traversal::charge_memo_type(typ.as_type(), budget)?;
-    } else {
+    if !matches!(value, Value::ReflType(_)) {
         *budget = budget.checked_sub(1)?;
     }
     match value {
@@ -3090,16 +3246,16 @@ fn value_memo_key(value: &Value, budget: &mut usize) -> Option<EvalValueMemoKey>
             annotation.clone(),
         )),
         Value::StrAtom(value) => Some(EvalValueMemoKey::StrAtom(value.clone())),
-        Value::ReflType(typ) => Some(EvalValueMemoKey::ReflType(ReflectionTypeKey::new(
-            typ.as_type(),
-        ))),
+        Value::ReflType(typ) => Some(EvalValueMemoKey::ReflType(
+            reflection_bindings::ReflectedSnapshotKey::new(typ, budget)?,
+        )),
         Value::CheckedTerm(_) => None,
         #[cfg(feature = "surface")]
         Value::Projected(_) => None,
         Value::ReflTypeArity(arity) => Some(EvalValueMemoKey::ReflTypeArity(*arity)),
-        Value::ReflTypeVar { name, arity } => {
-            Some(EvalValueMemoKey::ReflTypeVar(name.clone(), *arity))
-        }
+        Value::ReflTypeVar(variable) => Some(EvalValueMemoKey::ReflTypeVar(
+            reflection_bindings::ReflectedSnapshotKey::new(&variable.as_type(), budget)?,
+        )),
         Value::ReflTypeName {
             segments,
             param_arities,
@@ -3116,7 +3272,11 @@ fn value_memo_key(value: &Value, budget: &mut usize) -> Option<EvalValueMemoKey>
         }),
         Value::EvalClosure { .. } | Value::StructuralRecur { .. } => None,
         Value::Atom(name) => Some(EvalValueMemoKey::Atom(name.clone())),
-        Value::Data(_) | Value::CaseSplit { .. } | Value::Seq { .. } | Value::Stuck(_, _) => None,
+        Value::Data(_)
+        | Value::CaseSplit { .. }
+        | Value::Seq { .. }
+        | Value::Stuck(_, _)
+        | Value::StuckType(_, _) => None,
     }
 }
 
@@ -3142,19 +3302,24 @@ fn value_shareable_for_exact_memo(value: &Value, budget: &mut usize) -> bool {
         | Value::IntAtom(_, _)
         | Value::FloatAtom(_, _)
         | Value::StrAtom(_)
-        | Value::ReflType(_)
         | Value::ReflTypeArity(_)
-        | Value::ReflTypeVar { .. }
         | Value::ReflTypeName { .. }
         | Value::DiagnosticText(_)
         | Value::NewtypeMember(_)
         | Value::Atom(_) => true,
+        Value::ReflType(ty) => reflection_bindings::charge_reflected_type(ty, budget).is_some(),
+        Value::ReflTypeVar(variable) => {
+            reflection_bindings::charge_reflected_type(&variable.as_type(), budget).is_some()
+        }
         Value::Primitive(builtin) => *builtin != ComptimeBuiltin::StructuralRecur,
         Value::CheckedTerm(_) => false,
         #[cfg(feature = "surface")]
         Value::Projected(_) => false,
         Value::Data(data) => {
             if data.structural_recur_identity().is_some() {
+                return false;
+            }
+            if data.incomplete_observation().is_some() {
                 return false;
             }
             #[cfg(feature = "surface")]
@@ -3167,7 +3332,8 @@ fn value_shareable_for_exact_memo(value: &Value, budget: &mut usize) -> bool {
         | Value::StructuralRecur { .. }
         | Value::CaseSplit { .. }
         | Value::Seq { .. }
-        | Value::Stuck(_, _) => false,
+        | Value::Stuck(_, _)
+        | Value::StuckType(_, _) => false,
     }
 }
 
@@ -3182,6 +3348,7 @@ enum EvalExpr {
     Primitive(ComptimeBuiltin),
     StructuralRecurPrimitive(EvalRef<DataValue>),
     Const(Value),
+    TypeValue(Arc<EvalTypeTemplate>),
     Local(usize),
     Atom(String),
     FnRef {
@@ -3209,6 +3376,7 @@ enum EvalExpr {
     },
     TypeApplication {
         callee: EvalRef<EvalExpr>,
+        argument: Arc<EvalTypeTemplate>,
     },
     CallAtom {
         name: String,
@@ -3611,8 +3779,6 @@ pub struct EvalCtx<'m> {
     eval_function_cache: SharedEvalFunctionCache,
     type_view_cache: SharedTypeViewCache,
     exact_call_memo: SharedExactCallMemoCache,
-    // Results of calls that mint observable binder handles cannot be replayed.
-    reflected_binder_epoch: std::sync::atomic::AtomicU64,
     primitive_env: EvalPrimitiveEnv,
     /// Dotted path for flat-map eval contexts. Package-backed eval
     /// carries the current owner module path in the compile state so
@@ -3622,8 +3788,7 @@ pub struct EvalCtx<'m> {
     /// value-args-only behavior, the pre-existing default.
     pub module_path: String,
     pub metrics: Option<Arc<EvalMetrics>>,
-    structural_recur_operations:
-        Mutex<HashMap<std::thread::ThreadId, StructuralRecurOperationState>>,
+    operations: Mutex<HashMap<std::thread::ThreadId, EvalOperationState>>,
 }
 
 impl<'m> Default for EvalCtx<'m> {
@@ -3646,11 +3811,10 @@ impl<'m> EvalCtx<'m> {
             eval_function_cache: SharedEvalFunctionCache::default(),
             type_view_cache: SharedTypeViewCache::default(),
             exact_call_memo: SharedExactCallMemoCache::default(),
-            reflected_binder_epoch: std::sync::atomic::AtomicU64::new(0),
             primitive_env: EvalPrimitiveEnv::default(),
             module_path: String::new(),
             metrics: None,
-            structural_recur_operations: Mutex::new(HashMap::new()),
+            operations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -3846,17 +4010,18 @@ pub fn eval_fn_tables<'m>(
 /// reuse the context's shared compiled-function or closure cache. Returned
 /// closures retain that root's private function-cache generation.
 pub fn eval(expr: &Expr<EvalPhase>, env: &Env, ctx: &EvalCtx<'_>) -> Value {
-    eval_with_compile_scope(expr, env, ctx, EvalSourceGeneration::fresh(), false)
+    eval_with_compile_scope(expr, env, &[], ctx, EvalSourceGeneration::fresh(), false)
 }
 
 fn eval_with_compile_scope(
     expr: &Expr<EvalPhase>,
     env: &Env,
+    type_bindings: &[EvalTypeBinding],
     ctx: &EvalCtx<'_>,
     source_generation: EvalSourceGeneration,
     share_fn_closures: bool,
 ) -> Value {
-    let operation = ctx.enter_structural_recur_operation();
+    let operation = ctx.enter_eval_operation();
     let eval_value = || {
         let mut initial_bindings = Vec::new();
         if !env.is_empty() {
@@ -3872,15 +4037,17 @@ fn eval_with_compile_scope(
             expr,
             ctx,
             initial_names,
+            type_bindings,
             source_generation,
             local_eval_function_cache.as_ref(),
             share_fn_closures,
         )
         .expect("Kio' evaluator expression should compile to slot IR");
-        let initial_values: Vec<Value> = initial_bindings
+        let mut initial_values: Vec<Value> = initial_bindings
             .into_iter()
             .map(|(_, value)| value)
             .collect();
+        initial_values.extend(type_bindings.iter().map(|binding| binding.value.clone()));
         let mut slots = EvalSlots::root(initial_values);
         eval_compiled_expr(&compiled, &mut slots, ctx)
     };
@@ -3895,14 +4062,56 @@ fn eval_with_compile_scope(
     operation.finish(value)
 }
 
+pub(crate) struct EvalTypeBinding {
+    name: String,
+    arity: usize,
+    value: Value,
+}
+
+impl EvalTypeBinding {
+    #[cfg(any(all(feature = "surface", feature = "cli"), test))]
+    pub(crate) fn neutral(param: &TypeParam) -> Self {
+        let arity = param.effective_kind().arity();
+        Self {
+            name: param.name.clone(),
+            arity,
+            value: Value::ReflType(
+                reflection_bindings::ReflectedVariable::neutral(param.name.clone(), arity)
+                    .as_type(),
+            ),
+        }
+    }
+}
+
 type RootEvalFunctionCache = RefCell<HashMap<EvalFunctionCacheKey, EvalRef<EvalFunction>>>;
+
+#[derive(Clone)]
+struct EvalLocal {
+    name: String,
+    is_type: bool,
+}
+
+impl EvalLocal {
+    fn value(name: String) -> Self {
+        Self {
+            name,
+            is_type: false,
+        }
+    }
+    fn type_parameter(name: String) -> Self {
+        Self {
+            name,
+            is_type: true,
+        }
+    }
+}
 
 struct EvalCompileState<'c, 'm> {
     ctx: &'c EvalCtx<'m>,
     module: Option<&'m Module<EvalPhase>>,
     module_path: String,
     label_scope: Option<String>,
-    locals: Vec<String>,
+    locals: Vec<EvalLocal>,
     type_binders: HashMap<String, crate::ast::Kind>,
     fn_stack: Vec<EvalFunctionCacheKey>,
     source_generation: EvalSourceGeneration,
@@ -3949,6 +4158,7 @@ fn compile_eval_root<'m>(
         expr,
         ctx,
         locals,
+        &[],
         EvalSourceGeneration::fresh(),
         Some(&local_eval_function_cache),
         false,
@@ -3959,6 +4169,7 @@ fn compile_eval_root_in_scope<'c, 'm>(
     expr: &EvalAstExpr,
     ctx: &'c EvalCtx<'m>,
     locals: Vec<String>,
+    type_bindings: &[EvalTypeBinding],
     source_generation: EvalSourceGeneration,
     local_eval_function_cache: Option<&'c RootEvalFunctionCache>,
     share_fn_closures: bool,
@@ -3971,8 +4182,24 @@ fn compile_eval_root_in_scope<'c, 'm>(
             .map(module_path_string)
             .unwrap_or_else(|| ctx.module_path.clone()),
         label_scope: None,
-        locals,
-        type_binders: HashMap::new(),
+        locals: locals
+            .into_iter()
+            .map(EvalLocal::value)
+            .chain(
+                type_bindings
+                    .iter()
+                    .map(|binding| EvalLocal::type_parameter(binding.name.clone())),
+            )
+            .collect(),
+        type_binders: type_bindings
+            .iter()
+            .map(|binding| {
+                (
+                    binding.name.clone(),
+                    crate::ast::Kind::arrow_chain(binding.arity),
+                )
+            })
+            .collect(),
         fn_stack: Vec::new(),
         source_generation,
         local_eval_function_cache,
@@ -4032,7 +4259,7 @@ fn compile_eval_expr(
             name, value, body, ..
         } => {
             let value = compile_eval_expr(value, state)?;
-            state.locals.push(name.clone());
+            state.locals.push(EvalLocal::value(name.clone()));
             let body = compile_eval_expr(body, state)?;
             state.locals.pop();
             EvalExpr::Let { value, body }
@@ -4082,13 +4309,10 @@ fn compile_eval_expr(
                 }
             }
         }
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
+            match *ext {}
+        }
         Expr::Tuple { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -4126,14 +4350,17 @@ fn compile_staged_eval_call(
     for arg in args {
         match arg {
             CallArg::Value(value) => values.push(compile_eval_expr(value, state)?),
-            CallArg::Type(_) => {
+            CallArg::Type(ty) => {
                 if !values.is_empty() {
                     callee = EvalRef::new(EvalExpr::Call {
                         callee,
                         args: std::mem::take(&mut values),
                     });
                 }
-                callee = EvalRef::new(EvalExpr::TypeApplication { callee });
+                callee = EvalRef::new(EvalExpr::TypeApplication {
+                    callee,
+                    argument: compile_type_template(ty, state)?,
+                });
             }
         }
     }
@@ -4214,7 +4441,11 @@ fn resolve_unqualified_eval_value<'m>(
         return Some(ResolvedUnqualifiedEvalValue::Newtype(member));
     }
     let name = head.as_str();
-    if let Some(slot) = state.locals.iter().rposition(|local| local == name) {
+    if let Some(slot) = state
+        .locals
+        .iter()
+        .rposition(|local| !local.is_type && local.name == name)
+    {
         return Some(ResolvedUnqualifiedEvalValue::Local(slot));
     }
     if let Some(function) = state
@@ -4353,11 +4584,11 @@ fn compile_eval_fn_expr(
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<(EvalRef<EvalFunction>, Arc<[usize]>)> {
     let (params, value_groups, abi_arity) = collect_value_param_layout(sig);
-    let param_names = eval_param_names(&params);
+    let param_names = eval_param_locals(&params, &value_groups);
     let captured_slots = capture_slots_for_fn_body(body, &param_names, &state.locals);
     let cache_key =
         eval_function_cache_key_for_lambda(sig, body, occurrence, state, &captured_slots);
-    let mut nested_locals: Vec<String> = captured_slots
+    let mut nested_locals: Vec<EvalLocal> = captured_slots
         .iter()
         .map(|slot| state.locals[*slot].clone())
         .collect();
@@ -4421,8 +4652,8 @@ fn compile_eval_fn_expr(
 
 fn capture_slots_for_fn_body(
     body: &EvalAstExpr,
-    params: &[String],
-    outer_locals: &[String],
+    params: &[EvalLocal],
+    outer_locals: &[EvalLocal],
 ) -> Vec<usize> {
     let mut bound = params.to_vec();
     let mut captures = Vec::new();
@@ -4432,8 +4663,8 @@ fn capture_slots_for_fn_body(
 
 fn collect_capture_slots(
     expr: &EvalAstExpr,
-    outer_locals: &[String],
-    bound: &mut Vec<String>,
+    outer_locals: &[EvalLocal],
+    bound: &mut Vec<EvalLocal>,
     captures: &mut Vec<usize>,
 ) {
     match expr {
@@ -4443,10 +4674,16 @@ fn collect_capture_slots(
                 return;
             };
             let name = head.as_str();
-            if bound.iter().rev().any(|local| local == name) {
+            if bound
+                .iter()
+                .rev()
+                .any(|local| !local.is_type && local.name == name)
+            {
                 return;
             }
-            if let Some(slot) = outer_locals.iter().rposition(|local| local == name)
+            if let Some(slot) = outer_locals
+                .iter()
+                .rposition(|local| !local.is_type && local.name == name)
                 && !captures.contains(&slot)
             {
                 captures.push(slot);
@@ -4455,8 +4692,13 @@ fn collect_capture_slots(
         Expr::Call { callee, args, .. } => {
             collect_capture_slots(callee, outer_locals, bound, captures);
             for arg in args {
-                if let CallArg::Value(value) = arg {
-                    collect_capture_slots(value, outer_locals, bound, captures);
+                match arg {
+                    CallArg::Value(value) => {
+                        collect_capture_slots(value, outer_locals, bound, captures)
+                    }
+                    CallArg::Type(ty) => {
+                        collect_type_capture_slots(ty, outer_locals, bound, captures)
+                    }
                 }
             }
         }
@@ -4464,7 +4706,7 @@ fn collect_capture_slots(
             name, value, body, ..
         } => {
             collect_capture_slots(value, outer_locals, bound, captures);
-            bound.push(name.clone());
+            bound.push(EvalLocal::value(name.clone()));
             collect_capture_slots(body, outer_locals, bound, captures);
             bound.pop();
         }
@@ -4472,24 +4714,38 @@ fn collect_capture_slots(
             collect_capture_slots(value, outer_locals, bound, captures);
             collect_capture_slots(body, outer_locals, bound, captures);
         }
-        Expr::FnExpr { sig, body, .. } => {
+        Expr::FnExpr {
+            sig, ret_ty, body, ..
+        } => {
             let old_len = bound.len();
-            bound.extend(collect_value_param_names(&sig.params));
+            for param in &sig.params {
+                match param {
+                    SignatureParam::Type(param) => {
+                        bound.push(EvalLocal::type_parameter(param.name.clone()))
+                    }
+                    SignatureParam::Value(param) => {
+                        if let Some(ty) = &param.ty {
+                            collect_type_capture_slots(ty, outer_locals, bound, captures);
+                        }
+                        bound.push(EvalLocal::value(param.name.clone()));
+                    }
+                }
+            }
+            if let Some(ty) = ret_ty {
+                collect_type_capture_slots(ty, outer_locals, bound, captures);
+            }
             collect_capture_slots(body, outer_locals, bound, captures);
             bound.truncate(old_len);
         }
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
+            match *ext {}
+        }
         Expr::Unit { .. }
         | Expr::BoolLit { .. }
         | Expr::IntLit { .. }
         | Expr::FloatLit { .. }
         | Expr::StrLit { .. } => {}
         Expr::Tuple { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -4818,7 +5074,7 @@ fn compile_eval_fn_body<'m>(
     }
     state.fn_stack.push(cache_key.clone());
     let (params, value_groups, abi_arity) = collect_value_param_layout(&def.sig);
-    let param_names = eval_param_names(&params);
+    let param_names = eval_param_locals(&params, &value_groups);
     let mut nested = EvalCompileState {
         ctx: state.ctx,
         module: owner,
@@ -4977,7 +5233,7 @@ fn compile_direct_path_call(
             if state
                 .locals
                 .iter()
-                .rposition(|local| local == name)
+                .rposition(|local| !local.is_type && local.name == name)
                 .is_some()
             {
                 return None;
@@ -5200,8 +5456,8 @@ fn is_obvious_eval_value(expr: &EvalExpr) -> bool {
             | EvalExpr::DiagnosticText(_)
             | EvalExpr::Primitive(_)
             | EvalExpr::StructuralRecurPrimitive(_)
-            // The sole compiler-produced Const is the inert result of the
-            // reflected-type constant fold. Keep that invariant explicit
+            // Compiler-produced reflected constants are inert type snapshots.
+            // Keep that invariant explicit
             // instead of making arbitrary precomputed Values eligible for
             // erasing rewrites.
             | EvalExpr::Const(Value::ReflType(_))
@@ -5324,14 +5580,19 @@ fn inline_small_eval_expr(
         EvalExpr::Local(slot) if *slot < param_count => Some(fn_args[*slot].as_ref().clone()),
         EvalExpr::Local(_) => None,
         EvalExpr::Atom(name) => Some(EvalExpr::Atom(name.clone())),
-        EvalExpr::TypeApplication { callee } => Some(EvalExpr::TypeApplication {
-            callee: EvalRef::new(inline_small_eval_expr(
-                callee,
-                fn_args,
-                param_count,
-                budget,
-            )?),
-        }),
+        EvalExpr::TypeValue(_) => None,
+        EvalExpr::TypeApplication { callee, argument } if argument.is_closed() => {
+            Some(EvalExpr::TypeApplication {
+                callee: EvalRef::new(inline_small_eval_expr(
+                    callee,
+                    fn_args,
+                    param_count,
+                    budget,
+                )?),
+                argument: argument.clone(),
+            })
+        }
+        EvalExpr::TypeApplication { .. } => None,
         EvalExpr::CallAtom { name, args } => Some(EvalExpr::CallAtom {
             name: name.clone(),
             args: inline_small_eval_args(args, fn_args, param_count, budget)?,
@@ -5649,6 +5910,9 @@ fn compile_direct_atom_call(
             args: compile_value_arg_exprs_without_fn(args, call_span, state)?,
         });
     }
+    if args.iter().any(|arg| matches!(arg, CallArg::Type(_))) {
+        return None;
+    }
     let args = compile_value_arg_exprs_without_fn(args, call_span, state)?;
     Some(EvalExpr::CallAtom { name, args })
 }
@@ -5823,7 +6087,7 @@ fn compile_direct_comptime_operands(
         "__type_product_spine_fold__"
         | "__type_sum_spine_fold__"
         | "__type_args_fold__"
-        | "__type_function_params_fold__" => {
+        | "__type_forall_prefix_fold__" => {
             let (typ, init, step) = trailing_value_arg3(args)?;
             let typ = compile_eval_expr(typ, state)?;
             let init = compile_eval_expr(init, state)?;
@@ -5836,7 +6100,7 @@ fn compile_direct_comptime_operands(
                     "__type_product_spine_fold__" => "__type_product_spine_fold__",
                     "__type_sum_spine_fold__" => "__type_sum_spine_fold__",
                     "__type_args_fold__" => "__type_args_fold__",
-                    _ => "__type_function_params_fold__",
+                    _ => "__type_forall_prefix_fold__",
                 },
                 typ,
                 init,
@@ -6011,11 +6275,7 @@ fn direct_comptime_runtime_arity(builtin: ComptimeBuiltin) -> Option<usize> {
         | TypeInstantiate | DiagnosticConcat | TermFn | TermTypeFn | TermTypeApp
         | IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
         | IntrinsicAbsurd => 2,
-        TypeProductSpineFold
-        | TypeSumSpineFold
-        | TypeArgsFold
-        | TypeFunctionParamsFold
-        | TermLet
+        TypeProductSpineFold | TypeSumSpineFold | TypeArgsFold | TypeForallPrefixFold | TermLet
         | TermCall => 3,
         IntrinsicIfThenElse => 4,
         IntrinsicEither => 5,
@@ -6031,11 +6291,7 @@ fn projected_capable_direct_runtime_arity(builtin: ComptimeBuiltin) -> Option<us
         | IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
         | IntrinsicAbsurd => 2,
         TypeView | TypeIsProductRoot | TypeIsSumRoot | TermType => 1,
-        TypeProductSpineFold
-        | TypeSumSpineFold
-        | TypeArgsFold
-        | TypeFunctionParamsFold
-        | TermLet
+        TypeProductSpineFold | TypeSumSpineFold | TypeArgsFold | TypeForallPrefixFold | TermLet
         | TermCall => 3,
         IntrinsicIfThenElse => 4,
         IntrinsicEither => 5,
@@ -6048,49 +6304,15 @@ fn compile_value_arg_exprs_for_fn_def(
     args: &[EvalAstCallArg],
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<Vec<EvalRef<EvalExpr>>> {
-    let value_param_count = def.sig.value_param_count();
-    let type_param_count = def.sig.params.len() - value_param_count;
-    let value_param_types: Vec<Option<EvalAstType>> = def
-        .sig
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            SignatureParam::Type(_) => None,
-            SignatureParam::Value(param) => param.ty.as_ref(),
-        })
-        .map(|ty| Some(convert_type::<EvalPhase, EvalPhase>(ty)))
-        .collect();
-    let all_value_args = args.iter().all(|a| matches!(a, CallArg::Value(_)));
-    if type_param_count > 0 && all_value_args && args.len() == value_param_count {
-        let mut values = args.iter().enumerate();
-        return def
-            .sig
-            .params
-            .iter()
-            .map(|param| match param {
-                SignatureParam::Type(_) => Some(EvalRef::new(EvalExpr::Unit)),
-                SignatureParam::Value(_) => {
-                    let (index, CallArg::Value(value)) = values.next()? else {
-                        return None;
-                    };
-                    compile_eval_expr_against(
-                        value,
-                        value_param_types.get(index).and_then(Option::as_ref),
-                        state,
-                    )
-                }
-            })
-            .collect();
-    }
     let mut out = Vec::new();
     let mut sig_iter = def.sig.params.iter();
     for arg in args {
         match sig_iter.next() {
             Some(SignatureParam::Type(_)) => {
-                if !matches!(arg, CallArg::Type(_)) {
+                let CallArg::Type(ty) = arg else {
                     return None;
-                }
-                out.push(EvalRef::new(EvalExpr::Unit));
+                };
+                out.push(EvalRef::new(compile_type_template(ty, state)?.expression()));
             }
             Some(SignatureParam::Value(param)) => {
                 if let CallArg::Value(v) = arg {
@@ -6307,6 +6529,7 @@ fn is_memo_candidate_expr_inner(expr: &EvalExpr, budget: &mut usize) -> bool {
     *budget = next_budget;
     match expr {
         EvalExpr::TypeApplication { .. }
+        | EvalExpr::TypeValue(_)
         | EvalExpr::Call { .. }
         | EvalExpr::CallAtom { .. }
         | EvalExpr::CallPrimitive { .. }
@@ -6526,6 +6749,35 @@ fn primitive_value(name: &str) -> Value {
     )
 }
 
+fn reflection_residual(builtin: ComptimeBuiltin, mut args: Vec<Value>) -> Value {
+    let carries_projected = {
+        #[cfg(feature = "surface")]
+        {
+            args.iter().any(|arg| matches!(arg, Value::Projected(_)))
+        }
+        #[cfg(not(feature = "surface"))]
+        {
+            false
+        }
+    };
+    if !matches!(builtin, ComptimeBuiltin::Fill | ComptimeBuiltin::FillResult)
+        && !carries_projected
+        && args.first().is_some_and(is_reflection_proof)
+    {
+        let runtime_width = comptime_packet_width(builtin, false).and_then(|width| {
+            if width > 1 {
+                Some(width - 1)
+            } else {
+                comptime_packet_width(builtin, true)
+            }
+        });
+        if runtime_width == Some(args.len() - 1) {
+            args.remove(0);
+        }
+    }
+    Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into())
+}
+
 fn finish_direct_reflection(
     name: &str,
     result: Option<Value>,
@@ -6682,20 +6934,11 @@ fn compile_reflect_type_call(
         return None;
     };
     let proof = compile_eval_expr(proof, state)?;
-    let ty = state
-        .module
-        .map(|owner| qualify_explicit_reflected_paths(&ty, owner, &state.type_binders))
-        .unwrap_or(ty);
-    let reflected = ReflectedType::new(ty, "`_` cannot be reflected at compile time")
-        .ok()
-        .map(Value::ReflType)?;
-    let reflected = EvalExpr::Const(reflected);
+    let reflected = compile_type_template(&ty, state)?.expression();
     if is_obvious_eval_value(&proof) {
         Some(reflected)
     } else {
-        // ReflectType's type operand is erased from runtime argument packets,
-        // so declining this fold would lose information. Evaluate a computed
-        // proof exactly once before returning the reflected constant instead.
+        // Evaluate a computed proof exactly once before instantiating the reflected type template.
         Some(EvalExpr::Let {
             value: proof,
             body: EvalRef::new(reflected),
@@ -6736,6 +6979,60 @@ fn diagnostic_value(v: &Value) -> Option<String> {
     }
 }
 
+fn reflected_type_carrier(value: &Value) -> Option<&ReflectedType> {
+    let Value::ReflType(ty) = value else {
+        return None;
+    };
+    Some(ty)
+}
+
+fn reflection_binary_type_value(
+    builtin: ComptimeBuiltin,
+    left: &Value,
+    right: &Value,
+) -> Option<Value> {
+    let left = reflected_type_carrier(left)?;
+    let right = reflected_type_carrier(right)?;
+    let mut builder = reflection_bindings::ReflectionTypeBuilder::new([left, right]);
+    let left = builder.import(left);
+    let right = builder.import(right);
+    let ty = match builtin {
+        ComptimeBuiltin::TypeProduct => Type::Product {
+            left: Box::new(left.take()),
+            right: Box::new(right.take()),
+            meta: zero_meta(),
+        },
+        ComptimeBuiltin::TypeSum => Type::Sum {
+            left: Box::new(left.take()),
+            right: Box::new(right.take()),
+            meta: zero_meta(),
+        },
+        ComptimeBuiltin::TypeArrow => {
+            let abi_arity = usize::from(!matches!(&*left, Type::Unit { .. }));
+            Type::Function {
+                param: Box::new(left.take()),
+                ret: Box::new(right.take()),
+                abi_arity,
+                caps: (),
+                meta: zero_meta(),
+            }
+        }
+        _ => unreachable!("binary reflected constructor"),
+    };
+    Some(Value::ReflType(builder.finish(ty)))
+}
+
+fn reflection_type_apply_value(head: &Value, argument: &Value) -> Option<Value> {
+    let head = reflected_type_carrier(head)?;
+    let argument = reflected_type_carrier(argument)?;
+    let mut builder = reflection_bindings::ReflectionTypeBuilder::new([head, argument]);
+    let mut applied = builder.import(head);
+    if let Type::Path { args, .. } = &mut *applied {
+        args.push(builder.import(argument).take());
+    }
+    Some(Value::ReflType(builder.finish(applied.take())))
+}
+
 fn canonical_refl_type(v: &Value, ctx: &EvalCtx<'_>) -> Option<Type<EvalPhase>> {
     let Value::ReflType(reflected) = v else {
         return None;
@@ -6749,60 +7046,55 @@ fn qualify_explicit_reflected_paths(
     owner: &Module<EvalPhase>,
     binders: &HashMap<String, crate::ast::Kind>,
 ) -> Type<EvalPhase> {
-    match ty {
-        Type::Path {
-            segments,
-            args,
-            meta,
-        } => {
-            let segments =
-                crate::pass::resolve::qualify_type_segments_in_module(segments, owner, binders);
-            let args = args
-                .iter()
-                .map(|arg| qualify_explicit_reflected_paths(arg, owner, binders))
-                .collect();
-            Type::synth_path_segments(segments, args, meta.span)
-        }
-        Type::Function {
-            param,
-            ret,
-            meta,
-            abi_arity,
-            caps,
-        } => Type::Function {
-            param: Box::new(qualify_explicit_reflected_paths(param, owner, binders)),
-            ret: Box::new(qualify_explicit_reflected_paths(ret, owner, binders)),
-            meta: meta.clone(),
-            abi_arity: *abi_arity,
-            caps: *caps,
-        },
-        Type::Product { left, right, meta } => Type::Product {
-            left: Box::new(qualify_explicit_reflected_paths(left, owner, binders)),
-            right: Box::new(qualify_explicit_reflected_paths(right, owner, binders)),
-            meta: meta.clone(),
-        },
-        Type::Sum { left, right, meta } => Type::Sum {
-            left: Box::new(qualify_explicit_reflected_paths(left, owner, binders)),
-            right: Box::new(qualify_explicit_reflected_paths(right, owner, binders)),
-            meta: meta.clone(),
-        },
-        Type::Forall { param, body, meta } => {
-            let mut nested_binders = binders.clone();
-            nested_binders.insert(param.name.clone(), param.effective_kind());
-            Type::Forall {
-                param: param.clone(),
-                body: Box::new(qualify_explicit_reflected_paths(
-                    body,
-                    owner,
-                    &nested_binders,
-                )),
-                meta: meta.clone(),
-            }
-        }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => ty.clone(),
-        Type::LabelSugar { ext, .. } => match *ext {},
-        Type::Goal { ext, .. } => match *ext {},
+    enum Work<'a> {
+        Enter(&'a mut EvalAstType),
+        Leave(String),
     }
+    let mut out = ownership::Owned::new(type_traversal::clone_type(ty));
+    let mut bound: HashMap<String, usize> = binders.keys().map(|name| (name.clone(), 1)).collect();
+    let mut work = vec![Work::Enter(&mut out)];
+    while let Some(next) = work.pop() {
+        match next {
+            Work::Leave(name) => {
+                let count = bound.get_mut(&name).expect("entered reflected type binder");
+                *count -= 1;
+                if *count == 0 {
+                    bound.remove(&name);
+                }
+            }
+            Work::Enter(ty) => match ty {
+                Type::Path {
+                    segments,
+                    args,
+                    meta,
+                } => {
+                    *segments = crate::pass::resolve::qualify_type_segments_in_module_with(
+                        segments,
+                        owner,
+                        |name| bound.contains_key(name),
+                    );
+                    *meta = Meta::new(meta.span);
+                    work.extend(args.iter_mut().rev().map(Work::Enter));
+                }
+                Type::Forall { param, body, .. } => {
+                    *bound.entry(param.name.clone()).or_default() += 1;
+                    work.push(Work::Leave(param.name.clone()));
+                    work.push(Work::Enter(body));
+                }
+                Type::Function { param, ret, .. } => {
+                    work.push(Work::Enter(ret));
+                    work.push(Work::Enter(param));
+                }
+                Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
+                    work.push(Work::Enter(right));
+                    work.push(Work::Enter(left));
+                }
+                Type::Unit { .. } | Type::Bottom { .. } => {}
+                Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
+            },
+        }
+    }
+    out.take()
 }
 
 fn as_refl_type_ref(v: &Value) -> Option<&Type<EvalPhase>> {
@@ -6822,15 +7114,6 @@ fn as_checked_term(v: &Value) -> Option<EvalRef<CheckedTerm>> {
 fn as_checked_term_ref(v: &Value) -> Option<&CheckedTerm> {
     match v {
         Value::CheckedTerm(term) => Some(term.as_ref()),
-        _ => None,
-    }
-}
-
-fn into_checked_term(v: Value) -> Option<CheckedTerm> {
-    match v {
-        Value::CheckedTerm(term) => {
-            Some(EvalRef::try_unwrap(term).unwrap_or_else(|term| (*term).clone()))
-        }
         _ => None,
     }
 }
@@ -6880,35 +7163,34 @@ fn predicate_value(ok: bool) -> Value {
     Value::Bool(ok)
 }
 
-fn type_instantiate_ok(ty: Type<EvalPhase>) -> Value {
-    value_sum_inject(0, 2, refl_type_value(ty))
+fn type_instantiate_ok(ty: ReflectedType) -> Value {
+    value_sum_inject(0, 2, Value::ReflType(ty))
 }
 
 fn type_instantiate_err(message: impl Into<String>) -> Value {
     value_sum_inject(1, 2, Value::DiagnosticText(message.into()))
 }
 
-fn type_instantiate_value(
-    scheme: Type<EvalPhase>,
-    arg: Type<EvalPhase>,
-    ctx: &EvalCtx<'_>,
-) -> Value {
-    let unfolded = unfold_canonical_refl_type(&scheme, ctx);
-    let Type::Forall { param, body, .. } = unfolded else {
+fn type_instantiate_value(scheme: &ReflectedType, arg: &ReflectedType, ctx: &EvalCtx<'_>) -> Value {
+    let unfolded = unfold_reflected_carrier(scheme, ctx);
+    let Type::Forall { param, .. } = unfolded.as_type() else {
         return type_instantiate_err(format!(
             "__type_instantiate__ expected a forall type, got `{}`",
-            crate::pass::typecheck_core::display_type(&scheme)
+            crate::pass::typecheck_core::display_type(scheme.as_type())
         ));
     };
-    if param.effective_kind().arity() > 0 && !matches!(arg, Type::Path { .. }) {
+    if param.effective_kind().arity() > 0 && !matches!(arg.as_type(), Type::Path { .. }) {
         return type_instantiate_err(format!(
             "__type_instantiate__ cannot substitute structural type `{}` for higher-kinded binder `{}`",
-            crate::pass::typecheck_core::display_type(&arg),
+            crate::pass::typecheck_core::display_type(arg.as_type()),
             param.name
         ));
     }
-    let subst = HashMap::from([(param.name, arg)]);
-    type_instantiate_ok(subst_type(&body, &subst))
+    type_instantiate_ok(
+        unfolded
+            .instantiate_forall(arg)
+            .expect("validated forall root"),
+    )
 }
 
 fn eval_refl_type_free_bare_heads(ty: &Type<EvalPhase>) -> HashSet<String> {
@@ -6960,7 +7242,6 @@ fn eval_refl_type_free_bare_heads(ty: &Type<EvalPhase>) -> HashSet<String> {
                 Type::Infer { .. } => unreachable!(
                     "compile-time reflected types are validated as inference-free before evaluation"
                 ),
-                Type::LabelSugar { ext, .. } => match *ext {},
                 Type::Goal { ext, .. } => match *ext {},
             },
         }
@@ -7005,6 +7286,171 @@ fn unfold_canonical_refl_type(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Type<E
     out
 }
 
+fn unfold_reflected_carrier(ty: &ReflectedType, ctx: &EvalCtx<'_>) -> ReflectedType {
+    let unfolded = ownership::Owned::new(unfold_canonical_refl_type(ty.as_type(), ctx));
+    let original = ReflectionTypeKey::new(ty.as_type());
+    let expanded = ReflectionTypeKey::new(&unfolded);
+    if original == expanded && original.presentation_matches(&expanded) {
+        ty.clone()
+    } else {
+        ReflectedType::from_parts(EvalRef::new(unfolded.take()), None, ty.environment.clone())
+    }
+}
+
+fn erases_type_stage(value: &Value) -> bool {
+    match value {
+        Value::Primitive(builtin) => *builtin != ComptimeBuiltin::ReflectType,
+        Value::NewtypeMember(_) => true,
+        Value::Data(data) => matches!(
+            data.structural_recur_identity(),
+            Some(StructuralRecurDataIdentity::Primitive { .. })
+        ),
+        Value::Stuck(callee, args) if args.len() == 1 => {
+            matches!(callee.as_ref(), Value::Primitive(builtin)
+                if builtin.is_fold() || *builtin == ComptimeBuiltin::StructuralRecur)
+        }
+        _ => false,
+    }
+}
+
+fn has_neutral_type_reference(typ: &ReflectedType) -> bool {
+    typ.free_variables().iter().any(|variable| {
+        matches!(
+            variable.meaning,
+            reflection_bindings::VariableMeaning::Neutral(_)
+        )
+    })
+}
+
+fn neutral_type_observation_is_known(
+    builtin: ComptimeBuiltin,
+    typ: &ReflectedType,
+    ctx: &EvalCtx<'_>,
+) -> bool {
+    use ComptimeBuiltin::{
+        TermFn, TermHostConvert, TermSpecialize, TypeDisplay, TypeForallPrefixFold,
+        TypeHostConverters, TypeProductSpineFold, TypeShortName, TypeSumSpineFold,
+    };
+    use reflection_bindings::{TypeChild, VariableMeaning};
+    if matches!(
+        builtin,
+        TypeDisplay | TypeShortName | TypeHostConverters | TermHostConvert | TermSpecialize
+    ) {
+        return !has_neutral_type_reference(typ);
+    }
+    let mut cursor = typ.clone();
+    let mut operation = builtin;
+    loop {
+        cursor = unfold_reflected_carrier(&cursor, ctx);
+        if let Type::Path { segments, .. } = cursor.as_type()
+            && let [name] = segments.as_slice()
+            && cursor
+                .environment
+                .get(name.as_str())
+                .is_some_and(|variable| matches!(variable.meaning, VariableMeaning::Neutral(_)))
+        {
+            return false;
+        }
+        let next = match (operation, cursor.as_type()) {
+            (TypeForallPrefixFold, Type::Forall { .. }) => {
+                cursor = cursor.open_forall().expect("known forall head").1;
+                continue;
+            }
+            (TypeProductSpineFold, Type::Product { .. }) | (TypeSumSpineFold, Type::Sum { .. }) => {
+                TypeChild::Right
+            }
+            (TermFn, Type::Function { .. }) => {
+                operation = TypeProductSpineFold;
+                TypeChild::Left
+            }
+            _ => return true,
+        };
+        cursor = cursor.child(next);
+    }
+}
+
+fn neutral_reflection_is_pending(
+    builtin: ComptimeBuiltin,
+    runtime: &[Value],
+    ctx: &EvalCtx<'_>,
+) -> bool {
+    use ComptimeBuiltin::*;
+    let operands: &[usize] = match builtin {
+        TypeView | TypeIsHost | TypeArityFn | TypeIsProductRoot | TypeIsSumRoot | TypeArgsFold
+        | TypeForallPrefixFold | TypeProductSpineFold | TypeSumSpineFold | TypeDisplay
+        | TypeShortName | TypeInstantiate | TermFn => &[0],
+        TypeHostConverters | TermHostConvert => &[0, 1],
+        TermSpecialize => &[1, 2],
+        _ => return false,
+    };
+    operands.iter().any(|index| {
+        runtime
+            .get(*index)
+            .and_then(reflected_type_carrier)
+            .is_some_and(|typ| !neutral_type_observation_is_known(builtin, typ, ctx))
+    })
+}
+
+fn incomplete_observation_fault(builtin: ComptimeBuiltin, ctx: &EvalCtx<'_>) -> Value {
+    let fault = Value::Data(EvalRef::new(DataValue {
+        ctor: String::new(),
+        identity: DataConstructorIdentity::IncompleteObservation(builtin),
+        args: empty_structural_recur_data_args(),
+    }));
+    ctx.record_operation_fault(&fault);
+    fault
+}
+
+fn reflection_type_var_equal_value(
+    left: &Value,
+    right: &Value,
+    ctx: &EvalCtx<'_>,
+) -> Option<Value> {
+    let (Value::ReflTypeVar(left), Value::ReflTypeVar(right)) = (left, right) else {
+        return None;
+    };
+    match reflection_bindings::semantic_type_comparison(&left.as_type(), &right.as_type()) {
+        Ok(reflection_bindings::TypeComparison::Equal) => Some(predicate_value(true)),
+        Ok(reflection_bindings::TypeComparison::Different) => Some(predicate_value(false)),
+        Ok(reflection_bindings::TypeComparison::Undetermined) => None,
+        Err(reflection_bindings::IncompleteOwner) => Some(incomplete_observation_fault(
+            ComptimeBuiltin::TypeVarEqual,
+            ctx,
+        )),
+    }
+}
+
+fn reflection_constructor_fault(ctx: &EvalCtx<'_>) -> Value {
+    let fault = reflection_error_value(
+        CheckedTermErrorKind::Macro,
+        &Value::DiagnosticText(
+            "a quantified result contains a parameter opened from another scheme".into(),
+        ),
+    )
+    .expect("a diagnostic string constructs a macro error");
+    ctx.record_operation_fault(&fault);
+    fault
+}
+
+fn reflection_type_equal_value(left: &Value, right: &Value, ctx: &EvalCtx<'_>) -> Option<Value> {
+    let left = unfold_reflected_carrier(reflected_type_carrier(left)?, ctx);
+    let right = unfold_reflected_carrier(reflected_type_carrier(right)?, ctx);
+    let start = ctx.metrics.as_deref().map(|_| Instant::now());
+    let equality = reflection_bindings::semantic_type_comparison(&left, &right);
+    if let (Some(metrics), Some(start)) = (ctx.metrics.as_deref(), start) {
+        metrics.record_type_equiv(start.elapsed());
+    }
+    match equality {
+        Ok(reflection_bindings::TypeComparison::Equal) => Some(predicate_value(true)),
+        Ok(reflection_bindings::TypeComparison::Different) => Some(predicate_value(false)),
+        Ok(reflection_bindings::TypeComparison::Undetermined) => None,
+        Err(reflection_bindings::IncompleteOwner) => Some(incomplete_observation_fault(
+            ComptimeBuiltin::TypeEqual,
+            ctx,
+        )),
+    }
+}
+
 fn canonical_refl_type_equiv(
     left: &Type<EvalPhase>,
     right: &Type<EvalPhase>,
@@ -7045,83 +7491,7 @@ fn type_arity_of_type(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> usize {
     }
 }
 
-fn product_spine(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Vec<Type<EvalPhase>> {
-    match unfold_canonical_refl_type(ty, ctx) {
-        Type::Product { left, right, .. } => {
-            let mut out = vec![*left];
-            out.extend(product_spine(&right, ctx));
-            out
-        }
-        other => vec![other],
-    }
-}
-
-fn sum_spine(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Vec<Type<EvalPhase>> {
-    match unfold_canonical_refl_type(ty, ctx) {
-        Type::Sum { left, right, .. } => {
-            let mut out = vec![*left];
-            out.extend(sum_spine(&right, ctx));
-            out
-        }
-        other => vec![other],
-    }
-}
-
-fn type_args(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Vec<Type<EvalPhase>> {
-    match unfold_canonical_refl_type(ty, ctx) {
-        Type::Path { args, .. } => args,
-        _ => Vec::new(),
-    }
-}
-
-fn split_canonical_function_params(
-    ty: &Type<EvalPhase>,
-    ctx: &EvalCtx<'_>,
-) -> Option<(Vec<Type<EvalPhase>>, Type<EvalPhase>)> {
-    let unfolded = unfold_canonical_refl_type(ty, ctx);
-    let Type::Function {
-        param,
-        ret,
-        abi_arity,
-        ..
-    } = unfolded
-    else {
-        return None;
-    };
-    if abi_arity == 0 {
-        return Some((Vec::new(), *ret));
-    }
-    let params = split_product_prefix(&param, abi_arity, ctx)?;
-    Some((params, *ret))
-}
-
-fn split_product_prefix(
-    ty: &Type<EvalPhase>,
-    n: usize,
-    ctx: &EvalCtx<'_>,
-) -> Option<Vec<Type<EvalPhase>>> {
-    if n == 0 {
-        return Some(Vec::new());
-    }
-    let mut out = Vec::with_capacity(n);
-    let mut cur = ty.clone();
-    for i in 0..n {
-        if i + 1 == n {
-            out.push(unfold_canonical_refl_type(&cur, ctx));
-            return Some(out);
-        }
-        let unfolded = unfold_canonical_refl_type(&cur, ctx);
-        match unfolded {
-            Type::Product { left, right, .. } => {
-                out.push(*left);
-                cur = *right;
-            }
-            _ => return None,
-        }
-    }
-    Some(out)
-}
-
+#[cfg(test)]
 fn right_fold_product_type(types: &[Type<EvalPhase>]) -> Type<EvalPhase> {
     match types {
         [] => Type::Unit { meta: zero_meta() },
@@ -7244,7 +7614,6 @@ fn source_mentions_host_type(
         | Type::Bottom { .. }
         | Type::Function { .. }
         | Type::Forall { .. }
-        | Type::LabelSugar { .. }
         | Type::Infer { .. } => false,
         Type::Goal { ext, .. } => match ext {},
     }
@@ -7262,6 +7631,63 @@ fn source_host_types<'m>(
         .collect()
 }
 
+fn host_converter_carrier(
+    module: &str,
+    host: &HostType<EvalPhase>,
+    string: &ReflectedType,
+) -> ReflectedType {
+    let skeleton = ReflectedType::new_trusted(host_converter_type(
+        module,
+        host,
+        Type::Unit { meta: zero_meta() },
+    ));
+    let mut builder = reflection_bindings::ReflectionTypeBuilder::new([string, &skeleton]);
+    let string_type = builder.import(string).take();
+    builder.finish(host_converter_type(module, host, string_type))
+}
+
+fn reflected_product_type(types: &[ReflectedType]) -> ReflectedType {
+    let Some((last, rest)) = types.split_last() else {
+        return ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+    };
+    let mut result = last.clone();
+    for ty in rest.iter().rev() {
+        let Value::ReflType(product) = reflection_binary_type_value(
+            ComptimeBuiltin::TypeProduct,
+            &Value::ReflType(ty.clone()),
+            &Value::ReflType(result),
+        )
+        .expect("two reflected type operands") else {
+            unreachable!()
+        };
+        result = product;
+    }
+    result
+}
+
+fn reflection_host_converter_types(
+    string: &Value,
+    source: &Value,
+    ctx: &EvalCtx<'_>,
+) -> Option<Value> {
+    let string = reflected_type_carrier(string)?;
+    let source = reflected_type_carrier(source)?;
+    if reflection_bindings::require_determined(string).is_err()
+        || reflection_bindings::require_determined(source).is_err()
+    {
+        return Some(incomplete_observation_fault(
+            ComptimeBuiltin::TypeHostConverters,
+            ctx,
+        ));
+    }
+    let types: Vec<_> = source_host_types(source.as_type(), ctx)
+        .into_iter()
+        .map(|(module, host)| host_converter_carrier(module, host, string))
+        .collect();
+    Some(Value::ReflType(reflected_product_type(&types)))
+}
+
+#[cfg(test)]
 fn host_converter_product_type(
     string_ty: Type<EvalPhase>,
     source_ty: &Type<EvalPhase>,
@@ -7308,75 +7734,6 @@ fn match_package_host_type<'m>(
     match_host_type(ty, &package_host_types(ctx), ctx)
 }
 
-fn checked_product_projection(
-    intrinsic: &str,
-    left_ty: Type<EvalPhase>,
-    right_ty: Type<EvalPhase>,
-    value: EvalRef<CheckedTerm>,
-) -> EvalRef<CheckedTerm> {
-    let result_ty = if intrinsic == "__fst__" {
-        left_ty.clone()
-    } else {
-        right_ty.clone()
-    };
-    EvalRef::new(CheckedTerm::from_node(
-        CheckedTermNode::IntrinsicProjection {
-            intrinsic: intrinsic.to_owned(),
-            left_ty,
-            right_ty,
-            value,
-        },
-        result_ty,
-    ))
-}
-
-fn project_right_fold_product_slot(
-    value: EvalRef<CheckedTerm>,
-    slot_tys: &[Type<EvalPhase>],
-    index: usize,
-) -> Option<EvalRef<CheckedTerm>> {
-    match slot_tys {
-        [] => None,
-        [_] => (index == 0).then_some(value),
-        [first, rest @ ..] => {
-            let rest_ty = right_fold_product_type(rest);
-            if index == 0 {
-                Some(checked_product_projection(
-                    "__fst__",
-                    first.clone(),
-                    rest_ty,
-                    value,
-                ))
-            } else {
-                let snd = checked_product_projection("__snd__", first.clone(), rest_ty, value);
-                project_right_fold_product_slot(snd, rest, index - 1)
-            }
-        }
-    }
-}
-
-fn apply_host_converter_type_args(
-    mut converter: EvalRef<CheckedTerm>,
-    args: &[Type<EvalPhase>],
-    ctx: &EvalCtx<'_>,
-) -> Option<EvalRef<CheckedTerm>> {
-    for arg in args {
-        let Type::Forall { param, body, .. } = unfold_canonical_refl_type(converter.ty(), ctx)
-        else {
-            return None;
-        };
-        let result_ty = subst_type(&body, &HashMap::from([(param.name, arg.clone())]));
-        converter = EvalRef::new(CheckedTerm::from_node(
-            CheckedTermNode::TermTypeApp {
-                fn_value: converter,
-                arg: arg.clone(),
-            },
-            result_ty,
-        ));
-    }
-    Some(converter)
-}
-
 fn reflection_term_host_convert_value(
     string_ty: &Value,
     source_ty: &Value,
@@ -7384,145 +7741,175 @@ fn reflection_term_host_convert_value(
     value: &Value,
     ctx: &EvalCtx<'_>,
 ) -> Option<Value> {
-    let string_ty = canonical_refl_type(string_ty, ctx)?;
-    let source_ty = canonical_refl_type(source_ty, ctx)?;
+    use reflection_bindings::TypeChild;
+    let string_ty = reflected_type_carrier(string_ty)?;
+    let source_ty = reflected_type_carrier(source_ty)?;
     let converters = as_checked_term(converters)?;
     let value = as_checked_term(value)?;
-    let host_types = source_host_types(&source_ty, ctx);
-    let converter_tys: Vec<_> = host_types
+    for ty in [string_ty, source_ty, &converters.ty, &value.ty] {
+        if reflection_bindings::require_determined(ty).is_err() {
+            return Some(incomplete_observation_fault(
+                ComptimeBuiltin::TermHostConvert,
+                ctx,
+            ));
+        }
+    }
+    let host_types = source_host_types(source_ty.as_type(), ctx);
+    let converter_types: Vec<_> = host_types
         .iter()
         .copied()
-        .map(|(module_path, host_type)| {
-            host_converter_type(module_path, host_type, string_ty.clone())
-        })
+        .map(|(module, host)| host_converter_carrier(module, host, string_ty))
         .collect();
-    let converter_product_ty = right_fold_product_type(&converter_tys);
-    if !checked_type_equiv(&converters, &converter_product_ty, ctx) {
+    if !checked_reflected_type_equiv(
+        &converters,
+        &reflected_product_type(&converter_types),
+        ComptimeBuiltin::TermHostConvert,
+        ctx,
+    ) {
         return None;
     }
-    let (index, host_type, args) = match_host_type(value.ty(), &host_types, ctx)?;
-    let host_value_ty = host_type_application(host_types[index].0, host_type, args.clone());
-    if !checked_type_equiv(&value, &host_value_ty, ctx) {
+    let value_type = unfold_reflected_carrier(&value.ty, ctx);
+    let (index, _host, args) = match_host_type(value_type.as_type(), &host_types, ctx)?;
+    let mut converter = Value::CheckedTerm(project_reflected_product_slot(
+        converters,
+        &converter_types,
+        index,
+    )?);
+    for index in 0..args.len() {
+        converter = reflection_term_type_app_value(
+            &converter,
+            &Value::ReflType(value_type.child(TypeChild::Argument(index))),
+            ctx,
+        )?;
+    }
+    let converter = as_checked_term(&converter)?;
+    let (domain, result) = reflected_function_types(&converter.ty, ctx)?;
+    if !checked_reflected_type_equiv(&value, &domain, ComptimeBuiltin::TermHostConvert, ctx) {
         return None;
     }
-    let converter = project_right_fold_product_slot(converters, &converter_tys, index)?;
-    let converter = apply_host_converter_type_args(converter, &args, ctx)?;
-    let fn_ty = converter.clone_type();
-    let (params, ret_ty) = split_canonical_function_params(&fn_ty, ctx)?;
-    if params.len() != 1
-        || !canonical_refl_type_equiv(&params[0], &host_value_ty, ctx)
-        || !canonical_refl_type_equiv(&ret_ty, &string_ty, ctx)
-    {
-        return None;
+    let expected_result = unfold_reflected_carrier(string_ty, ctx);
+    match reflection_bindings::type_correspondence(&result, &expected_result) {
+        Ok(reflection_bindings::TypeComparison::Equal) => {}
+        Ok(reflection_bindings::TypeComparison::Different) => return None,
+        _ => {
+            return Some(incomplete_observation_fault(
+                ComptimeBuiltin::TermHostConvert,
+                ctx,
+            ));
+        }
     }
-    Some(checked_term_node_value(
-        CheckedTermNode::TermCall {
+    reflected_checked_value(
+        ProjectedTermConstruction::Call {
             fn_value: converter,
-            params,
             arg_packet: value,
         },
-        string_ty,
-    ))
+        string_ty.clone(),
+    )
 }
 
-fn function_param_types(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Vec<Type<EvalPhase>> {
-    // Owner-qualify host heads (through each alias's declaring module)
-    // before splitting, so a param's host type stays consistent with the
-    // goal under deep cross-package decomposition.
-    let qualified = unfold_canonical_refl_type(ty, ctx);
-    split_canonical_function_params(&qualified, ctx)
-        .map(|(params, _)| params)
-        .unwrap_or_default()
-}
-
+#[cfg(test)]
 fn type_view_value(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<Value> {
-    let key = TypeViewCacheKey {
-        ty: ReflectionTypeKey::new(ty),
-    };
-    if let Some(cached) = ctx
-        .type_view_cache
-        .inner
-        .lock()
-        .expect("type-view cache lock poisoned")
-        .get_key_value(&key)
-        .filter(|(stored, _)| stored.ty.presentation_matches(&key.ty))
-        .map(|(_, value)| value.clone())
+    reflected_type_view_value(
+        &ReflectedType::new_trusted(type_traversal::clone_type(ty)),
+        ctx,
+    )
+}
+
+fn reflected_type_view_value(ty: &ReflectedType, ctx: &EvalCtx<'_>) -> Option<Value> {
+    let mut budget = EXACT_CALL_MEMO_RESULT_BUDGET;
+    let key = reflection_bindings::ReflectedSnapshotKey::new(ty, &mut budget)
+        .map(|ty| TypeViewCacheKey { ty });
+    if let Some(key) = key.as_ref()
+        && let Some(cached) = ctx
+            .type_view_cache
+            .inner
+            .lock()
+            .expect("type-view cache lock poisoned")
+            .get_key_value(key)
+            .filter(|(stored, _)| stored.ty.presentation_matches(&key.ty))
+            .map(|(_, value)| value.clone())
     {
         return cached;
     }
     let value = type_view_value_uncached(ty, ctx);
-    ctx.type_view_cache
-        .inner
-        .lock()
-        .expect("type-view cache lock poisoned")
-        .entry(key)
-        .or_insert_with(|| value.clone());
+    if let Some(key) = key {
+        ctx.type_view_cache
+            .inner
+            .lock()
+            .expect("type-view cache lock poisoned")
+            .entry(key)
+            .or_insert_with(|| value.clone());
+    }
     value
 }
 
-fn type_view_value_uncached(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<Value> {
-    // Qualify host-type heads before the view is destructured, so the
-    // per-component `refl_type_value` recursions (and the leaf
-    // `ReflTypeName`) carry the same self-identifying host spelling the
-    // macro-call goal type does — keeping deep `derive` subgoal
-    // reflections consistent with the goal.
-    let ty = unfold_canonical_refl_type(ty, ctx);
-    Some(match ty {
+fn reflected_type_arity(ty: &ReflectedType, ctx: &EvalCtx<'_>) -> usize {
+    let ty = unfold_reflected_carrier(ty, ctx);
+    if let Type::Path { segments, args, .. } = ty.as_type()
+        && let [head] = segments.as_slice()
+        && let Some(variable) = ty.environment.get(head.as_str())
+    {
+        return variable.arity.saturating_sub(args.len());
+    }
+    type_arity_of_type(ty.as_type(), ctx)
+}
+
+fn type_view_value_uncached(ty: &ReflectedType, ctx: &EvalCtx<'_>) -> Option<Value> {
+    use reflection_bindings::TypeChild;
+    let ty = unfold_reflected_carrier(ty, ctx);
+    Some(match ty.as_type() {
         Type::Unit { .. } => value_sum_inject(0, 8, Value::Unit),
         Type::Bottom { .. } => value_sum_inject(1, 8, Value::Unit),
-        Type::Product { left, right, .. } => value_sum_inject(
-            2,
-            8,
-            value_pair(refl_type_value(*left), refl_type_value(*right)),
-        ),
-        Type::Sum { left, right, .. } => value_sum_inject(
-            3,
-            8,
-            value_pair(refl_type_value(*left), refl_type_value(*right)),
-        ),
-        Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } => value_sum_inject(
-            4,
-            8,
-            value_pair3(
-                refl_type_value(*param),
-                Value::ReflTypeArity(abi_arity),
-                refl_type_value(*ret),
-            ),
-        ),
-        Type::Forall { param, body, .. } => {
-            let arity = param.effective_kind().arity();
+        Type::Product { .. } | Type::Sum { .. } | Type::Function { .. } => {
+            let arm = match ty.as_type() {
+                Type::Product { .. } => 2,
+                Type::Sum { .. } => 3,
+                _ => 4,
+            };
+            value_sum_inject(
+                arm,
+                8,
+                value_pair(
+                    Value::ReflType(ty.child(TypeChild::Left)),
+                    Value::ReflType(ty.child(TypeChild::Right)),
+                ),
+            )
+        }
+        Type::Forall { .. } => {
+            let (variable, body) = ty.open_forall().expect("known forall head");
+            let arity = variable.arity;
             value_sum_inject(
                 5,
                 8,
                 value_pair3(
-                    Value::ReflTypeVar {
-                        name: param.name,
-                        arity,
-                    },
+                    Value::ReflTypeVar(variable),
                     Value::ReflTypeArity(arity),
-                    refl_type_value(*body),
+                    Value::ReflType(body),
                 ),
             )
         }
-        Type::Path { segments, args, .. } => value_sum_inject(
-            7,
-            8,
-            Value::ReflTypeName {
-                segments: segments.into_iter().map(|s| s.name).collect(),
-                param_arities: args
-                    .iter()
-                    .map(|arg| type_arity_of_type(arg, ctx))
-                    .collect(),
-            },
-        ),
-        Type::LabelSugar { ext, .. } => match ext {},
+        Type::Path { segments, args, .. } => {
+            if let [head] = segments.as_slice()
+                && let Some(variable) = ty.environment.get(head.as_str())
+            {
+                value_sum_inject(6, 8, Value::ReflTypeVar(variable.clone()))
+            } else {
+                value_sum_inject(
+                    7,
+                    8,
+                    Value::ReflTypeName {
+                        segments: segments.iter().map(|s| s.name.clone()).collect(),
+                        param_arities: (0..args.len())
+                            .map(|index| {
+                                reflected_type_arity(&ty.child(TypeChild::Argument(index)), ctx)
+                            })
+                            .collect(),
+                    },
+                )
+            }
+        }
         Type::Infer { .. } => return None,
-        Type::Goal { ext, .. } => match ext {},
+        Type::Goal { ext, .. } => match *ext {},
     })
 }
 
@@ -7544,30 +7931,26 @@ fn projected_type_view_value(
             8,
             value_pair(projected_value(left), projected_value(right)),
         ),
-        ProjectedTypeView::Function {
-            param,
-            abi_arity,
-            ret,
-        } => value_sum_inject(
+        ProjectedTypeView::Function { param, ret } => value_sum_inject(
             4,
             8,
-            value_pair3(
-                projected_value(param),
-                Value::ReflTypeArity(abi_arity),
-                projected_value(ret),
-            ),
+            value_pair(projected_value(param), projected_value(ret)),
         ),
-        ProjectedTypeView::Forall { name, arity, body } => value_sum_inject(
+        ProjectedTypeView::Forall {
+            variable,
+            arity,
+            body,
+        } => value_sum_inject(
             5,
             8,
             value_pair3(
-                Value::ReflTypeVar { name, arity },
+                Value::ReflTypeVar(variable),
                 Value::ReflTypeArity(arity),
                 projected_value(body),
             ),
         ),
-        ProjectedTypeView::TypeVar { name, arity } => {
-            value_sum_inject(6, 8, Value::ReflTypeVar { name, arity })
+        ProjectedTypeView::TypeVar(variable) => {
+            value_sum_inject(6, 8, Value::ReflTypeVar(variable))
         }
         ProjectedTypeView::TypeName {
             segments,
@@ -7607,41 +7990,6 @@ fn projected_spine(
     }
 }
 
-#[cfg(feature = "surface")]
-fn projected_function_params(
-    proof: &crate::pass::typecheck_core::apply::fills::MarkedComptimeProof,
-    root: &crate::pass::typecheck_core::apply::fills::ProjectedValue,
-) -> Result<Vec<crate::pass::typecheck_core::apply::fills::ProjectedValue>, crate::error::Error> {
-    use crate::pass::typecheck_core::apply::fills::{ProjectedTypeView, projected_type_view};
-    let ProjectedTypeView::Function {
-        mut param,
-        abi_arity,
-        ..
-    } = projected_type_view(proof, root)?
-    else {
-        return Ok(Vec::new());
-    };
-    if abi_arity == 0 {
-        return Ok(Vec::new());
-    }
-    let mut params = Vec::with_capacity(abi_arity);
-    for index in 0..abi_arity {
-        if index + 1 == abi_arity {
-            params.push(param);
-            return Ok(params);
-        }
-        let ProjectedTypeView::Product { left, right } = projected_type_view(proof, &param)? else {
-            return Err(crate::error::Error::macro_error(
-                zero_span(),
-                "a projected function ABI arity exceeded its exact product parameter spine",
-            ));
-        };
-        params.push(left);
-        param = right;
-    }
-    unreachable!("a nonzero projected function ABI arity completed without its last parameter")
-}
-
 fn fresh_checked_term_name(prefix: &str) -> String {
     static CHECKED_TERM_FRESH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = CHECKED_TERM_FRESH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -7653,32 +8001,84 @@ pub(crate) fn fresh_checked_term_value_name(prefix: &str) -> String {
     format!("_{name}__")
 }
 
+fn project_reflected_product_slot(
+    mut value: EvalRef<CheckedTerm>,
+    slots: &[ReflectedType],
+    index: usize,
+) -> Option<EvalRef<CheckedTerm>> {
+    if index >= slots.len() {
+        return None;
+    }
+    if slots.len() == 1 {
+        return Some(value);
+    }
+    let mut suffixes = Vec::with_capacity(slots.len());
+    suffixes.push(slots.last()?.clone());
+    for slot in slots[..slots.len() - 1].iter().rev() {
+        let Value::ReflType(next) = reflection_binary_type_value(
+            ComptimeBuiltin::TypeProduct,
+            &Value::ReflType(slot.clone()),
+            &Value::ReflType(suffixes.last()?.clone()),
+        )?
+        else {
+            unreachable!()
+        };
+        suffixes.push(next);
+    }
+    for offset in 0..slots.len() - 1 {
+        let left = &slots[offset];
+        let right = &suffixes[slots.len() - offset - 2];
+        let mut builder = reflection_bindings::ReflectionTypeBuilder::new([left, right]);
+        let left_ty = builder.import(left).take();
+        let right_ty = builder.import(right).take();
+        let select_left = offset == index;
+        let result = type_traversal::clone_type(if select_left { &left_ty } else { &right_ty });
+        value = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::IntrinsicProjection {
+                intrinsic: if select_left { "__fst__" } else { "__snd__" }.into(),
+                left_ty,
+                right_ty,
+                value,
+            },
+            builder.finish(result),
+        ));
+        if select_left {
+            break;
+        }
+    }
+    Some(value)
+}
+
 fn checked_product_packet(terms: &[EvalRef<CheckedTerm>]) -> EvalRef<CheckedTerm> {
-    match terms {
-        [] => EvalRef::new(CheckedTerm::new(
+    let Some((last, rest)) = terms.split_last() else {
+        return EvalRef::new(CheckedTerm::new(
             Expr::Unit {
                 source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
             Type::Unit { meta: zero_meta() },
-        )),
-        [one] => one.clone(),
-        [first, rest @ ..] => {
-            let right = checked_product_packet(rest);
-            EvalRef::new(CheckedTerm::from_node(
-                CheckedTermNode::IntrinsicPair {
-                    left: first.clone(),
-                    right: right.clone(),
-                },
-                Type::Product {
-                    left: Box::new(first.clone_type()),
-                    right: Box::new(right.clone_type()),
-                    meta: zero_meta(),
-                },
-            ))
-        }
+        ));
+    };
+    let mut result = last.clone();
+    for term in rest.iter().rev() {
+        let mut builder = reflection_bindings::ReflectionTypeBuilder::new([&term.ty, &result.ty]);
+        let left_ty = builder.import(&term.ty).take();
+        let right_ty = builder.import(&result.ty).take();
+        let ty = builder.finish(Type::Product {
+            left: Box::new(left_ty),
+            right: Box::new(right_ty),
+            meta: zero_meta(),
+        });
+        result = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::IntrinsicPair {
+                left: term.clone(),
+                right: result,
+            },
+            ty,
+        ));
     }
+    result
 }
 
 #[cfg(feature = "surface")]
@@ -7701,59 +8101,95 @@ fn projected_checked_product_packet(
     }
 }
 
-fn project_packet(packet: EvalAstExpr, params: &[EvalAstType]) -> Vec<EvalAstExpr> {
-    let mut packet = EvalRef::new(packet);
-    let mut out = Vec::with_capacity(params.len());
-    for (index, first) in params.iter().enumerate() {
-        if index + 1 == params.len() {
-            out.push(
-                packet
-                    .into_inner()
-                    .expect("a projected packet is uniquely owned"),
-            );
-            return out;
-        }
-        let rest_ty = right_fold_product_type(&params[index + 1..]);
-        out.push(intrinsic_expr(
-            "__fst__",
-            vec![
-                CallArg::Type(first.clone()),
-                CallArg::Type(rest_ty.clone()),
-                CallArg::Value(checked_traversal::clone_expr(&packet)),
-            ],
-        ));
-        packet = EvalRef::new(intrinsic_expr(
-            "__snd__",
-            vec![
-                CallArg::Type(first.clone()),
-                CallArg::Type(rest_ty),
-                CallArg::Value(
-                    packet
-                        .into_inner()
-                        .expect("a projected packet is uniquely owned"),
-                ),
-            ],
-        ));
-    }
-    out
-}
-
 fn checked_term_value(expr: Expr<EvalPhase>, ty: Type<EvalPhase>) -> Value {
     Value::CheckedTerm(EvalRef::new(CheckedTerm::new(expr, ty)))
-}
-
-fn checked_term_local_value(name: String, ty: Type<EvalPhase>) -> Value {
-    checked_term_node_value(CheckedTermNode::Local { name }, ty)
 }
 
 fn checked_term_node_value(node: CheckedTermNode, ty: Type<EvalPhase>) -> Value {
     Value::CheckedTerm(EvalRef::new(CheckedTerm::from_node(node, ty)))
 }
 
+fn reflected_checked_value(
+    construction: ProjectedTermConstruction,
+    ty: ReflectedType,
+) -> Option<Value> {
+    CheckedTerm::from_projected_reflected(construction, ty)
+        .ok()
+        .map(|term| Value::CheckedTerm(EvalRef::new(term)))
+}
+
+fn checked_reflected_type_equiv(
+    term: &CheckedTerm,
+    expected: &ReflectedType,
+    builtin: ComptimeBuiltin,
+    ctx: &EvalCtx<'_>,
+) -> bool {
+    let actual = unfold_reflected_carrier(&term.ty, ctx);
+    let expected = unfold_reflected_carrier(expected, ctx);
+    match reflection_bindings::type_correspondence(&actual, &expected) {
+        Ok(reflection_bindings::TypeComparison::Equal) => true,
+        Ok(reflection_bindings::TypeComparison::Different) => false,
+        Ok(reflection_bindings::TypeComparison::Undetermined)
+        | Err(reflection_bindings::IncompleteOwner) => {
+            incomplete_observation_fault(builtin, ctx);
+            false
+        }
+    }
+}
+
+fn reflected_local_value(name: String, ty: ReflectedType) -> Value {
+    Value::CheckedTerm(EvalRef::new(CheckedTerm::from_reflected_node(
+        CheckedTermNode::Local { name },
+        ty,
+    )))
+}
+
+fn reflected_function_layout(
+    ty: &ReflectedType,
+    ctx: &EvalCtx<'_>,
+) -> Option<(Vec<ReflectedType>, ReflectedType)> {
+    use reflection_bindings::TypeChild;
+    let ty = unfold_reflected_carrier(ty, ctx);
+    let Type::Function { abi_arity, .. } = ty.as_type() else {
+        return None;
+    };
+    let result = ty.child(TypeChild::Right);
+    let mut domain = ty.child(TypeChild::Left);
+    let mut params = Vec::with_capacity(*abi_arity);
+    for index in 0..*abi_arity {
+        domain = unfold_reflected_carrier(&domain, ctx);
+        if index + 1 == *abi_arity {
+            params.push(domain);
+            break;
+        }
+        if !matches!(domain.as_type(), Type::Product { .. }) {
+            return None;
+        }
+        params.push(domain.child(TypeChild::Left));
+        domain = domain.child(TypeChild::Right);
+    }
+    Some((params, result))
+}
+
+fn reflected_function_types(
+    ty: &ReflectedType,
+    ctx: &EvalCtx<'_>,
+) -> Option<(ReflectedType, ReflectedType)> {
+    let ty = unfold_reflected_carrier(ty, ctx);
+    if !matches!(ty.as_type(), Type::Function { .. }) {
+        return None;
+    }
+    Some((
+        ty.child(reflection_bindings::TypeChild::Left),
+        ty.child(reflection_bindings::TypeChild::Right),
+    ))
+}
+
 fn checked_type_equiv(term: &CheckedTerm, expected: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> bool {
     canonical_refl_type_equiv(term.ty(), expected, ctx)
 }
 
+#[cfg(test)]
 fn checked_term_type_fn(param: TypeParam, body: EvalRef<CheckedTerm>) -> CheckedTerm {
     let forall_ty = Type::Forall {
         param: param.clone(),
@@ -7778,38 +8214,32 @@ fn reflection_term_call_value_owned(
     arg_packet: Value,
     ctx: &EvalCtx<'_>,
 ) -> Result<Value, Vec<Value>> {
-    let Some(fn_type_ty) = canonical_refl_type(&fn_type, ctx) else {
-        return Err(vec![fn_type, fn_value, arg_packet]);
-    };
-    let Some((params, ret_ty)) = split_canonical_function_params(&fn_type_ty, ctx) else {
-        return Err(vec![fn_type, fn_value, arg_packet]);
-    };
-    let Some(fn_value_term) = as_checked_term_ref(&fn_value) else {
-        return Err(vec![fn_type, fn_value, arg_packet]);
-    };
-    let Some(arg_packet_term) = as_checked_term_ref(&arg_packet) else {
-        return Err(vec![fn_type, fn_value, arg_packet]);
-    };
-    let packet_ty = right_fold_product_type(&params);
-    if !checked_type_equiv(fn_value_term, &fn_type_ty, ctx)
-        || !checked_type_equiv(arg_packet_term, &packet_ty, ctx)
+    reflection_term_call_value(&fn_type, &fn_value, &arg_packet, ctx)
+        .ok_or_else(|| vec![fn_type, fn_value, arg_packet])
+}
+
+fn reflection_term_call_value(
+    fn_type: &Value,
+    fn_value: &Value,
+    arg_packet: &Value,
+    ctx: &EvalCtx<'_>,
+) -> Option<Value> {
+    let fn_type = reflected_type_carrier(fn_type)?;
+    let (domain, result) = reflected_function_types(fn_type, ctx)?;
+    let fn_value = as_checked_term(fn_value)?;
+    let arg_packet = as_checked_term(arg_packet)?;
+    if !checked_reflected_type_equiv(&fn_value, fn_type, ComptimeBuiltin::TermCall, ctx)
+        || !checked_reflected_type_equiv(&arg_packet, &domain, ComptimeBuiltin::TermCall, ctx)
     {
-        return Err(vec![fn_type, fn_value, arg_packet]);
+        return None;
     }
-    let fn_value = EvalRef::new(
-        into_checked_term(fn_value).expect("checked-term value matched before consuming"),
-    );
-    let arg_packet = EvalRef::new(
-        into_checked_term(arg_packet).expect("checked-term value matched before consuming"),
-    );
-    Ok(checked_term_node_value(
-        CheckedTermNode::TermCall {
+    reflected_checked_value(
+        ProjectedTermConstruction::Call {
             fn_value,
-            params,
             arg_packet,
         },
-        ret_ty,
-    ))
+        result,
+    )
 }
 
 fn reflection_term_type_app_value_owned(
@@ -7817,27 +8247,19 @@ fn reflection_term_type_app_value_owned(
     arg: Value,
     ctx: &EvalCtx<'_>,
 ) -> Result<Value, Vec<Value>> {
-    let Some(fn_value_term) = as_checked_term_ref(&fn_value) else {
-        return Err(vec![fn_value, arg]);
-    };
-    let Type::Forall { param, body, .. } = unfold_canonical_refl_type(fn_value_term.ty(), ctx)
-    else {
-        return Err(vec![fn_value, arg]);
-    };
-    let Some(arg_ty) = canonical_refl_type(&arg, ctx) else {
-        return Err(vec![fn_value, arg]);
-    };
-    let result_ty = subst_type(&body, &HashMap::from([(param.name, arg_ty.clone())]));
-    let fn_value = EvalRef::new(
-        into_checked_term(fn_value).expect("checked-term value matched before consuming"),
-    );
-    Ok(checked_term_node_value(
-        CheckedTermNode::TermTypeApp {
-            fn_value,
-            arg: arg_ty,
-        },
-        result_ty,
-    ))
+    reflection_term_type_app_value(&fn_value, &arg, ctx).ok_or_else(|| vec![fn_value, arg])
+}
+
+fn reflection_term_type_app_value(
+    fn_value: &Value,
+    arg: &Value,
+    ctx: &EvalCtx<'_>,
+) -> Option<Value> {
+    let term = as_checked_term(fn_value)?;
+    let scheme = unfold_reflected_carrier(&term.ty, ctx);
+    let arg = reflected_type_carrier(arg)?.clone();
+    let result = scheme.instantiate_forall(&arg)?;
+    reflected_checked_value(ProjectedTermConstruction::TypeApp { term, arg }, result)
 }
 
 fn is_reflection_proof(value: &Value) -> bool {
@@ -7871,7 +8293,7 @@ fn adapt_reflection_packet(builtin: ComptimeBuiltin, mut args: Vec<Value>) -> Ve
 }
 
 fn reflection_runtime_args(builtin: ComptimeBuiltin, args: &[Value]) -> &[Value] {
-    if builtin == ComptimeBuiltin::Fill {
+    if matches!(builtin, ComptimeBuiltin::Fill | ComptimeBuiltin::FillResult) {
         return args;
     }
     match args.first() {
@@ -7917,7 +8339,7 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
     use crate::pass::typecheck_core::apply::fills::ProjectedHelperClass;
     use ComptimeBuiltin::*;
     let helper = match builtin {
-        Fill => return ProjectedBuiltinClass::Fill,
+        Fill | FillResult => return ProjectedBuiltinClass::Fill,
         TermSpecialize => return ProjectedBuiltinClass::Specialize,
         ComptimeProof
         | Type
@@ -7931,7 +8353,6 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
         | FillCtx
         | TypeNameEqual
         | TypeVarEqual
-        | TypeArityFn
         | TypeVarArity
         | TypeArityZero
         | TypeAritySucc
@@ -7945,40 +8366,15 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
         | MacroError
         | TypeError
         | StructuralRecur => ProjectedHelperClass::ContextInsensitive,
-        TypeIsHost | TypeHostConverters | TypeEqual | TypeDisplay | TypeShortName
-        | TermHostConvert => ProjectedHelperClass::GoalFreeOnly,
-        ReflectType
-        | TypeView
-        | TypeIsProductRoot
-        | TypeIsSumRoot
-        | TypeUnit
-        | TypeBottom
-        | TypeProduct
-        | TypeSum
-        | TypeArrow
-        | TypeForall
-        | TypeVarFn
-        | TypeNameType
-        | TypeApply
-        | TypeInstantiate
-        | TypeProductSpineFold
-        | TypeSumSpineFold
-        | TypeArgsFold
-        | TypeFunctionParamsFold
-        | TermType
-        | TermLet
-        | TermFn
-        | TermCall
-        | TermTypeFn
-        | TermTypeApp
-        | TermUnit
-        | IntrinsicPair
-        | IntrinsicFst
-        | IntrinsicSnd
-        | IntrinsicLeft
-        | IntrinsicRight
-        | IntrinsicEither
-        | IntrinsicAbsurd
+        TypeHostConverters | TypeEqual | TypeDisplay | TypeShortName | TermHostConvert => {
+            ProjectedHelperClass::GoalFreeOnly
+        }
+        ReflectType | TypeView | TypeArityFn | TypeIsHost | TypeIsProductRoot | TypeIsSumRoot
+        | TypeUnit | TypeBottom | TypeProduct | TypeSum | TypeArrow | TypeForall | TypeVarFn
+        | TypeNameType | TypeApply | TypeInstantiate | TypeProductSpineFold | TypeSumSpineFold
+        | TypeArgsFold | TypeForallPrefixFold | TermType | TermLet | TermFn | TermCall
+        | TermTypeFn | TermTypeApp | TermUnit | IntrinsicPair | IntrinsicFst | IntrinsicSnd
+        | IntrinsicLeft | IntrinsicRight | IntrinsicEither | IntrinsicAbsurd
         | IntrinsicIfThenElse => ProjectedHelperClass::FocusStructural,
     };
     ProjectedBuiltinClass::Helper(helper)
@@ -8002,11 +8398,8 @@ fn close_authenticated_projected_args(
 }
 
 fn reflection_term_type_value(term: &Value, ctx: &EvalCtx<'_>) -> Option<Value> {
-    // Checked-term types are canonical semantic types. Preserve that mode:
-    // reading them as source spellings would reinterpret a module-qualified
-    // head through the consumer's same-named import alias.
-    let ty = as_checked_term(term)?.clone_type();
-    Some(refl_type_value(unfold_canonical_refl_type(&ty, ctx)))
+    let term = as_checked_term(term)?;
+    Some(Value::ReflType(unfold_reflected_carrier(&term.ty, ctx)))
 }
 
 fn reflection_term_unit_value() -> Value {
@@ -8033,37 +8426,19 @@ fn reflection_error_value(kind: CheckedTermErrorKind, message: &Value) -> Option
 fn reflection_intrinsic_pair_value(left: &Value, right: &Value) -> Option<Value> {
     let left = as_checked_term(left)?;
     let right = as_checked_term(right)?;
-    let left_ty = left.clone_type();
-    let right_ty = right.clone_type();
-    Some(checked_term_node_value(
-        CheckedTermNode::IntrinsicPair { left, right },
-        Type::Product {
-            left: Box::new(left_ty),
-            right: Box::new(right_ty),
-            meta: zero_meta(),
-        },
-    ))
+    let Value::ReflType(result) = reflection_binary_type_value(
+        ComptimeBuiltin::TypeProduct,
+        &Value::ReflType(left.ty.clone()),
+        &Value::ReflType(right.ty.clone()),
+    )?
+    else {
+        unreachable!()
+    };
+    reflected_checked_value(ProjectedTermConstruction::Pair { left, right }, result)
 }
 
 fn reflection_intrinsic_pair_value_owned(left: Value, right: Value) -> Result<Value, Vec<Value>> {
-    if !matches!(left, Value::CheckedTerm(_)) || !matches!(right, Value::CheckedTerm(_)) {
-        return Err(vec![left, right]);
-    }
-    let left =
-        EvalRef::new(into_checked_term(left).expect("checked-term value matched before consuming"));
-    let right = EvalRef::new(
-        into_checked_term(right).expect("checked-term value matched before consuming"),
-    );
-    let left_ty = left.clone_type();
-    let right_ty = right.clone_type();
-    Ok(checked_term_node_value(
-        CheckedTermNode::IntrinsicPair { left, right },
-        Type::Product {
-            left: Box::new(left_ty),
-            right: Box::new(right_ty),
-            meta: zero_meta(),
-        },
-    ))
+    reflection_intrinsic_pair_value(&left, &right).ok_or_else(|| vec![left, right])
 }
 
 fn reflection_intrinsic_projection_value(
@@ -8072,33 +8447,37 @@ fn reflection_intrinsic_projection_value(
     value: &Value,
     ctx: &EvalCtx<'_>,
 ) -> Option<Value> {
-    let product_type = canonical_refl_type(product_type, ctx)?;
-    let Type::Product { left, right, .. } = unfold_canonical_refl_type(&product_type, ctx) else {
-        return None;
-    };
-    let value = as_checked_term(value)?;
-    if !checked_type_equiv(&value, &product_type, ctx) {
+    use reflection_bindings::TypeChild;
+    let product = unfold_reflected_carrier(reflected_type_carrier(product_type)?, ctx);
+    if !matches!(product.as_type(), Type::Product { .. }) {
         return None;
     }
-    let intrinsic = if name == "__intrinsic_fst__" {
-        "__fst__"
+    let value = as_checked_term(value)?;
+    if !checked_reflected_type_equiv(
+        &value,
+        &product,
+        ComptimeBuiltin::from_public_name(name)?,
+        ctx,
+    ) {
+        return None;
+    }
+    let left = name == "__intrinsic_fst__";
+    let left_ty = product.child(TypeChild::Left);
+    let right_ty = product.child(TypeChild::Right);
+    let result = if left {
+        left_ty.clone()
     } else {
-        "__snd__"
+        right_ty.clone()
     };
-    let result_ty = if name == "__intrinsic_fst__" {
-        (*left).clone()
-    } else {
-        (*right).clone()
-    };
-    Some(checked_term_node_value(
-        CheckedTermNode::IntrinsicProjection {
-            intrinsic: intrinsic.to_owned(),
-            left_ty: (*left).clone(),
-            right_ty: (*right).clone(),
+    reflected_checked_value(
+        ProjectedTermConstruction::ProductProjection {
+            left_ty,
+            right_ty,
             value,
+            left,
         },
-        result_ty,
-    ))
+        result,
+    )
 }
 
 fn reflection_intrinsic_projection_value_owned(
@@ -8107,41 +8486,8 @@ fn reflection_intrinsic_projection_value_owned(
     value: Value,
     ctx: &EvalCtx<'_>,
 ) -> Result<Value, Vec<Value>> {
-    let Some(product_type_ty) = canonical_refl_type(&product_type, ctx) else {
-        return Err(vec![product_type, value]);
-    };
-    let Type::Product { left, right, .. } = unfold_canonical_refl_type(&product_type_ty, ctx)
-    else {
-        return Err(vec![product_type, value]);
-    };
-    let Some(value_term) = as_checked_term_ref(&value) else {
-        return Err(vec![product_type, value]);
-    };
-    if !checked_type_equiv(value_term, &product_type_ty, ctx) {
-        return Err(vec![product_type, value]);
-    }
-    let intrinsic = if name == "__intrinsic_fst__" {
-        "__fst__"
-    } else {
-        "__snd__"
-    };
-    let result_ty = if name == "__intrinsic_fst__" {
-        (*left).clone()
-    } else {
-        (*right).clone()
-    };
-    let value = EvalRef::new(
-        into_checked_term(value).expect("checked-term value matched before consuming"),
-    );
-    Ok(checked_term_node_value(
-        CheckedTermNode::IntrinsicProjection {
-            intrinsic: intrinsic.to_owned(),
-            left_ty: (*left).clone(),
-            right_ty: (*right).clone(),
-            value,
-        },
-        result_ty,
-    ))
+    reflection_intrinsic_projection_value(name, &product_type, &value, ctx)
+        .ok_or_else(|| vec![product_type, value])
 }
 
 fn reflection_intrinsic_injection_value(
@@ -8150,31 +8496,32 @@ fn reflection_intrinsic_injection_value(
     value: &Value,
     ctx: &EvalCtx<'_>,
 ) -> Option<Value> {
-    let sum_type = canonical_refl_type(sum_type, ctx)?;
-    let Type::Sum { left, right, .. } = unfold_canonical_refl_type(&sum_type, ctx) else {
+    use reflection_bindings::TypeChild;
+    let result = unfold_reflected_carrier(reflected_type_carrier(sum_type)?, ctx);
+    if !matches!(result.as_type(), Type::Sum { .. }) {
         return None;
-    };
+    }
     let value = as_checked_term(value)?;
-    let intrinsic = if name == "__intrinsic_left__" {
-        if !checked_type_equiv(&value, &left, ctx) {
-            return None;
-        }
-        "__left__"
-    } else {
-        if !checked_type_equiv(&value, &right, ctx) {
-            return None;
-        }
-        "__right__"
-    };
-    Some(checked_term_node_value(
-        CheckedTermNode::IntrinsicInjection {
-            intrinsic: intrinsic.to_owned(),
-            left_ty: (*left).clone(),
-            right_ty: (*right).clone(),
+    let left = name == "__intrinsic_left__";
+    let left_ty = result.child(TypeChild::Left);
+    let right_ty = result.child(TypeChild::Right);
+    if !checked_reflected_type_equiv(
+        &value,
+        if left { &left_ty } else { &right_ty },
+        ComptimeBuiltin::from_public_name(name)?,
+        ctx,
+    ) {
+        return None;
+    }
+    reflected_checked_value(
+        ProjectedTermConstruction::Injection {
+            left_ty,
+            right_ty,
             value,
+            left,
         },
-        sum_type,
-    ))
+        result,
+    )
 }
 
 fn reflection_intrinsic_injection_value_owned(
@@ -8183,38 +8530,8 @@ fn reflection_intrinsic_injection_value_owned(
     value: Value,
     ctx: &EvalCtx<'_>,
 ) -> Result<Value, Vec<Value>> {
-    let Some(sum_type_ty) = canonical_refl_type(&sum_type, ctx) else {
-        return Err(vec![sum_type, value]);
-    };
-    let Type::Sum { left, right, .. } = unfold_canonical_refl_type(&sum_type_ty, ctx) else {
-        return Err(vec![sum_type, value]);
-    };
-    let Some(value_term) = as_checked_term_ref(&value) else {
-        return Err(vec![sum_type, value]);
-    };
-    let intrinsic = if name == "__intrinsic_left__" {
-        if !checked_type_equiv(value_term, &left, ctx) {
-            return Err(vec![sum_type, value]);
-        }
-        "__left__"
-    } else {
-        if !checked_type_equiv(value_term, &right, ctx) {
-            return Err(vec![sum_type, value]);
-        }
-        "__right__"
-    };
-    let value = EvalRef::new(
-        into_checked_term(value).expect("checked-term value matched before consuming"),
-    );
-    Ok(checked_term_node_value(
-        CheckedTermNode::IntrinsicInjection {
-            intrinsic: intrinsic.to_owned(),
-            left_ty: (*left).clone(),
-            right_ty: (*right).clone(),
-            value,
-        },
-        sum_type_ty,
-    ))
+    reflection_intrinsic_injection_value(name, &sum_type, &value, ctx)
+        .ok_or_else(|| vec![sum_type, value])
 }
 
 fn reflection_intrinsic_absurd_value_owned(
@@ -8222,25 +8539,24 @@ fn reflection_intrinsic_absurd_value_owned(
     result_type: Value,
     ctx: &EvalCtx<'_>,
 ) -> Result<Value, Vec<Value>> {
-    let Some(bottom_ref) = as_checked_term_ref(&bottom_value) else {
-        return Err(vec![bottom_value, result_type]);
-    };
-    if !checked_type_equiv(bottom_ref, &Type::Bottom { meta: zero_meta() }, ctx) {
-        return Err(vec![bottom_value, result_type]);
+    reflection_intrinsic_absurd_value(&bottom_value, &result_type, ctx)
+        .ok_or_else(|| vec![bottom_value, result_type])
+}
+
+fn reflection_intrinsic_absurd_value(
+    bottom_value: &Value,
+    result_type: &Value,
+    ctx: &EvalCtx<'_>,
+) -> Option<Value> {
+    let bottom_value = as_checked_term(bottom_value)?;
+    if !checked_type_equiv(&bottom_value, &Type::Bottom { meta: zero_meta() }, ctx) {
+        return None;
     }
-    let Some(result_type_ty) = canonical_refl_type(&result_type, ctx) else {
-        return Err(vec![bottom_value, result_type]);
-    };
-    let bottom_value = EvalRef::new(
-        into_checked_term(bottom_value).expect("checked-term value matched before consuming"),
-    );
-    Ok(checked_term_node_value(
-        CheckedTermNode::IntrinsicAbsurd {
-            result_ty: result_type_ty.clone(),
-            bottom_value,
-        },
-        result_type_ty,
-    ))
+    let result_type = reflected_type_carrier(result_type)?.clone();
+    reflected_checked_value(
+        ProjectedTermConstruction::Absurd { bottom_value },
+        result_type,
+    )
 }
 
 fn specialization_nominal_kind(
@@ -8301,26 +8617,28 @@ fn specialization_nominal_kinds(
     target: &Type<EvalPhase>,
     params: &[TypeParam],
     ctx: &EvalCtx<'_>,
+    environment: &reflection_bindings::ReflectionEnvironment,
 ) -> Result<HashMap<Vec<String>, crate::ast::Kind>, String> {
     fn collect(
         ty: &Type<EvalPhase>,
         bound: &mut HashMap<String, usize>,
         kinds: &mut HashMap<Vec<String>, crate::ast::Kind>,
         ctx: &EvalCtx<'_>,
+        environment: &reflection_bindings::ReflectionEnvironment,
     ) -> Result<(), String> {
         match ty {
             Type::Unit { .. } | Type::Bottom { .. } => Ok(()),
             Type::Function { param, ret, .. } => {
-                collect(param, bound, kinds, ctx)?;
-                collect(ret, bound, kinds, ctx)
+                collect(param, bound, kinds, ctx, environment)?;
+                collect(ret, bound, kinds, ctx, environment)
             }
             Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                collect(left, bound, kinds, ctx)?;
-                collect(right, bound, kinds, ctx)
+                collect(left, bound, kinds, ctx, environment)?;
+                collect(right, bound, kinds, ctx, environment)
             }
             Type::Forall { param, body, .. } => {
                 *bound.entry(param.name.clone()).or_default() += 1;
-                let result = collect(body, bound, kinds, ctx);
+                let result = collect(body, bound, kinds, ctx, environment);
                 let count = bound
                     .get_mut(&param.name)
                     .expect("specialization binder stack lost its top entry");
@@ -8332,7 +8650,7 @@ fn specialization_nominal_kinds(
             }
             Type::Path { segments, args, .. } => {
                 for arg in args {
-                    collect(arg, bound, kinds, ctx)?;
+                    collect(arg, bound, kinds, ctx, environment)?;
                 }
                 if segments.len() == 1 && bound.contains_key(segments[0].as_str()) {
                     return Ok(());
@@ -8341,7 +8659,15 @@ fn specialization_nominal_kinds(
                     .iter()
                     .map(|segment| segment.name.clone())
                     .collect::<Vec<_>>();
-                let kind = specialization_nominal_kind(segments, ctx).ok_or_else(|| {
+                let kind = (if let [head] = segments.as_slice() {
+                    environment
+                        .get(head.as_str())
+                        .map(|variable| crate::ast::Kind::arrow_chain(variable.arity))
+                } else {
+                    None
+                })
+                .or_else(|| specialization_nominal_kind(segments, ctx))
+                .ok_or_else(|| {
                     format!(
                         "__term_specialize__ could not resolve canonical type head `{}`",
                         key.join(".")
@@ -8363,7 +8689,6 @@ fn specialization_nominal_kinds(
             }
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -8372,8 +8697,8 @@ fn specialization_nominal_kinds(
     for param in params {
         *pattern_bound.entry(param.name.clone()).or_default() += 1;
     }
-    collect(pattern, &mut pattern_bound, &mut kinds, ctx)?;
-    collect(target, &mut HashMap::new(), &mut kinds, ctx)?;
+    collect(pattern, &mut pattern_bound, &mut kinds, ctx, environment)?;
+    collect(target, &mut HashMap::new(), &mut kinds, ctx, environment)?;
     Ok(kinds)
 }
 
@@ -8384,39 +8709,97 @@ fn term_specialize_value(
     ctx: &EvalCtx<'_>,
 ) -> Option<Value> {
     let term = as_checked_term(term)?;
-    let term_type = unfold_canonical_refl_type(term.ty(), ctx);
-    let pattern = unfold_canonical_refl_type(as_refl_type_ref(pattern)?, ctx);
-    let target = unfold_canonical_refl_type(as_refl_type_ref(target)?, ctx);
+    let pattern = unfold_reflected_carrier(reflected_type_carrier(pattern)?, ctx);
+    let target = unfold_reflected_carrier(reflected_type_carrier(target)?, ctx);
+    let mut cursor = unfold_reflected_carrier(&term.ty, ctx);
+    let mut binders = Vec::new();
     let mut params = Vec::new();
-    let mut cursor = &term_type;
-    while let Type::Forall { param, body, .. } = cursor {
+    while let Type::Forall { param, .. } = cursor.as_type() {
         params.push(param.clone());
-        cursor = body;
+        let (variable, body) = cursor
+            .open_forall()
+            .expect("the inspected type is a forall");
+        binders.push(variable);
+        cursor = unfold_reflected_carrier(&body, ctx);
     }
-    let nominal_kinds = match specialization_nominal_kinds(&pattern, &target, &params, ctx) {
-        Ok(kinds) => kinds,
-        Err(message) => {
-            return Some(value_sum_inject(2, 3, Value::DiagnosticText(message)));
-        }
-    };
-    let specialization_ctx =
-        crate::pass::typecheck_core::IsolatedSpecializationContext::from_canonical_nominal_head_kinds(
-            nominal_kinds,
+    let binder_types: Vec<_> = binders.iter().map(ReflectedVariable::as_type).collect();
+    let mut builder = reflection_bindings::ReflectionTypeBuilder::for_correspondence(
+        [&pattern, &target].into_iter().chain(binder_types.iter()),
+    );
+    for (param, ty) in params.iter_mut().zip(&binder_types) {
+        let imported = builder.import(ty);
+        let Type::Path { segments, args, .. } = &*imported else {
+            unreachable!("imported binder is a path")
+        };
+        assert!(
+            args.is_empty() && segments.len() == 1,
+            "a binder import has one unapplied head"
         );
+        param.rename(segments[0].name.clone());
+    }
+    let pattern = builder.import(&pattern).take();
+    let target = builder.import(&target).take();
+    let prepared = builder.finish(Type::Product {
+        left: Box::new(pattern),
+        right: Box::new(target),
+        meta: zero_meta(),
+    });
+    let Type::Product {
+        left: pattern,
+        right: target,
+        ..
+    } = prepared.as_type()
+    else {
+        unreachable!()
+    };
+    let nominal_kinds =
+        match specialization_nominal_kinds(pattern, target, &params, ctx, &prepared.environment) {
+            Ok(kinds) => kinds,
+            Err(message) => return Some(value_sum_inject(2, 3, Value::DiagnosticText(message))),
+        };
+    let specialization_ctx = crate::pass::typecheck_core::IsolatedSpecializationContext::from_canonical_nominal_head_kinds(nominal_kinds);
     let pattern = crate::pass::typecheck_core::InternedType::fresh_canonical(convert_type::<
         EvalPhase,
         crate::ast::Lowered,
-    >(&pattern));
+    >(pattern));
     let target = crate::pass::typecheck_core::InternedType::fresh_canonical(convert_type::<
         EvalPhase,
         crate::ast::Lowered,
-    >(&target));
+    >(target));
+    let rigid_mismatch = |left: &crate::pass::typecheck_core::ScopedType,
+                          right: &crate::pass::typecheck_core::ScopedType,
+                          span: Span| {
+        let lookup = |ty: &crate::pass::typecheck_core::ScopedType| {
+            let Type::Path { segments, .. } = ty.ty().as_type() else {
+                return None;
+            };
+            let [head] = segments.as_slice() else {
+                return None;
+            };
+            prepared.environment.get(head.as_str())
+        };
+        let (Some(left), Some(right)) = (lookup(left), lookup(right)) else {
+            return None;
+        };
+        match reflection_bindings::type_correspondence(&left.as_type(), &right.as_type()) {
+            Ok(reflection_bindings::TypeComparison::Undetermined)
+            | Err(reflection_bindings::IncompleteOwner) => {
+                incomplete_observation_fault(ComptimeBuiltin::TermSpecialize, ctx);
+                Some(crate::error::Error::macro_error(
+                    span,
+                    "generic parameter correspondence requires complete containing types",
+                ))
+            }
+            _ => None,
+        }
+    };
     let outcome = crate::pass::typecheck_core::solve_canonical_specialization_by_name(
         &params,
         &pattern,
         &target,
         zero_span(),
         &specialization_ctx,
+        Some(&rigid_mismatch),
     );
     match outcome {
         Ok(crate::pass::typecheck_core::IsolatedSpecialization::NoMatch) => {
@@ -8425,15 +8808,15 @@ fn term_specialize_value(
         Ok(crate::pass::typecheck_core::IsolatedSpecialization::Matched(arguments)) => {
             let mut specialized = Value::CheckedTerm(term);
             for argument in arguments {
-                let argument = refl_type_value(convert_type::<crate::ast::Lowered, EvalPhase>(
-                    argument.as_type(),
+                let argument = Value::ReflType(ReflectedType::from_parts(
+                    EvalRef::new(convert_type::<crate::ast::Lowered, EvalPhase>(
+                        argument.as_type(),
+                    )),
+                    None,
+                    prepared.environment.clone(),
                 ));
                 specialized = reflection_term_type_app_value_owned(specialized, argument, ctx)
-                    .unwrap_or_else(|_| {
-                        unreachable!(
-                            "the shared specialization solver produced an inapplicable type argument"
-                        )
-                    });
+                    .unwrap_or_else(|_| unreachable!("the shared specialization solver produced an inapplicable type argument"));
             }
             Some(value_sum_inject(0, 3, specialized))
         }
@@ -8457,7 +8840,13 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
                 };
                 let term = projected_value_from_value(term)?;
                 let outcome = crate::pass::typecheck_core::apply::fills::specialize_projected_term(
-                    proof, term, pattern, target,
+                    proof,
+                    term,
+                    pattern,
+                    target,
+                    || {
+                        incomplete_observation_fault(ComptimeBuiltin::TermSpecialize, ctx);
+                    },
                 )
                 .ok()?;
                 use crate::pass::typecheck_core::apply::fills::ProjectedSpecializationOutcome;
@@ -8486,6 +8875,20 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
                                 )
                                 .ok()?;
                             return Some(projected_value(ty));
+                        }
+                        (ComptimeBuiltin::TypeArityFn, [ty]) => {
+                            let ty = projected_value_from_value(ty)?;
+                            return Some(Value::ReflTypeArity(ty.observed_outer_arity(proof)?));
+                        }
+                        (ComptimeBuiltin::TypeIsHost, [ty]) => {
+                            let ty = projected_value_from_value(ty)?;
+                            let host = ty.observed_nominal_head(proof)?.is_some_and(|(segments, count)| {
+                                package_host_types(ctx).iter().any(|(module_path, host_type)| {
+                                    host_type_path_matches(segments, module_path, &host_type.name)
+                                        && host_type.type_params.len() == count
+                                })
+                            });
+                            return Some(predicate_value(host));
                         }
                         (ComptimeBuiltin::TypeView, [ty]) => {
                             let ty = projected_value_from_value(ty)?;
@@ -8533,11 +8936,10 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
                             .ok()?;
                             return Some(projected_value(ty));
                         }
-                        (ComptimeBuiltin::TypeArrow, [params, arity, result]) => {
-                            let arity = as_refl_type_arity(arity)?;
+                        (ComptimeBuiltin::TypeArrow, [params, result]) => {
                             let arrow =
                                 crate::pass::typecheck_core::apply::fills::projected_type_arrow(
-                                    proof, params, arity, result,
+                                    proof, params, result,
                                 )
                                 .ok()?;
                             return Some(projected_value(arrow));
@@ -8649,6 +9051,14 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
     let args = reflection_runtime_args(builtin, args);
     match (name, args) {
         #[cfg(feature = "surface")]
+        ("__fill_result__", [proof, context, candidate]) => {
+            let proof = marked_comptime_proof_from_value(proof)?;
+            let context = fill_context_from_value(context)?;
+            Some(fill_context_value(
+                context.append_result(proof, candidate.clone())?,
+            ))
+        }
+        #[cfg(feature = "surface")]
         ("__fill__", [proof, context, destination, candidate]) => {
             let proof = marked_comptime_proof_from_value(proof)?;
             let context = fill_context_from_value(context)?;
@@ -8670,62 +9080,27 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
         }
         ("__type_unit__", []) => Some(refl_type_value(Type::Unit { meta: zero_meta() })),
         ("__type_bottom__", []) => Some(refl_type_value(Type::Bottom { meta: zero_meta() })),
-        ("__type_product__", [left, right]) => Some(refl_type_value(Type::Product {
-            left: Box::new(canonical_refl_type(left, ctx)?),
-            right: Box::new(canonical_refl_type(right, ctx)?),
-            meta: zero_meta(),
-        })),
-        ("__type_sum__", [left, right]) => Some(refl_type_value(Type::Sum {
-            left: Box::new(canonical_refl_type(left, ctx)?),
-            right: Box::new(canonical_refl_type(right, ctx)?),
-            meta: zero_meta(),
-        })),
-        ("__type_arrow__", [params, arity, result]) => {
-            let abi_arity = as_refl_type_arity(arity)?;
-            let param = canonical_refl_type(params, ctx)?;
-            Some(refl_type_value(Type::Function {
-                param: Box::new(param),
-                ret: Box::new(canonical_refl_type(result, ctx)?),
-                meta: zero_meta(),
-                abi_arity,
-                caps: (),
-            }))
+        ("__type_product__" | "__type_sum__" | "__type_arrow__", [left, right]) => {
+            reflection_binary_type_value(builtin, left, right)
         }
-        ("__type_var__", [Value::ReflTypeVar { name, .. }]) => {
-            Some(refl_type_value(type_path(name)))
+        ("__type_var__", [Value::ReflTypeVar(variable)]) => {
+            Some(Value::ReflType(variable.as_type()))
         }
         ("__type_name_type__", [Value::ReflTypeName { segments, .. }]) => Some(refl_type_value(
             Type::synth_path(segments.clone(), Vec::new(), zero_span()),
         )),
-        ("__type_apply__", [head, arg]) => {
-            let mut head_ty = canonical_refl_type(head, ctx)?;
-            if let Type::Path { args, .. } = &mut head_ty {
-                args.push(canonical_refl_type(arg, ctx)?);
-            }
-            Some(refl_type_value(head_ty))
-        }
-        ("__type_view__", [typ]) => type_view_value(&canonical_refl_type(typ, ctx)?, ctx),
+        ("__type_apply__", [head, arg]) => reflection_type_apply_value(head, arg),
+        ("__type_view__", [typ]) => reflected_type_view_value(reflected_type_carrier(typ)?, ctx),
         ("__type_is_host__", [typ]) => Some(predicate_value(
             match_package_host_type(&canonical_refl_type(typ, ctx)?, ctx).is_some(),
         )),
         ("__type_host_converters__", [string_ty, source_ty]) => {
-            let source_ty = canonical_refl_type(source_ty, ctx)?;
-            Some(refl_type_value(host_converter_product_type(
-                canonical_refl_type(string_ty, ctx)?,
-                &source_ty,
-                ctx,
-            )))
+            reflection_host_converter_types(string_ty, source_ty, ctx)
         }
-        ("__type_equal__", [left, right]) => {
-            let left = canonical_refl_type(left, ctx)?;
-            let right = canonical_refl_type(right, ctx)?;
-            Some(predicate_value(canonical_refl_type_equiv(
-                &left, &right, ctx,
-            )))
-        }
+        ("__type_equal__", [left, right]) => reflection_type_equal_value(left, right, ctx),
         ("__type_instantiate__", [scheme, arg]) => Some(type_instantiate_value(
-            canonical_refl_type(scheme, ctx)?,
-            canonical_refl_type(arg, ctx)?,
+            reflected_type_carrier(scheme)?,
+            reflected_type_carrier(arg)?,
             ctx,
         )),
         ("__type_name_equal__", [left, right]) => Some(predicate_value(match (left, right) {
@@ -8741,19 +9116,7 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
             ) => left_segments == right_segments && left_arities == right_arities,
             _ => return None,
         })),
-        ("__type_var_equal__", [left, right]) => Some(predicate_value(match (left, right) {
-            (
-                Value::ReflTypeVar {
-                    name: left_name,
-                    arity: left_arity,
-                },
-                Value::ReflTypeVar {
-                    name: right_name,
-                    arity: right_arity,
-                },
-            ) => left_name == right_name && left_arity == right_arity,
-            _ => return None,
-        })),
+        ("__type_var_equal__", [left, right]) => reflection_type_var_equal_value(left, right, ctx),
         ("__type_is_product_root__", [typ]) => Some(predicate_value(matches!(
             unfold_canonical_refl_type(&canonical_refl_type(typ, ctx)?, ctx),
             Type::Product { .. }
@@ -8762,12 +9125,12 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
             unfold_canonical_refl_type(&canonical_refl_type(typ, ctx)?, ctx),
             Type::Sum { .. }
         ))),
-        ("__type_arity__", [typ]) => Some(Value::ReflTypeArity(type_arity_of_type(
-            &canonical_refl_type(typ, ctx)?,
+        ("__type_arity__", [typ]) => Some(Value::ReflTypeArity(reflected_type_arity(
+            reflected_type_carrier(typ)?,
             ctx,
         ))),
-        ("__type_var_arity__", [Value::ReflTypeVar { arity, .. }]) => {
-            Some(Value::ReflTypeArity(*arity))
+        ("__type_var_arity__", [Value::ReflTypeVar(variable)]) => {
+            Some(Value::ReflTypeArity(variable.arity))
         }
         ("__type_arity_zero__", []) => Some(Value::ReflTypeArity(0)),
         ("__type_arity_succ__", [prev]) => {
@@ -8788,8 +9151,8 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
                 crate::pass::typecheck_core::display_reflected_type_name(segments),
             ))
         }
-        ("__type_var_display__", [Value::ReflTypeVar { name, .. }]) => {
-            Some(Value::DiagnosticText(name.clone()))
+        ("__type_var_display__", [Value::ReflTypeVar(variable)]) => {
+            Some(Value::DiagnosticText(variable.name.clone()))
         }
         ("__type_arity_display__", [arity]) => Some(Value::DiagnosticText(
             as_refl_type_arity(arity)?.to_string(),
@@ -8810,37 +9173,10 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
             term_specialize_value(term, pattern, target, ctx)
         }
         ("__term_call__", [fn_type, fn_value, arg_packet]) => {
-            let fn_type = canonical_refl_type(fn_type, ctx)?;
-            let (params, ret_ty) = split_canonical_function_params(&fn_type, ctx)?;
-            let fn_value = as_checked_term(fn_value)?;
-            let arg_packet = as_checked_term(arg_packet)?;
-            let packet_ty = right_fold_product_type(&params);
-            if !checked_type_equiv(&fn_value, &fn_type, ctx)
-                || !checked_type_equiv(&arg_packet, &packet_ty, ctx)
-            {
-                return None;
-            }
-            Some(checked_term_node_value(
-                CheckedTermNode::TermCall {
-                    fn_value,
-                    params,
-                    arg_packet,
-                },
-                ret_ty,
-            ))
+            reflection_term_call_value(fn_type, fn_value, arg_packet, ctx)
         }
         ("__term_type_app__", [fn_value, arg]) => {
-            let fn_value = as_checked_term(fn_value)?;
-            let Type::Forall { param, body, .. } = unfold_canonical_refl_type(fn_value.ty(), ctx)
-            else {
-                return None;
-            };
-            let arg = canonical_refl_type(arg, ctx)?;
-            let result_ty = subst_type(&body, &HashMap::from([(param.name, arg.clone())]));
-            Some(checked_term_node_value(
-                CheckedTermNode::TermTypeApp { fn_value, arg },
-                result_ty,
-            ))
+            reflection_term_type_app_value(fn_value, arg, ctx)
         }
         ("__term_unit__", []) => Some(reflection_term_unit_value()),
         ("__term_host_convert__", [string_ty, source_ty, converters, value]) => {
@@ -8855,27 +9191,16 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
             reflection_intrinsic_injection_value(name, sum_type, value, ctx)
         }
         ("__intrinsic_absurd__", [bottom_value, result_type]) => {
-            let bottom_value = as_checked_term(bottom_value)?;
-            if !checked_type_equiv(&bottom_value, &Type::Bottom { meta: zero_meta() }, ctx) {
-                return None;
-            }
-            let result_type = canonical_refl_type(result_type, ctx)?;
-            Some(checked_term_node_value(
-                CheckedTermNode::IntrinsicAbsurd {
-                    result_ty: result_type.clone(),
-                    bottom_value,
-                },
-                result_type,
-            ))
+            reflection_intrinsic_absurd_value(bottom_value, result_type, ctx)
         }
         _ => None,
     }
 }
 
-/// Apply an evaluator value, retaining the first totality failure throughout
+/// Apply an evaluator value, retaining the first compile-time fault throughout
 /// the operation, including failures in a discarded argument or callback.
 pub fn apply(callee: Value, args: Vec<Value>, ctx: &EvalCtx<'_>) -> Value {
-    let operation = ctx.enter_structural_recur_operation();
+    let operation = ctx.enter_eval_operation();
     operation.finish(apply_args(callee, EvalArgs::Many(args), ctx))
 }
 
@@ -8958,6 +9283,12 @@ fn eval_group_expr_binding_candidates(
     args: &[EvalRef<EvalExpr>],
 ) -> Vec<(Vec<EvalRef<EvalExpr>>, usize)> {
     let mut out = Vec::new();
+    if group.type_arity.is_some() {
+        if let Some(arg) = args.get(arg_index) {
+            out.push((vec![arg.clone()], arg_index + 1));
+        }
+        return out;
+    }
     if group.abi_arity == 0 {
         // Expr twin of eval_group_binding_candidates' zero-slot arm:
         // the group claims the unit-packet argument position
@@ -9113,6 +9444,12 @@ fn eval_group_binding_candidates(
     args: &[Value],
 ) -> Vec<(Vec<Value>, usize)> {
     let mut out = Vec::new();
+    if group.type_arity.is_some() {
+        if let Some(arg @ Value::ReflType(_)) = args.get(arg_index) {
+            out.push((vec![arg.clone()], arg_index + 1));
+        }
+        return out;
+    }
     if group.abi_arity == 0 {
         // A zero-slot group is one unit-typed param or a nullary group
         // (see collect_value_param_layout); either way its type has
@@ -9251,11 +9588,30 @@ fn project_product_value(name: &'static str, pair: &Value) -> Value {
 /// an argument position without a slot, so slot-count equality no
 /// longer means every layer received its argument.
 fn abi_slots_saturate_groups(function: &EvalFunction) -> bool {
+    function.type_param_count() == 0 && private_slots_saturate_groups(function)
+}
+
+fn private_slots_saturate_groups(function: &EvalFunction) -> bool {
     function.value_groups.len() <= 1
         || function
             .value_groups
             .iter()
-            .all(|group| group.abi_arity > 0)
+            .all(|group| group.type_arity.is_some() || group.abi_arity > 0)
+}
+
+fn private_slot_types_match(function: &EvalFunction, args: &[Value]) -> bool {
+    let mut index = 0;
+    for group in function.value_groups.iter() {
+        if group.type_arity.is_some() {
+            if !matches!(args.get(index), Some(Value::ReflType(_))) {
+                return false;
+            }
+            index += 1;
+        } else {
+            index += group.abi_arity;
+        }
+    }
+    true
 }
 
 fn lookup_exact_call_memo(
@@ -9263,13 +9619,13 @@ fn lookup_exact_call_memo(
     captured: &[Value],
     args: &[Value],
     ctx: &EvalCtx<'_>,
-) -> Result<Option<ExactCallMemoTicket>, Value> {
+) -> Result<Option<ExactCallMemoKey>, Value> {
     // A cached result cannot replace work performed while a recursion helper
     // is active, and a fault already recorded by this operation cannot be
     // hidden by a later cache hit.
     let memo_key = if !function.memo_candidate
         || ctx.has_active_structural_recur_helper()
-        || ctx.structural_recur_operation_has_fault()
+        || ctx.operation_has_fault()
     {
         None
     } else {
@@ -9301,30 +9657,18 @@ fn lookup_exact_call_memo(
     {
         metrics.record_exact_call_memo_miss();
     }
-    Ok(memo_key.map(|key| ExactCallMemoTicket {
-        key,
-        reflected_binder_epoch: ctx
-            .reflected_binder_epoch
-            .load(std::sync::atomic::Ordering::Relaxed),
-    }))
+    Ok(memo_key)
 }
 
-fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoTicket>, value: Value) {
+fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoKey>, value: Value) {
     let Some(ticket) = ticket else {
         return;
     };
-    if ticket.reflected_binder_epoch
-        != ctx
-            .reflected_binder_epoch
-            .load(std::sync::atomic::Ordering::Relaxed)
-    {
-        return;
-    }
     // The body may have executed and then discarded a totality failure while
     // producing an otherwise shareable result. The operation retains that
     // first fault until its public boundary, so never cache the apparent
     // success.
-    if ctx.has_active_structural_recur_helper() || ctx.structural_recur_operation_has_fault() {
+    if ctx.has_active_structural_recur_helper() || ctx.operation_has_fault() {
         return;
     }
     if !exact_call_memo_result_shareable(&value) {
@@ -9336,7 +9680,7 @@ fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoTicket>
         .lock()
         .expect("exact call memo lock poisoned");
     if memo.len() < EXACT_CALL_MEMO_MAX_ENTRIES
-        && let std::collections::hash_map::Entry::Vacant(entry) = memo.entry(ticket.key)
+        && let std::collections::hash_map::Entry::Vacant(entry) = memo.entry(ticket)
     {
         entry.insert(value);
         if let Some(metrics) = ctx.metrics.as_deref() {
@@ -9357,6 +9701,7 @@ fn suspend_eval_function_suffix(
     let value_groups: Arc<[EvalParamGroup]> = function.value_groups[suffix_group_index..]
         .iter()
         .map(|group| EvalParamGroup {
+            type_arity: group.type_arity,
             param_start: group.param_start - suffix_param_start,
             param_count: group.param_count,
             abi_arity: group.abi_arity,
@@ -9440,11 +9785,21 @@ fn collect_value_param_layout<P: crate::ast::Phase>(
             let SignatureGroupRef::Type(type_params) = group else {
                 unreachable!()
             };
-            value_groups.extend(type_params.iter().map(|_| EvalParamGroup {
-                param_start: params.len(),
-                param_count: 0,
-                abi_arity: 0,
-            }));
+            for param in type_params {
+                let SignatureParam::Type(param) = param else {
+                    unreachable!("a type group contains type parameters");
+                };
+                value_groups.push(EvalParamGroup {
+                    type_arity: Some(param.effective_kind().arity()),
+                    param_start: params.len(),
+                    param_count: 1,
+                    abi_arity: 0,
+                });
+                params.push(EvalParam {
+                    name: param.name.clone(),
+                    abi_arity: 1,
+                });
+            }
             continue;
         };
         let group_start = params.len();
@@ -9470,6 +9825,7 @@ fn collect_value_param_layout<P: crate::ast::Phase>(
         }
         total_abi_arity += group_abi_arity;
         value_groups.push(EvalParamGroup {
+            type_arity: None,
             param_start: group_start,
             param_count: params.len() - group_start,
             abi_arity: group_abi_arity,
@@ -9478,8 +9834,19 @@ fn collect_value_param_layout<P: crate::ast::Phase>(
     (params.into(), value_groups.into(), total_abi_arity)
 }
 
-fn eval_param_names(params: &[EvalParam]) -> Vec<String> {
-    params.iter().map(|param| param.name.clone()).collect()
+fn eval_param_locals(params: &[EvalParam], groups: &[EvalParamGroup]) -> Vec<EvalLocal> {
+    let mut locals: Vec<_> = params
+        .iter()
+        .map(|param| EvalLocal::value(param.name.clone()))
+        .collect();
+    for group in groups {
+        if group.type_arity.is_some() {
+            for local in &mut locals[group.param_start..group.param_start + group.param_count] {
+                local.is_type = true;
+            }
+        }
+    }
+    locals
 }
 
 /// The canonical host-type path of a literal's optional `(Type)` annotation,
@@ -9587,12 +9954,10 @@ fn literal_is_primitive_type(
 /// closures and eta-equivalence (`λx. f(x) ≡ f` when `x` is not free
 /// in `f`). Structural elsewhere.
 pub fn nf_eq(a: &Value, b: &Value, ctx: &EvalCtx<'_>) -> bool {
-    if structural_recur_stuck_message(a, ctx).is_some()
-        || structural_recur_stuck_message(b, ctx).is_some()
-    {
+    if comptime_fault_message(a, ctx).is_some() || comptime_fault_message(b, ctx).is_some() {
         return false;
     };
-    let operation = ctx.enter_structural_recur_operation();
+    let operation = ctx.enter_eval_operation();
     let out = measured_nf_eq_in_operation(a, b, ctx);
     operation.finish_checked(out).unwrap_or(false)
 }
@@ -9612,13 +9977,13 @@ fn measured_nf_eq_in_operation(a: &Value, b: &Value, ctx: &EvalCtx<'_>) -> bool 
 }
 
 pub(crate) fn nf_eq_checked(a: &Value, b: &Value, ctx: &EvalCtx<'_>) -> Result<bool, Value> {
-    if structural_recur_stuck_message(a, ctx).is_some() {
+    if comptime_fault_message(a, ctx).is_some() {
         return Err(a.clone());
     }
-    if structural_recur_stuck_message(b, ctx).is_some() {
+    if comptime_fault_message(b, ctx).is_some() {
         return Err(b.clone());
     }
-    let operation = ctx.enter_structural_recur_operation();
+    let operation = ctx.enter_eval_operation();
     operation.finish_checked(measured_nf_eq_in_operation(a, b, ctx))
 }
 
@@ -10236,7 +10601,7 @@ mod tests {
             env.insert("fuel".to_owned(), fuel.clone());
             env.insert("input".to_owned(), Value::Unit);
             env.insert("step".to_owned(), step.clone());
-            let operation = ctx.enter_structural_recur_operation();
+            let operation = ctx.enter_eval_operation();
             let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
             let result = eval_authenticated(&indirect_call, &env, &ctx);
             drop(active);
@@ -10546,7 +10911,7 @@ mod tests {
             unauthorized_first_memo,
         );
         assert_eq!(
-            structural_recur_stuck_message(&rejected, &EvalCtx::new()),
+            comptime_fault_message(&rejected, &EvalCtx::new()),
             Some(
                 "`__structural_recur__` got stuck because its initial fuel has no structural compile-time measure"
                     .to_owned()
@@ -10621,6 +10986,7 @@ mod tests {
             Vec::new().into()
         } else {
             vec![EvalParamGroup {
+                type_arity: None,
                 param_start: 0,
                 param_count: params.len(),
                 abi_arity: params.len(),
@@ -10650,15 +11016,22 @@ mod tests {
 
     fn type_only_closure_for_test(stages: usize, captured: Vec<Value>) -> Value {
         let mut function = test_eval_function(&[], EvalExpr::Local(0)).unwrap_or_clone();
-        function.value_groups = vec![
-            EvalParamGroup {
-                param_start: 0,
-                param_count: 0,
+        function.params = (0..stages)
+            .map(|stage| EvalParam {
+                name: format!("T{stage}"),
+                abi_arity: 1,
+            })
+            .collect::<Vec<_>>()
+            .into();
+        function.value_groups = (0..stages)
+            .map(|stage| EvalParamGroup {
+                type_arity: Some(0),
+                param_start: stage,
+                param_count: 1,
                 abi_arity: 0,
-            };
-            stages
-        ]
-        .into();
+            })
+            .collect::<Vec<_>>()
+            .into();
         Value::EvalClosure {
             function: EvalRef::new(function),
             captured: captured.into(),
@@ -10669,6 +11042,7 @@ mod tests {
         eval_compiled_expr(
             &EvalExpr::TypeApplication {
                 callee: EvalRef::new(EvalExpr::Const(value)),
+                argument: EvalTypeTemplate::unit(),
             },
             &mut EvalSlots::root(Vec::new()),
             ctx,
@@ -10690,8 +11064,13 @@ mod tests {
                         panic!("a single type application consumed more than one stage")
                     };
                     assert_eq!(function.value_groups.len(), remaining);
-                    assert!(function.params.is_empty());
-                    assert_eq!(captured.len(), 3);
+                    assert_eq!(function.params.len(), remaining);
+                    assert_eq!(captured.len(), 3 + stages - remaining);
+                    assert!(
+                        captured[3..]
+                            .iter()
+                            .all(|value| matches!(value, Value::ReflType(_)))
+                    );
                     copied_groups += function.value_groups.len();
                 }
             }
@@ -10699,25 +11078,30 @@ mod tests {
             let snapshot = metrics.snapshot();
             assert_eq!(snapshot.closure_builds, stages - 1);
             assert_eq!(snapshot.capture_vec_builds, stages - 1);
-            assert_eq!(snapshot.capture_vec_values, 3 * (stages - 1));
+            assert_eq!(
+                snapshot.capture_vec_values,
+                3 * (stages - 1) + stages * (stages - 1) / 2
+            );
             assert_eq!(copied_groups, stages * (stages - 1) / 2);
             eprintln!(
-                "type-stage-cost binders={stages} suffix_functions={} copied_groups={copied_groups} copied_params=0 copied_captures={}",
+                "type-stage-cost binders={stages} suffix_functions={} copied_groups={copied_groups} copied_params={copied_groups} copied_captures={}",
                 snapshot.closure_builds, snapshot.capture_vec_values
             );
         }
     }
 
     #[test]
-    fn type_only_specialization_preserves_primitive_and_opaque_values() {
+    fn type_only_specialization_erases_primitives_and_retains_opaque_stages() {
         let ctx = EvalCtx::new();
         assert!(matches!(
             specialize_for_test(Value::Primitive(ComptimeBuiltin::TypeUnit), &ctx),
             Value::Primitive(ComptimeBuiltin::TypeUnit)
         ));
-        assert!(
-            matches!(specialize_for_test(Value::Atom("__type_unit__".into()), &ctx), Value::Atom(name) if name == "__type_unit__")
-        );
+        let opaque = specialize_for_test(Value::Atom("__type_unit__".into()), &ctx);
+        assert!(matches!(opaque, Value::StuckType(callee, argument)
+            if matches!(callee.as_ref(), Value::Atom(name) if name == "__type_unit__")
+                && matches!(argument.as_type(), Type::Unit { .. })));
+
         let primitive = structural_recur_source_primitive_for_test();
         let Value::Data(expected) = &primitive else {
             panic!("structural primitive")
@@ -10744,11 +11128,10 @@ mod tests {
             EvalRef::new(Value::Atom("unknown".into())),
             vec![Value::Bool(true)].into(),
         );
-        assert!(nf_eq(
-            &specialize_for_test(stuck.clone(), &ctx),
-            &stuck,
-            &ctx
-        ));
+        let specialized = specialize_for_test(stuck.clone(), &ctx);
+        assert!(matches!(specialized, Value::StuckType(callee, argument)
+            if nf_eq(callee.as_ref(), &stuck, &ctx)
+                && matches!(argument.as_type(), Type::Unit { .. })));
     }
 
     #[test]
@@ -11125,7 +11508,7 @@ mod tests {
             | ComptimeBuiltin::TypeProductSpineFold
             | ComptimeBuiltin::TypeSumSpineFold
             | ComptimeBuiltin::TypeArgsFold
-            | ComptimeBuiltin::TypeFunctionParamsFold => ComptimeEvalSurface::DirectType,
+            | ComptimeBuiltin::TypeForallPrefixFold => ComptimeEvalSurface::DirectType,
             ComptimeBuiltin::DiagnosticConcat
             | ComptimeBuiltin::MacroError
             | ComptimeBuiltin::TypeError => ComptimeEvalSurface::DirectDiagnostic,
@@ -11165,6 +11548,7 @@ mod tests {
             | ComptimeBuiltin::TypeArityDisplay
             | ComptimeBuiltin::TermHostConvert
             | ComptimeBuiltin::Fill
+            | ComptimeBuiltin::FillResult
             | ComptimeBuiltin::TermSpecialize => ComptimeEvalSurface::GenericOnly,
         }
     }
@@ -11238,10 +11622,8 @@ mod tests {
             segments: vec!["Box".to_string()],
             param_arities: vec![0],
         };
-        let type_var = || Value::ReflTypeVar {
-            name: "A".to_string(),
-            arity: 0,
-        };
+        let variable = ReflectedVariable::live("A".to_string(), 0);
+        let type_var = || Value::ReflTypeVar(variable.clone());
         let fold_step = || Value::EvalClosure {
             function: test_eval_function(&["acc", "item"], EvalExpr::Local(0)),
             captured: Vec::<Value>::new().into(),
@@ -11275,7 +11657,7 @@ mod tests {
             },
             DirectTypeCase {
                 builtin: ComptimeBuiltin::TypeView,
-                valid_args: vec![reflected_unit()],
+                valid_args: vec![refl_type_value(function)],
                 invalid_args: Some(vec![Value::Unit]),
             },
             DirectTypeCase {
@@ -11300,7 +11682,7 @@ mod tests {
             },
             DirectTypeCase {
                 builtin: ComptimeBuiltin::TypeInstantiate,
-                valid_args: vec![refl_type_value(scheme), reflected_unit()],
+                valid_args: vec![refl_type_value(scheme.clone()), reflected_unit()],
                 invalid_args: Some(vec![Value::Unit, reflected_unit()]),
             },
             DirectTypeCase {
@@ -11329,8 +11711,8 @@ mod tests {
                 invalid_args: Some(invalid_fold_args()),
             },
             DirectTypeCase {
-                builtin: ComptimeBuiltin::TypeFunctionParamsFold,
-                valid_args: fold_args(function),
+                builtin: ComptimeBuiltin::TypeForallPrefixFold,
+                valid_args: fold_args(scheme),
                 invalid_args: Some(invalid_fold_args()),
             },
         ]
@@ -12115,10 +12497,8 @@ mod tests {
             captured: Vec::<Value>::new().into(),
         };
         let reflected = |ty| refl_type_value(ty);
-        let type_var = || Value::ReflTypeVar {
-            name: "T".to_owned(),
-            arity: 2,
-        };
+        let variable = ReflectedVariable::live("T".to_owned(), 2);
+        let type_var = || Value::ReflTypeVar(variable.clone());
         let box_name = || Value::ReflTypeName {
             segments: vec!["generic".to_owned(), "Box".to_owned()],
             param_arities: vec![0],
@@ -12155,6 +12535,8 @@ mod tests {
             body: Box::new(specialized_pattern.clone()),
             meta: zero_meta(),
         };
+        let specialized_pattern =
+            specialization_pattern_for_test(&specialized_ty, specialized_pattern);
         let specialized_term = checked_term_value(path_expr("poly"), specialized_ty);
 
         let (fill_proof, empty_fills) = fresh_fills_capability_values();
@@ -12180,16 +12562,8 @@ mod tests {
             },
             GenericOnlyCase {
                 builtin: ComptimeBuiltin::TypeArrow,
-                valid_args: vec![
-                    reflected(unit()),
-                    Value::ReflTypeArity(1),
-                    reflected(bottom()),
-                ],
-                invalid_args: Some(vec![
-                    Value::Unit,
-                    Value::ReflTypeArity(1),
-                    reflected(bottom()),
-                ]),
+                valid_args: vec![reflected(unit()), reflected(bottom())],
+                invalid_args: Some(vec![Value::Unit, reflected(bottom())]),
             },
             GenericOnlyCase {
                 builtin: ComptimeBuiltin::TypeForall,
@@ -12304,6 +12678,15 @@ mod tests {
                 ]),
             },
             GenericOnlyCase {
+                builtin: ComptimeBuiltin::FillResult,
+                valid_args: vec![
+                    fill_proof.clone(),
+                    empty_fills.clone(),
+                    fill_candidate.clone(),
+                ],
+                invalid_args: Some(vec![fill_proof.clone(), empty_fills.clone(), Value::Unit]),
+            },
+            GenericOnlyCase {
                 builtin: ComptimeBuiltin::Fill,
                 valid_args: vec![
                     fill_proof.clone(),
@@ -12320,11 +12703,7 @@ mod tests {
             },
             GenericOnlyCase {
                 builtin: ComptimeBuiltin::TermSpecialize,
-                valid_args: vec![
-                    specialized_term,
-                    reflected(specialized_pattern),
-                    reflected(unit()),
-                ],
+                valid_args: vec![specialized_term, specialized_pattern, reflected(unit())],
                 invalid_args: Some(vec![
                     Value::Unit,
                     reflected(type_path("A")),
@@ -12434,7 +12813,7 @@ mod tests {
                 matches!(as_refl_type_ref(value), Some(Type::Function {
                     param,
                     ret,
-                    abi_arity: 1,
+                    abi_arity: 0,
                     ..
                 }) if matches!(param.as_ref(), Type::Unit { .. })
                     && matches!(ret.as_ref(), Type::Bottom { .. })),
@@ -12532,18 +12911,15 @@ mod tests {
                 assert!(canonical_refl_type_equiv(term.ty(), text_ty, ctx));
                 let CheckedTermNode::TermCall {
                     fn_value,
-                    params,
                     arg_packet,
                 } = term.node.as_ref()
                 else {
                     panic!("host conversion did not produce a checked call: {term:?}")
                 };
-                assert_eq!(params.len(), 1);
-                assert!(canonical_refl_type_equiv(&params[0], host_ty, ctx));
                 assert!(canonical_refl_type_equiv(fn_value.ty(), converter_ty, ctx));
                 assert!(canonical_refl_type_equiv(arg_packet.ty(), host_ty, ctx));
             }
-            ComptimeBuiltin::Fill => {
+            ComptimeBuiltin::Fill | ComptimeBuiltin::FillResult => {
                 let context = fill_context_from_value(value)
                     .unwrap_or_else(|| panic!("Fill did not produce a Fill context: {value:?}"));
                 assert_eq!(context.relations_in_source_order().len(), 1);
@@ -12678,41 +13054,41 @@ mod tests {
     fn type_packets_do_not_enter_raw_slot_shortcuts() {
         for body in [
             EvalExpr::CoreIf {
-                condition: EvalRef::new(EvalExpr::Local(0)),
-                then_thunk: EvalRef::new(EvalExpr::Local(1)),
-                else_thunk: EvalRef::new(EvalExpr::Local(2)),
+                condition: EvalRef::new(EvalExpr::Local(2)),
+                then_thunk: EvalRef::new(EvalExpr::Local(3)),
+                else_thunk: EvalRef::new(EvalExpr::Local(4)),
             },
             EvalExpr::CoreEither {
-                scrutinee: EvalRef::new(EvalExpr::Local(0)),
-                left: test_either_thunk_branch(1),
-                right: test_either_thunk_branch(2),
+                scrutinee: EvalRef::new(EvalExpr::Local(2)),
+                left: test_either_thunk_branch(3),
+                right: test_either_thunk_branch(4),
             },
         ] {
             let mut function =
-                test_eval_function(&["condition", "yes", "no"], body).unwrap_or_clone();
-            let mut groups = vec![
-                EvalParamGroup {
-                    param_start: 0,
-                    param_count: 0,
-                    abi_arity: 0
-                };
-                2
-            ];
-            groups.extend((0..3).map(|param_start| EvalParamGroup {
+                test_eval_function(&["A", "B", "condition", "yes", "no"], body).unwrap_or_clone();
+            function.abi_arity = 3;
+            let mut groups = (0..2)
+                .map(|param_start| EvalParamGroup {
+                    type_arity: Some(0),
+                    param_start,
+                    param_count: 1,
+                    abi_arity: 0,
+                })
+                .collect::<Vec<_>>();
+            groups.extend((2..5).map(|param_start| EvalParamGroup {
+                type_arity: None,
                 param_start,
                 param_count: 1,
                 abi_arity: 1,
             }));
             function.value_groups = groups.into();
-            assert!(
-                core_if_thunk_layout(&function).is_some()
-                    || core_either_thunk_layout(&function).is_some()
-            );
+            assert!(core_if_thunk_layout(&function).is_none());
+            assert!(core_either_thunk_layout(&function).is_none());
             let call = compile_direct_eval_fn_call(
                 EvalRef::new(function),
                 vec![
-                    EvalRef::new(EvalExpr::Unit),
-                    EvalRef::new(EvalExpr::Unit),
+                    EvalRef::new(EvalTypeTemplate::unit().expression()),
+                    EvalRef::new(EvalTypeTemplate::unit().expression()),
                     EvalRef::new(EvalExpr::Bool(true)),
                 ],
             );
@@ -12723,7 +13099,10 @@ mod tests {
                 panic!("partial call executed its branch body")
             };
             assert_eq!(function.value_groups.len(), 2);
-            assert!(matches!(captured.as_slice(), [Value::Bool(true)]));
+            assert!(matches!(
+                captured.as_slice(),
+                [Value::ReflType(_), Value::ReflType(_), Value::Bool(true)]
+            ));
         }
     }
 
@@ -12968,7 +13347,7 @@ mod tests {
             );
             let fault = eval(&call, &Env::new(), &ctx);
             assert_eq!(
-                structural_recur_stuck_message(&fault, &ctx),
+                comptime_fault_message(&fault, &ctx),
                 Some(
                     "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                         .to_string()
@@ -13487,6 +13866,7 @@ mod tests {
             }]
             .into(),
             value_groups: vec![EvalParamGroup {
+                type_arity: None,
                 param_start: 0,
                 param_count: 1,
                 abi_arity: 1,
@@ -13608,14 +13988,14 @@ mod tests {
             structural_recur_primitive_stage(&bare),
             Some(StructuralRecurPrimitiveStage::AwaitingProof)
         );
-        assert!(structural_recur_stuck_message(&bare, &ctx).is_none());
+        assert!(comptime_fault_message(&bare, &ctx).is_none());
         let proof = Value::Atom("opaque-proof".to_owned());
         let proof_partial = apply(bare, vec![proof], &ctx);
         assert_eq!(
             structural_recur_primitive_stage(&proof_partial),
             Some(StructuralRecurPrimitiveStage::AwaitingRuntime)
         );
-        assert!(structural_recur_stuck_message(&proof_partial, &ctx).is_none());
+        assert!(comptime_fault_message(&proof_partial, &ctx).is_none());
 
         // Type groups are erased before evaluator application. Applying an
         // empty group must retain the same staged partial value.
@@ -13624,7 +14004,7 @@ mod tests {
             structural_recur_primitive_stage(&type_partial),
             Some(StructuralRecurPrimitiveStage::AwaitingRuntime)
         );
-        assert!(structural_recur_stuck_message(&type_partial, &ctx).is_none());
+        assert!(comptime_fault_message(&type_partial, &ctx).is_none());
 
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
         let step = Value::EvalClosure {
@@ -13641,7 +14021,7 @@ mod tests {
         let saturated = apply(type_partial, vec![packet], &ctx);
         assert!(matches!(saturated, Value::Unit));
 
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         let internal = apply_args(
             structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime),
             EvalArgs::Three([fuel, Value::Unit, step]),
@@ -13683,7 +14063,7 @@ mod tests {
             Some(StructuralRecurPrimitiveStage::AwaitingRuntime)
         );
         assert_eq!(inner_args.len(), 2);
-        assert!(structural_recur_stuck_message(&second, &ctx).is_none());
+        assert!(comptime_fault_message(&second, &ctx).is_none());
     }
 
     #[test]
@@ -13742,9 +14122,9 @@ mod tests {
                     && args.len() == 1
         ));
         let type_partial = apply(proof_partial.clone(), Vec::new(), &source_ctx);
-        assert!(structural_recur_stuck_message(&type_partial, &source_ctx).is_none());
+        assert!(comptime_fault_message(&type_partial, &source_ctx).is_none());
 
-        let source_operation = source_ctx.enter_structural_recur_operation();
+        let source_operation = source_ctx.enter_eval_operation();
         let (_source_measure, source_active) =
             source_ctx.enter_structural_recur_helper(&fuel).unwrap();
         let saturated_elsewhere = apply(
@@ -13756,7 +14136,7 @@ mod tests {
         source_operation.finish(Value::Unit);
         assert!(matches!(saturated_elsewhere, Value::Unit));
 
-        let destination_operation = destination_ctx.enter_structural_recur_operation();
+        let destination_operation = destination_ctx.enter_eval_operation();
         let (_destination_measure, destination_active) = destination_ctx
             .enter_structural_recur_helper(&fuel)
             .unwrap();
@@ -13822,12 +14202,7 @@ mod tests {
             &ctx,
         );
         assert!(matches!(nested, Value::Unit));
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
 
         let clean = apply(
             Value::Primitive(ComptimeBuiltin::StructuralRecur),
@@ -13842,19 +14217,14 @@ mod tests {
             &ctx,
         );
         assert!(matches!(clean, Value::Unit));
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
     }
 
     #[test]
     fn structural_recur_helper_activity_is_thread_local_and_unwind_safe() {
         let ctx = Arc::new(EvalCtx::new());
         let fuel = refl_type_value(Type::Unit { meta: zero_meta() });
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
         assert!(ctx.has_active_structural_recur_helper());
         let thread_ctx = ctx.clone();
@@ -13884,18 +14254,13 @@ mod tests {
         operation.finish(Value::Unit);
 
         let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _operation = ctx.enter_structural_recur_operation();
+            let _operation = ctx.enter_eval_operation();
             let _active = ctx.enter_structural_recur_helper(&fuel).unwrap();
             assert!(ctx.has_active_structural_recur_helper());
             panic!("helper activity cleanup witness");
         }));
         assert!(unwind.is_err());
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
     }
 
     #[test]
@@ -13935,7 +14300,7 @@ mod tests {
                     && matches!(args.as_slice(), [Value::Stuck(_, _), Value::Stuck(_, _)])
         ));
         assert_eq!(
-            structural_recur_stuck_message(&opaque, &ctx),
+            comptime_fault_message(&opaque, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call used fuel with no structural compile-time measure (root=3, current=3, next=unmeasurable)"
                     .to_string()
@@ -13966,7 +14331,7 @@ mod tests {
             &ctx,
         );
         assert_eq!(
-            structural_recur_stuck_message(&malformed, &ctx),
+            comptime_fault_message(&malformed, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not stay below the root fuel measure (root=1, current=100, next=50)"
                     .to_owned()
@@ -13982,7 +14347,7 @@ mod tests {
 
         let current_violation = apply(callback(100, 50), vec![measure_50, Value::Unit], &ctx);
         assert_eq!(
-            structural_recur_stuck_message(&current_violation, &ctx),
+            comptime_fault_message(&current_violation, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=100, current=50, next=50)"
                     .to_owned()
@@ -14020,17 +14385,17 @@ mod tests {
     #[test]
     fn structural_recur_nested_entries_measure_independently_and_balance_activity() {
         let ctx = EvalCtx::new();
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         assert!(!ctx.has_active_structural_recur_helper());
         let (root, outer) = ctx.enter_structural_recur_helper(&Value::Unit).unwrap();
         assert_eq!(root, 1);
         assert!(ctx.has_active_structural_recur_helper());
-        let nested = ctx.enter_structural_recur_operation();
+        let nested = ctx.enter_eval_operation();
         for fuel in [Value::Unit, Value::ReflTypeArity(9), Value::Unit] {
             let (measure, inner) = ctx.enter_structural_recur_helper(&fuel).unwrap();
             assert_eq!(measure, initial_fuel_measure(&fuel, &ctx).unwrap());
             assert_eq!(
-                ctx.structural_recur_operations
+                ctx.operations
                     .lock()
                     .unwrap()
                     .get(&std::thread::current().id())
@@ -14047,7 +14412,7 @@ mod tests {
         ] {
             assert!(ctx.enter_structural_recur_helper(&fuel).is_none());
             assert_eq!(
-                ctx.structural_recur_operations
+                ctx.operations
                     .lock()
                     .unwrap()
                     .get(&std::thread::current().id())
@@ -14061,20 +14426,20 @@ mod tests {
         drop(outer);
         assert!(!ctx.has_active_structural_recur_helper());
         operation.finish(Value::Unit);
-        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
+        assert!(ctx.operations.lock().unwrap().is_empty());
     }
 
     #[test]
     fn unmeasurable_initial_fuel_does_not_create_helper_activity() {
         let ctx = EvalCtx::new();
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         assert!(
             ctx.enter_structural_recur_helper(&Value::Atom("opaque".to_owned()))
                 .is_none()
         );
         assert!(!ctx.has_active_structural_recur_helper());
         operation.finish(Value::Unit);
-        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
+        assert!(ctx.operations.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -14088,7 +14453,7 @@ mod tests {
         assert!(!nf_eq(&plain, &right, &ctx));
         assert_eq!(value_to_string(&left), "__structural_recur__");
         assert_eq!(value_to_string(&right), value_to_string(&plain));
-        assert!(structural_recur_stuck_message(&left, &ctx).is_none());
+        assert!(comptime_fault_message(&left, &ctx).is_none());
         let Value::Data(left_data) = &left else {
             panic!("source helper token must use the private data envelope")
         };
@@ -14119,7 +14484,7 @@ mod tests {
         let plain_eta_fault = nf_eq_checked(&plain, &eta, &ctx)
             .expect_err("the public adapter's unary eta probe must propagate its Totality fault");
         assert_eq!(
-            structural_recur_stuck_message(&plain_eta_fault, &ctx),
+            comptime_fault_message(&plain_eta_fault, &ctx),
             Some(
                 "`__structural_recur__` got stuck because its initial fuel has no structural compile-time measure"
                     .to_owned()
@@ -14151,7 +14516,7 @@ mod tests {
         let eta_fault = nf_eq_checked(&runtime, &runtime_eta, &ctx)
             .expect_err("the runtime unary eta probe must propagate its Totality fault");
         assert_eq!(
-            structural_recur_stuck_message(&eta_fault, &ctx),
+            comptime_fault_message(&eta_fault, &ctx),
             Some(
                 "`__structural_recur__` got stuck because its initial fuel has no structural compile-time measure"
                     .to_owned()
@@ -14178,10 +14543,10 @@ mod tests {
 
         let forged = data_value(ComptimeBuiltin::StructuralRecur.public_name(), Vec::new());
         assert!(structural_recur_data_identity(&forged).is_none());
-        assert!(structural_recur_stuck_message(&forged, &ctx).is_none());
+        assert!(comptime_fault_message(&forged, &ctx).is_none());
         let forged_apply = apply(forged, vec![Value::Unit], &ctx);
         assert!(matches!(forged_apply, Value::Stuck(_, _)));
-        assert!(structural_recur_stuck_message(&forged_apply, &ctx).is_none());
+        assert!(comptime_fault_message(&forged_apply, &ctx).is_none());
     }
 
     #[test]
@@ -14198,18 +14563,13 @@ mod tests {
         let fault = nf_eq_checked(&left, &right, &ctx)
             .expect_err("checked closure comparison must propagate Totality");
         assert_eq!(
-            structural_recur_stuck_message(&fault, &ctx),
+            comptime_fault_message(&fault, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                     .to_owned()
             )
         );
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
 
         let token =
             structural_recur_primitive_value(StructuralRecurPrimitiveStage::AwaitingRuntime);
@@ -14257,7 +14617,7 @@ mod tests {
 
         for fault in [&first, &second] {
             assert_eq!(
-                structural_recur_stuck_message(fault, &ctx),
+                comptime_fault_message(fault, &ctx),
                 Some(
                     "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                         .to_string()
@@ -14269,10 +14629,7 @@ mod tests {
         assert_eq!(snapshot.exact_call_memo_hits, 0, "{snapshot:?}");
         assert_eq!(snapshot.exact_call_memo_stores, 0, "{snapshot:?}");
         assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty(),
+            ctx.operations.lock().expect("operation map").is_empty(),
             "a completed public operation retained its fault frame"
         );
 
@@ -14309,7 +14666,7 @@ mod tests {
 
         let warmed = apply(closure(), vec![fuel.clone()], &ctx);
         assert!(matches!(warmed, Value::Unit));
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         let (_measure, active) = ctx.enter_structural_recur_helper(&fuel).unwrap();
         let guarded = apply(closure(), vec![fuel], &ctx);
         drop(active);
@@ -14382,7 +14739,7 @@ mod tests {
             }
         ));
         assert_eq!(metrics.snapshot().exact_call_memo_hits, 1);
-        assert!(ctx.structural_recur_operations.lock().unwrap().is_empty());
+        assert!(ctx.operations.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -14392,12 +14749,12 @@ mod tests {
         let ctx = Arc::new(EvalCtx::new());
         let first = structural_recur_callback_rejection_for_test(5, 3, Some(3));
         let later = structural_recur_callback_rejection_for_test(9, 7, Some(7));
-        let root = ctx.enter_structural_recur_operation();
-        ctx.record_structural_recur_fault(&first);
-        let nested = ctx.enter_structural_recur_operation();
-        ctx.record_structural_recur_fault(&later);
+        let root = ctx.enter_eval_operation();
+        ctx.record_operation_fault(&first);
+        let nested = ctx.enter_eval_operation();
+        ctx.record_operation_fault(&later);
         assert!(matches!(nested.finish(Value::Unit), Value::Unit));
-        assert!(ctx.structural_recur_operation_has_fault());
+        assert!(ctx.operation_has_fault());
         let root_fault = root.finish(Value::Unit);
         assert_eq!(
             structural_recur_callback_rejection_measures(&root_fault),
@@ -14408,8 +14765,8 @@ mod tests {
         let fault_ctx = ctx.clone();
         let fault_barrier = barrier.clone();
         let fault_thread = std::thread::spawn(move || {
-            let operation = fault_ctx.enter_structural_recur_operation();
-            fault_ctx.record_structural_recur_fault(&first);
+            let operation = fault_ctx.enter_eval_operation();
+            fault_ctx.record_operation_fault(&first);
             fault_barrier.wait();
             fault_barrier.wait();
             let fault = operation.finish(Value::Unit);
@@ -14422,42 +14779,32 @@ mod tests {
         let clean_barrier = barrier.clone();
         let clean_thread = std::thread::spawn(move || {
             clean_barrier.wait();
-            let operation = clean_ctx.enter_structural_recur_operation();
-            assert!(!clean_ctx.structural_recur_operation_has_fault());
+            let operation = clean_ctx.enter_eval_operation();
+            assert!(!clean_ctx.operation_has_fault());
             assert!(matches!(operation.finish(Value::Unit), Value::Unit));
             clean_barrier.wait();
         });
         fault_thread.join().expect("fault thread");
         clean_thread.join().expect("clean thread");
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
     }
 
     #[test]
     fn structural_recur_operation_guard_cleans_up_on_unwind() {
         let ctx = EvalCtx::new();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _operation = ctx.enter_structural_recur_operation();
+            let _operation = ctx.enter_eval_operation();
             panic!("operation cleanup witness");
         }));
         assert!(result.is_err());
-        assert!(
-            ctx.structural_recur_operations
-                .lock()
-                .expect("operation map")
-                .is_empty()
-        );
+        assert!(ctx.operations.lock().expect("operation map").is_empty());
     }
 
     #[test]
     fn omitted_value_prefixes_execute_before_direct_specializations() {
         let module = parse_module(
             "module x; import __comptime__; \
-             newtype Box : . { constructor box; projector unbox; }; \
+             type { Box: . { mk; get; }; }; \
              fn reject(proof: .) -> . { \
                __structural_recur__(proof)( __type_unit__(), (), \
                  .(recur, fuel, input) { recur(fuel, input) }) \
@@ -14545,7 +14892,7 @@ mod tests {
             (
                 "newtype constructor prefix",
                 Expr::synth_call(
-                    qualified("Box", "box"),
+                    qualified("Box", "mk"),
                     vec![CallArg::Value(reject()), unit()],
                     zero_span(),
                 ),
@@ -14553,11 +14900,11 @@ mod tests {
             (
                 "newtype projector prefix",
                 Expr::synth_call(
-                    qualified("Box", "unbox"),
+                    qualified("Box", "get"),
                     vec![
                         CallArg::Value(reject()),
                         CallArg::Value(Expr::synth_call(
-                            qualified("Box", "box"),
+                            qualified("Box", "mk"),
                             vec![unit()],
                             zero_span(),
                         )),
@@ -14570,7 +14917,7 @@ mod tests {
         for (label, expr) in cases {
             let fault = eval(&expr, &Env::new(), &ctx);
             assert_eq!(
-                structural_recur_stuck_message(&fault, &ctx),
+                comptime_fault_message(&fault, &ctx),
                 Some(
                     "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                         .to_string()
@@ -14953,7 +15300,7 @@ mod tests {
 
         let (a, _b) = first_two(&values);
         assert_eq!(
-            structural_recur_stuck_message(a, &ctx),
+            comptime_fault_message(a, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=3, current=1, next=1)"
                     .to_string()
@@ -15015,7 +15362,7 @@ mod tests {
     }
 
     #[test]
-    fn structural_recur_stuck_message_descends_into_case_split() {
+    fn comptime_fault_message_descends_into_case_split() {
         let stuck = Value::Stuck(
             EvalRef::new(Value::StructuralRecur {
                 root_measure: 2,
@@ -15034,7 +15381,7 @@ mod tests {
         let ctx = EvalCtx::new();
 
         assert_eq!(
-            structural_recur_stuck_message(&value, &ctx),
+            comptime_fault_message(&value, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=2, current=1, next=1)"
                     .to_string()
@@ -15043,7 +15390,7 @@ mod tests {
     }
 
     #[test]
-    fn structural_recur_stuck_message_finds_rejection_past_deep_residual_wrappers() {
+    fn comptime_fault_message_finds_rejection_past_deep_residual_wrappers() {
         let ctx = EvalCtx::new();
         let mut value = structural_recur_callback_rejection_for_test(7, 3, Some(3));
         for _ in 0..256 {
@@ -15051,7 +15398,7 @@ mod tests {
         }
 
         assert_eq!(
-            structural_recur_stuck_message(&value, &ctx),
+            comptime_fault_message(&value, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=7, current=3, next=3)"
                     .to_string()
@@ -15071,7 +15418,7 @@ mod tests {
         };
         let missing = apply((*recur()).clone(), Vec::new(), &ctx);
         assert_eq!(
-            structural_recur_stuck_message(&missing, &ctx),
+            comptime_fault_message(&missing, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not provide one product packet or two flattened arguments (root=7, current=3, next=missing)"
                     .to_string()
@@ -15088,7 +15435,7 @@ mod tests {
             &ctx,
         );
         assert_eq!(
-            structural_recur_stuck_message(&extra, &ctx),
+            comptime_fault_message(&extra, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call did not provide one product packet or two flattened arguments (root=7, current=3, next=1)"
                     .to_string()
@@ -15100,7 +15447,7 @@ mod tests {
             vec![Value::Atom("opaque-fuel".to_string()), Value::Unit].into(),
         );
         assert_eq!(
-            structural_recur_stuck_message(&unmeasurable, &ctx),
+            comptime_fault_message(&unmeasurable, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call used fuel with no structural compile-time measure (root=7, current=3, next=unmeasurable)"
                     .to_string()
@@ -15109,7 +15456,7 @@ mod tests {
 
         let site_unmeasurable = structural_recur_callback_rejection_for_test(7, 3, None);
         assert_eq!(
-            structural_recur_stuck_message(&site_unmeasurable, &ctx),
+            comptime_fault_message(&site_unmeasurable, &ctx),
             Some(
                 "`__structural_recur__` got stuck because a recursive call used fuel with no structural compile-time measure (root=7, current=3, next=unmeasurable)"
                     .to_string()
@@ -15752,6 +16099,189 @@ mod tests {
             }
         }
 
+        fn unit_expr() -> Expr<EvalPhase> {
+            Expr::Unit {
+                source_trivia: Default::default(),
+                occurrence: Default::default(),
+                meta: zero_meta(),
+            }
+        }
+
+        fn assert_materializers(term: &CheckedTerm, expected: &str) {
+            let mut raw_to_pre_prime = |expr: &Expr<EvalPhase>, _span: Span| {
+                crate::ast::convert_expr::<EvalPhase, PrePrime>(expr)
+            };
+            let mut type_to_pre_prime =
+                |ty: &Type<EvalPhase>| crate::ast::convert_type::<EvalPhase, PrePrime>(ty);
+            let replayed = term.instantiate_template_pre_prime(
+                &[],
+                zero_span(),
+                &mut raw_to_pre_prime,
+                &mut type_to_pre_prime,
+            );
+            assert_eq!(replay_expr_shape(&replayed), expected, "template replay");
+            let materialized = crate::ast::convert_expr::<EvalPhase, PrePrime>(&term.clone_expr());
+            assert_eq!(
+                replay_expr_shape(&materialized),
+                expected,
+                "evaluator materialization"
+            );
+        }
+
+        #[test]
+        fn checked_calls_materialize_generated_packets_once_at_every_abi_shape() {
+            let unit = Type::Unit { meta: zero_meta() };
+            let atom = type_path("Atom");
+            let product = |left, right| Type::Product {
+                left: Box::new(left),
+                right: Box::new(right),
+                meta: zero_meta(),
+            };
+            let pair = product(atom.clone(), atom.clone());
+            let grouped_tail = product(atom.clone(), pair.clone());
+            let nested = product(pair.clone(), atom.clone());
+            for (domain, abi_arity) in [
+                (unit.clone(), 0),
+                (unit.clone(), 1),
+                (pair.clone(), 1),
+                (pair, 2),
+                (grouped_tail, 2),
+                (nested, 2),
+            ] {
+                let function_type = Type::Function {
+                    param: Box::new(domain.clone()),
+                    ret: Box::new(unit.clone()),
+                    abi_arity,
+                    caps: (),
+                    meta: zero_meta(),
+                };
+                let maker_type = Type::synth_function(Vec::new(), domain.clone(), zero_span());
+                let packet = EvalRef::new(CheckedTerm::from_node(
+                    CheckedTermNode::TermCall {
+                        fn_value: local("make_packet", maker_type),
+                        arg_packet: EvalRef::new(CheckedTerm::new(unit_expr(), unit.clone())),
+                    },
+                    domain,
+                ));
+                for projected in [false, true] {
+                    let fn_value = local("consume", function_type.clone());
+                    let call = if projected {
+                        CheckedTerm::from_projected(
+                            ProjectedTermConstruction::Call {
+                                fn_value,
+                                arg_packet: packet.clone(),
+                            },
+                            unit.clone(),
+                        )
+                    } else {
+                        CheckedTerm::from_node(
+                            CheckedTermNode::TermCall {
+                                fn_value,
+                                arg_packet: packet.clone(),
+                            },
+                            unit.clone(),
+                        )
+                    };
+                    assert_materializers(&call, "consume(V:make_packet(V:()))");
+                }
+            }
+        }
+
+        #[test]
+        fn checked_calls_preserve_successive_function_packets_and_type_arguments() {
+            let unit = Type::Unit { meta: zero_meta() };
+            let packet = |name: &str| {
+                EvalRef::new(CheckedTerm::new(
+                    Expr::synth_call(
+                        path_expr(name),
+                        vec![CallArg::Value(unit_expr())],
+                        zero_span(),
+                    ),
+                    unit.clone(),
+                ))
+            };
+            let inner_type = Type::synth_function(vec![unit.clone()], unit.clone(), zero_span());
+            let outer_type =
+                Type::synth_function(vec![unit.clone()], inner_type.clone(), zero_span());
+            let specialized = EvalRef::new(CheckedTerm::from_node(
+                CheckedTermNode::TermTypeApp {
+                    fn_value: local(
+                        "staged",
+                        Type::Forall {
+                            param: TypeParam {
+                                presentation: Default::default(),
+                                name: "A".to_owned(),
+                                span: zero_span(),
+                                kind: None,
+                            },
+                            body: Box::new(outer_type.clone()),
+                            meta: zero_meta(),
+                        },
+                    ),
+                    arg: unit.clone(),
+                },
+                outer_type,
+            ));
+            let first = EvalRef::new(CheckedTerm::from_node(
+                CheckedTermNode::TermCall {
+                    fn_value: specialized,
+                    arg_packet: packet("first_packet"),
+                },
+                inner_type,
+            ));
+            let second = CheckedTerm::from_node(
+                CheckedTermNode::TermCall {
+                    fn_value: first,
+                    arg_packet: packet("second_packet"),
+                },
+                unit.clone(),
+            );
+            assert_materializers(
+                &second,
+                "staged(T:Unit,V:first_packet(V:()))(V:second_packet(V:()))",
+            );
+            let function = Type::synth_function(vec![unit.clone()], unit.clone(), zero_span());
+            let scheme = Type::Forall {
+                param: TypeParam {
+                    presentation: Default::default(),
+                    name: "B".to_owned(),
+                    span: zero_span(),
+                    kind: None,
+                },
+                body: Box::new(function.clone()),
+                meta: zero_meta(),
+            };
+            let producer = local(
+                "interleaved",
+                Type::synth_function(vec![unit.clone()], scheme.clone(), zero_span()),
+            );
+            let first = EvalRef::new(CheckedTerm::from_node(
+                CheckedTermNode::TermCall {
+                    fn_value: producer,
+                    arg_packet: packet("first_packet"),
+                },
+                scheme,
+            ));
+            let specialized = EvalRef::new(CheckedTerm::from_node(
+                CheckedTermNode::TermTypeApp {
+                    fn_value: first,
+                    arg: unit.clone(),
+                },
+                function,
+            ));
+            let second = CheckedTerm::from_node(
+                CheckedTermNode::TermCall {
+                    fn_value: specialized,
+                    arg_packet: packet("second_packet"),
+                },
+                unit,
+            );
+            assert_materializers(
+                &second,
+                "interleaved(V:first_packet(V:()))(T:Unit,V:second_packet(V:()))",
+            );
+        }
+
         #[test]
         fn instantiate_template_pre_prime_replays_every_checked_term_node_kind() {
             let unit_ty = Type::Unit { meta: zero_meta() };
@@ -15768,9 +16298,7 @@ mod tests {
                 meta: zero_meta(),
             };
 
-            // Type applications become the first two call arguments; the
-            // two `params` below describe how the pair packet becomes the
-            // following two value arguments.
+            // Type applications precede the single value packet.
             let nested_type_app_callee = EvalRef::new(CheckedTerm::from_node(
                 CheckedTermNode::TermTypeApp {
                     fn_value: EvalRef::new(CheckedTerm::from_node(
@@ -15844,12 +16372,11 @@ mod tests {
                     CheckedTerm::from_node(
                         CheckedTermNode::TermCall {
                             fn_value: nested_type_app_callee,
-                            params: vec![unit_ty.clone(), bottom_ty.clone()],
                             arg_packet: call_packet,
                         },
                         result_ty.clone(),
                     ),
-                    "call_target(T:Unit,T:Bottom,V:first_arg,V:second_arg)",
+                    "call_target(T:Unit,T:Bottom,V:__pair__(T:Unit,T:Bottom,V:first_arg,V:second_arg))",
                 ),
                 replay_case!(
                     "type-app",
@@ -16100,7 +16627,6 @@ mod tests {
         let term = CheckedTerm::from_node(
             CheckedTermNode::TermCall {
                 fn_value: typed_rule,
-                params: Vec::new(),
                 arg_packet,
             },
             witness_of(unit_ty),
@@ -16379,6 +16905,23 @@ mod tests {
         assert_eq!(snapshot.reflection_type_equal_calls, 1);
     }
 
+    fn projected_specialization_pattern_for_test(
+        proof: &Value,
+        term: &crate::pass::typecheck_core::apply::fills::ProjectedValue,
+    ) -> Value {
+        use crate::pass::typecheck_core::apply::fills::{
+            ProjectedTypeView, projected_term_type, projected_type_view,
+        };
+        let proof = marked_comptime_proof_from_value(proof).expect("marked fixture proof");
+        let typ = projected_term_type(proof, term).expect("authenticated term type");
+        let ProjectedTypeView::Forall { body, .. } =
+            projected_type_view(proof, &typ).expect("authenticated leading forall")
+        else {
+            panic!("specialization fixture has one leading parameter")
+        };
+        projected_value(body)
+    }
+
     #[test]
     fn proofed_compiled_term_type_fn_retries_a_projected_callback() {
         let ctx = EvalCtx::new();
@@ -16389,12 +16932,8 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
                 proof.clone(),
-                projected_value(template),
-                refl_type_value(Type::synth_path(
-                    vec!["A".to_owned()],
-                    Vec::new(),
-                    zero_span(),
-                )),
+                projected_value(template.clone()),
+                projected_specialization_pattern_for_test(&proof, &template),
                 refl_type_value(Type::Unit { meta: zero_meta() }),
             ],
             &ctx,
@@ -17332,19 +17871,12 @@ mod tests {
 
     #[test]
     fn iota_newtype_unwraps_constructor() {
-        // ι-Newtype (specs/formal/equiv.md § 2.1): a newtype projector
-        // applied to the matching constructor's wrap unwraps it. The
-        // `labels { wrap[A]: A }` block mints newtype `Wrap` with
-        // constructor `mk` and projector `get`; lexical resolution gives
-        // both members the same declaration identity, so
-        // `Wrap.get(Wrap.mk(x)) → x`. `parse_module` runs
-        // label lowering, so the `Item::Newtype` is present to
-        // expose. Use explicit Kio' newtype members here: surface
-        // label construction has already been removed at the evaluator
-        // boundary.
+        // ι-Newtype (specs/formal/equiv.md § 2.1): the matching projector
+        // unwraps its constructor's payload. Compact declaration lowering
+        // supplies the ordinary nominal identity before evaluation.
         let m = parse_module(
             "module x; \
-             labels { wrap[A]: A }; \
+             type { Wrap[A]: A; }; \
              equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
         );
         let ctx = EvalCtx::new()
@@ -17376,11 +17908,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "a.kio",
-                "module a; pub newtype Wrap[A] : A { pub constructor mk; pub projector get; };",
+                "module a; pub type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "b.kio",
-                "module b; pub newtype Wrap[A] : A { pub constructor mk; pub projector get; };",
+                "module b; pub type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
@@ -17434,7 +17966,7 @@ mod tests {
     fn newtype_member_values_apply_higher_order() {
         let (mut m, [body]) = parse_module_with_bodies(
             "module a; \
-             newtype Wrap[A] : A { pub constructor mk; pub projector get; }; \
+             type { Wrap[A]: A { pub mk; pub get; }; }; \
              equiv members { Wrap.mk; Wrap.get } \
              equiv applied { \
                  (); \
@@ -17476,11 +18008,11 @@ mod tests {
                 "provider.kio",
                 "module provider; \
                  rec { \
-                   pub newtype Wrap[A] : A & Peer[A] { pub constructor mk; pub projector get; }; \
-                   newtype Peer[A] : Wrap[A] { constructor make_peer; projector un_peer; }; \
+                   pub type { Wrap[A]: A & Peer[A] { pub mk; pub get; }; }; \
+                   type { Peer[A]: Wrap[A] { mk; get; }; }; \
                  } \
                  pub type Alias[A] = Wrap[A]; \
-                 pub newtype Hidden[A] : A { constructor mk; projector get; };",
+                 pub type { Hidden[A]: A { mk; get; }; };",
             ),
             (
                 "consumer.kio",
@@ -17541,14 +18073,14 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; \
-                 pub newtype Wrap[A] : A { pub constructor mk; pub projector get; }; \
+                 pub type { Wrap[A]: A { pub mk; pub get; }; }; \
                  pub fn wrap[A](x: A) -> Wrap[A] { Wrap.mk[A](x) }",
             ),
             (
                 "consumer.kio",
                 "module consumer; \
                  import provider as p; \
-                 newtype Wrap[A] : A { constructor mk; projector get; }; \
+                 type { Wrap[A]: A { mk; get; }; }; \
                  fn run[A](x: A) -> A { p.Wrap.get[A](p.wrap[A](x)) }",
             ),
         ]);
@@ -17761,11 +18293,10 @@ mod tests {
     #[test]
     fn newtype_ctor_builds_data_then_proj_unwraps() {
         // The newtype constructor genuinely builds `Value::Data`, and
-        // the projector case-reduces over it. `labels { wrap[A]: A }`
-        // mints newtype `Wrap` with constructor `mk` + projector
-        // `get`. First confirm `Wrap.mk(x)` is built as `Value::Data`,
+        // the projector case-reduces over it. `Wrap` has constructor
+        // `mk` and projector `get`. First confirm `Wrap.mk(x)` is built as `Value::Data`,
         // then confirm `Wrap.get(Wrap.mk(x)) → x` (ι-Newtype).
-        let cons_m = parse_module("module x; labels { wrap[A]: A }; equiv c { Wrap.mk[A](x); () }");
+        let cons_m = parse_module("module x; type { Wrap[A]: A; }; equiv c { Wrap.mk[A](x); () }");
         let cons_ctx = EvalCtx::new().with_root_module(&cons_m);
         let constructed = eval(equiv_terms(&cons_m)[0], &Env::new(), &cons_ctx);
         assert!(
@@ -17775,7 +18306,7 @@ mod tests {
         );
 
         let m = parse_module(
-            "module x; labels { wrap[A]: A }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
+            "module x; type { Wrap[A]: A; }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
         );
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
@@ -17789,7 +18320,7 @@ mod tests {
     fn newtype_ctor_product_payload_rebuilds_packet_from_abi_slots() {
         let m = parse_module(
             "module x; \
-             newtype Wrap : . & . { pub constructor mk; pub projector get; }; \
+             type { Wrap: . & . { pub mk; pub get; }; }; \
              equiv c { Wrap.mk((), ()); () }",
         );
         let ctx = EvalCtx::new().with_root_module(&m);
@@ -17811,7 +18342,7 @@ mod tests {
 
         let packet_m = parse_module(
             "module x; import __intrinsics__; \
-             newtype Wrap : . & . { pub constructor mk; pub projector get; }; \
+             type { Wrap: . & . { pub mk; pub get; }; }; \
              equiv c { Wrap.mk(__pair__[.][.]((), ())); () }",
         );
         let packet_ctx = EvalCtx::new().with_root_module(&packet_m);
@@ -18172,6 +18703,7 @@ mod tests {
         CaseSplit,
         Seq,
         Stuck,
+        StuckType,
     }
 
     fn value_kind(value: &Value) -> ValueKind {
@@ -18186,7 +18718,7 @@ mod tests {
             #[cfg(feature = "surface")]
             Value::Projected(_) => ValueKind::Projected,
             Value::ReflTypeArity(_) => ValueKind::ReflTypeArity,
-            Value::ReflTypeVar { .. } => ValueKind::ReflTypeVar,
+            Value::ReflTypeVar(_) => ValueKind::ReflTypeVar,
             Value::ReflTypeName { .. } => ValueKind::ReflTypeName,
             Value::DiagnosticText(_) => ValueKind::DiagnosticText,
             Value::Primitive(_) => ValueKind::Primitive,
@@ -18198,6 +18730,7 @@ mod tests {
             Value::CaseSplit { .. } => ValueKind::CaseSplit,
             Value::Seq { .. } => ValueKind::Seq,
             Value::Stuck(_, _) => ValueKind::Stuck,
+            Value::StuckType(_, _) => ValueKind::StuckType,
         }
     }
 
@@ -18223,6 +18756,7 @@ mod tests {
             ValueKind::CaseSplit,
             ValueKind::Seq,
             ValueKind::Stuck,
+            ValueKind::StuckType,
         ]);
         #[cfg(feature = "surface")]
         expected.insert(ValueKind::Projected);
@@ -18337,10 +18871,7 @@ mod tests {
             },
             ValueRenderCase {
                 kind: ValueKind::ReflTypeVar,
-                value: Value::ReflTypeVar {
-                    name: "T".to_owned(),
-                    arity: 1,
-                },
+                value: Value::ReflTypeVar(ReflectedVariable::live("T".to_owned(), 1)),
                 expected: "<type-var T/1>",
             },
             ValueRenderCase {
@@ -18409,6 +18940,14 @@ mod tests {
                 expected: "effect; ()",
             },
             ValueRenderCase {
+                kind: ValueKind::StuckType,
+                value: Value::StuckType(
+                    EvalRef::new(Value::Atom("f".into())),
+                    ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+                ),
+                expected: "f[.]",
+            },
+            ValueRenderCase {
                 kind: ValueKind::Stuck,
                 value: Value::Stuck(
                     EvalRef::new(Value::Atom("f".into())),
@@ -18454,7 +18993,7 @@ mod tests {
     }
 
     #[test]
-    fn structural_recur_stuck_message_classifies_each_value_variant() {
+    fn comptime_fault_message_classifies_each_value_variant() {
         let newtype_member = Value::NewtypeMember(Arc::new(ResolvedNewtypeMemberValue {
             constructor: NewtypeCtorIdentity {
                 module_path: "scan".to_owned(),
@@ -18500,10 +19039,7 @@ mod tests {
             (ValueKind::ReflTypeArity, Value::ReflTypeArity(2)),
             (
                 ValueKind::ReflTypeVar,
-                Value::ReflTypeVar {
-                    name: "T".to_owned(),
-                    arity: 1,
-                },
+                Value::ReflTypeVar(ReflectedVariable::live("T".to_owned(), 1)),
             ),
             (
                 ValueKind::ReflTypeName,
@@ -18549,6 +19085,13 @@ mod tests {
                 },
             ),
             (
+                ValueKind::StuckType,
+                Value::StuckType(
+                    EvalRef::new(Value::Atom("f".into())),
+                    ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+                ),
+            ),
+            (
                 ValueKind::Stuck,
                 Value::Stuck(
                     EvalRef::new(Value::Atom("f".to_owned())),
@@ -18571,7 +19114,7 @@ mod tests {
                 kind
             );
             assert!(
-                structural_recur_stuck_message(&value, &ctx).is_none(),
+                comptime_fault_message(&value, &ctx).is_none(),
                 "clean {:?} fixture was classified as a fault",
                 kind
             );
@@ -18589,7 +19132,7 @@ mod tests {
         let second = "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=11, current=5, next=5)";
         let assert_rejection = |value: Value, expected: &str| {
             assert_eq!(
-                structural_recur_stuck_message(&value, &ctx).as_deref(),
+                comptime_fault_message(&value, &ctx).as_deref(),
                 Some(expected)
             );
         };
@@ -18617,6 +19160,13 @@ mod tests {
         );
         assert_rejection(
             Value::Stuck(EvalRef::new(rejection(7, 3)), vec![Value::Unit].into()),
+            first,
+        );
+        assert_rejection(
+            Value::StuckType(
+                EvalRef::new(rejection(7, 3)),
+                ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+            ),
             first,
         );
         assert_rejection(
@@ -18700,9 +19250,15 @@ mod tests {
                 unit_type(),
             )
         };
-        let type_var = |name: &str, arity| Value::ReflTypeVar {
-            name: name.to_owned(),
-            arity,
+        let variables = std::cell::RefCell::new(HashMap::new());
+        let type_var = |name: &str, arity| {
+            Value::ReflTypeVar(
+                variables
+                    .borrow_mut()
+                    .entry((name.to_owned(), arity))
+                    .or_insert_with(|| ReflectedVariable::live(name.to_owned(), arity))
+                    .clone(),
+            )
         };
         let type_name = |name: &str, param_arities| Value::ReflTypeName {
             segments: vec!["inventory".to_owned(), name.to_owned()],
@@ -18857,6 +19413,22 @@ mod tests {
                 same_expected: true,
             },
             NfEqCase {
+                kind: ValueKind::StuckType,
+                left: Value::StuckType(
+                    EvalRef::new(Value::Atom("f".into())),
+                    ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+                ),
+                same: Value::StuckType(
+                    EvalRef::new(Value::Atom("f".into())),
+                    ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+                ),
+                changed: Value::StuckType(
+                    EvalRef::new(Value::Atom("f".into())),
+                    ReflectedType::new_trusted(Type::Bottom { meta: zero_meta() }),
+                ),
+                same_expected: true,
+            },
+            NfEqCase {
                 kind: ValueKind::Stuck,
                 left: Value::Stuck(
                     EvalRef::new(Value::Atom("f".to_owned())),
@@ -18952,9 +19524,15 @@ mod tests {
             segments: vec![seg.to_string()],
             param_arities: arities,
         };
-        let tvar = |n: &str, arity: usize| Value::ReflTypeVar {
-            name: n.to_string(),
-            arity,
+        let variables = std::cell::RefCell::new(HashMap::new());
+        let tvar = |n: &str, arity| {
+            Value::ReflTypeVar(
+                variables
+                    .borrow_mut()
+                    .entry((n.to_owned(), arity))
+                    .or_insert_with(|| ReflectedVariable::live(n.to_owned(), arity))
+                    .clone(),
+            )
         };
 
         // Equal ground leaves compare equal — kills the deleted literal
@@ -19211,7 +19789,7 @@ mod tests {
         // / constructor-identity match flips).
         let m = parse_module(
             "module x; \
-             newtype Wrap : . & . { pub constructor mk; pub projector get; };",
+             type { Wrap: . & . { pub mk; pub get; }; };",
         );
         let nt_ctx = EvalCtx::new().with_root_module(&m);
         let member = |name: &str| {
@@ -19554,22 +20132,22 @@ mod tests {
     fn structural_recur_initial_failure_is_explicit_and_partial_values_are_not_faults() {
         let ctx = EvalCtx::new();
         let bare = structural_recur_source_primitive_for_test();
-        assert!(structural_recur_stuck_message(&bare, &ctx).is_none());
+        assert!(comptime_fault_message(&bare, &ctx).is_none());
         let proof_partial = apply(
             bare.clone(),
             vec![Value::Primitive(ComptimeBuiltin::ComptimeProof)],
             &ctx,
         );
-        assert!(structural_recur_stuck_message(&proof_partial, &ctx).is_none());
+        assert!(comptime_fault_message(&proof_partial, &ctx).is_none());
         let type_stage = apply(proof_partial, Vec::new(), &ctx);
-        assert!(structural_recur_stuck_message(&type_stage, &ctx).is_none());
+        assert!(comptime_fault_message(&type_stage, &ctx).is_none());
 
         let identity = Value::EvalClosure {
             function: test_eval_function(&["value"], EvalExpr::Local(0)),
             captured: Vec::<Value>::new().into(),
         };
         let returned = apply(identity, vec![bare], &ctx);
-        assert!(structural_recur_stuck_message(&returned, &ctx).is_none());
+        assert!(comptime_fault_message(&returned, &ctx).is_none());
 
         let flattened = apply(
             structural_recur_primitive_for_test(),
@@ -19602,7 +20180,7 @@ mod tests {
                 Some(StructuralRecurDataIdentity::InitialRejected)
             ));
             assert_eq!(
-                structural_recur_stuck_message(fault, &ctx),
+                comptime_fault_message(fault, &ctx),
                 Some(
                     "`__structural_recur__` got stuck because its initial fuel has no structural compile-time measure"
                         .to_string()
@@ -19642,6 +20220,7 @@ mod tests {
             }]
             .into(),
             value_groups: vec![EvalParamGroup {
+                type_arity: None,
                 param_start: 0,
                 param_count: 1,
                 abi_arity: 1,
@@ -19746,19 +20325,543 @@ mod tests {
     }
 
     #[test]
-    fn type_parameterized_fn_with_elided_type_args_reduces() {
-        // Calling `id(a)` with the type argument elided must still bind
-        // the value argument (the special elided-type-arg branch), so it
-        // reduces to `a`; the general loop drops the value arg against the
-        // type param.
+    fn type_parameterized_fn_requires_materialized_type_stage() {
+        // This helper bypasses type checking and elaboration. The actual
+        // inferred type stage is supplied by the Lowered to Prime boundary.
         let m = parse_module(
             "module x; fn id[T](x: T) -> T { x } \
-             equiv elided { id(a); a }",
+             equiv stages { id(a); id[.](a); a }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
-        let (a, b) = first_two(&v);
-        assert!(nf_eq(a, b, &ctx), "elided-type-arg call: {a:?} vs {b:?}");
+        assert!(matches!(&v[0], Value::Stuck(callee, args)
+            if matches!(callee.as_ref(), Value::EvalClosure { .. })
+                && matches!(args.as_slice(), [Value::Atom(name)] if name == "a")));
+        assert!(
+            nf_eq(&v[1], &v[2], &ctx),
+            "materialized type stage: {:?} vs {:?}",
+            v[1],
+            v[2]
+        );
+    }
+
+    fn prefix_test_type(binders: &[(&str, usize)], mut body: Type<EvalPhase>) -> Type<EvalPhase> {
+        for (name, arity) in binders.iter().rev() {
+            body = Type::Forall {
+                param: TypeParam {
+                    presentation: Default::default(),
+                    name: (*name).to_owned(),
+                    span: zero_span(),
+                    kind: Some(Box::new(crate::ast::Kind::arrow_chain(*arity))),
+                },
+                body: Box::new(body),
+                meta: zero_meta(),
+            };
+        }
+        body
+    }
+
+    fn prefix_collect_step() -> Value {
+        Value::EvalClosure {
+            function: test_eval_function(
+                &["acc", "binder"],
+                EvalExpr::CoreCtor {
+                    name: "__pair__",
+                    args: vec![
+                        EvalRef::new(EvalExpr::Local(0)),
+                        EvalRef::new(EvalExpr::Local(1)),
+                    ],
+                },
+            ),
+            captured: Vec::<Value>::new().into(),
+        }
+    }
+
+    #[test]
+    fn type_forall_prefix_fold_matches_views_and_returns_remainder() {
+        let ctx = EvalCtx::new();
+        for binders in [
+            vec![],
+            vec![("A", 0)],
+            vec![("A", 0), ("F", 2), ("B", 0)],
+            vec![("A", 0), ("A", 1)],
+        ] {
+            let body = Type::Function {
+                param: Box::new(type_path("A")),
+                ret: Box::new(type_path("B")),
+                meta: zero_meta(),
+                abi_arity: 1,
+                caps: (),
+            };
+            let typ = prefix_test_type(&binders, body);
+            let mut cursor = ReflectedType::new_trusted(typ.clone());
+            let mut expected = Value::Unit;
+            for (_, arity) in &binders {
+                let view = reflected_type_view_value(&cursor, &ctx).expect("known type view");
+                let Value::Data(_) = view else {
+                    panic!("view must be a sum")
+                };
+                // The public view's forall arm carries binder, kind arity, body.
+                let mut arm = view;
+                for _ in 0..5 {
+                    let Value::Data(data) = arm else {
+                        panic!("right injection")
+                    };
+                    assert_eq!(data.ctor(), "__right__");
+                    assert_eq!(data.args().len(), 1);
+                    arm = data.args()[0].clone();
+                }
+                let Value::Data(data) = arm else {
+                    panic!("left injection")
+                };
+                assert_eq!(data.ctor(), "__left__");
+                assert_eq!(data.args().len(), 1);
+                let payload = data.args()[0].clone();
+                let binder = project_product_value("__fst__", &payload);
+                let rest = project_product_value("__snd__", &payload);
+                let viewed_body = project_product_value("__snd__", &rest);
+                assert_eq!(
+                    as_refl_type_arity(&apply(
+                        Value::Primitive(ComptimeBuiltin::TypeVarArity),
+                        vec![binder.clone()],
+                        &ctx
+                    )),
+                    Some(*arity)
+                );
+                expected = value_pair(expected, binder);
+                cursor = reflected_type_carrier(&viewed_body)
+                    .expect("forall body")
+                    .clone();
+            }
+            let folded = apply(
+                Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+                vec![refl_type_value(typ), Value::Unit, prefix_collect_step()],
+                &ctx,
+            );
+            assert!(
+                nf_eq(&project_product_value("__fst__", &folded), &expected, &ctx),
+                "{folded:?}"
+            );
+            assert!(
+                nf_eq(
+                    &project_product_value("__snd__", &folded),
+                    &Value::ReflType(cursor),
+                    &ctx
+                ),
+                "{folded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn projected_forall_prefix_fold_preserves_open_remainder_and_binders() {
+        use crate::pass::typecheck_core::apply::fills::{
+            ProjectedTypeView, projected_type_transport_matches_for_test, projected_type_view,
+            projected_type_with_proof_for_fuel_test,
+        };
+        let complete = prefix_test_type(
+            &[("A", 0), ("F", 1)],
+            Type::Function {
+                param: Box::new(type_path("A")),
+                ret: Box::new(type_path("A")),
+                meta: zero_meta(),
+                abi_arity: 1,
+                caps: (),
+            },
+        );
+        let mut open = crate::ast::convert_type::<EvalPhase, crate::ast::Lowered>(&complete);
+        let mut end = &mut open;
+        while let Type::Forall { body, .. } = end {
+            end = body;
+        }
+        let Type::Function { ret, .. } = end else {
+            panic!("known function tail")
+        };
+        **ret = Type::Goal {
+            goal: crate::ast::TypeGoalRef::for_test(701, 0, 0),
+            args: vec![],
+            meta: crate::ast::Meta::new(zero_span()),
+            ext: (),
+        };
+        let (proof, root) = projected_type_with_proof_for_fuel_test(open.clone(), open.clone());
+        let (foreign_proof, foreign_root) =
+            projected_type_with_proof_for_fuel_test(open.clone(), open);
+        let mut foreign_cursor = foreign_root;
+        for _ in 0..2 {
+            let ProjectedTypeView::Forall { body, .. } =
+                projected_type_view(&foreign_proof, &foreign_cursor).expect("foreign owner view")
+            else {
+                panic!("same-shape foreign binder")
+            };
+            foreign_cursor = body;
+        }
+        let mut cursor = root.clone();
+        let mut expected = Value::Unit;
+        for _ in 0..2 {
+            let ProjectedTypeView::Forall { variable, body, .. } =
+                projected_type_view(&proof, &cursor).unwrap()
+            else {
+                panic!("known binder")
+            };
+            expected = value_pair(expected, Value::ReflTypeVar(variable));
+            cursor = body;
+        }
+        let proof_value = Value::Data(EvalRef::new(DataValue::new_marked_comptime_proof(
+            proof.clone(),
+        )));
+        let ctx = EvalCtx::new();
+        let folded = apply(
+            Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+            vec![
+                proof_value.clone(),
+                projected_value(root),
+                Value::Unit,
+                prefix_collect_step(),
+            ],
+            &ctx,
+        );
+        let actual = project_product_value("__fst__", &folded);
+        let mut actual_cursor = &actual;
+        let mut expected_cursor = &expected;
+        for _ in 0..2 {
+            let (Value::Data(actual_pair), Value::Data(expected_pair)) =
+                (actual_cursor, expected_cursor)
+            else {
+                panic!("prefix accumulator packets")
+            };
+            let (Value::ReflTypeVar(actual_var), Value::ReflTypeVar(expected_var)) =
+                (&actual_pair.args()[1], &expected_pair.args()[1])
+            else {
+                panic!("transported prefix binders")
+            };
+            assert_eq!(actual_var.arity, expected_var.arity);
+            assert!(reflection_bindings::reflected_variables_correspond(
+                actual_var,
+                expected_var
+            ));
+            let observed = apply(
+                Value::Primitive(ComptimeBuiltin::TypeVarEqual),
+                vec![
+                    Value::ReflTypeVar(actual_var.clone()),
+                    Value::ReflTypeVar(expected_var.clone()),
+                ],
+                &ctx,
+            );
+            assert!(
+                comptime_fault_message(&observed, &ctx).is_some(),
+                "an incomplete owner was publicly compared: {observed:?}"
+            );
+            actual_cursor = &actual_pair.args()[0];
+            expected_cursor = &expected_pair.args()[0];
+        }
+        let remainder = project_product_value("__snd__", &folded);
+        let Value::Projected(remainder) = remainder else {
+            panic!("retained remainder: {folded:?}")
+        };
+        assert!(projected_type_transport_matches_for_test(
+            &remainder, &cursor
+        ));
+        assert!(!projected_type_transport_matches_for_test(
+            &remainder,
+            &foreign_cursor
+        ));
+        assert!(matches!(
+            projected_type_view(&proof, &remainder).unwrap(),
+            ProjectedTypeView::Function { .. }
+        ));
+        assert_eq!(remainder.structural_measure(), None);
+        for binders in [vec![], vec![("A", 0)]] {
+            let ordinary =
+                refl_type_value(prefix_test_type(&binders, Type::Unit { meta: zero_meta() }));
+            let identity_step = Value::EvalClosure {
+                function: test_eval_function(&["acc", "binder"], EvalExpr::Local(0)),
+                captured: Vec::<Value>::new().into(),
+            };
+            let generic = apply(
+                Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+                vec![
+                    proof_value.clone(),
+                    ordinary.clone(),
+                    Value::Projected(remainder.clone()),
+                    identity_step.clone(),
+                ],
+                &ctx,
+            );
+            let expression = EvalExpr::ReflTypeFold {
+                name: "__type_forall_prefix_fold__",
+                typ: EvalRef::new(EvalExpr::Const(ordinary)),
+                init: EvalRef::new(EvalExpr::Const(Value::Projected(remainder.clone()))),
+                step: EvalRef::new(EvalExpr::Const(identity_step)),
+            };
+            let direct = eval_compiled_expr(&expression, &mut EvalSlots::root(Vec::new()), &ctx);
+            for result in [generic, direct] {
+                assert!(
+                    matches!(project_product_value("__fst__", &result), Value::Projected(t) if t.same_snapshot(&remainder))
+                );
+                assert!(
+                    matches!(project_product_value("__snd__", &result), Value::ReflType(t) if matches!(t.as_type(), Type::Unit { .. }))
+                );
+            }
+        }
+        let zero = apply(
+            Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+            vec![
+                proof_value,
+                Value::Projected(remainder.clone()),
+                Value::Unit,
+                prefix_collect_step(),
+            ],
+            &ctx,
+        );
+        assert!(matches!(
+            project_product_value("__fst__", &zero),
+            Value::Unit
+        ));
+        assert!(
+            matches!(project_product_value("__snd__", &zero), Value::Projected(t) if t.same_snapshot(&remainder))
+        );
+    }
+
+    #[test]
+    fn forall_prefix_fold_faults_before_callbacks_on_unknown_tail_and_keeps_callback_faults() {
+        use crate::pass::typecheck_core::apply::fills::projected_type_with_proof_for_fuel_test;
+        let fault_step = Value::EvalClosure {
+            function: test_eval_function(
+                &["acc", "binder"],
+                EvalExpr::CallPrimitive {
+                    builtin: ComptimeBuiltin::StructuralRecur,
+                    args: vec![
+                        EvalRef::new(EvalExpr::Const(Value::Atom("unmeasurable".to_owned()))),
+                        EvalRef::new(EvalExpr::Unit),
+                        EvalRef::new(EvalExpr::Unit),
+                    ],
+                },
+            ),
+            captured: Vec::<Value>::new().into(),
+        };
+        for count in [0, 1, 3] {
+            let complete =
+                prefix_test_type(&vec![("A", 0); count], Type::Unit { meta: zero_meta() });
+            let mut open = crate::ast::convert_type::<EvalPhase, crate::ast::Lowered>(&complete);
+            let mut end = &mut open;
+            while let Type::Forall { body, .. } = end {
+                end = body;
+            }
+            *end = Type::Goal {
+                goal: crate::ast::TypeGoalRef::for_test(702, 0, 0),
+                args: vec![],
+                meta: crate::ast::Meta::new(zero_span()),
+                ext: (),
+            };
+            let (proof, typ) = projected_type_with_proof_for_fuel_test(open.clone(), open);
+            let ctx = EvalCtx::new();
+            let result = apply(
+                Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+                vec![
+                    Value::Data(EvalRef::new(DataValue::new_marked_comptime_proof(proof))),
+                    projected_value(typ),
+                    Value::Unit,
+                    fault_step.clone(),
+                ],
+                &ctx,
+            );
+            assert!(
+                matches!(
+                    comptime_fault(&result, &ctx),
+                    Some(ComptimeFault::IncompleteObservation(
+                        ComptimeBuiltin::TypeForallPrefixFold
+                    ))
+                ),
+                "{result:?}"
+            );
+        }
+        let ctx = EvalCtx::new();
+        let operation = ctx.enter_eval_operation();
+        let zero = apply(
+            Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+            vec![
+                refl_type_value(Type::Unit { meta: zero_meta() }),
+                Value::Unit,
+                fault_step.clone(),
+            ],
+            &ctx,
+        );
+        assert!(comptime_fault(&zero, &ctx).is_none());
+        let result = apply(
+            Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+            vec![
+                refl_type_value(prefix_test_type(
+                    &[("A", 0)],
+                    Type::Unit { meta: zero_meta() },
+                )),
+                Value::Unit,
+                fault_step,
+            ],
+            &ctx,
+        );
+        assert!(
+            matches!(
+                comptime_fault(&result, &ctx),
+                Some(ComptimeFault::Totality(_))
+            ),
+            "{result:?}"
+        );
+        assert!(matches!(
+            comptime_fault(&operation.finish(Value::Unit), &ctx),
+            Some(ComptimeFault::Totality(_))
+        ));
+    }
+
+    #[test]
+    fn nested_type_fuel_is_atomic_before_and_after_refinement() {
+        use crate::pass::typecheck_core::apply::fills::{
+            open_function_reflection_for_test, projected_type_for_fuel_test,
+        };
+        let ctx = EvalCtx::new();
+        let (_, _, open) =
+            open_function_reflection_for_test(ReflectedType::new_trusted(Type::Unit {
+                meta: zero_meta(),
+            }));
+        let large = Type::Function {
+            param: Box::new(Type::Unit { meta: zero_meta() }),
+            ret: Box::new(Type::Product {
+                left: Box::new(Type::Unit { meta: zero_meta() }),
+                right: Box::new(Type::Unit { meta: zero_meta() }),
+                meta: zero_meta(),
+            }),
+            meta: zero_meta(),
+            abi_arity: 1,
+            caps: (),
+        };
+        let closed = crate::ast::convert_type::<EvalPhase, crate::ast::Lowered>(&large);
+        let opaque = Type::Goal {
+            goal: crate::ast::TypeGoalRef::for_test(703, 0, 0),
+            args: vec![],
+            meta: crate::ast::Meta::new(zero_span()),
+            ext: (),
+        };
+        for ty in [
+            projected_value(open),
+            refl_type_value(large),
+            projected_value(projected_type_for_fuel_test(closed.clone(), closed)),
+            projected_value(projected_type_for_fuel_test(opaque.clone(), opaque)),
+        ] {
+            let start = data_value(
+                "Start",
+                vec![ty.clone(), Value::Unit, Value::Unit, Value::Unit],
+            );
+            let next = data_value("Next", vec![ty.clone(), ty.clone()]);
+            assert_eq!(initial_fuel_measure(&start, &ctx), Some(5));
+            assert_eq!(fuel_measure(&next, &ctx), Some(3));
+            let callback = Value::StructuralRecur {
+                root_measure: 5,
+                current_measure: 5,
+                step: EvalRef::new(Value::Atom("visited".to_owned())),
+            };
+            let result = apply(callback, vec![next, Value::Unit], &ctx);
+            assert!(
+                matches!(result, Value::Stuck(c, _) if matches!(c.as_ref(), Value::Atom(n) if n == "visited"))
+            );
+            assert_eq!(fuel_measure(&data_value("Tuple", vec![ty]), &ctx), Some(2));
+        }
+    }
+
+    #[test]
+    fn direct_type_fuel_ignores_unknown_constructor_arguments_and_preserves_known_descent() {
+        use crate::pass::typecheck_core::apply::fills::projected_type_for_fuel_test;
+        let meta = || crate::ast::Meta::<crate::ast::Lowered>::new(zero_span());
+        let unit = Type::Unit { meta: meta() };
+        let large = Type::Product {
+            left: Box::new(unit.clone()),
+            right: Box::new(unit.clone()),
+            meta: meta(),
+        };
+        let unknown_application = Type::Goal {
+            goal: crate::ast::TypeGoalRef::for_test(704, 0, 0),
+            args: vec![large.clone()],
+            meta: meta(),
+            ext: (),
+        };
+        let partial = Type::Function {
+            param: Box::new(unit.clone()),
+            ret: Box::new(unknown_application),
+            meta: meta(),
+            abi_arity: 1,
+            caps: (),
+        };
+        // A higher-kinded choice can become an alias which discards Large.
+        let completed = Type::Function {
+            param: Box::new(unit.clone()),
+            ret: Box::new(unit.clone()),
+            meta: meta(),
+            abi_arity: 1,
+            caps: (),
+        };
+        let ctx = EvalCtx::new();
+        for (ty, initial, recursive) in [(partial, 2, None), (completed, 3, Some(3))] {
+            let value = projected_value(projected_type_for_fuel_test(ty.clone(), ty));
+            assert_eq!(initial_fuel_measure(&value, &ctx), Some(initial));
+            assert_eq!(fuel_measure(&value, &ctx), recursive);
+            let child = projected_value(projected_type_for_fuel_test(unit.clone(), unit.clone()));
+            let result = apply(
+                Value::StructuralRecur {
+                    root_measure: initial,
+                    current_measure: initial,
+                    step: EvalRef::new(Value::Atom("known_parameter".to_owned())),
+                },
+                vec![child, Value::Unit],
+                &ctx,
+            );
+            assert!(
+                matches!(result, Value::Stuck(c, a) if matches!(c.as_ref(), Value::Atom(n) if n == "known_parameter") && matches!(a.as_slice(), [Value::StructuralRecur { current_measure: 1, .. }, _, _]))
+            );
+        }
+    }
+
+    #[test]
+    fn closed_reflection_and_projected_type_fuel_agree_for_aliases_and_binders() {
+        use crate::pass::typecheck_core::apply::fills::projected_type_for_fuel_test;
+        let artifact = lowered_package(&[
+            ("aliases.kio", "module aliases; pub type Pair = . & .;"),
+            ("consumer.kio", "module consumer; fn keep() -> . { () }"),
+        ]);
+        let module = &artifact.module("consumer").unwrap().module;
+        let ctx = EvalCtx::for_module(&artifact, module, "consumer").unwrap();
+        let unit = Type::Unit { meta: zero_meta() };
+        let pair = Type::Product {
+            left: Box::new(unit.clone()),
+            right: Box::new(unit.clone()),
+            meta: zero_meta(),
+        };
+        let hkt = prefix_test_type(
+            &[("F", 1)],
+            Type::synth_path(vec!["F".to_owned()], vec![pair.clone()], zero_span()),
+        );
+        let shadowed = prefix_test_type(&[("A", 0), ("A", 0)], type_path("A"));
+        for (exact, carrier, size) in [
+            (
+                Type::synth_path(
+                    vec!["aliases".to_owned(), "Pair".to_owned()],
+                    vec![],
+                    zero_span(),
+                ),
+                pair.clone(),
+                3,
+            ),
+            (hkt.clone(), hkt, 5),
+            (shadowed.clone(), shadowed, 3),
+        ] {
+            let projected = projected_value(projected_type_for_fuel_test(
+                crate::ast::convert_type::<EvalPhase, crate::ast::Lowered>(&exact),
+                crate::ast::convert_type::<EvalPhase, crate::ast::Lowered>(&carrier),
+            ));
+            let ordinary = refl_type_value(exact);
+            for value in [ordinary, projected] {
+                assert_eq!(initial_fuel_measure(&value, &ctx), Some(size));
+                assert_eq!(fuel_measure(&value, &ctx), Some(size));
+                assert_eq!(fuel_measure(&value_pair(value, Value::Unit), &ctx), Some(3));
+            }
+        }
     }
 
     #[test]
@@ -19827,10 +20930,10 @@ mod tests {
         let ctx = EvalCtx::new();
         let unit = || refl_type_value(Type::Unit { meta: zero_meta() });
 
-        // __type_arrow__(param, arity, result) builds a function type.
+        // The constructor takes one logical domain and result.
         let arrow = apply(
             Value::Primitive(ComptimeBuiltin::TypeArrow),
-            vec![unit(), Value::ReflTypeArity(1), unit()],
+            vec![unit(), unit()],
             &ctx,
         );
         assert!(
@@ -19861,9 +20964,15 @@ mod tests {
             segments: vec![seg.to_string()],
             param_arities: vec![0],
         };
-        let var = |n: &str| Value::ReflTypeVar {
-            name: n.to_string(),
-            arity: 0,
+        let variables = std::cell::RefCell::new(HashMap::new());
+        let var = |n: &str| {
+            Value::ReflTypeVar(
+                variables
+                    .borrow_mut()
+                    .entry(n.to_owned())
+                    .or_insert_with(|| ReflectedVariable::live(n.to_owned(), 0))
+                    .clone(),
+            )
         };
 
         assert!(matches!(
@@ -20196,8 +21305,7 @@ mod tests {
             "{term_type_app:?}"
         );
 
-        // __term_call__ over a product-domain function drives
-        // split_function_params → split_product_prefix's Product arm.
+        // The logical product domain is supplied as one checked packet.
         let product_ty = Type::Product {
             left: Box::new(unit()),
             right: Box::new(unit()),
@@ -20227,6 +21335,18 @@ mod tests {
         assert!(matches!(term_call, Value::CheckedTerm(_)), "{term_call:?}");
     }
 
+    fn specialization_pattern_for_test(scheme: &EvalAstType, pattern: EvalAstType) -> Value {
+        let mut cursor = ReflectedType::new_trusted(type_traversal::clone_type(scheme));
+        while let Some((_, body)) = cursor.open_forall() {
+            cursor = body;
+        }
+        Value::ReflType(ReflectedType::from_parts(
+            EvalRef::new(pattern),
+            None,
+            cursor.environment,
+        ))
+    }
+
     #[test]
     fn term_specialize_uses_shared_solver_and_instantiates_in_binder_order() {
         let ctx = EvalCtx::new();
@@ -20245,8 +21365,8 @@ mod tests {
         let result = apply(
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
-                checked_term_value(path_expr("poly"), poly_type),
-                refl_type_value(pattern),
+                checked_term_value(path_expr("poly"), poly_type.clone()),
+                specialization_pattern_for_test(&poly_type, pattern),
                 refl_type_value(Type::Unit { meta: zero_meta() }),
             ],
             &ctx,
@@ -20305,6 +21425,7 @@ mod tests {
                 meta: zero_meta(),
             };
         }
+        let reflected_pattern = specialization_pattern_for_test(&scheme, pattern.clone());
         let term = checked_term_value(path_expr("keep"), scheme);
         let target = product(
             boxed("owner", Type::Unit { meta: zero_meta() }),
@@ -20315,7 +21436,7 @@ mod tests {
                 Value::Primitive(ComptimeBuiltin::TermSpecialize),
                 vec![
                     term.clone(),
-                    refl_type_value(pattern.clone()),
+                    reflected_pattern.clone(),
                     refl_type_value(target),
                 ],
                 &ctx,
@@ -20373,12 +21494,8 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
                 proof.clone(),
-                projected_value(term),
-                refl_type_value(Type::synth_path(
-                    vec!["A".to_owned()],
-                    Vec::new(),
-                    zero_span(),
-                )),
+                projected_value(term.clone()),
+                projected_specialization_pattern_for_test(&proof, &term),
                 refl_type_value(Type::Unit { meta: zero_meta() }),
             ],
             &ctx,
@@ -20425,6 +21542,62 @@ mod tests {
         assert!(
             matches!(&view, Value::Data(unit) if unit.ctor() == "__left__" && matches!(unit.args(), [Value::Unit])),
             "__type_view__ must structurally reduce the projected specialized result: {view:?}"
+        );
+    }
+
+    #[test]
+    fn projected_specialization_rejects_unassociated_parameter_spelling_without_panicking() {
+        let ctx = EvalCtx::new();
+        let (proof, fills, term) =
+            crate::pass::typecheck_core::apply::fills::specialization_term_for_test();
+        let (proof, _) = fills_capability_values(proof, fills);
+        let specialize = |pattern| {
+            apply(
+                Value::Primitive(ComptimeBuiltin::TermSpecialize),
+                vec![
+                    proof.clone(),
+                    projected_value(term.clone()),
+                    pattern,
+                    refl_type_value(Type::Unit { meta: zero_meta() }),
+                ],
+                &ctx,
+            )
+        };
+        let raw_name = specialize(refl_type_value(type_path("A")));
+        assert!(nf_eq(&raw_name, &value_sum_inject(1, 3, Value::Unit), &ctx));
+    }
+
+    #[test]
+    fn projected_specialization_reports_unused_parameter_without_panicking() {
+        let ctx = EvalCtx::new();
+        let (proof, fills, term) =
+            crate::pass::typecheck_core::apply::fills::specialization_term_for_test();
+        let (proof, _) = fills_capability_values(proof, fills);
+        let specialize = |pattern| {
+            apply(
+                Value::Primitive(ComptimeBuiltin::TermSpecialize),
+                vec![
+                    proof.clone(),
+                    projected_value(term.clone()),
+                    pattern,
+                    refl_type_value(Type::Unit { meta: zero_meta() }),
+                ],
+                &ctx,
+            )
+        };
+        let unused = specialize(refl_type_value(Type::Unit { meta: zero_meta() }));
+        let Value::Data(right) = &unused else {
+            panic!("an undetermined parameter returns a specialization diagnostic: {unused:?}")
+        };
+        assert_eq!(right.ctor(), "__right__");
+        assert!(
+            matches!(
+                right.args(),
+                [Value::Data(diagnostic)]
+                    if diagnostic.ctor() == "__right__"
+                        && matches!(diagnostic.args(), [Value::DiagnosticText(_)])
+            ),
+            "{unused:?}"
         );
     }
 
@@ -20516,7 +21689,6 @@ mod tests {
             vec![
                 proof.clone(),
                 projected(unit.clone()),
-                Value::ReflTypeArity(1),
                 refl_type_value(unit.clone()),
             ],
             &ctx,
@@ -20526,7 +21698,7 @@ mod tests {
         };
         assert!(matches!(
             projected_type_view(proof_capability, &arrow).unwrap(),
-            ProjectedTypeView::Function { abi_arity: 1, .. }
+            ProjectedTypeView::Function { .. }
         ));
 
         let head = Type::synth_path(vec!["F".to_owned()], Vec::new(), zero_span());
@@ -20600,11 +21772,7 @@ mod tests {
             vec![
                 proof.clone(),
                 projected_value(template.clone()),
-                refl_type_value(Type::synth_path(
-                    vec!["A".to_owned()],
-                    Vec::new(),
-                    zero_span(),
-                )),
+                projected_specialization_pattern_for_test(&proof, &template),
                 refl_type_value(unit.clone()),
             ],
             &ctx,
@@ -20647,7 +21815,7 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermTypeApp),
             vec![
                 proof.clone(),
-                projected_value(template),
+                projected_value(template.clone()),
                 refl_type_value(unit.clone()),
             ],
             &ctx,
@@ -20730,12 +21898,7 @@ mod tests {
 
         let function_type = apply(
             Value::Primitive(ComptimeBuiltin::TypeArrow),
-            vec![
-                proof.clone(),
-                unit_type.clone(),
-                Value::ReflTypeArity(1),
-                unit_type.clone(),
-            ],
+            vec![proof.clone(), unit_type.clone(), unit_type.clone()],
             &ctx,
         );
         let direct_fn = apply(
@@ -20808,12 +21971,8 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
                 proof.clone(),
-                projected_value(template),
-                refl_type_value(Type::synth_path(
-                    vec!["A".to_owned()],
-                    Vec::new(),
-                    zero_span(),
-                )),
+                projected_value(template.clone()),
+                projected_specialization_pattern_for_test(&proof, &template),
                 refl_type_value(unit.clone()),
             ],
             &ctx,
@@ -20921,12 +22080,8 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
                 proof.clone(),
-                projected_value(term),
-                refl_type_value(Type::synth_path(
-                    vec!["A".to_owned()],
-                    Vec::new(),
-                    zero_span(),
-                )),
+                projected_value(term.clone()),
+                projected_specialization_pattern_for_test(&proof, &term),
                 refl_type_value(target),
             ],
             &ctx,
@@ -21037,16 +22192,16 @@ mod tests {
                 &data_value("fuel_wrapper", vec![projected(goal.clone())]),
                 &ctx,
             ),
-            None,
-            "a constructor cannot make provisional projected fuel measurable"
+            Some(2),
+            "an opaque reflected type is one atom inside ordinary data"
         );
         assert_eq!(
             initial_fuel_measure(
                 &data_value("fuel_wrapper", vec![projected(goal.clone())]),
                 &ctx,
             ),
-            None,
-            "a constructor cannot hide an unresolved projected root"
+            Some(2),
+            "initial nested type weight does not observe an opaque root"
         );
 
         let closed_product = projected(Type::Product {
@@ -21056,8 +22211,8 @@ mod tests {
         });
         let wrapped_closed_product = data_value("fuel_wrapper", vec![closed_product.clone()]);
         assert_eq!(fuel_measure(&closed_product, &ctx), Some(3));
-        assert_eq!(fuel_measure(&wrapped_closed_product, &ctx), Some(4));
-        assert_eq!(initial_fuel_measure(&wrapped_closed_product, &ctx), Some(4));
+        assert_eq!(fuel_measure(&wrapped_closed_product, &ctx), Some(2));
+        assert_eq!(initial_fuel_measure(&wrapped_closed_product, &ctx), Some(2));
 
         let dropped_goal_projected = projected_type_for_fuel_test(
             Type::synth_path(vec!["Drop".to_owned()], vec![goal.clone()], zero_span()),
@@ -21147,18 +22302,18 @@ mod tests {
         );
         assert_eq!(
             fuel_measure(&wrapped_open_function, &ctx),
-            Some(3),
-            "a known projected shell has the same stable rank inside recursive constructor fuel"
+            Some(2),
+            "nested reflected types have atomic recursive rank"
         );
         assert_eq!(
             initial_fuel_measure(&wrapped_open_function, &ctx),
-            Some(3),
-            "initial and recursive constructor ranks must agree for an open projected field"
+            Some(2),
+            "initial and recursive nested type ranks agree"
         );
         let nested_open_function =
             data_value("outer_fuel_wrapper", vec![wrapped_open_function.clone()]);
-        assert_eq!(fuel_measure(&nested_open_function, &ctx), Some(4));
-        assert_eq!(initial_fuel_measure(&nested_open_function, &ctx), Some(4));
+        assert_eq!(fuel_measure(&nested_open_function, &ctx), Some(3));
+        assert_eq!(initial_fuel_measure(&nested_open_function, &ctx), Some(3));
 
         let unwrap_closed = apply(
             Value::StructuralRecur {
@@ -21188,13 +22343,13 @@ mod tests {
         assert!(
             matches!(&traverse_open_wrapper, Value::Stuck(callee, args)
                 if matches!(callee.as_ref(), Value::Atom(name) if name == "open_projected_wrapper_step")
-                    && matches!(args.as_slice(), [Value::StructuralRecur { current_measure: 3, .. }, Value::Data(_), Value::Unit])),
+                    && matches!(args.as_slice(), [Value::StructuralRecur { current_measure: 2, .. }, Value::Data(_), Value::Unit])),
             "a shrinking constructor spine with a known open projected field did not recurse: {traverse_open_wrapper:?}"
         );
         let repeat_open_wrapper = apply(
             Value::StructuralRecur {
                 root_measure: 4,
-                current_measure: 3,
+                current_measure: 2,
                 step: EvalRef::new(Value::Atom("repeat_open_projected_wrapper_step".to_owned())),
             },
             vec![reminted_open_wrapper, Value::Unit],
@@ -21208,7 +22363,7 @@ mod tests {
         let increasing_open_wrapper = apply(
             Value::StructuralRecur {
                 root_measure: 5,
-                current_measure: 3,
+                current_measure: 2,
                 step: EvalRef::new(Value::Atom(
                     "increasing_open_projected_wrapper_step".to_owned(),
                 )),
@@ -21246,7 +22401,7 @@ mod tests {
             "a projected nested goal became measurable on a recursive edge"
         );
 
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         let open_function_value = projected_value(open_function.clone());
         let (initial_measure, active) = ctx
             .enter_structural_recur_helper(&open_function_value)
@@ -21411,7 +22566,7 @@ mod tests {
             "equal-measure ordinary fuel bypassed strict descent: {ordinary:?}"
         );
 
-        let operation = ctx.enter_structural_recur_operation();
+        let operation = ctx.enter_eval_operation();
         let parent_value = projected_value(parent);
         let first_value = projected_value(first);
         let reminted_value = projected_value(reminted);
@@ -21567,11 +22722,7 @@ mod tests {
                 vec![
                     proof.clone(),
                     projected_value(term.clone()),
-                    refl_type_value(Type::synth_path(
-                        vec!["A".to_owned()],
-                        Vec::new(),
-                        zero_span(),
-                    )),
+                    projected_specialization_pattern_for_test(&proof, &term),
                     refl_type_value(target),
                 ],
                 &ctx,
@@ -21779,8 +22930,8 @@ mod tests {
         for (left, expected) in [(true, "__fst__"), (false, "__snd__")] {
             let projected = CheckedTerm::from_projected(
                 ProjectedTermConstruction::ProductProjection {
-                    left_ty: unit.clone(),
-                    right_ty: unit.clone(),
+                    left_ty: ReflectedType::new_trusted(unit.clone()),
+                    right_ty: ReflectedType::new_trusted(unit.clone()),
                     value: value.clone(),
                     left,
                 },
@@ -21808,8 +22959,8 @@ mod tests {
         let source = EvalRef::new(CheckedTerm::template_value(0, product.clone()));
         let left = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::ProductProjection {
-                left_ty: unit.clone(),
-                right_ty: unit.clone(),
+                left_ty: ReflectedType::new_trusted(unit.clone()),
+                right_ty: ReflectedType::new_trusted(unit.clone()),
                 value: source.clone(),
                 left: true,
             },
@@ -21817,8 +22968,8 @@ mod tests {
         ));
         let right = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::ProductProjection {
-                left_ty: unit.clone(),
-                right_ty: unit.clone(),
+                left_ty: ReflectedType::new_trusted(unit.clone()),
+                right_ty: ReflectedType::new_trusted(unit.clone()),
                 value: source,
                 left: false,
             },
@@ -21830,14 +22981,14 @@ mod tests {
         );
         let adapted = split.adapt_template_values(&CheckedTermTemplateValueAdapter {
             sources: vec![CheckedTermTemplateSource {
-                ty: product.clone(),
+                ty: ReflectedType::new_trusted(product.clone()),
                 force_if_unused: false,
             }],
             slots: vec![CheckedTermTemplateSlot {
                 pieces: vec![CheckedTermTemplatePiece {
                     source_index: 0,
                     source_slot: 0,
-                    source_slot_tys: vec![product],
+                    source_slot_tys: vec![ReflectedType::new_trusted(product)],
                 }],
             }],
         });
@@ -21930,7 +23081,6 @@ mod tests {
             EvalRef::new(CheckedTerm::from_projected(
                 ProjectedTermConstruction::Call {
                     fn_value: source.clone(),
-                    params: vec![unit.clone(), unit.clone()],
                     arg_packet: packet.clone(),
                 },
                 nested_result.clone(),
@@ -21950,14 +23100,14 @@ mod tests {
         );
         let adapted = template.adapt_template_values(&CheckedTermTemplateValueAdapter {
             sources: vec![CheckedTermTemplateSource {
-                ty: source_ty.clone(),
+                ty: ReflectedType::new_trusted(source_ty.clone()),
                 force_if_unused: false,
             }],
             slots: vec![CheckedTermTemplateSlot {
                 pieces: vec![CheckedTermTemplatePiece {
                     source_index: 0,
                     source_slot: 0,
-                    source_slot_tys: vec![source_ty],
+                    source_slot_tys: vec![ReflectedType::new_trusted(source_ty)],
                 }],
             }],
         });
@@ -21978,16 +23128,13 @@ mod tests {
         };
         for call in [left, right] {
             let CheckedTermNode::TermCall {
-                fn_value, params, ..
+                fn_value,
+                arg_packet,
             } = call.node.as_ref()
             else {
                 panic!("the repeated source use must remain an authored call")
             };
-            assert_eq!(
-                params.len(),
-                2,
-                "both semantic arguments must survive replay"
-            );
+            assert!(matches!(arg_packet.ty(), Type::Product { .. }));
             assert!(matches!(
                 fn_value.node.as_ref(),
                 CheckedTermNode::Local { name: local } if local == name
@@ -22065,7 +23212,7 @@ mod tests {
             2,
             "both calls must use the one persisted binding"
         );
-        assert!(calls.iter().all(|args| args.len() == 2));
+        assert!(calls.iter().all(|args| args.len() == 1));
     }
 
     fn assert_template_types(
@@ -22149,6 +23296,424 @@ mod tests {
         ))
     }
 
+    fn unused_type_parameter_for_test(result: &ReflectedType) -> ReflectedType {
+        ReflectedType::from_parts(
+            EvalRef::new(Type::Forall {
+                param: TypeParam {
+                    name: "Ignored".into(),
+                    kind: None,
+                    span: zero_span(),
+                    presentation: Default::default(),
+                },
+                body: Box::new(type_traversal::clone_type(result.as_type())),
+                meta: zero_meta(),
+            }),
+            None,
+            result.environment.clone(),
+        )
+    }
+
+    #[test]
+    fn projected_term_constructor_preserves_hidden_argument_and_signature_carriers() {
+        use reflection_bindings::{ReflectedVariable, semantic_type_equal};
+        let result = ReflectedVariable::live("A".into(), 0);
+        let hidden = ReflectedVariable::live("A".into(), 0);
+        let value = raw_carrier_for_test("value", result.as_type());
+        let generic =
+            raw_carrier_for_test("generic", unused_type_parameter_for_test(&result.as_type()));
+        let application = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::TypeApp {
+                term: generic.clone(),
+                arg: hidden.as_type(),
+            },
+            result.as_type(),
+        )
+        .unwrap();
+        let CheckedTermNode::TermTypeApp { arg, fn_value } = application.node.as_ref() else {
+            panic!("type application")
+        };
+        assert!(EvalRef::ptr_eq(fn_value, &generic));
+        let argument = RuntimeCallbackAdapter::typed_field(&application, arg);
+        assert!(semantic_type_equal(&argument, &hidden.as_type()).unwrap());
+        assert!(semantic_type_equal(&application.ty, &result.as_type()).unwrap());
+        assert!(!semantic_type_equal(&argument, &application.ty).unwrap());
+
+        let function_ty = callback_carrier_for_test(&hidden.as_type(), &result.as_type());
+        let function = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::Fn {
+                params: vec![("parameter".into(), hidden.as_type())],
+                span: zero_span(),
+                body: value.clone(),
+            },
+            function_ty.clone(),
+        )
+        .unwrap();
+        let CheckedTermNode::TermFn { sig, body } = function.node.as_ref() else {
+            panic!("function")
+        };
+        assert!(EvalRef::ptr_eq(body, &value));
+        let SignatureParam::Value(param) = &sig.params[0] else {
+            panic!("value parameter")
+        };
+        assert_eq!(param.name, "parameter");
+        let parameter = RuntimeCallbackAdapter::typed_field(&function, param.ty.as_ref().unwrap());
+        assert!(semantic_type_equal(&parameter, &hidden.as_type()).unwrap());
+        assert!(semantic_type_equal(&function.ty, &function_ty).unwrap());
+    }
+
+    #[test]
+    fn projected_term_constructor_preserves_same_spelled_branch_payloads() {
+        use reflection_bindings::{ReflectedVariable, semantic_type_equal};
+        let left = ReflectedVariable::live("A".into(), 0);
+        let right = ReflectedVariable::live("A".into(), 0);
+        let unit = ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+        let left_type = left.as_type();
+        let right_type = right.as_type();
+        let mut types = reflection_bindings::ReflectionTypeBuilder::new([&left_type, &right_type]);
+        let left_ty = types.import(&left_type).take();
+        let right_ty = types.import(&right_type).take();
+        let sum = types.finish(Type::Sum {
+            left: Box::new(left_ty),
+            right: Box::new(right_ty),
+            meta: zero_meta(),
+        });
+        let scrutinee = raw_carrier_for_test("scrutinee", sum);
+        let branch = raw_carrier_for_test("branch", unit.clone());
+        let either = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::Either {
+                left_ty: left_type,
+                right_ty: right_type,
+                value: scrutinee.clone(),
+                left_name: "left".into(),
+                left_body: branch.clone(),
+                right_name: "right".into(),
+                right_body: branch,
+            },
+            unit,
+        )
+        .unwrap();
+        let CheckedTermNode::IntrinsicEither {
+            left_ty,
+            right_ty,
+            value,
+            ..
+        } = either.node.as_ref()
+        else {
+            panic!("either")
+        };
+        assert!(EvalRef::ptr_eq(value, &scrutinee));
+        let left_field = RuntimeCallbackAdapter::typed_field(&either, left_ty);
+        let right_field = RuntimeCallbackAdapter::typed_field(&either, right_ty);
+        assert!(semantic_type_equal(&left_field, &left.as_type()).unwrap());
+        assert!(semantic_type_equal(&right_field, &right.as_type()).unwrap());
+        assert!(!semantic_type_equal(&left_field, &right_field).unwrap());
+    }
+
+    #[test]
+    fn projected_type_function_closes_its_actual_live_binder_and_rejects_opened_escape() {
+        use reflection_bindings::{ReflectedVariable, semantic_type_equal};
+        let inner = ReflectedVariable::live("A".into(), 0);
+        let enclosing = ReflectedVariable::live("A".into(), 0);
+        let body_ty = callback_carrier_for_test(&inner.as_type(), &enclosing.as_type());
+        let body = raw_carrier_for_test("body", body_ty.clone());
+        let expected = body_ty.close_forall(&inner).unwrap();
+        let function = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::TypeFn {
+                variable: inner,
+                span: zero_span(),
+                body,
+            },
+            expected.clone(),
+        )
+        .unwrap();
+        assert!(semantic_type_equal(&function.ty, &expected).unwrap());
+        let (_, opened_body) = function.ty.open_forall().unwrap();
+        assert!(
+            semantic_type_equal(&opened_body.child(TypeChild::Right), &enclosing.as_type())
+                .unwrap()
+        );
+
+        let (foreign, _) = expected.open_forall().unwrap();
+        let unit = ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+        let hidden = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::TypeApp {
+                term: raw_carrier_for_test("ignore_type", unused_type_parameter_for_test(&unit)),
+                arg: foreign.as_type(),
+            },
+            unit.clone(),
+        )
+        .unwrap();
+        let unused = ReflectedVariable::live("Unused".into(), 0);
+        let expected_unit = unit.close_forall(&unused).unwrap();
+        let error = CheckedTerm::from_projected_reflected(
+            ProjectedTermConstruction::TypeFn {
+                variable: unused,
+                span: Span::new(17, 23),
+                body: EvalRef::new(hidden),
+            },
+            expected_unit,
+        )
+        .expect_err("a hidden free opened parameter cannot escape a quantified constructor");
+        assert!(
+            format!("{error:?}").contains(
+                "a quantified term result contains a parameter opened from another scheme"
+            )
+        );
+    }
+
+    fn callback_carrier_for_test(param: &ReflectedType, ret: &ReflectedType) -> ReflectedType {
+        let mut types = reflection_bindings::ReflectionTypeBuilder::new([param, ret]);
+        let param = types.import(param).take();
+        let ret = types.import(ret).take();
+        types.finish(Type::Function {
+            param: Box::new(param),
+            ret: Box::new(ret),
+            abi_arity: 1,
+            meta: zero_meta(),
+            caps: (),
+        })
+    }
+
+    fn raw_carrier_for_test(name: &str, ty: ReflectedType) -> EvalRef<CheckedTerm> {
+        EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::Raw(path_expr(name)),
+            ty,
+        ))
+    }
+
+    fn callback_runtime_for_test(
+        variable: &reflection_bindings::ReflectedVariable,
+    ) -> ReflectedType {
+        ReflectedType::from_parts(
+            EvalRef::new(Type::Sum {
+                left: Box::new(type_path(&variable.name)),
+                right: Box::new(Type::Unit { meta: zero_meta() }),
+                meta: zero_meta(),
+            }),
+            None,
+            variable.as_type().environment.clone(),
+        )
+    }
+
+    #[test]
+    fn lifted_terminal_callback_adapter_preserves_same_spelled_pair_bindings() {
+        use reflection_bindings::{ReflectedVariable, TypeChild, semantic_type_equal};
+        let state = ReflectedVariable::live("A".into(), 0);
+        let other = ReflectedVariable::live("A".into(), 0);
+        let unit = ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+        let public_callback = callback_carrier_for_test(&unit, &unit);
+        let runtime = callback_runtime_for_test(&state);
+        let lifted = callback_carrier_for_test(&unit, &runtime);
+        let ordinary_type = callback_carrier_for_test(&other.as_type(), &unit);
+        let ordinary = raw_carrier_for_test("ordinary", ordinary_type.clone());
+        let mut types =
+            reflection_bindings::ReflectionTypeBuilder::new([&public_callback, &ordinary_type]);
+        let left = types.import(&public_callback).take();
+        let right = types.import(&ordinary_type).take();
+        let pair_ty = types.finish(Type::Product {
+            left: Box::new(left),
+            right: Box::new(right),
+            meta: zero_meta(),
+        });
+        let callbacks = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::IntrinsicPair {
+                left: EvalRef::new(CheckedTerm::from_reflected_node(
+                    CheckedTermNode::TemplateValue { index: 0 },
+                    public_callback.clone(),
+                )),
+                right: ordinary.clone(),
+            },
+            pair_ty.clone(),
+        ));
+        let selected = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::IntrinsicProjection {
+                intrinsic: "__fst__".into(),
+                left_ty: type_traversal::clone_type(pair_ty.child(TypeChild::Left).as_type()),
+                right_ty: type_traversal::clone_type(pair_ty.child(TypeChild::Right).as_type()),
+                value: EvalRef::new(CheckedTerm::from_reflected_node(
+                    CheckedTermNode::Local {
+                        name: "callbacks".into(),
+                    },
+                    pair_ty.clone(),
+                )),
+            },
+            pair_ty.child(TypeChild::Left),
+        ));
+        let call = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::TermCall {
+                fn_value: selected,
+                arg_packet: raw_carrier_for_test("unit", unit.clone()),
+            },
+            unit.clone(),
+        ));
+        let template = CheckedTerm::from_reflected_node(
+            CheckedTermNode::TermLet {
+                name: "callbacks".into(),
+                value: callbacks,
+                body: call,
+            },
+            unit.clone(),
+        );
+        let adapted = template.adapt_lifted_terminal_callbacks(
+            &[Some(lifted)],
+            runtime.clone(),
+            raw_carrier_for_test("continue", callback_carrier_for_test(&unit, &runtime)),
+        );
+        let CheckedTermNode::TermLet { value, body, .. } = adapted.node.as_ref() else {
+            panic!("let")
+        };
+        let CheckedTermNode::IntrinsicPair { right, .. } = value.node.as_ref() else {
+            panic!("pair")
+        };
+        assert!(EvalRef::ptr_eq(right, &ordinary));
+        let lhs = value
+            .ty
+            .child(TypeChild::Left)
+            .child(TypeChild::Right)
+            .child(TypeChild::Left);
+        let rhs = value.ty.child(TypeChild::Right).child(TypeChild::Left);
+        assert!(semantic_type_equal(&lhs, &state.as_type()).unwrap());
+        assert!(semantic_type_equal(&rhs, &other.as_type()).unwrap());
+        assert!(!semantic_type_equal(&lhs, &rhs).unwrap());
+        let CheckedTermNode::TermCall { fn_value, .. } = body.node.as_ref() else {
+            panic!("call")
+        };
+        let CheckedTermNode::IntrinsicProjection { right_ty, .. } = fn_value.node.as_ref() else {
+            panic!("projection")
+        };
+        let hidden = RuntimeCallbackAdapter::typed_field(fn_value, right_ty).child(TypeChild::Left);
+        assert!(semantic_type_equal(&hidden, &other.as_type()).unwrap());
+        assert!(semantic_type_equal(&adapted.ty, &runtime).unwrap());
+    }
+
+    #[test]
+    fn lifted_terminal_callback_adapter_keeps_hidden_type_application_argument() {
+        use reflection_bindings::{ReflectedVariable, TypeChild, semantic_type_equal};
+        let state = ReflectedVariable::live("A".into(), 0);
+        let unit = ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+        let public_callback = callback_carrier_for_test(&unit, &unit);
+        let runtime = callback_runtime_for_test(&state);
+        let lifted = callback_carrier_for_test(&unit, &runtime);
+        let state_type = lifted.child(TypeChild::Right).child(TypeChild::Left);
+        let Type::Path { segments, .. } = state_type.as_type() else {
+            panic!("runtime state reference")
+        };
+        let argument = ReflectedVariable::live(segments[0].name.clone(), 0);
+        let forall = |body: &ReflectedType| {
+            ReflectedType::from_parts(
+                EvalRef::new(Type::Forall {
+                    param: TypeParam {
+                        name: "Ignored".into(),
+                        kind: None,
+                        span: zero_span(),
+                        presentation: Default::default(),
+                    },
+                    body: Box::new(type_traversal::clone_type(body.as_type())),
+                    meta: zero_meta(),
+                }),
+                None,
+                body.environment.clone(),
+            )
+        };
+        let mut application_type = public_callback.clone();
+        application_type.environment = application_type
+            .environment
+            .with(argument.name.clone(), argument.clone());
+        let specialized = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::TermTypeApp {
+                fn_value: EvalRef::new(CheckedTerm::from_reflected_node(
+                    CheckedTermNode::TemplateValue { index: 0 },
+                    forall(&public_callback),
+                )),
+                arg: type_path(&argument.name),
+            },
+            application_type,
+        ));
+        let template = CheckedTerm::from_reflected_node(
+            CheckedTermNode::TermCall {
+                fn_value: specialized,
+                arg_packet: raw_carrier_for_test("unit", unit.clone()),
+            },
+            unit.clone(),
+        );
+        let adapted = template.adapt_lifted_terminal_callbacks(
+            &[Some(forall(&lifted))],
+            runtime.clone(),
+            raw_carrier_for_test("continue", callback_carrier_for_test(&unit, &runtime)),
+        );
+        let CheckedTermNode::TermCall { fn_value, .. } = adapted.node.as_ref() else {
+            panic!("call")
+        };
+        let CheckedTermNode::TermTypeApp { arg, .. } = fn_value.node.as_ref() else {
+            panic!("type app")
+        };
+        let hidden = RuntimeCallbackAdapter::typed_field(fn_value, arg);
+        let state_type = fn_value.ty.child(TypeChild::Right).child(TypeChild::Left);
+        assert!(semantic_type_equal(&hidden, &argument.as_type()).unwrap());
+        assert!(semantic_type_equal(&state_type, &state.as_type()).unwrap());
+        assert!(!semantic_type_equal(&hidden, &state_type).unwrap());
+        assert!(semantic_type_equal(&adapted.ty, &runtime).unwrap());
+    }
+
+    #[test]
+    fn lifted_terminal_callback_adapter_keeps_branch_payload_types() {
+        use reflection_bindings::{ReflectedVariable, TypeChild, semantic_type_equal};
+        let state = ReflectedVariable::live("A".into(), 0);
+        let payload = ReflectedVariable::live("A".into(), 0);
+        let unit = ReflectedType::new_trusted(Type::Unit { meta: zero_meta() });
+        let public_callback = callback_carrier_for_test(&unit, &unit);
+        let runtime = callback_runtime_for_test(&state);
+        let lifted = callback_carrier_for_test(&unit, &runtime);
+        let scrutinee = raw_carrier_for_test("scrutinee", callback_runtime_for_test(&payload));
+        let terminal = EvalRef::new(CheckedTerm::from_reflected_node(
+            CheckedTermNode::TermCall {
+                fn_value: EvalRef::new(CheckedTerm::from_reflected_node(
+                    CheckedTermNode::TemplateValue { index: 0 },
+                    public_callback,
+                )),
+                arg_packet: raw_carrier_for_test("unit", unit.clone()),
+            },
+            unit.clone(),
+        ));
+        let mut branch_ty = unit.clone();
+        branch_ty.environment = payload.as_type().environment.clone();
+        let template = CheckedTerm::from_reflected_node(
+            CheckedTermNode::IntrinsicEither {
+                left_ty: type_path("A"),
+                right_ty: Type::Unit { meta: zero_meta() },
+                result_ty: Type::Unit { meta: zero_meta() },
+                value: scrutinee.clone(),
+                left_name: "payload".into(),
+                left_body: terminal,
+                right_name: "unused".into(),
+                right_body: raw_carrier_for_test("ordinary", unit.clone()),
+            },
+            branch_ty,
+        );
+        let adapted = template.adapt_lifted_terminal_callbacks(
+            &[Some(lifted)],
+            runtime.clone(),
+            raw_carrier_for_test("continue", callback_carrier_for_test(&unit, &runtime)),
+        );
+        let CheckedTermNode::IntrinsicEither {
+            left_ty,
+            result_ty,
+            value,
+            ..
+        } = adapted.node.as_ref()
+        else {
+            panic!("either")
+        };
+        assert!(EvalRef::ptr_eq(value, &scrutinee));
+        let payload_type = RuntimeCallbackAdapter::typed_field(&adapted, left_ty);
+        let state_type =
+            RuntimeCallbackAdapter::typed_field(&adapted, result_ty).child(TypeChild::Left);
+        assert!(semantic_type_equal(&payload_type, &payload.as_type()).unwrap());
+        assert!(semantic_type_equal(&state_type, &state.as_type()).unwrap());
+        assert!(!semantic_type_equal(&payload_type, &state_type).unwrap());
+        assert!(semantic_type_equal(&adapted.ty, &runtime).unwrap());
+    }
+
     #[test]
     fn lifted_terminal_callback_adapter_retypes_every_opaque_child_family() {
         let unit = Type::Unit { meta: zero_meta() };
@@ -22183,7 +23748,6 @@ mod tests {
             EvalRef::new(CheckedTerm::from_projected(
                 ProjectedTermConstruction::Call {
                     fn_value: EvalRef::new(CheckedTerm::template_value(0, public_callback.clone())),
-                    params: vec![unit.clone()],
                     arg_packet: raw("unit_argument", unit.clone()),
                 },
                 unit.clone(),
@@ -22214,8 +23778,8 @@ mod tests {
         ));
         let selected_public_callback = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::ProductProjection {
-                left_ty: public_callback.clone(),
-                right_ty: public_callback.clone(),
+                left_ty: ReflectedType::new_trusted(public_callback.clone()),
+                right_ty: ReflectedType::new_trusted(public_callback.clone()),
                 value: callback_pair,
                 left: false,
             },
@@ -22231,7 +23795,6 @@ mod tests {
         let call_argument = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: raw("consume_callback", consumer_type),
-                params: vec![public_callback.clone()],
                 arg_packet: selected_public_callback,
             },
             unit.clone(),
@@ -22244,8 +23807,8 @@ mod tests {
         };
         let either = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Either {
-                left_ty: unit.clone(),
-                right_ty: unit.clone(),
+                left_ty: ReflectedType::new_trusted(unit.clone()),
+                right_ty: ReflectedType::new_trusted(unit.clone()),
                 value: hidden(raw("scrutinee", sum_type)),
                 left_name: "left".to_owned(),
                 left_body: raw("left_body", unit.clone()),
@@ -22278,15 +23841,11 @@ mod tests {
         };
         let function = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Fn {
-                sig: Signature::from_parts(
-                    vec![SignatureParam::Value(crate::ast::Param {
-                        name: "parameter".to_owned(),
-                        ty: Some(unit.clone()),
-                        pattern: (),
-                        meta: zero_meta(),
-                    })],
-                    vec![crate::ast::SignatureGroupKind::Value { len: 1 }],
-                ),
+                params: vec![(
+                    "parameter".to_owned(),
+                    ReflectedType::new_trusted(unit.clone()),
+                )],
+                span: zero_span(),
                 body: hidden(raw("fn_body", unit.clone())),
             },
             function_type.clone(),
@@ -22294,7 +23853,6 @@ mod tests {
         let function_call = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: function,
-                params: vec![unit.clone()],
                 arg_packet: raw("fn_argument", unit.clone()),
             },
             unit.clone(),
@@ -22302,12 +23860,8 @@ mod tests {
 
         let type_function = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::TypeFn {
-                param: TypeParam {
-                    presentation: Default::default(),
-                    name: "A".to_owned(),
-                    span: zero_span(),
-                    kind: None,
-                },
+                variable: ReflectedVariable::live("A".to_owned(), 0),
+                span: zero_span(),
                 body: hidden(raw("type_fn_body", unit.clone())),
             },
             unit.clone(),
@@ -22315,15 +23869,15 @@ mod tests {
         let type_application = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::TypeApp {
                 term: type_function,
-                arg: unit.clone(),
+                arg: ReflectedType::new_trusted(unit.clone()),
             },
             unit.clone(),
         ));
 
         let injection = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Injection {
-                left_ty: unit.clone(),
-                right_ty: unit.clone(),
+                left_ty: ReflectedType::new_trusted(unit.clone()),
+                right_ty: ReflectedType::new_trusted(unit.clone()),
                 value: hidden(raw("injected", unit.clone())),
                 left: true,
             },
@@ -22353,8 +23907,8 @@ mod tests {
         ];
         for (label, opaque) in fixtures {
             let adapted = with_terminal(opaque).adapt_lifted_terminal_callbacks(
-                &[Some(runtime_callback.clone())],
-                runtime_result.clone(),
+                &[Some(ReflectedType::new_trusted(runtime_callback.clone()))],
+                ReflectedType::new_trusted(runtime_result.clone()),
                 runtime_tail_for_test(&runtime_result),
             );
             assert_eq!(adapted.ty(), &runtime_result, "{label}");
@@ -22401,7 +23955,7 @@ mod tests {
         let specialized = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::TypeApp {
                 term: EvalRef::new(CheckedTerm::template_value(0, public_source)),
-                arg: unit.clone(),
+                arg: ReflectedType::new_trusted(unit.clone()),
             },
             public_callback.clone(),
         ));
@@ -22424,8 +23978,8 @@ mod tests {
         let callback_call = |name: &str| {
             let callback = EvalRef::new(CheckedTerm::from_projected(
                 ProjectedTermConstruction::ProductProjection {
-                    left_ty: public_callback.clone(),
-                    right_ty: public_callback.clone(),
+                    left_ty: ReflectedType::new_trusted(public_callback.clone()),
+                    right_ty: ReflectedType::new_trusted(public_callback.clone()),
                     value: EvalRef::new(CheckedTerm::local(name.to_owned(), public_pair.clone())),
                     left: true,
                 },
@@ -22434,7 +23988,6 @@ mod tests {
             EvalRef::new(CheckedTerm::from_projected(
                 ProjectedTermConstruction::Call {
                     fn_value: callback,
-                    params: vec![unit.clone()],
                     arg_packet: EvalRef::new(CheckedTerm::new(
                         Expr::Unit {
                             source_trivia: Default::default(),
@@ -22478,8 +24031,8 @@ mod tests {
         ));
         let either = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Either {
-                left_ty: public_pair,
-                right_ty: unit.clone(),
+                left_ty: ReflectedType::new_trusted(public_pair),
+                right_ty: ReflectedType::new_trusted(unit.clone()),
                 value: scrutinee.clone(),
                 left_name: "callbacks".to_owned(),
                 left_body: shadowed_call,
@@ -22500,8 +24053,8 @@ mod tests {
         reset_runtime_callback_adapter_work();
         let outer_continuation = runtime_tail_for_test(&runtime_result);
         let adapted = template.adapt_lifted_terminal_callbacks(
-            &[Some(runtime_source.clone())],
-            runtime_result.clone(),
+            &[Some(ReflectedType::new_trusted(runtime_source.clone()))],
+            ReflectedType::new_trusted(runtime_result.clone()),
             outer_continuation.clone(),
         );
 
@@ -22602,7 +24155,6 @@ mod tests {
         let template = CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: unused_alias,
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22617,8 +24169,8 @@ mod tests {
 
         let outer_continuation = runtime_tail_for_test(&runtime_result);
         let adapted = template.adapt_lifted_terminal_callbacks(
-            &[Some(runtime_callback)],
-            runtime_result.clone(),
+            &[Some(ReflectedType::new_trusted(runtime_callback))],
+            ReflectedType::new_trusted(runtime_result.clone()),
             outer_continuation.clone(),
         );
 
@@ -22686,8 +24238,8 @@ mod tests {
         ));
         let ordinary_projection = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::ProductProjection {
-                left_ty: public_callback.clone(),
-                right_ty: public_callback.clone(),
+                left_ty: ReflectedType::new_trusted(public_callback.clone()),
+                right_ty: ReflectedType::new_trusted(public_callback.clone()),
                 value: pair,
                 left: false,
             },
@@ -22696,7 +24248,6 @@ mod tests {
         let template = CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: ordinary_projection,
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22711,8 +24262,8 @@ mod tests {
 
         let outer_continuation = runtime_tail_for_test(&runtime_result);
         let adapted = template.adapt_lifted_terminal_callbacks(
-            &[Some(runtime_callback.clone())],
-            runtime_result.clone(),
+            &[Some(ReflectedType::new_trusted(runtime_callback.clone()))],
+            ReflectedType::new_trusted(runtime_result.clone()),
             outer_continuation.clone(),
         );
 
@@ -22785,8 +24336,8 @@ mod tests {
         for level in (1..=DEPTH).rev() {
             selected = EvalRef::new(CheckedTerm::from_projected(
                 ProjectedTermConstruction::ProductProjection {
-                    left_ty: level_types[level - 1].clone(),
-                    right_ty: level_types[level - 1].clone(),
+                    left_ty: ReflectedType::new_trusted(level_types[level - 1].clone()),
+                    right_ty: ReflectedType::new_trusted(level_types[level - 1].clone()),
                     value: selected,
                     left: true,
                 },
@@ -22796,7 +24347,6 @@ mod tests {
         let mut body = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: selected,
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22842,8 +24392,8 @@ mod tests {
 
         reset_runtime_callback_adapter_work();
         let adapted = template.adapt_lifted_terminal_callbacks(
-            &[Some(runtime_callback)],
-            runtime_result.clone(),
+            &[Some(ReflectedType::new_trusted(runtime_callback))],
+            ReflectedType::new_trusted(runtime_result.clone()),
             runtime_tail_for_test(&runtime_result),
         );
 
@@ -22875,7 +24425,6 @@ mod tests {
         let template = CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: EvalRef::new(CheckedTerm::template_value(0, callback)),
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22890,7 +24439,7 @@ mod tests {
 
         let _ = template.adapt_lifted_terminal_callbacks(
             &[],
-            runtime_result.clone(),
+            ReflectedType::new_trusted(runtime_result.clone()),
             runtime_tail_for_test(&runtime_result),
         );
     }
@@ -22925,7 +24474,6 @@ mod tests {
         let template = CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: forged_callee,
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22939,8 +24487,10 @@ mod tests {
         );
 
         let _ = template.adapt_lifted_terminal_callbacks(
-            &[Some(callback(runtime_result.clone()))],
-            runtime_result.clone(),
+            &[Some(ReflectedType::new_trusted(callback(
+                runtime_result.clone(),
+            )))],
+            ReflectedType::new_trusted(runtime_result.clone()),
             runtime_tail_for_test(&runtime_result),
         );
     }
@@ -22959,7 +24509,6 @@ mod tests {
         let call = CheckedTerm::from_projected(
             ProjectedTermConstruction::Call {
                 fn_value: EvalRef::new(CheckedTerm::new(path_expr("projected_fn"), fn_type)),
-                params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
                         source_trivia: Default::default(),
@@ -22972,7 +24521,7 @@ mod tests {
             unit.clone(),
         );
         assert!(
-            matches!(call.node.as_ref(), CheckedTermNode::TermCall { params, .. } if params == &vec![unit.clone()])
+            matches!(call.node.as_ref(), CheckedTermNode::TermCall { arg_packet, .. } if arg_packet.ty() == &unit)
         );
         assert!(matches!(call.clone_expr(), Expr::Call { .. }));
 
@@ -23019,8 +24568,11 @@ mod tests {
         let underdetermined = apply(
             Value::Primitive(ComptimeBuiltin::TermSpecialize),
             vec![
-                checked_term_value(path_expr("poly"), poly_type),
-                refl_type_value(Type::synth_path(vec!["A".into()], Vec::new(), zero_span())),
+                checked_term_value(path_expr("poly"), poly_type.clone()),
+                specialization_pattern_for_test(
+                    &poly_type,
+                    Type::synth_path(vec!["A".into()], Vec::new(), zero_span()),
+                ),
                 refl_type_value(Type::Unit { meta: zero_meta() }),
             ],
             &ctx,
@@ -23266,6 +24818,49 @@ mod tests {
     }
 
     #[test]
+    fn whole_result_fill_authenticates_and_keeps_no_observable_target() {
+        let ctx = EvalCtx::new();
+        let (proof, empty) = fresh_fills_capability_values();
+        let candidate = refl_type_value(Type::Unit { meta: zero_meta() });
+        let filled = apply(
+            Value::Primitive(ComptimeBuiltin::FillResult),
+            vec![proof.clone(), empty.clone(), candidate.clone()],
+            &ctx,
+        );
+        let context = fill_context_from_value(&filled).expect("whole-result append must reduce");
+        assert!(
+            fill_context_from_value(&empty)
+                .unwrap()
+                .relations_in_source_order()
+                .is_empty()
+        );
+        let relations = context.relations_in_source_order();
+        assert_eq!(relations.len(), 1);
+        assert!(
+            relations[0].0.is_none(),
+            "the transcript stores no reflected target"
+        );
+        assert!(!exact_call_memo_result_shareable(&filled));
+        let mut budget = EXACT_CALL_MEMO_KEY_BUDGET;
+        assert!(value_memo_key(&filled, &mut budget).is_none());
+        let (foreign_proof, _) = fresh_fills_capability_values();
+        let foreign_candidate = projected_value(
+            crate::pass::typecheck_core::apply::fills::focused_type_for_test(
+                marked_comptime_proof_from_value(&foreign_proof).unwrap(),
+                ReflectedType::new_trusted(Type::Unit { meta: zero_meta() }),
+            ),
+        );
+        for args in [
+            vec![foreign_proof, empty.clone(), candidate],
+            vec![proof.clone(), empty.clone(), foreign_candidate],
+            vec![proof, empty, Value::Unit],
+        ] {
+            let rejected = apply(Value::Primitive(ComptimeBuiltin::FillResult), args, &ctx);
+            assert!(matches!(rejected, Value::Stuck(..)), "{rejected:?}");
+        }
+    }
+
+    #[test]
     fn marked_fill_capabilities_are_immutable_call_scoped_and_unmemoizable() {
         let ctx = EvalCtx::new();
         let (proof, empty) = fresh_fills_capability_values();
@@ -23355,7 +24950,7 @@ mod tests {
     }
 
     #[test]
-    fn projected_type_args_fold_residualizes_only_an_unresolved_specialization_root() {
+    fn projected_type_args_fold_faults_only_on_an_unresolved_specialization_root() {
         use crate::pass::typecheck_core::apply::fills::{
             focused_type_for_test, projected_type_apply, projected_type_arguments,
             unresolved_type_reflections_for_test,
@@ -23391,8 +24986,8 @@ mod tests {
                 &ctx,
             );
             assert!(
-                matches!(folded, Value::Stuck(..)),
-                "an unresolved canonical root reduced to a concrete fold result: {folded:?}"
+                comptime_fault_message(&folded, &ctx).is_some(),
+                "an unresolved canonical root did not fault: {folded:?}"
             );
         }
 
@@ -23449,7 +25044,7 @@ mod tests {
     }
 
     #[test]
-    fn projected_type_apply_residualizes_only_an_unresolved_specialization_head() {
+    fn projected_type_apply_faults_only_on_an_unresolved_specialization_head() {
         use crate::pass::typecheck_core::apply::fills::{
             focused_type_for_test, projected_type_apply, projected_type_arguments,
             unresolved_type_reflections_for_test,
@@ -23500,8 +25095,8 @@ mod tests {
                 &ctx,
             );
             assert!(
-                matches!(applied, Value::Stuck(..)),
-                "an unresolved canonical head reduced after dropping its argument: {applied:?}"
+                comptime_fault_message(&applied, &ctx).is_some(),
+                "an unresolved canonical head did not fault: {applied:?}"
             );
         }
 
@@ -23605,8 +25200,8 @@ mod tests {
                 &ctx,
             );
             assert!(
-                matches!(equality, Value::Stuck(..)),
-                "an open parent or sibling was laundered into reflected evidence: {equality:?}"
+                comptime_fault_message(&equality, &ctx).is_some(),
+                "an open parent or sibling did not fault: {equality:?}"
             );
         }
         let foreign = apply(
@@ -23665,6 +25260,13 @@ mod tests {
         let expected_display = crate::pass::typecheck_core::display_type(&expected);
         assert_eq!(expected_display, "A", "rigid-binder protection was lost");
 
+        let ProjectedTypeView::TypeVar(variable) =
+            projected_type_view(&proof, &param).expect("alias child preserves its caller binder")
+        else {
+            panic!("the canonical alias child is the original caller variable")
+        };
+        let expected_reflected = variable.as_type();
+        assert_eq!(expected_reflected.as_type(), &expected);
         let proof_value = Value::Data(EvalRef::new(DataValue::new_marked_comptime_proof(proof)));
         let foreign_proof_value = Value::Data(EvalRef::new(DataValue::new_marked_comptime_proof(
             foreign_proof,
@@ -23675,11 +25277,24 @@ mod tests {
             vec![
                 proof_value.clone(),
                 param.clone(),
-                refl_type_value(expected),
+                Value::ReflType(expected_reflected),
             ],
             &ctx,
         );
         assert!(matches!(equal, Value::Bool(true)), "{equal:?}");
+        let same_spelling = apply(
+            Value::Primitive(ComptimeBuiltin::TypeEqual),
+            vec![
+                proof_value.clone(),
+                param.clone(),
+                refl_type_value(expected),
+            ],
+            &ctx,
+        );
+        assert!(
+            matches!(same_spelling, Value::Bool(false)),
+            "{same_spelling:?}"
+        );
         for builtin in [ComptimeBuiltin::TypeDisplay, ComptimeBuiltin::TypeShortName] {
             let displayed = apply(
                 Value::Primitive(builtin),
@@ -23873,8 +25488,27 @@ mod tests {
         }
         let (outer, body) = type_fn_parts(&canonical);
         let (inner, _) = type_fn_parts(body);
-        assert!(is_generated_checked_term_type_name(&outer.name));
-        assert!(is_generated_checked_term_type_name(&inner.name));
+        let Type::Forall {
+            param: outer_type,
+            body: scheme,
+            ..
+        } = canonical.ty()
+        else {
+            panic!("the checked type-function result lost its outer scheme");
+        };
+        let Type::Forall {
+            param: inner_type,
+            body: result,
+            ..
+        } = scheme.as_ref()
+        else {
+            panic!("the checked type-function result lost its inner scheme");
+        };
+        assert_eq!(outer, outer_type);
+        assert_eq!(inner, inner_type);
+        assert_eq!(outer.effective_kind().arity(), 0);
+        assert_eq!(inner.effective_kind().arity(), 0);
+        assert!(matches!(result.as_ref(), Type::Unit { .. }));
         assert_ne!(outer.name, inner.name);
         assert_eq!(
             canonical.serialization_type_binders(),
@@ -23918,13 +25552,13 @@ mod tests {
         let artifact = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; pub newtype Remote : . { constructor remote; projector un_remote; };",
+                "module provider; pub type { Remote: . { mk; get; }; };",
             ),
             (
                 "caller.kio",
                 "module caller; import provider(Remote); \
-                 newtype Local : . { constructor local; projector un_local; }; \
-                 newtype Other : . { constructor other; projector un_other; };",
+                 type { Local: . { mk; get; }; }; \
+                 type { Other: . { mk; get; }; };",
             ),
         ]);
         let caller = &artifact.module("caller").expect("caller module").module;
@@ -24478,8 +26112,11 @@ mod tests {
             &Env::new(),
             &ctx,
         );
-        assert!(matches!(reflected, Value::Stuck(callee, _)
-            if matches!(callee.as_ref(), Value::Atom(name) if name == "__reflect_type__")));
+        assert!(matches!(reflected, Value::StuckType(callee, argument)
+            if matches!(argument.as_type(), Type::Unit { .. })
+                && matches!(callee.as_ref(), Value::Stuck(inner, args)
+                    if matches!(inner.as_ref(), Value::Atom(name) if name == "__reflect_type__")
+                        && matches!(args.as_slice(), [Value::Unit]))));
 
         let authorized = test_primitive_ctx(&[ComptimeBuiltin::ReflectType]);
         let qualified = Expr::Path {
@@ -24492,9 +26129,11 @@ mod tests {
             ext: (),
         };
         let qualified = eval(&reflect_unit_call(qualified), &Env::new(), &authorized);
-        assert!(matches!(qualified, Value::Stuck(callee, _)
-            if matches!(callee.as_ref(), Value::Atom(name)
-                if name == "fake.__reflect_type__")));
+        assert!(matches!(qualified, Value::StuckType(callee, argument)
+            if matches!(argument.as_type(), Type::Unit { .. })
+                && matches!(callee.as_ref(), Value::Stuck(inner, args)
+                    if matches!(inner.as_ref(), Value::Atom(name) if name == "fake.__reflect_type__")
+                        && matches!(args.as_slice(), [Value::Unit]))));
     }
 
     #[test]
@@ -24698,7 +26337,7 @@ mod tests {
             );
 
             assert_eq!(
-                structural_recur_stuck_message(&fault, &ctx),
+                comptime_fault_message(&fault, &ctx),
                 Some(
                     "`__structural_recur__` got stuck because a recursive call did not descend from the current fuel measure (root=1, current=1, next=1)"
                         .to_string()
@@ -24719,7 +26358,7 @@ mod tests {
             ),
             (
                 "main.kio",
-                "module main; import other as types; import types as real; host type String role(i32); newtype T : . { constructor mk_t; projector un_t; };",
+                "module main; import other as types; import types as real; host type String role(i32); type { T: . { mk; get; }; };",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -24924,8 +26563,8 @@ mod tests {
         let pkg = lowered_package(&[(
             "a.kio",
             "module a; rec { \
-               newtype Wrap : Peer { pub constructor mk; pub projector get; }; \
-               newtype Peer : Wrap { constructor make_peer; projector un_peer; }; \
+               type { Wrap: Peer { pub mk; pub get; }; }; \
+               type { Peer: Wrap { mk; get; }; }; \
              }",
         )]);
         let registry = newtype_registry_for_package(&pkg);
@@ -24937,11 +26576,8 @@ mod tests {
         assert!(!registry.proj_ctor.contains_key("Wrap.get"));
         assert!(!registry.proj_ctor.contains_key("get"));
         assert_eq!(
-            registry
-                .proj_ctor
-                .get("a::Peer.un_peer")
-                .map(String::as_str),
-            Some("a::Peer.make_peer")
+            registry.proj_ctor.get("a::Peer.get").map(String::as_str),
+            Some("a::Peer.mk")
         );
     }
 
@@ -24951,18 +26587,33 @@ mod tests {
             (
                 "a.kio",
                 "module a; \
-                 newtype Wrap[A] : A { pub constructor mk; pub projector get; }; \
+                 type { Wrap[A]: A { pub mk; pub get; }; }; \
                  fn unwrap[A](x: A) -> A { Wrap.get[A](Wrap.mk[A](x)) }",
             ),
             (
                 "unrelated.kio",
                 "module unrelated; \
-                 newtype Wrap[A] : A { pub constructor make; pub projector get; };",
+                 type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
         ]);
         let module = &pkg.module("a").expect("module a").module;
         let unwrap = find_module_fn(module, "unwrap").expect("unwrap fn");
         let ctx = EvalCtx::for_module(&pkg, module, "a").expect("evaluation context");
+        for member in ["mk", "get"] {
+            let path =
+                ["Wrap", member].map(|part| PathSegment::synth(part.to_owned(), zero_span()));
+            let resolved =
+                resolve_module_newtype_member(&ctx, module, &path).expect("local nominal member");
+            assert_eq!(
+                resolved.constructor,
+                NewtypeCtorIdentity {
+                    module_path: "a".to_owned(),
+                    type_name: "Wrap".to_owned(),
+                    constructor_name: "mk".to_owned(),
+                }
+            );
+            assert_eq!(resolved.member_name, member);
+        }
         let mut env = Env::new();
         env.insert("x".to_owned(), Value::Atom("payload".to_owned()));
 
@@ -24978,10 +26629,10 @@ mod tests {
         let pkg = lowered_package(&[(
             "main.kio",
             "module main; \
-             newtype Box[A] : A { constructor make; projector open; }; \
+             type { Box[A]: A { mk; get; }; }; \
              type Mid[A] = Box[A]; \
              type Alias[A] = Mid[A]; \
-             fn unwrap[A](x: A) -> A { Alias.open[A](Alias.make[A](x)) }",
+             fn unwrap[A](x: A) -> A { Alias.get[A](Alias.mk[A](x)) }",
         )]);
         let module = &pkg.module("main").expect("main module").module;
         let unwrap = find_module_fn(module, "unwrap").expect("unwrap fn");
@@ -24994,6 +26645,50 @@ mod tests {
             matches!(&value, Value::Atom(name) if name == "payload"),
             "identity-alias members did not reduce through their terminal newtype: {value:?}"
         );
+    }
+
+    #[test]
+    fn host_converter_result_preserves_a_rehost_alias_and_nominal_identity() {
+        let package = lowered_package(&[
+            ("host.kio", "module host; host type Text; host type Input;"),
+            (
+                "bridge.kio",
+                "module bridge; import host as runtime; pub type Text = runtime.Text;",
+            ),
+            ("other.kio", "module other; host type Text;"),
+        ]);
+        package.resolve_imports().expect("resolve alias owner");
+        let ctx = EvalCtx::new().with_package(Some(&package));
+        let path = |module: &str, name: &str| {
+            Type::synth_path(vec![module.into(), name.into()], Vec::new(), zero_span())
+        };
+        let input = path("host", "Input");
+        let text = path("host", "Text");
+        let alias = ReflectedType::new_trusted(path("bridge", "Text"));
+        let converter_type = Type::synth_function(vec![input.clone()], text, zero_span());
+        let convert = |result: ReflectedType| {
+            apply(
+                Value::Primitive(ComptimeBuiltin::TermHostConvert),
+                vec![
+                    Value::ReflType(result),
+                    refl_type_value(input.clone()),
+                    checked_term_value(path_expr("convert"), converter_type.clone()),
+                    checked_term_value(path_expr("input"), input.clone()),
+                ],
+                &ctx,
+            )
+        };
+        let result = convert(alias.clone());
+        let Value::CheckedTerm(term) = &result else {
+            panic!("the converter's result alias must remain a checked call: {result:?}")
+        };
+        assert!(reflection_bindings::semantic_type_equal(term.reflected_type(), &alias).unwrap());
+        assert!(matches!(
+            term.node.as_ref(),
+            CheckedTermNode::TermCall { .. }
+        ));
+        let wrong = convert(ReflectedType::new_trusted(path("other", "Text")));
+        assert_builtin_stuck(&wrong, ComptimeBuiltin::TermHostConvert);
     }
 
     #[test]
@@ -25082,7 +26777,7 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "library/type_of.kio",
-                "module library/type_of; pub newtype Rep_unit : . { pub constructor mk; pub projector un; };",
+                "module library/type_of; pub type { Rep_unit: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
@@ -25234,7 +26929,7 @@ mod tests {
         let pkg = lowered_package(&[(
             "owner.kio",
             "module owner; \
-             newtype A : . { constructor mk_a; projector un_a; }; \
+             type { A: . { mk; get; }; }; \
              pub type Pair[T] = T & A; \
              type Inner[T] = T & A; \
              pub type Outer[A] = Inner[A];",
@@ -25274,7 +26969,7 @@ mod tests {
         let pkg = lowered_package(&[(
             "owner.kio",
             "module owner; \
-             newtype A : . { constructor mk_a; projector un_a; }; \
+             type { A: . { mk; get; }; }; \
              pub type Poly[T] = [A] T & A;",
         )]);
         pkg.resolve_imports().expect("resolve imports");
@@ -25554,6 +27249,7 @@ mod tests {
             },
             params: Vec::new().into(),
             value_groups: vec![EvalParamGroup {
+                type_arity: None,
                 param_start: 0,
                 param_count: 0,
                 abi_arity: 0,

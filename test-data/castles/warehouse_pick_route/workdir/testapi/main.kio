@@ -1,6 +1,7 @@
 module testapi/main;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -9,14 +10,14 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-labels Choice = { chosen_index: I32, chosen_dist: I32 };
+type Choice = { Chosen_index: I32; Chosen_dist: I32 };
 
-labels Plan = {
-, score: I32
-, route: Array[I32]
-, blocked: Array[Bool]
-, picks: Array[I32]
-, qty: Array[I32]
+type Plan = {
+  Score: I32;
+  Route: Array[I32];
+  Blocked: Array[Bool];
+  Picks: Array[I32];
+  Qty: Array[I32]
 };
 
 fn node_count() -> I32 { 6 }
@@ -213,7 +214,7 @@ rec(loop) fn choose_pick(
       )
     }
   } else {
-    {chosen_index = best_index, chosen_dist = best_dist}
+    (Chosen_index.mk(best_index), Chosen_dist.mk(best_dist))
   }
 }
 
@@ -234,8 +235,8 @@ rec(loop) fn plan_picks(
   } else {
     let distances = shortest_from(current, graph);
     let choice = choose_pick(0, pick_nodes, picked, distances, node_count(), blocked_distance());
-    let chosen_index = choice.?{chosen_index};
-    let chosen_dist = choice.?{chosen_dist};
+    let chosen_index = choice.>select { Chosen_index.get };
+    let chosen_dist = choice.>select { Chosen_dist.get };
     let chosen_node = array.array_get(pick_nodes, chosen_index);
     array.array_set(picked, chosen_index, .t);
     array.array_push(route, chosen_node);
@@ -341,19 +342,22 @@ fn run_plan() -> Plan {
   let route = array.array_make_empty[I32](());
   array.array_push(route, dock_node());
   let score = plan_picks(pick_count(), dock_node(), 0, graph, picks, picked, route);
-  {score, route, blocked, picks, qty}
+  (Score.mk(score), Route.mk(route), Blocked.mk(blocked), Picks.mk(picks), Qty.mk(qty))
 }
 
 pub fn main() {
   let plan = run_plan();
-  let route = array.array_clone(plan.?{route});
+  let route = array.array_clone(plan.>select { Route.get });
   print_line("warehouse pick route");
   print_line(text.string_concat("nodes: ", fmt.int_to_string(node_count())));
   print_line(text.string_concat(
   , "blocked crosslink A1-rear <-> B1-rear: "
-  , fmt.bool_to_string(array.array_get(plan.?{blocked}, edge_index(2, 3)))
+  , fmt.bool_to_string(array.array_get(plan.>select { Blocked.get }, edge_index(2, 3)))
   ));
   print_line(text.string_concat("route: ", route_text(0, route, "")));
-  print_line(text.string_concat("picks: ", pick_summary(1, route, plan.?{picks}, plan.?{qty}, "")));
-  print_line(text.string_concat("travel score: ", fmt.int_to_string(plan.?{score})))
+  print_line(text.string_concat(
+  , "picks: "
+  , pick_summary(1, route, plan.>select { Picks.get }, plan.>select { Qty.get }, "")
+  ));
+  print_line(text.string_concat("travel score: ", fmt.int_to_string(plan.>select { Score.get })))
 }

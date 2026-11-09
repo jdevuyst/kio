@@ -1,12 +1,15 @@
 module testapi/main;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, String);
 import testapi/io(print);
 
-labels Condition_record = { flag: Bool };
+type { Flag: Bool { mk; get } }
 
-fn make_flag(value: Bool) -> Condition_record { {flag = value} }
+type Condition_record = Flag;
+
+fn make_flag(value: Bool) -> Condition_record { Flag.mk(value) }
 
 fn make_pair(value: Bool) -> Condition_record & . { (make_flag(value), ()) }
 
@@ -15,15 +18,15 @@ fn produced[A](make: . -> A) -> A { make(()) }
 fn identity[A](value: A) -> A { value }
 
 fn select_direct(value: Bool) -> String {
-  if(make_flag(value).?{flag}) { "direct-true\n" } else { "direct-false\n" }
+  if(make_flag(value).>Flag.get) { "direct-true\n" } else { "direct-false\n" }
 }
 
 fn select_product(value: Bool) -> String {
-  if(make_pair(value).?{flag}) { "product-true\n" } else { "product-false\n" }
+  if(make_pair(value).>select { Flag.get }) { "product-true\n" } else { "product-false\n" }
 }
 
 fn select_callback(value: Bool) -> String {
-  if(produced(.() -> Condition_record { make_flag(value) }).?{flag}) {
+  if(produced(.() -> Condition_record { make_flag(value) }).>Flag.get) {
     "callback-true\n"
   } else {
     "callback-false\n"
@@ -31,7 +34,7 @@ fn select_callback(value: Bool) -> String {
 }
 
 fn select_nested(value: Bool) -> String {
-  if(identity(produced(.() -> Condition_record { make_flag(value) }).?{flag})) {
+  if(identity(produced(.() -> Condition_record { make_flag(value) }).>Flag.get)) {
     "nested-true\n"
   } else {
     "nested-false\n"

@@ -12,19 +12,20 @@ module tree/audit;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, lt_i32);
 import testapi/iter(loop);
-import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of, {three}, {two});
+import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of);
 
 /// (a) The uniform leaf depth of a subtree, or `ragged` when its leaves
 /// disagree — the answer that makes a broken rebalance visible.
-labels Depth = { level: I32 } | { ragged: . };
+type Depth = { Level: I32 } | { Ragged: . };
 
-fn level(d: I32) -> Depth { ({level = d}.>widen_sum)[Depth] }
+fn level(d: I32) -> Depth { (Level.mk(d).>widen_sum)[Depth] }
 
-fn ragged() -> Depth { ({ragged=}.>widen_sum)[Depth] }
+fn ragged() -> Depth { (Ragged.mk(()).>widen_sum)[Depth] }
 
 /// Sibling depths that agree collapse to one; anything else is ragged, and
 /// raggedness spreads to every ancestor.
@@ -35,7 +36,11 @@ fn agree(a: Depth, b: Depth) -> Depth {
         match(b) {
           (
           , .(y: Level) {
-              if(eq_i32(x.?{level}, y.?{level})) { level(x.?{level}) } else { ragged() }
+              if(eq_i32(x.>select { Level.get }, y.>select { Level.get })) {
+                level(x.>select { Level.get })
+              } else {
+                ragged()
+              }
             }
           , .(_r: Ragged) { ragged() }
           )
@@ -48,22 +53,28 @@ fn agree(a: Depth, b: Depth) -> Depth {
 
 fn deeper(d: Depth) -> Depth {
   match(d) {
-    (.(x: Level) { level(add_i32(x.?{level}, 1)) }, .(_r: Ragged) { ragged() })
+    (
+    , .(x: Level) {
+        level(add_i32(x.>select { Level.get }, 1))
+      }
+    , .(_r: Ragged) { ragged() }
+    )
   }
 }
 
 rec(loop) fn depth_of(t: Node) -> Depth {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { level(0) }
     , .(n: Two) {
-        let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+        let .(l: Node, _k: I32, _v: String, r: Node) = n.>select { Two.get };
         let dl = recur(cont) depth_of(l);
         let dr = recur(cont) depth_of(r);
         deeper(agree(dl, dr))
       }
     , .(n: Three) {
-        let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) = n.?{three};
+        let .(l: Node, _k1: I32, _v1: String, m: Node, _k2: I32, _v2: String, r: Node) =
+          n.>select { Three.get };
         let dl = recur(cont) depth_of(l);
         let dm = recur(cont) depth_of(m);
         let dr = recur(cont) depth_of(r);
@@ -81,13 +92,13 @@ fn depth_uniform(t: Node) -> Bool {
 
 /// (b) The inorder walk's running state: the last key it saw, and whether
 /// every key so far arrived strictly after its predecessor.
-labels Seen = { last: I32 } | { unseen: . };
+type Seen = { Last: I32 } | { Unseen: . };
 
 type Order = Seen & Bool;
 
-fn seen(k: I32) -> Seen { ({last = k}.>widen_sum)[Seen] }
+fn seen(k: I32) -> Seen { (Last.mk(k).>widen_sum)[Seen] }
 
-fn unseen() -> Seen { ({unseen=}.>widen_sum)[Seen] }
+fn unseen() -> Seen { (Unseen.mk(()).>widen_sum)[Seen] }
 
 fn order_start() -> Order { (unseen(), .t) }
 
@@ -96,24 +107,30 @@ fn order_ok(o: Order) -> Bool { let .(_s: Seen, ok: Bool) = o; ok }
 fn order_step(o: Order, k: I32) -> Order {
   let .(s: Seen, ok: Bool) = o;
   match(s) {
-    (.(p: Last) { (seen(k), and(ok, lt_i32(p.?{last}, k))) }, .(_u: Unseen) { (seen(k), ok) })
+    (
+    , .(p: Last) {
+        (seen(k), and(ok, lt_i32(p.>select { Last.get }, k)))
+      }
+    , .(_u: Unseen) { (seen(k), ok) }
+    )
   }
 }
 
 /// Left subtree, first key, middle subtree, second key, right subtree — the
 /// keys arrive in the order the tree claims to hold them.
 rec(loop) fn order_walk(t: Node, o: Order) -> Order {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { o }
     , .(n: Two) {
-        let .(l: Node, k: I32, _v: String, r: Node) = n.?{two};
+        let .(l: Node, k: I32, _v: String, r: Node) = n.>select { Two.get };
         let after_left = recur(cont) order_walk(l, o);
         let after_key = order_step(after_left, k);
         recur order_walk(r, after_key)
       }
     , .(n: Three) {
-        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) =
+          n.>select { Three.get };
         let after_left = recur(cont) order_walk(l, o);
         let after_k1 = order_step(after_left, k1);
         let after_mid = recur(cont) order_walk(m, after_k1);
@@ -142,17 +159,18 @@ fn shape_node(keys: I32, children: I32, ordered: Bool, below: Shape) -> Shape {
 }
 
 rec(loop) fn shape_walk(t: Node) -> Shape {
-  match(t.>Node.un_node) {
+  match(t.>Node.get) {
     (
     , .(_e: Leaf) { shape_leaf() }
     , .(n: Two) {
-        let .(l: Node, _k: I32, _v: String, r: Node) = n.?{two};
+        let .(l: Node, _k: I32, _v: String, r: Node) = n.>select { Two.get };
         let sl = recur(cont) shape_walk(l);
         let sr = recur(cont) shape_walk(r);
         shape_node(1, 2, .t, shape_join(sl, sr))
       }
     , .(n: Three) {
-        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) = n.?{three};
+        let .(l: Node, k1: I32, _v1: String, m: Node, k2: I32, _v2: String, r: Node) =
+          n.>select { Three.get };
         let sl = recur(cont) shape_walk(l);
         let sm = recur(cont) shape_walk(m);
         let sr = recur(cont) shape_walk(r);

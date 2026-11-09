@@ -54,11 +54,8 @@ pub(crate) fn check_module_in_package_with_typecheck_scope_collect_errors<'m, P>
 ) -> Result<(), Vec<Error>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
     crate::ast::FnDef<P>: Sync,
     ModuleEnv<'m, P>: Sync,
     P::Elaborations: Send,
@@ -86,11 +83,8 @@ fn check_module_in_package_with_typecheck_scope_collect_errors_with_execution<'m
 ) -> Result<(), Vec<Error>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
     crate::ast::FnDef<P>: Sync,
     ModuleEnv<'m, P>: Sync,
     P::Elaborations: Send,
@@ -139,11 +133,8 @@ pub(crate) fn check_module_in_package_with_typecheck_scope_collect_errors<'m, P>
 ) -> Result<(), Vec<Error>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
         module,
@@ -168,11 +159,8 @@ fn check_module_in_package_with_typecheck_scope_collect_errors_with_execution<'m
 ) -> Result<(), Vec<Error>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     check_module_declarations(
         module,
@@ -226,11 +214,8 @@ fn check_module_declarations<'m, P>(
 ) -> Result<(), Vec<Error>>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let env = ModuleEnv::build_with_typecheck_scope_and_execution(
         module,
@@ -268,11 +253,8 @@ fn first_collected_error(errors: Vec<Error>) -> Error {
 pub fn check_package_signatures<P>(package: &Package<P>) -> Result<(), LocatedError>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let Some((_, first)) = package.modules().next() else {
         return Ok(());
@@ -298,11 +280,8 @@ pub(crate) fn check_module_signatures<P>(
 ) -> Result<(), LocatedError>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let typecheck_scope = PackageTypecheckScope::fresh_for_module(
         &entry.module,
@@ -319,11 +298,8 @@ fn check_module_signatures_with_scope<P>(
 ) -> Result<(), LocatedError>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let package_file = package.package_file().map(|entry| &entry.package_file);
     let package_name = package
@@ -362,11 +338,8 @@ where
 pub(crate) fn check_no_alias_only_cycles<P>(package: &Package<P>) -> Result<(), LocatedError>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     struct AliasNode<'a, P: crate::ast::Phase> {
         module_path: String,
@@ -471,11 +444,8 @@ fn collect_alias_edges<'m, P>(
     out: &mut Vec<(usize, crate::span::Span)>,
 ) where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     match ty {
         crate::ast::Type::Path {
@@ -527,7 +497,6 @@ fn collect_alias_edges<'m, P>(
             }
         }
         crate::ast::Type::Unit { .. } | crate::ast::Type::Bottom { .. } => {}
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         crate::ast::Type::Infer { .. } => {}
     }
 }
@@ -543,11 +512,8 @@ fn finish_checking_module_collect_errors<'m, P>(
 ) -> Result<(), Vec<Error>>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     // The per-newtype variance table and the newtype SCC partition are
     // computed once, up front. The strict-positivity check on each
@@ -665,7 +631,7 @@ where
                 // Statically uninhabited per the
                 // `ItemLabels = Never` bound on `P`.
                 crate::ast::Item::Labels(_, ext) => match *ext {},
-                crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
                 // `equiv` validation: each arm is typechecked, then
                 // all arms are required to share a type.
                 crate::ast::Item::Equiv(e, witness) => {
@@ -734,18 +700,11 @@ fn missing_recursive_labels_marker_error(
         deferred.reference_span,
         "recursive data declaration requires `rec`",
     )
-    .with_secondary(
-        deferred.head_span,
-        "this labels declaration does not enable its atomic recursive scope",
-    )
-    .with_help(if deferred.has_named_alias {
-        "write `rec labels`; the named alias remains transparent and a generated label newtype grounds the recursive component"
-    } else {
-        "write `rec labels`; the generated label newtype grounds the recursive component"
-    })
+    .with_secondary(deferred.head_span, "this type declaration is recursive")
+    .with_help("add `rec` before `type` to declare these recursive types")
     .with_fix(
         Fix::machine_applicable(
-            "Add `rec` to this recursive labels declaration",
+            "Make this type declaration recursive",
             vec![FixEdit::new(
                 crate::span::Span::new(
                     deferred.declaration_span.start,
@@ -765,11 +724,8 @@ fn check_type_alias_declaration<'m, P>(
 ) -> Result<(), Error>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let provider = NominalProvider::new(Some(env.module), env.package);
     let bound = alias
@@ -811,11 +767,8 @@ fn check_newtype_declaration<'m, P>(
 ) -> Result<(), Error>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let provider = NominalProvider::new(Some(env.module), env.package);
     let bound = newtype
@@ -902,11 +855,8 @@ fn resolved_signature_type_with_provider<P>(
 ) -> Option<ResolvedSignatureType>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     if matches!(segments, [name] if bound.contains(name.as_str())) {
         return None;
@@ -982,11 +932,8 @@ fn check_signature_type_visibility<P>(
 ) -> Result<(), Error>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let provider = NominalProvider::new(Some(env.module), env.package);
     check_signature_type_visibility_with_provider(
@@ -1011,11 +958,8 @@ fn check_signature_type_visibility_with_provider<P>(
 ) -> Result<(), Error>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     match ty {
         crate::ast::Type::Path {
@@ -1106,7 +1050,6 @@ where
         crate::ast::Type::Goal { .. } => unreachable!(
             "an internal Type::Goal cannot occur in a declaration signature visibility check"
         ),
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
     Ok(())
 }
@@ -1121,11 +1064,8 @@ fn check_newtype_member_visibility_with_provider<P>(
 ) -> Result<(), Error>
 where
     P: DeclarationPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let referrer = format!("{member_kind} `{}.{}`", newtype.name, member.name);
     let effective_visibility = intersect_visibility(&newtype.vis, &member.vis);
@@ -1210,11 +1150,8 @@ pub(crate) fn check_package_modules_with_typecheck_scope_collect_errors_with_exe
 ) -> Result<(), Vec<LocatedError>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
     crate::ast::FnDef<P>: Sync,
     crate::ast::PackageFile<P>: Sync,
     crate::pass::resolve::ModuleEntry<P>: Sync,
@@ -1281,11 +1218,8 @@ pub(crate) fn check_package_modules_with_typecheck_scope_collect_errors_with_exe
 ) -> Result<(), Vec<LocatedError>>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     typecheck_scope.assert_package(package);
     let package_file = package.package_file().map(|e| &e.package_file);
@@ -1332,11 +1266,8 @@ fn check_one_module_in_package_with_typecheck_scope<'m, P>(
 ) -> ModuleCheckResult<P::Elaborations>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
     crate::ast::FnDef<P>: Sync,
     crate::pass::resolve::ModuleEntry<P>: Sync,
     ModuleEnv<'m, P>: Sync,
@@ -1372,11 +1303,8 @@ fn check_one_module_in_package_with_typecheck_scope<'m, P>(
 ) -> ModuleCheckResult<P::Elaborations>
 where
     P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
+        + crate::ast::Phase<ItemLabels = crate::ast::Never, ItemOp = crate::ast::Never>
+        + Clone,
 {
     let mut local = P::new_elaborations(&typecheck_scope);
     let result = check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
@@ -1432,7 +1360,7 @@ fn module_errors<E>(results: &[ModuleCheckResult<E>]) -> Vec<LocatedError> {
 /// `specs/prime.md` § The newtype primitive.
 fn check_no_phantom_existentials<P>(d: &crate::ast::Newtype<P>) -> Result<(), Error>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     if d.existential_params.is_empty() {
         return Ok(());
@@ -1445,7 +1373,7 @@ where
                 binder.span,
                 format!(
                     "phantom existential binder `<{}>`: the binder does not appear in \
-                     the payload of `newtype {}`. Each existential binder must occur at \
+                     the payload of nominal type `{}`. Each existential binder must occur at \
                      least once in the payload — a phantom existential is \
                      information-free and rejected.",
                     binder.name, d.name,
@@ -1477,7 +1405,7 @@ pub fn check_fn_def<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let mut tcx = TypeCtx::new(env, elaborations).at_item(item_index);
     check_fn_signature_with_ctx(d, &mut tcx)?;
@@ -1492,7 +1420,7 @@ fn check_fn_signature<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: DeclarationPhase + crate::ast::Phase + Clone,
 {
     let mut tcx = TypeCtx::new(env, elaborations);
     check_fn_signature_with_ctx(d, &mut tcx)
@@ -1503,7 +1431,7 @@ fn check_fn_signature_with_ctx<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: DeclarationPhase + crate::ast::Phase + Clone,
 {
     // Bind parameters in source order. Each value-param's annotation
     // is a type expression that may reference type-parameters
@@ -1581,7 +1509,7 @@ pub fn check_equiv<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let mut tcx = TypeCtx::new(env, elaborations).at_item(item_index);
     // Same parameter scoping as `check_fn_def`.
@@ -1755,7 +1683,7 @@ mod tests {
             (
                 &[
                     "module left; host type Token; pub type Id[A] = A;",
-                    "module a; import left as dep; pub newtype Wrapped : dep.Id[dep.Token] { pub constructor wrap; pub projector unwrap; };",
+                    "module a; import left as dep; pub type { Wrapped: dep.Id[dep.Token] { pub mk; pub get; }; };",
                     "module b; import a(Wrapped); pub type Copy = Wrapped;",
                 ],
                 true,

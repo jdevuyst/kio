@@ -150,10 +150,10 @@ fn match_disjoint(a: &Type, b: &Type) -> bool {
 /// after a few unsuccessful tries; the caller falls back to the
 /// homogeneous-arm `__either__` production (which has no DNF
 /// dispatch and so isn't constrained by `match_disjoint`).
-fn pick_match_disjoint_pair<R: Rng>(rng: &mut R, surface_mode: bool) -> Option<(Type, Type)> {
+fn pick_match_disjoint_pair<R: Rng>(rng: &mut R) -> Option<(Type, Type)> {
     for _ in 0..10 {
-        let a = arbitrary_simple_type(rng, surface_mode);
-        let b = arbitrary_simple_type(rng, surface_mode);
+        let a = arbitrary_simple_type(rng);
+        let b = arbitrary_simple_type(rng);
         if match_disjoint(&a, &b) {
             return Some((a, b));
         }
@@ -182,7 +182,7 @@ const BODY_DEPTH: u32 = 5;
 #[derive(Debug, Clone, Default)]
 pub struct GenOpts {
     /// When true, restrict emission to Kio'. Surface forms (tuple
-    /// literal sugar, `if` blocks, `labels`, label-value sugar,
+    /// literal sugar, `if` blocks,
     /// `match`, the algebraic macros `iso` / `into` / `onto` /
     /// `align` / `atom`, and the spine palette `reorder_sum` /
     /// `reorder_prod` / `narrow_sum` / `narrow_prod` /
@@ -197,26 +197,14 @@ pub fn program_from_seed(seed: u64) -> Program {
 
 pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
-    // Surface-mode is decided up front so it gates type-pool
-    // membership: Label types are only available when surface_mode is
-    // on (in --prime-only the pool stays Kio'-only). Body and
-    // signature generation use the gated pool, so a Kio'-only
-    // program never references Greet.mk / Greet.get / Greet — and
-    // emit.rs can omit generated labels and label-type helpers for those
-    // cases, keeping the body-level Kio' render signal honest corpus-wide.
     let surface_mode = !opts.prime_only && rng.gen_bool(0.5);
 
-    let ret = arbitrary_type(&mut rng, TYPE_DEPTH, surface_mode);
+    let ret = arbitrary_type(&mut rng, TYPE_DEPTH);
     let arity = rng.gen_range(0u32..=3);
     let params: Vec<(String, Type)> = (0..arity)
-        .map(|i| {
-            (
-                format!("p{i}"),
-                arbitrary_type(&mut rng, TYPE_DEPTH, surface_mode),
-            )
-        })
+        .map(|i| (format!("p{i}"), arbitrary_type(&mut rng, TYPE_DEPTH)))
         .collect();
-    // Generated newtype wrappers sit in the typing environment from
+    // Generated nominal type wrappers sit in the typing environment from
     // the start; the body's existing env_fn / target_vars productions
     // pick them up like any other in-scope function.
     let mut env = wrapper_env(surface_mode);
@@ -249,13 +237,6 @@ pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
         &user_macros,
     );
 
-    // `uses_surface` is true iff the rendered output actually
-    // exercises a surface form. Surface forms today live exclusively
-    // in the body — generated label types render nominally in type
-    // position (see `render::render_type_opts`), so signature-position
-    // `Type::Label` doesn't bump the flag. A surface_mode program
-    // whose body happens to have no surface terms still renders to
-    // pure Kio' source at the body level.
     let uses_surface = surface_mode && term_uses_surface_forms(&body);
 
     Program {
@@ -273,12 +254,7 @@ pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
     }
 }
 
-/// Initial typing environment populated by generated newtype
-/// wrappers. Public so `tests/selfcheck.rs` can pre-load the same
-/// environment when it re-walks a generated program. Generated label
-/// members (`Greet.mk`/`Greet.get`/`Count.mk`/`Count.get`) are gated on
-/// `surface_mode` — Kio'-only programs don't see them, matching
-/// emit.rs's conditional generated labels.
+/// Initial typing environment for nominal wrappers and surface helpers.
 pub fn wrapper_env(surface_mode: bool) -> Vec<(String, Type)> {
     let mut env = Vec::new();
     for nominal in nominal_catalog() {
@@ -301,28 +277,6 @@ pub fn wrapper_env(surface_mode: bool) -> Vec<(String, Type)> {
         ));
     }
     if surface_mode {
-        for label_ty in label_catalog() {
-            let Type::Label {
-                payload,
-                constructor,
-                projector,
-                ..
-            } = &label_ty
-            else {
-                continue;
-            };
-            // `Greet.mk(payload) -> Greet` and `Greet.get(Greet) ->
-            // payload`, both emitted as generated newtype members by
-            // label_elab.
-            env.push((
-                constructor.clone(),
-                Type::Fun(vec![(**payload).clone()], Box::new(label_ty.clone())),
-            ));
-            env.push((
-                projector.clone(),
-                Type::Fun(vec![label_ty.clone()], Box::new((**payload).clone())),
-            ));
-        }
         // `pub fn kio_gen_op_pick(x: I32, y: I32) -> I32` — the
         // monomorphic 2-arg binding target for the `<+>` user-op
         // declared in the generated root module.
@@ -336,17 +290,14 @@ pub fn wrapper_env(surface_mode: bool) -> Vec<(String, Type)> {
 
 /// Pick a simple Kio' type — Base, Unit, a nullary nominal from
 /// the catalog, or a `Box[simple]` instantiation of the parametric
-/// newtype in the generated root module.
-fn arbitrary_simple_type<R: Rng>(rng: &mut R, surface_mode: bool) -> Type {
-    arbitrary_simple_type_at_depth(rng, 1, surface_mode)
+/// nominal type in the generated root module.
+fn arbitrary_simple_type<R: Rng>(rng: &mut R) -> Type {
+    arbitrary_simple_type_at_depth(rng, 1)
 }
 
-/// Inner picker with a depth budget so parametric types don't nest
-/// without bound (`Box[Box[Box[…]]]`). Label types are only available
-/// when `surface_mode` is true — Kio'-only programs never see a
-/// `Type::Label` because emit.rs omits generated labels.
-fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32, surface_mode: bool) -> Type {
-    let upper = if surface_mode { 14 } else { 12 };
+/// Bound parametric type nesting.
+fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32) -> Type {
+    let upper = 12;
     let r = rng.gen_range(0..upper);
     match r {
         0..=6 => Type::Base(*Base::all().choose(rng).unwrap()),
@@ -355,26 +306,20 @@ fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32, surface_mode:
             let nominals = nominal_catalog();
             nominals.choose(rng).unwrap().clone()
         }
-        10 | 11 if surface_mode => {
-            // Label-generated nominal types from the surface-mode
-            // catalog. They render as generated type names.
-            let labels = label_catalog();
-            labels.choose(rng).unwrap().clone()
-        }
         _ => {
             // Parametric `Box[X]` where X is also simple. Bound the
             // recursion so we don't wander into Box[Box[Box[…]]].
             let inner = if depth == 0 {
                 Type::Base(*Base::all().choose(rng).unwrap())
             } else {
-                arbitrary_simple_type_at_depth(rng, depth - 1, surface_mode)
+                arbitrary_simple_type_at_depth(rng, depth - 1)
             };
             box_param(inner)
         }
     }
 }
 
-/// The fixed nullary newtypes the generator can use, paired with the
+/// The fixed nullary nominal types the generator can use, paired with the
 /// flat wrapper-function names declared in the generated root module. The
 /// wrappers match this generator's flat callee representation:
 /// the wrapper's name fills the `constructor` /
@@ -399,31 +344,6 @@ pub fn nominal_catalog() -> Vec<Type> {
             payload: Box::new(Type::bool()),
             constructor: "box_bool".to_string(),
             projector: "unbox_bool".to_string(),
-        },
-    ]
-}
-
-/// The fixed label-generated nominal types the generator can use.
-/// Each label is declared in `prog.kio` via `pub labels { … };`.
-/// The minted newtype name is the surface label spelling with the
-/// first letter capitalized (`greet` -> `Greet`), per the kio-rs
-/// `label_elab` pass. Construction and projection go through the
-/// generated `mk` / `get` members.
-pub fn label_catalog() -> Vec<Type> {
-    vec![
-        Type::Label {
-            label: "greet".to_string(),
-            newtype_name: mint_label_newtype_name("greet"),
-            payload: Box::new(Type::str()),
-            constructor: "Greet.mk".to_string(),
-            projector: "Greet.get".to_string(),
-        },
-        Type::Label {
-            label: "count".to_string(),
-            newtype_name: mint_label_newtype_name("count"),
-            payload: Box::new(Type::i32()),
-            constructor: "Count.mk".to_string(),
-            projector: "Count.get".to_string(),
         },
     ]
 }
@@ -461,41 +381,27 @@ fn arbitrary_user_macros<R: Rng>(rng: &mut R) -> Vec<UserMacroSpec> {
     specs
 }
 
-/// Mirror of kio-rs's `label_elab::mint_label_newtype_name`: capitalize
-/// the first letter of the surface label spelling. Kept in sync with
-/// the implementation by spec contract; tested against the live
-/// kio-rs binary by the generator self-tests.
-fn mint_label_newtype_name(label: &str) -> String {
-    let mut chars = label.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
 /// Pick an arbitrary Kio type at outer position. Composite types
 /// (Fun / Product / Sum) wrap simple components only, which keeps
 /// call-site type args simple by construction.
-fn arbitrary_type<R: Rng>(rng: &mut R, _depth: u32, surface_mode: bool) -> Type {
+fn arbitrary_type<R: Rng>(rng: &mut R, _depth: u32) -> Type {
     if rng.gen_bool(0.55) {
-        arbitrary_simple_type(rng, surface_mode)
+        arbitrary_simple_type(rng)
     } else {
         match rng.gen_range(0u32..3) {
             0 => {
                 let arity = rng.gen_range(1u32..=2);
-                let args = (0..arity)
-                    .map(|_| arbitrary_simple_type(rng, surface_mode))
-                    .collect();
-                let ret = Box::new(arbitrary_simple_type(rng, surface_mode));
+                let args = (0..arity).map(|_| arbitrary_simple_type(rng)).collect();
+                let ret = Box::new(arbitrary_simple_type(rng));
                 Type::Fun(args, ret)
             }
             1 => Type::Product(
-                Box::new(arbitrary_simple_type(rng, surface_mode)),
-                Box::new(arbitrary_simple_type(rng, surface_mode)),
+                Box::new(arbitrary_simple_type(rng)),
+                Box::new(arbitrary_simple_type(rng)),
             ),
             _ => Type::Sum(
-                Box::new(arbitrary_simple_type(rng, surface_mode)),
-                Box::new(arbitrary_simple_type(rng, surface_mode)),
+                Box::new(arbitrary_simple_type(rng)),
+                Box::new(arbitrary_simple_type(rng)),
             ),
         }
     }
@@ -504,11 +410,11 @@ fn arbitrary_type<R: Rng>(rng: &mut R, _depth: u32, surface_mode: bool) -> Type 
 fn is_simple_type(t: &Type) -> bool {
     matches!(
         t,
-        Type::Base(_) | Type::Unit | Type::Nominal { .. } | Type::Param { .. } | Type::Label { .. }
+        Type::Base(_) | Type::Unit | Type::Nominal { .. } | Type::Param { .. }
     )
 }
 
-/// The parametric Box newtype, instantiated at `payload`.
+/// The parametric Box nominal type, instantiated at `payload`.
 fn box_param(payload: Type) -> Type {
     Type::Param {
         name: "Box".to_string(),
@@ -952,7 +858,7 @@ fn gen_at<R: Rng>(
         0 => Term::Var(target_vars.choose(rng).unwrap().clone()),
         1 => {
             let n = arbitrary_value_name(rng, &format!("v{}", env.len()));
-            let bind_ty = arbitrary_type(rng, 1, surface_mode);
+            let bind_ty = arbitrary_type(rng, 1);
             let rhs = gen_at(
                 rng,
                 user_rng,
@@ -1037,7 +943,7 @@ fn gen_at<R: Rng>(
         }
         6 => {
             // __fst__: target = a; pick b (simple); build (a & b).
-            let other = arbitrary_simple_type(rng, surface_mode);
+            let other = arbitrary_simple_type(rng);
             let pair_ty = Type::Product(Box::new(target.clone()), Box::new(other.clone()));
             Term::PolyCall {
                 name: "__fst__".to_string(),
@@ -1055,7 +961,7 @@ fn gen_at<R: Rng>(
         }
         7 => {
             // __snd__: target = b; pick a (simple); build (a & b).
-            let other = arbitrary_simple_type(rng, surface_mode);
+            let other = arbitrary_simple_type(rng);
             let pair_ty = Type::Product(Box::new(other.clone()), Box::new(target.clone()));
             Term::PolyCall {
                 name: "__snd__".to_string(),
@@ -1073,7 +979,7 @@ fn gen_at<R: Rng>(
         }
         9 => {
             // const1[A][B](x: A, y: B) -> A — target is A; pick B (simple).
-            let other = arbitrary_simple_type(rng, surface_mode);
+            let other = arbitrary_simple_type(rng);
             Term::PolyCall {
                 name: "const1".to_string(),
                 type_args: vec![target.clone(), other.clone()],
@@ -1101,7 +1007,7 @@ fn gen_at<R: Rng>(
         }
         10 => {
             // const2[A][B](x: A, y: B) -> B — target is B; pick A (simple).
-            let other = arbitrary_simple_type(rng, surface_mode);
+            let other = arbitrary_simple_type(rng);
             Term::PolyCall {
                 name: "const2".to_string(),
                 type_args: vec![other.clone(), target.clone()],
@@ -1225,7 +1131,7 @@ fn gen_at<R: Rng>(
 
             let want_match_macro = matches!(target, Type::Sum(_, _)) && rng.gen_bool(0.5);
             let pair = if want_match_macro {
-                pick_match_disjoint_pair(rng, surface_mode)
+                pick_match_disjoint_pair(rng)
             } else {
                 None
             };
@@ -1278,8 +1184,8 @@ fn gen_at<R: Rng>(
                     ret_ty: target.clone(),
                 }
             } else {
-                let a = arbitrary_simple_type(rng, surface_mode);
-                let b = arbitrary_simple_type(rng, surface_mode);
+                let a = arbitrary_simple_type(rng);
+                let b = arbitrary_simple_type(rng);
                 let sum_ty = Type::Sum(Box::new(a.clone()), Box::new(b.clone()));
                 let sum_term = gen_at(
                     rng,
@@ -1392,24 +1298,6 @@ fn intro<R: Rng>(
                 surface_mode,
                 user_macros,
             )],
-        },
-        Type::Label {
-            label,
-            constructor,
-            payload,
-            ..
-        } => Term::LabelConstruct {
-            label: label.clone(),
-            constructor: constructor.clone(),
-            payload: Box::new(gen_at(
-                rng,
-                user_rng,
-                payload,
-                env,
-                depth - 1,
-                surface_mode,
-                user_macros,
-            )),
         },
         Type::Fun(args, ret) => {
             let lam_params: Vec<(String, Type)> = args
@@ -1587,16 +1475,6 @@ pub fn canonical<R: Rng>(rng: &mut R, target: &Type) -> Term {
     match target {
         Type::Base(b) => base_literal(rng, *b),
         Type::Unit => Term::UnitLit,
-        Type::Label {
-            label,
-            constructor,
-            payload,
-            ..
-        } => Term::LabelConstruct {
-            label: label.clone(),
-            constructor: constructor.clone(),
-            payload: Box::new(canonical(rng, payload)),
-        },
         Type::Nominal {
             payload,
             constructor,

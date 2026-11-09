@@ -3,19 +3,19 @@ module testapi/model;
 import macros/spine_macros(macro widen_sum);
 import testapi(I32);
 
-pub labels { leaf: I32 };
+pub type { Leaf: I32 { pub mk; pub get } }
 
 rec {
-  pub labels { expr: Leaf | Pair };
-  pub labels { pair: Expr & Expr }
+  pub type { Expr: Leaf | Pair { pub mk; pub get } };
+  pub type { Pair: Expr & Expr { pub mk; pub get } }
 }
 
-pub labels Summary = { value: I32 };
+pub type Summary = { Value: I32 { pub mk; pub get } };
 
-pub fn number(value: I32) -> Expr { {expr = ({leaf = value}.>widen_sum)[Leaf | Pair]} }
+pub fn number(value: I32) -> Expr { Expr.mk((Leaf.mk(value).>widen_sum)[Leaf | Pair]) }
 
 pub fn pair(left: Expr, right: Expr) -> Expr {
-  {expr = ({pair = (left, right)}.>widen_sum)[Leaf | Pair]}
+  Expr.mk((Pair.mk(left, right).>widen_sum)[Leaf | Pair])
 }
 
-pub fn summary(value: I32) -> Summary { {value} }
+pub fn summary(value: I32) -> Summary { Value.mk(value) }

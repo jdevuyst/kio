@@ -1,16 +1,17 @@
 module http_status_window/window;
 
 import macros/control(macro if);
+import macros/row_macros(macro record);
 import testapi(Bool, I32, String);
 import testapi/text as text;
 
-pub labels Entry = {
-, ordinal: String
-, method: String
-, path: String
-, status: String
-, bytes: String
-, family: String
+pub type Entry = {
+  Ordinal: String;
+  Method: String;
+  Path: String;
+  Status: String;
+  Bytes: String;
+  Family: String
 };
 
 pub fn raw_window() -> String {
@@ -51,13 +52,13 @@ fn make_entry(
 , bytes_end: I32
 ) -> Entry {
   let code = field(status_start, status_end);
-  {
-  , ordinal = field(ordinal_start, ordinal_end)
-  , method = field(method_start, method_end)
-  , path = field(path_start, path_end)
-  , status = code
-  , bytes = field(bytes_start, bytes_end)
-  , family = family_label(code)
+  record {
+    Ordinal.mk(field(ordinal_start, ordinal_end));
+    Method.mk(field(method_start, method_end));
+    Path.mk(field(path_start, path_end));
+    Status.mk(code);
+    Bytes.mk(field(bytes_start, bytes_end));
+    Family.mk(family_label(code))
   }
 }
 

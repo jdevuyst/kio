@@ -1,6 +1,6 @@
 module api;
 
-pub newtype Wrap[*G] : G[.] { pub constructor wrap; pub projector unwrap }
+pub type { Wrap[*G]: G[.] { pub mk; pub get } }
 
 pub fn keep[**F][A](value: Wrap[F[A]]) -> Wrap[F[A]] { value }
 

@@ -6,6 +6,7 @@ import lab/report as report;
 import list/core as core;
 import list/list as lists;
 import list/list(varop [] as [* *]);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import result/result as result;
 import testapi(I32, String);
@@ -39,9 +40,9 @@ fn after_resolution(
 }
 
 pub fn run() {
-  let alpha = ({clock.alpha=}.>widen_sum)[clock.Node];
-  let beta = ({clock.beta=}.>widen_sum)[clock.Node];
-  let gamma = ({clock.gamma=}.>widen_sum)[clock.Node];
+  let alpha = (clock.Alpha.mk(()).>widen_sum)[clock.Node];
+  let beta = (clock.Beta.mk(()).>widen_sum)[clock.Node];
+  let gamma = (clock.Gamma.mk(()).>widen_sum)[clock.Node];
   let .(a, a1) = replica.write(replica.empty(alpha), 10, 10);
   let .(_a, a2) = replica.write(a, 10, 11);
   let .(b, b1) = replica.write(replica.empty(beta), 10, 20);
@@ -50,29 +51,29 @@ pub fn run() {
   report.line(
   , "a1 / a2: "
   , clock.describe(clock.compare(
-    , a1.?{replica.payload}.?{replica.stamp}
-    , a2.?{replica.payload}.?{replica.stamp}
+    , a1.>select { replica.Payload.get }.>select { replica.Stamp.get }
+    , a2.>select { replica.Payload.get }.>select { replica.Stamp.get }
     ))
   );
   report.line(
   , "a2 / a1: "
   , clock.describe(clock.compare(
-    , a2.?{replica.payload}.?{replica.stamp}
-    , a1.?{replica.payload}.?{replica.stamp}
+    , a2.>select { replica.Payload.get }.>select { replica.Stamp.get }
+    , a1.>select { replica.Payload.get }.>select { replica.Stamp.get }
     ))
   );
   report.line(
   , "a2 / b1: "
   , clock.describe(clock.compare(
-    , a2.?{replica.payload}.?{replica.stamp}
-    , b1.?{replica.payload}.?{replica.stamp}
+    , a2.>select { replica.Payload.get }.>select { replica.Stamp.get }
+    , b1.>select { replica.Payload.get }.>select { replica.Stamp.get }
     ))
   );
   report.line(
   , "b1 / b1: "
   , clock.describe(clock.compare(
-    , b1.?{replica.payload}.?{replica.stamp}
-    , b1.?{replica.payload}.?{replica.stamp}
+    , b1.>select { replica.Payload.get }.>select { replica.Stamp.get }
+    , b1.>select { replica.Payload.get }.>select { replica.Stamp.get }
     ))
   );
   let forward = [* a1, b1, a2, b2, c1, a2, b1 *];

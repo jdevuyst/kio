@@ -54,10 +54,10 @@ pub fn main() {
   ));
   print(line(
   , "phantom alias argument: "[String]
-  , "module hidden;\npub newtype Hidden : . { pub constructor mk_hidden; pub "
-    "projector un_hidden; };\nmodule aliases;\npub type Drop[A] = .;\nmodule "
-    "guest;\nimport hidden(Hidden);\nimport aliases(Drop);\npub fn expose(value: "
-    "Drop[Hidden]) -> . { () }\npackage guest;\nbridge { guest; aliases; }\n"[String]
+  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
+    "aliases;\npub type Drop[A] = .;\nmodule guest;\nimport hidden(Hidden);\n"
+    "import aliases(Drop);\npub fn expose(value: Drop[Hidden]) -> . { () }\n"
+    "package guest;\nbridge { guest; aliases; }\n"[String]
   ));
   print(line(
   , "private identity-forwarding alias in export: "[String]

@@ -2,27 +2,45 @@ module flow/network;
 
 import flow/math as math;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith as a;
 import testapi/array as ar;
 import testapi/iter(loop);
 
-pub labels Edge = { from: I32, to: I32, capacity: I32, reverse: I32, backward: Bool };
+pub type Edge = { From: I32; To: I32; Capacity: I32; Reverse: I32; Backward: Bool };
 
-pub labels Network = { vertices: I32, edges: Array[Edge] };
+pub type Network = { Vertices: I32; Edges: Array[Edge] };
 
-pub fn empty(vertices: I32) -> Network { {vertices, edges = ar.array_make_empty[Edge](())} }
+pub fn empty(vertices: I32) -> Network {
+  (Vertices.mk(vertices), Edges.mk(ar.array_make_empty[Edge](())))
+}
 
 pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
-  let edges = network.?{edges};
+  let edges = network.>select { Edges.get };
   let index = ar.array_len(edges);
-  ar.array_push(edges, {from, to, capacity, reverse = a.add_i32(index, 1), backward = .f});
-  ar.array_push(edges, {from = to, to = from, capacity = 0, reverse = index, backward = .t})
+  ar.array_push(
+  , edges
+  , (
+    , From.mk(from)
+    , To.mk(to)
+    , Capacity.mk(capacity)
+    , Reverse.mk(a.add_i32(index, 1))
+    , Backward.mk(.f)
+    )
+  );
+  ar.array_push(
+  , edges
+  , (From.mk(to), To.mk(from), Capacity.mk(0), Reverse.mk(index), Backward.mk(.t))
+  )
 }
 
 rec(loop) fn fill(network: Network, index: I32, residual: Array[I32]) -> Array[I32] {
-  if(math.less(index, ar.array_len(network.?{edges}))) {
-    ar.array_push(residual, ar.array_get(network.?{edges}, index).?{capacity});
+  if(math.less(index, ar.array_len(network.>select { Edges.get }))) {
+    ar.array_push(
+    , residual
+    , ar.array_get(network.>select { Edges.get }, index).>select { Capacity.get }
+    );
     recur fill(network, a.add_i32(index, 1), residual)
   } else {
     residual

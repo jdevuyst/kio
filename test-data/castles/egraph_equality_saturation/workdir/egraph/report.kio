@@ -6,6 +6,7 @@ import egraph/numbers as n;
 import egraph/rewrite as rewrite;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/array as arr;
 import testapi/fmt as fmt;
@@ -18,10 +19,13 @@ pub fn boolean(value: Bool) { io.print(fmt.bool_to_string(value)) }
 
 pub fn outcome(value: rewrite.Outcome) {
   match(value) {
-    .(done: rewrite.Saturated) { io.print("saturated rounds="); number(done.?{rewrite.saturated}) };
+    .(done: rewrite.Saturated) {
+      io.print("saturated rounds=");
+      number(done.>select { rewrite.Saturated.get })
+    };
     .(limited: rewrite.Exhausted) {
       io.print("exhausted rounds=");
-      number(limited.?{rewrite.exhausted})
+      number(limited.>select { rewrite.Exhausted.get })
     }
   }
 }

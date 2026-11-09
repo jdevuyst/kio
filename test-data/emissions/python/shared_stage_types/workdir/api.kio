@@ -4,7 +4,7 @@ host fn mark();
 
 host type Box[T];
 
-pub newtype Token : . { pub constructor make; pub projector read }
+pub type { Token: . { pub mk; pub get } }
 
 pub fn box_id[T](value: Box[T]) -> Box[T] { value }
 

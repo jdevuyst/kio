@@ -4,12 +4,7 @@
 //! entirely on `Type<P>` and `Expr<P>` shapes plus phase-
 //! agnostic pieces (`Span`, `Meta`, `Error`).
 //!
-//! Each helper is phase-polymorphic over the trait bounds it
-//! genuinely needs — usually `<P: Phase>` (for fold / clause /
-//! intrinsic builders that don't pattern-match on
-//! `Type::LabelSugar`) or `<P: Phase<TypeLabelSugar = Never>>`
-//! (for walkers that do — `subst_type`, `check_no_infer`,
-//! `check_well_formed_type`, `write_type`).
+//! Helpers are phase-polymorphic over the trait bounds they need.
 //!
 //! Extracted from [`super::typecheck_core`] so the umbrella file
 //! stays smaller as the typer grows; the umbrellan exports
@@ -70,12 +65,6 @@ where
                 pending.extend(args.iter().rev());
             }
             crate::ast::Type::Forall { body, .. } => pending.push(body),
-            crate::ast::Type::LabelSugar { labels, .. } => pending.extend(
-                labels
-                    .iter()
-                    .rev()
-                    .filter_map(|label| label.payload.as_ref()),
-            ),
         }
     }
     false
@@ -104,9 +93,6 @@ where
         }
         crate::ast::Type::Path { args, .. } => args.iter().any(type_contains_goal),
         crate::ast::Type::Forall { body, .. } => type_contains_goal(body),
-        crate::ast::Type::LabelSugar { labels, .. } => labels
-            .iter()
-            .any(|label| label.payload.as_ref().is_some_and(type_contains_goal)),
     }
 }
 
@@ -128,7 +114,7 @@ where
 /// call goals use their dedicated planners instead of this closed-type guard.
 pub fn check_no_infer<P>(ty: &crate::ast::Type<P>, message: &str) -> Result<(), Error>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     let mut pending = vec![ty];
     while let Some(ty) = pending.pop() {
@@ -151,7 +137,6 @@ where
                 pending.extend(args.iter().rev());
             }
             crate::ast::Type::Forall { body, .. } => pending.push(body),
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
     Ok(())
@@ -160,14 +145,14 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferFreeType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     ty: crate::ast::Type<P>,
 }
 
 impl<P> InferFreeType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     pub fn new(ty: crate::ast::Type<P>, message: &str) -> Result<Self, Error> {
         check_no_infer(&ty, message)?;
@@ -197,7 +182,7 @@ where
 /// the normal static-diagnostic boundary.
 pub fn check_well_formed_type<P>(ty: &crate::ast::Type<P>) -> Result<(), Error>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     match ty {
         crate::ast::Type::Unit { .. } | crate::ast::Type::Bottom { .. } => Ok(()),
@@ -220,9 +205,6 @@ where
             "check_well_formed_type accepts closed types; an open goal must be checked through its owning goal store"
         ),
         crate::ast::Type::Forall { body, .. } => check_well_formed_type(body),
-        // Statically uninhabited per the `TypeLabelSugar = Never`
-        // bound on `P`.
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         // `_` placeholders are surface-level inference markers, legal
         // only in fn signatures (`.(x: _, y) -> _ { … }`) and call
         // type-argument lists (`f(_, "")`). Top-level binding
@@ -454,7 +436,7 @@ pub fn compute_kind<P>(
     tcx: &super::TypeCtx<'_, '_, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut infer = IgnoreInfer;
@@ -488,7 +470,7 @@ pub(crate) fn compute_checked_kind<P>(
     tcx: &super::TypeCtx<'_, '_, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut infer = IgnoreInfer;
@@ -516,7 +498,7 @@ pub(crate) fn check_annotation_kinds_with_policy_and_binders<P>(
     infer: &mut dyn InferPolicy,
 ) -> Result<(), Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let required = crate::ast::Kind::Star;
@@ -596,7 +578,7 @@ pub(crate) fn resolve_nominal_head_kind<P>(
     identity_canonical: bool,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     resolve_nominal_head_kind_with_provider(
@@ -625,7 +607,7 @@ fn resolve_nominal_head_kind_with_provider<'m, P>(
     validate_source_path: bool,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     use crate::ast::Kind;
 
@@ -830,7 +812,7 @@ where
     'm: 'a,
     P: super::DeclarationPhase
         + crate::pass::resolve::ExportContractPhase
-        + crate::ast::Phase<TypeLabelSugar = crate::ast::Never>
+        + crate::ast::Phase
         + Clone,
 {
     #[cfg(test)]
@@ -884,7 +866,7 @@ where
     'm: 'a,
     P: super::DeclarationPhase
         + crate::pass::resolve::ExportContractPhase
-        + crate::ast::Phase<TypeLabelSugar = crate::ast::Never>
+        + crate::ast::Phase
         + Clone,
 {
     let summary = complete_function_scheme_summary(
@@ -946,7 +928,7 @@ fn compute_kind_with_embedded_binders<'a, 'm, P>(
 ) -> Result<crate::ast::Kind, Error>
 where
     'm: 'a,
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     use crate::ast::Kind;
     match ty {
@@ -1178,7 +1160,6 @@ where
             }
             Ok(remaining)
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -1194,15 +1175,12 @@ where
 /// so the per-application kind lookup resolves. Embedded `Forall`
 /// binders retain their explicit kinds while their scheme shape is checked.
 ///
-/// Phase-polymorphic with the usual `TypeLabelSugar = Never`
-/// bound so the surface-only `Type::LabelSugar` arm is statically
-/// uninhabited.
 pub fn check_kinds_in_type<'m, P>(
     ty: &'m crate::ast::Type<P>,
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     check_kinds_in_type_with_binder_recorder(ty, tcx, record_type_binder::<P>)
 }
@@ -1213,7 +1191,7 @@ pub(crate) fn check_kinds_in_type_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<(), Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, provider)?;
     require_star_kind_for_value_type(kind, ty.span())?;
@@ -1234,7 +1212,7 @@ pub(crate) fn check_callable_spine_kinds<'m, P>(
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     match ty {
         crate::ast::Type::Forall { param, body, .. } => {
@@ -1264,7 +1242,7 @@ pub(crate) fn check_kind_tree_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, provider)?;
     let mut recorder = record_type_binder::<P>;
@@ -1278,7 +1256,7 @@ fn record_type_binder<'m, 'e, P>(
     record_kind: TypeBinderRecordKind,
     tcx: &mut super::TypeCtx<'m, 'e, P>,
 ) where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     match record_kind {
         TypeBinderRecordKind::Reference => {
@@ -1310,7 +1288,7 @@ pub(crate) fn publish_validated_type_binders<'m, P>(
     ty: &crate::ast::Type<P>,
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut recorder = record_type_binder::<P>;
@@ -1350,7 +1328,7 @@ pub(crate) fn check_kinds_in_type_with_binder_recorder<'m, 'e, P>(
     mut record_binder: impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) -> Result<(), Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let kind = check_kind_tree_with_binder_recorder(ty, tcx, &mut record_binder)?;
     require_star_kind_for_value_type(kind, ty.span())?;
@@ -1363,7 +1341,7 @@ fn check_kind_tree_with_binder_recorder<'m, 'e, P>(
     mut record_binder: impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, &provider)?;
@@ -1385,7 +1363,7 @@ fn publish_checked_type_binders<'t, 'm, 'e, P>(
     provider: &NominalProvider<'m, P>,
     record_binder: &mut impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let nominal = if <P::HeaderRecording as super::HeaderRecording<P>>::RECORD_NOMINAL_TYPE_BINDERS
     {
@@ -1414,7 +1392,7 @@ fn collect_nominal_type_binders<'a, P>(
     bound: &mut Vec<&'a str>,
     out: &mut Vec<NominalTypeBinderRecord>,
 ) where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     match ty {
         crate::ast::Type::Unit { .. }
@@ -1489,7 +1467,6 @@ fn collect_nominal_type_binders<'a, P>(
             collect_nominal_type_binders(body, tcx, provider, bound, out);
             bound.pop();
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -1500,7 +1477,7 @@ fn compute_checked_kind_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let mut infer = IgnoreInfer;
     compute_kind_with_embedded_binders(
@@ -1525,7 +1502,7 @@ fn publish_type_binders_inner<'t, 'm, 'e, P>(
     tcx: &mut super::TypeCtx<'m, 'e, P>,
     record_binder: &mut impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     match ty {
         crate::ast::Type::Unit { .. }
@@ -1580,7 +1557,6 @@ fn publish_type_binders_inner<'t, 'm, 'e, P>(
             publish_type_binders_inner(body, tcx, record_binder);
             tcx.restore(mark);
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -1634,7 +1610,7 @@ fn subst_under_binder<P>(
     subst: &HashMap<String, crate::ast::Type<P>>,
 ) -> (crate::ast::TypeParam, crate::ast::Type<P>)
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let mut combined: HashMap<String, crate::ast::Type<P>> = HashMap::new();
     for (k, v) in subst {
@@ -1678,7 +1654,7 @@ pub(crate) fn append_type_args<P>(
     span: Span,
 ) -> Option<crate::ast::Type<P>>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     if args.is_empty() {
         return Some(head);
@@ -1719,14 +1695,12 @@ where
 /// Substitution under `Forall` alpha-renames a binder when necessary to keep
 /// free names in replacement types free.
 ///
-/// The phase bound excludes surface label sugar, which has no substitution
-/// semantics at the typer and backend phases that call this function.
 pub fn subst_type<P>(
     ty: &crate::ast::Type<P>,
     subst: &HashMap<String, crate::ast::Type<P>>,
 ) -> crate::ast::Type<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     if subst.is_empty() {
         return ty.clone();
@@ -1817,9 +1791,6 @@ where
             meta: Meta::new(*span),
             ext: ext.clone(),
         },
-        // Statically uninhabited per the `TypeLabelSugar = Never`
-        // bound on `P`; discharge by case analysis on the empty type.
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         // A source `_` is not a named variable and therefore cannot be
         // captured. Preserve it while alpha-renaming the surrounding checked
         // annotation; synthesis-only paths reject it before a phase boundary.
@@ -1835,7 +1806,7 @@ pub(crate) fn collect_free_type_vars<P>(
     ty: &crate::ast::Type<P>,
     out: &mut std::collections::HashSet<String>,
 ) where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     match ty {
         crate::ast::Type::Unit { .. } | crate::ast::Type::Bottom { .. } => {}
@@ -1872,7 +1843,6 @@ pub(crate) fn collect_free_type_vars<P>(
                 collect_free_type_vars(arg, out);
             }
         }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         // A checked annotation may still contain `_` while its surrounding
         // `Forall` is alpha-renamed. The placeholder contributes no free name.
         crate::ast::Type::Infer { .. } => {}
@@ -1999,11 +1969,9 @@ where
 /// `expected … found …` error messages and any other diagnostic
 /// that wants a recognisable type name.
 ///
-/// Phase-polymorphic with `P::TypeLabelSugar = Never` — see
-/// [`subst_type`] for the rationale.
 pub fn display_type<P>(ty: &crate::ast::Type<P>) -> String
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     let mut s = String::new();
     write_type(ty, &mut s);
@@ -2016,7 +1984,7 @@ where
 #[cfg(feature = "surface")]
 pub(crate) fn display_reflected_type<P>(ty: &crate::ast::Type<P>) -> String
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     let mut s = String::new();
     write_type_with_path_style(ty, &mut s, PathStyle::CanonicalModule, &mut None);
@@ -2054,7 +2022,7 @@ enum PathStyle {
 /// diagnostic strings can emit a type without an intermediate allocation.
 pub fn write_type<P>(ty: &crate::ast::Type<P>, out: &mut String)
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     let projection = crate::pass::binder_presentation::TypeNameProjection::new(ty, HashMap::new());
     write_type_with_path_style(ty, out, PathStyle::Source, &mut Some(projection));
@@ -2066,7 +2034,7 @@ fn write_type_with_path_style<P>(
     path_style: PathStyle,
     names: &mut Option<crate::pass::binder_presentation::TypeNameProjection>,
 ) where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     match ty {
         crate::ast::Type::Unit { .. } => out.push('.'),
@@ -2155,9 +2123,6 @@ fn write_type_with_path_style<P>(
                 }
             }
         }
-        // Statically uninhabited per the `TypeLabelSugar = Never`
-        // bound on `P`.
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         // Partial source annotations legitimately reach diagnostics before
         // their `_` slots are checked against a synthesized type.
         crate::ast::Type::Infer { .. } => out.push('_'),
@@ -2178,7 +2143,7 @@ fn write_type_atom<P>(
     path_style: PathStyle,
     names: &mut Option<crate::pass::binder_presentation::TypeNameProjection>,
 ) where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     if matches!(
         ty,
@@ -2198,9 +2163,7 @@ fn write_type_atom<P>(
 // Tiny type / scheme constructors
 // =========================================================================
 //
-// Pure builder helpers. They construct AST nodes — no pattern-matching
-// against phase-specific variants beyond the `TypeLabelSugar = Never`
-// discharge in [`clone_with_span`]. Both `typecheck_full` (P = Lowered)
+// Pure builder helpers construct AST nodes. Both `typecheck_full` (P = Lowered)
 // and the standalone Kio'-only checker in [`crate::prime::typer`] (P = Prime)
 // call these with the same source.
 
@@ -2328,11 +2291,9 @@ where
 /// Used so synthetic schemes report errors at the user's call-site
 /// rather than at the original declaration's source coordinates.
 ///
-/// Phase-polymorphic with `P::TypeLabelSugar = Never` — see
-/// [`subst_type`] for the rationale.
 pub fn clone_with_span<P>(ty: &crate::ast::Type<P>, span: Span) -> crate::ast::Type<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     match ty {
         crate::ast::Type::Unit { .. } => crate::ast::Type::Unit {
@@ -2393,7 +2354,6 @@ where
             meta: Meta::new(span),
             ext: ext.clone(),
         },
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         crate::ast::Type::Infer { .. } => unreachable!(
             "Type::Infer should be resolved by the typer's substitution pass; check_well_formed_type catches it at the boundary"
         ),
@@ -2415,7 +2375,7 @@ pub(crate) fn canonicalize_bound_type_names_at<P>(
     span: Span,
 ) -> super::InternedType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     canonicalize_bound_type_presentation_at(ty, span)
 }
@@ -2434,7 +2394,7 @@ pub(crate) fn canonicalize_type_annotation_presentation_at<P>(
     span: Span,
 ) -> super::InternedType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let canonical = canonicalize_bound_type_names_at(ty, span);
     let mut annotation = canonical.clone_type();
@@ -2448,7 +2408,7 @@ where
 #[cfg(any(feature = "surface", test))]
 pub(crate) fn canonicalize_type_expression_function_abi<P>(ty: &mut crate::ast::Type<P>)
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     match ty {
         crate::ast::Type::Function {
@@ -2475,7 +2435,6 @@ where
         crate::ast::Type::Unit { .. }
         | crate::ast::Type::Bottom { .. }
         | crate::ast::Type::Infer { .. } => {}
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -2485,14 +2444,14 @@ fn canonicalize_bound_type_presentation_at<P>(
     span: Span,
 ) -> super::InternedType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     fn collect_free_names<P>(
         ty: &crate::ast::Type<P>,
         bound: &mut HashMap<String, usize>,
         free: &mut HashSet<String>,
     ) where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+        P: crate::ast::Phase,
     {
         match ty {
             crate::ast::Type::Unit { .. }
@@ -2531,7 +2490,6 @@ where
                     bound.remove(&param.name);
                 }
             }
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -2560,7 +2518,7 @@ where
 
         fn rebuild<P>(&mut self, ty: &crate::ast::Type<P>) -> crate::ast::Type<P>
         where
-            P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+            P: crate::ast::Phase + Clone,
         {
             match ty {
                 crate::ast::Type::Unit { .. } => crate::ast::Type::Unit {
@@ -2653,7 +2611,6 @@ where
                     meta: Meta::new(self.span),
                     ext: ext.clone(),
                 },
-                crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
             }
         }
     }
@@ -2741,7 +2698,7 @@ mod tests {
 
         let mut source = String::from(
             "module provider; pub host type Host; \
-             pub newtype Nominal : . { pub constructor nominal; pub projector un_nominal; }; \
+             pub type { Nominal: . { pub mk; pub get; }; }; \
              pub type Alias = .;",
         );
         for index in 0..UNRELATED_DECLARATIONS {
@@ -2808,7 +2765,7 @@ mod tests {
             source.push_str(&format!(" type Unrelated{index} = .;"));
         }
         source.push_str(
-            " newtype Nominal : . { constructor nominal; projector un_nominal; }; \
+            " type { Nominal: . { mk; get; }; }; \
              type Alias = .; host type Host;",
         );
         let module = parse_module(&source);
@@ -2873,7 +2830,7 @@ mod tests {
 
         let mut provider = String::from(
             "module provider; pub host type Host; \
-             pub newtype Nominal : . { pub constructor nominal; pub projector un_nominal; }; \
+             pub type { Nominal: . { pub mk; pub get; }; }; \
              pub type Alias = .;",
         );
         for index in 0..UNRELATED_DECLARATIONS {
@@ -3391,7 +3348,6 @@ mod tests {
                 assert_all_lowered_type_spans(body, expected);
             }
             Ty::Unit { .. } | Ty::Bottom { .. } | Ty::Infer { .. } => {}
-            Ty::LabelSugar { ext, .. } => match *ext {},
         }
     }
 

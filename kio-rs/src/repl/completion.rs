@@ -1023,26 +1023,30 @@ mod tests {
     }
 
     #[test]
-    fn hinter_keeps_forwarding_selectors_in_declared_entity_commands() {
+    fn hinter_keeps_alias_names_in_declared_entity_commands() {
         let hinter = hinter_with(NameSet {
             items: vec![ItemEntry {
-                short_name: "{field}".to_owned(),
-                fqn: "pkg/api.{field}".to_owned(),
-                kind: ItemKind::LabelForward,
+                short_name: "Field".to_owned(),
+                fqn: "pkg/api.Field".to_owned(),
+                kind: ItemKind::TypeAlias,
                 source_module: "pkg/api".to_owned(),
                 vis_pub: true,
             }],
             ..NameSet::default()
         });
-        for command in ["t", "type", "pure", "normalize"] {
-            assert_eq!(hint_for(&hinter, &format!(":{command} pkg/api.")), "");
+        for command in [
+            "t",
+            "type",
+            "pure",
+            "doc",
+            "signature",
+            "source",
+            "refs",
+            "which",
+        ] {
+            assert_eq!(hint_for(&hinter, &format!(":{command} pkg/api.")), "Field");
         }
-        for command in ["doc", "signature", "source", "refs", "which"] {
-            assert_eq!(
-                hint_for(&hinter, &format!(":{command} pkg/api.")),
-                "{field}"
-            );
-        }
+        assert_eq!(hint_for(&hinter, ":normalize pkg/api."), "");
         assert_eq!(hint_for(&hinter, "fi"), "");
     }
 

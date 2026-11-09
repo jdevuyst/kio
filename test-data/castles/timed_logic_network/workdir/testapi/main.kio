@@ -6,6 +6,7 @@ import logic/model as model;
 import logic/report as report;
 import logic/simulate as simulate;
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
@@ -13,12 +14,12 @@ import testapi/text as text;
 pub fn main() {
   match(input.read()) {
     .(parsed: input.Stimulus) {
-      let events = parsed.?{input.stimulus};
+      let events = parsed.>select { input.Stimulus.get };
       report.header(traversal.length(events));
       report.summary(simulate.run(model.initial_state(events), model.circuit()))
     };
     .(error: input.Problem) {
-      io.print(error.?{input.problem}
+      io.print(error.>select { input.Problem.get }
         .>text.string_concat("\n")
         .>>text.string_concat("input error: "))
     }

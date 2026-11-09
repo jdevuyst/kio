@@ -160,7 +160,6 @@ fn declarations_matching(
             }
             DocEntry::LiteralAlias(_) => CompletionItemKind::CONSTANT,
             DocEntry::Op(..) | DocEntry::VariadicOperator(..) => CompletionItemKind::OPERATOR,
-            DocEntry::LabelForward(..) => CompletionItemKind::FIELD,
             DocEntry::TypeAlias(..)
             | DocEntry::Newtype(..)
             | DocEntry::HostType(_)
@@ -218,7 +217,7 @@ fn declarations_matching(
             DocEntry::Newtype(newtype, _) => {
                 for member in [&newtype.constructor, &newtype.projector] {
                     add(
-                        member.name.clone(),
+                        format!("{}.{}", newtype.name, member.name),
                         CompletionItemKind::FUNCTION,
                         true,
                         &member.vis,
@@ -231,27 +230,57 @@ fn declarations_matching(
                 entry: label,
                 ..
             } => {
-                add(
-                    label.name.clone(),
-                    CompletionItemKind::FIELD,
-                    false,
-                    &labels.vis,
-                    None,
-                );
-            }
-            DocEntry::Labels(labels, _, _) => {
-                for label in labels.entries.iter().filter(|label| {
-                    !label.is_reuse_marker()
-                        && labels.type_alias_name.as_ref()
-                            == Some(&crate::ast::mint_label_newtype_name(&label.name))
-                }) {
+                for (role, visibility) in [
+                    (
+                        "mk",
+                        label
+                            .members
+                            .as_ref()
+                            .map_or(&labels.vis, |members| &members.constructor.vis),
+                    ),
+                    (
+                        "get",
+                        label
+                            .members
+                            .as_ref()
+                            .map_or(&labels.vis, |members| &members.projector.vis),
+                    ),
+                ] {
                     add(
-                        label.name.clone(),
-                        CompletionItemKind::FIELD,
-                        false,
-                        &labels.vis,
+                        format!("{}.{}", label.name, role),
+                        CompletionItemKind::FUNCTION,
+                        true,
+                        visibility,
                         None,
                     );
+                }
+            }
+            DocEntry::Labels(labels, name, _) => {
+                if let Some(label) = crate::ast::named_labels_identity_alias_entry(labels) {
+                    for (role, visibility) in [
+                        (
+                            "mk",
+                            label
+                                .members
+                                .as_ref()
+                                .map_or(&labels.vis, |members| &members.constructor.vis),
+                        ),
+                        (
+                            "get",
+                            label
+                                .members
+                                .as_ref()
+                                .map_or(&labels.vis, |members| &members.projector.vis),
+                        ),
+                    ] {
+                        add(
+                            format!("{name}.{role}"),
+                            CompletionItemKind::FUNCTION,
+                            true,
+                            visibility,
+                            None,
+                        );
+                    }
                 }
             }
             _ => {}
@@ -378,18 +407,6 @@ fn names(
                         }
                         _ => {}
                     }
-                    if candidate.item.kind == Some(CompletionItemKind::FIELD)
-                        && matches!(item, crate::ast::ImportItem::Label { name, .. } if name == &candidate.item.label)
-                    {
-                        let mut braced = Candidate {
-                            item: candidate.item.clone(),
-                            entry: candidate.entry.clone(),
-                            visibility: candidate.visibility.clone(),
-                            value: false,
-                        };
-                        braced.item.label = format!("{{{}}}", braced.item.label);
-                        add(braced, "", Some(&owner));
-                    }
                     add(candidate, "", Some(&owner));
                 }
             }
@@ -504,10 +521,6 @@ fn names(
 fn imported_candidate(item: &crate::ast::ImportItem, candidate: &Candidate<'_>) -> bool {
     match item {
         crate::ast::ImportItem::Name { name, .. } => name == &candidate.item.label,
-        crate::ast::ImportItem::Label { name, .. } => {
-            candidate.item.kind == Some(CompletionItemKind::FIELD)
-                && (name == &candidate.item.label || format!("{{{name}}}") == candidate.item.label)
-        }
         crate::ast::ImportItem::OperatorPattern { grammar, .. } => {
             grammar.render() == candidate.entry.name()
         }

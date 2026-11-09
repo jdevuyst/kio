@@ -4,7 +4,7 @@ import macros/match(macro match);
 import testapi(I32, String);
 import testapi/io(print);
 
-pub labels { a: I32, b: String };
+pub type { A: I32; B: String }
 
 pub fn say(p: A & B) {
   print(B.get(match(p) {

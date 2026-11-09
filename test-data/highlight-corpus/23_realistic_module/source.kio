@@ -1,8 +1,8 @@
 module app/main;
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
+pub type { Box[A]: A { pub mk; pub get } };
 
-pub labels Pair[A][B] = { fst: A, snd: B };
+pub type Pair[A][B] = { Fst: A; Snd: B };
 
 pub fn show(x: I32) -> String { int_to_string(x) }
 

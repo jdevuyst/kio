@@ -25,10 +25,14 @@
 //!   `e_i` when moving it past the later items preserves effect order.
 //!   Non-selected impure items remain in a leading [`Expr::Seq`] chain.
 //! - [`compose_recovered_tail_access`] — a projection or field-get
-//!   over the tail tuple materialized for `__snd__` composes back
+//!   over a retained final-slot projection or a reconstructed tail composes back
 //!   into a direct projection of the original product. This keeps
 //!   wide label-field reads and updates from rebuilding every suffix
 //!   product before selecting a slot.
+//! - [`let_tuple_reconstruction`] — reuse an ordered, complete product
+//!   reconstruction without unpacking and rebuilding its bound value.
+//! - [`propagate_bound_tuple_slots`] — move inert single-use slots through
+//!   projections, retaining at most one computed or shared slot in its let.
 //! - [`inject_then_match`] — `Match(Inject(p, idx, _), arms)` →
 //!   `let arms[idx].param = p in arms[idx].body`. The dispatch is
 //!   decidable at compile time; the let form preserves the payload-
@@ -318,7 +322,6 @@ fn optimize_item(ctx: &OptimizerCtx, item: Item<Enriched>) -> Item<Enriched> {
         Item::HostFn(h) => Item::HostFn(h),
         Item::LiteralAlias(_, ext)
         | Item::Labels(_, ext)
-        | Item::LabelForward(_, ext)
         | Item::Equiv(_, ext)
         | Item::Macro(_, ext)
         | Item::Op(_, ext)
@@ -356,7 +359,10 @@ fn optimize_expr_in_mode(
         let mut changed = false;
         e = project_after_tuple(e, &mut changed);
         e = compose_recovered_tail_access(e, &mut changed);
+        e = let_tuple_reconstruction(e, &mut changed);
+        e = propagate_bound_tuple_slots(e, &mut changed);
         e = let_bound_tuple_projection(e, &mut changed);
+        e = recover_bound_conditional(e, &mut changed);
         e = inject_then_match(e, &mut changed);
         e = absurd_propagate(e, &mut changed);
         if mode == CatalogMode::Full {
@@ -586,9 +592,6 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
         // `Enriched`.
         Expr::Tuple { ext, .. } => match ext {},
         Expr::FnPlaceholder { ext, .. } => match ext {},
-        Expr::LabelValue { ext, .. } => match ext {},
-        Expr::RowLet { ext, .. } => match ext {},
-        Expr::Elaborator { ext, .. } => match ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
         Expr::Ufcs { ext, .. } => match ext {},
         Expr::OpChain { ext, .. } => match ext {},
@@ -662,15 +665,14 @@ fn sequence_effects(effects: Vec<Expr<Enriched>>, kept: Expr<Enriched>) -> Expr<
 /// Recovery and single-use substitution can both leave effects in tuple members.
 ///
 /// Do not apply this rewrite to [`Expr::EnrichedFieldGet`]. A
-/// field-get is not only positional selection: it represents a label
-/// newtype accessor folded over that selection. Replacing it with
-/// the tuple slot would return the wrapped label value and drop the
-/// accessor.
+/// field-get is not only positional selection: it represents a nominal
+/// projector folded over that selection. Replacing it with the tuple slot
+/// would return the nominal value and drop the projector.
 ///
-/// Conservative on shape mismatches: if the projection's `arity` and
-/// the tuple's `items.len()` disagree (which would be a typer / IR-
-/// shape bug), the pass leaves the node alone so the bug surfaces
-/// later rather than masking it with a silent reduction.
+/// A final slot covering several tuple items keeps that suffix as a tuple,
+/// with its type taken from the original tuple's explicit right spine.
+/// Discarded prefix effects run before the retained suffix in their original
+/// order. Other differing layouts keep the projection for ordinary routing.
 fn project_after_tuple(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     match e {
         Expr::EnrichedProject {
@@ -681,25 +683,53 @@ fn project_after_tuple(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> 
             target_ty,
             meta,
             ext,
-        } => match *target {
-            Expr::EnrichedTuple { items, .. }
-                if items.len() == arity
-                    && index < arity
-                    && can_pick_with_leading_effects(&items, index) =>
-            {
-                *changed = true;
-                pick_with_leading_effects(items, index)
+        } => {
+            let suffix_ty = match target.as_ref() {
+                Expr::EnrichedTuple {
+                    items, synth_ty, ..
+                } if arity >= 2 && index.checked_add(1) == Some(arity) && arity < items.len() => (0
+                    ..index)
+                    .try_fold(synth_ty, |ty, _| match ty {
+                        Type::Product { right, .. } => Some(right.as_ref()),
+                        _ => None,
+                    })
+                    .cloned(),
+                _ => None,
+            };
+            match *target {
+                Expr::EnrichedTuple { mut items, .. } if suffix_ty.is_some() => {
+                    let tail = items.split_off(index);
+                    *changed = true;
+                    sequence_effects(
+                        items,
+                        Expr::EnrichedTuple {
+                            occurrence: Default::default(),
+                            items: tail,
+                            synth_ty: suffix_ty.expect("explicit suffix type checked above"),
+                            meta,
+                            ext,
+                        },
+                    )
+                }
+                Expr::EnrichedTuple { items, .. }
+                    if items.len() == arity
+                        && index < arity
+                        && can_pick_with_leading_effects(&items, index) =>
+                {
+                    *changed = true;
+                    pick_with_leading_effects(items, index)
+                }
+                other => Expr::EnrichedProject {
+                    occurrence: Default::default(),
+                    target: Box::new(other),
+                    index,
+                    arity,
+                    target_ty,
+                    meta,
+                    ext,
+                },
             }
-            other => Expr::EnrichedProject {
-                occurrence: Default::default(),
-                target: Box::new(other),
-                index,
-                arity,
-                target_ty,
-                meta,
-                ext,
-            },
-        },
+        }
         e @ Expr::EnrichedFieldGet { .. } => e,
         e => e,
     }
@@ -719,17 +749,15 @@ fn pick_with_leading_effects(mut items: Vec<Expr<Enriched>>, index: usize) -> Ex
 
 // ---- pass: Compose Recovered Tail Access ------------------------
 
-/// `Project(let r = p; Tuple([Project(r, 1), ...]), 0)` →
-/// `Project(p, 1)`, and likewise for [`Expr::EnrichedFieldGet`].
+/// Compose an access through a bounded projection's final slot, retaining
+/// the original product type and evaluating its target once. For an inner
+/// final slot `i` and outer view `(j, b)`, the composed view is `(i + j, i + b)`.
+/// Nonterminal slots may be compound left components and cannot be combined.
 ///
-/// `structural_recovery` represents `__snd__` of a product tail as a
-/// fresh tuple of direct projections from the original product. That
-/// is the right standalone value for `__snd__`, but a later
-/// `__fst__` / label projector over that tail should not build the
-/// suffix product only to select one slot from it. This rule follows
-/// the recovered tail tuple chain and composes the access into the
-/// original product slot in one sweep, so field `n` of a wide product
-/// does not require `n` optimizer fixpoint iterations.
+/// The same rule also recognizes an ordinary `let`-bound tuple consisting
+/// exactly of the original product's suffix projections. Field gets retain
+/// their nominal unwrap while only their positional target is composed.
+/// Following the whole chain avoids one optimizer iteration per tail step.
 fn compose_recovered_tail_access(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     match e {
         Expr::EnrichedProject {
@@ -796,10 +824,13 @@ fn compose_tail_target(
     while let Some((next_index, next_arity, next_target_ty)) =
         recovered_tail_slot_projection(&target, index, arity)
     {
-        let Expr::Let { value, .. } = target else {
-            unreachable!("recovered_tail_slot_projection only accepts Let targets")
+        target = match target {
+            Expr::Let { value, .. } => *value,
+            Expr::EnrichedProject { target, .. } => *target,
+            _ => {
+                unreachable!("tail composition accepts a retained projection or bound suffix tuple")
+            }
         };
-        target = *value;
         index = next_index;
         arity = next_arity;
         target_ty = next_target_ty;
@@ -813,6 +844,26 @@ fn recovered_tail_slot_projection(
     index: usize,
     arity: usize,
 ) -> Option<(usize, usize, Type<Enriched>)> {
+    if let Expr::EnrichedProject {
+        index: tail_index,
+        arity: tail_arity,
+        target_ty,
+        ..
+    } = target
+    {
+        if arity < 2
+            || index >= arity
+            || *tail_arity < 2
+            || tail_index.checked_add(1)? != *tail_arity
+        {
+            return None;
+        }
+        return Some((
+            tail_index.checked_add(index)?,
+            tail_index.checked_add(arity)?,
+            target_ty.clone(),
+        ));
+    }
     let Expr::Let { name, body, .. } = target else {
         return None;
     };
@@ -857,6 +908,370 @@ fn projection_from_bound(
         return None;
     }
     Some((*index, *arity, target_ty.clone()))
+}
+
+/// An ordered reconstruction of a bound product is the original value,
+/// including when its initializer has effects. The final projection retains
+/// the complete right suffix; nominal field getters are not projections here.
+fn let_tuple_reconstruction(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+    let identity = (|| {
+        let Expr::Let {
+            name,
+            ty,
+            value,
+            body,
+            ..
+        } = &e
+        else {
+            return None;
+        };
+        let Expr::EnrichedTuple {
+            items, synth_ty, ..
+        } = body.as_ref()
+        else {
+            return None;
+        };
+        let source_ty = match value.as_ref() {
+            Expr::EnrichedTuple { synth_ty, .. } => synth_ty,
+            _ => ty.as_ref()?,
+        };
+        if !structural_type_equal(source_ty, synth_ty) {
+            return None;
+        }
+        let mut max_arity = 1;
+        let mut tail = source_ty;
+        while let Type::Product { right, .. } = tail {
+            max_arity += 1;
+            tail = right;
+        }
+        if items.len() < 2 || items.len() > max_arity {
+            return None;
+        }
+        for (position, item) in items.iter().enumerate() {
+            let Expr::EnrichedProject {
+                target,
+                index,
+                arity,
+                target_ty,
+                ..
+            } = item
+            else {
+                return None;
+            };
+            if !bound_tuple_name(target, name)
+                || *index != position
+                || *arity < 2
+                || *arity > max_arity
+                || !structural_type_equal(source_ty, target_ty)
+                || (position + 1 == items.len() && *arity != items.len())
+                || (position + 1 < items.len() && *arity <= position + 1)
+            {
+                return None;
+            }
+        }
+        Some(())
+    })()
+    .is_some();
+    if !identity {
+        return e;
+    }
+    let Expr::Let { value, .. } = e else {
+        unreachable!("reconstruction requires a let")
+    };
+    *changed = true;
+    *value
+}
+
+fn explicit_tuple_slots(ty: &Type<Enriched>, arity: usize) -> Option<Vec<&Type<Enriched>>> {
+    if arity < 2 {
+        return None;
+    }
+    let mut slots = Vec::with_capacity(arity);
+    let mut tail = ty;
+    for _ in 1..arity {
+        let Type::Product { left, right, .. } = tail else {
+            return None;
+        };
+        slots.push(left.as_ref());
+        tail = right;
+    }
+    slots.push(tail);
+    Some(slots)
+}
+
+fn bound_tuple_name(e: &Expr<Enriched>, name: &str) -> bool {
+    matches!(e, Expr::Path { segments, .. }
+        if segments.len() == 1 && segments[0].name == name)
+}
+
+/// Visit only complete slot projections. A bare packet use, a suffix with a
+/// different layout, or a use deferred beneath a function keeps the let intact.
+/// The stack walks disjoint children and never rebuilds a tuple at each use.
+fn visit_bound_tuple_slots(
+    body: &mut Expr<Enriched>,
+    name: &str,
+    tuple_ty: &Type<Enriched>,
+    arity: usize,
+    mut visit: impl FnMut(usize, &mut Expr<Enriched>) -> bool,
+) -> bool {
+    let mut pending = vec![body];
+    while let Some(e) = pending.pop() {
+        if let Expr::EnrichedProject {
+            target,
+            index,
+            arity: projected_arity,
+            target_ty,
+            ..
+        } = e
+            && bound_tuple_name(target, name)
+        {
+            let index = *index;
+            if *projected_arity != arity
+                || index >= arity
+                || !structural_type_equal(target_ty, tuple_ty)
+                || !visit(index, e)
+            {
+                return false;
+            }
+            continue;
+        }
+        match e {
+            Expr::Path { .. } if bound_tuple_name(e, name) => return false,
+            Expr::FnExpr { .. } => {
+                if count_free_uses(e, name) != 0 {
+                    return false;
+                }
+            }
+            Expr::Call { callee, args, .. } => {
+                pending.push(callee.as_mut());
+                for arg in args {
+                    if let CallArg::Value(value) = arg {
+                        pending.push(value);
+                    }
+                }
+            }
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+                pending.push(value.as_mut());
+                pending.push(body.as_mut());
+            }
+            Expr::EnrichedTuple { items, .. } => pending.extend(items.iter_mut()),
+            Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
+                pending.push(target.as_mut());
+            }
+            Expr::EnrichedInject { payload, .. } => pending.push(payload.as_mut()),
+            Expr::EnrichedMatch {
+                scrutinee, arms, ..
+            } => {
+                pending.push(scrutinee.as_mut());
+                pending.extend(arms.iter_mut().map(|arm| &mut arm.body));
+            }
+            Expr::EnrichedConditional {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                pending.push(cond.as_mut());
+                pending.push(then_branch.as_mut());
+                pending.push(else_branch.as_mut());
+            }
+            Expr::Path { .. }
+            | Expr::Unit { .. }
+            | Expr::StrLit { .. }
+            | Expr::IntLit { .. }
+            | Expr::FloatLit { .. }
+            | Expr::BoolLit { .. } => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Keep explicit host-literal construction out of propagation. Function values
+/// defer their bodies; a syntactically invoked function does not. Computed
+/// callees decline rather than requiring analysis of returned functions.
+fn tuple_slots_preserve_literal_boundary(items: &[Expr<Enriched>]) -> bool {
+    let mut pending = items.iter().collect::<Vec<_>>();
+    while let Some(e) = pending.pop() {
+        match e {
+            Expr::StrLit { .. }
+            | Expr::IntLit { .. }
+            | Expr::FloatLit { .. }
+            | Expr::BoolLit { .. } => return false,
+            Expr::Path { .. } | Expr::Unit { .. } | Expr::FnExpr { .. } => {}
+            Expr::Call { callee, args, .. } => {
+                match callee.as_ref() {
+                    Expr::Path { .. } => {}
+                    Expr::FnExpr { body, .. } => pending.push(body.as_ref()),
+                    _ => return false,
+                }
+                for arg in args {
+                    if let CallArg::Value(value) = arg {
+                        pending.push(value);
+                    }
+                }
+            }
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+                pending.push(value.as_ref());
+                pending.push(body.as_ref());
+            }
+            Expr::EnrichedTuple { items, .. } => pending.extend(items),
+            Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
+                pending.push(target.as_ref())
+            }
+            Expr::EnrichedInject { payload, .. } => pending.push(payload.as_ref()),
+            Expr::EnrichedMatch {
+                scrutinee, arms, ..
+            } => {
+                pending.push(scrutinee.as_ref());
+                pending.extend(arms.iter().map(|arm| &arm.body));
+            }
+            Expr::EnrichedConditional {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                pending.push(cond.as_ref());
+                pending.push(then_branch.as_ref());
+                pending.push(else_branch.as_ref());
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn movable_tuple_slot(e: &Expr<Enriched>) -> bool {
+    match e {
+        Expr::Path { .. } | Expr::Unit { .. } => true,
+        Expr::FnExpr { sig, .. } => sig
+            .params
+            .iter()
+            .all(|param| matches!(param, crate::ast::SignatureParam::Value(_))),
+        _ => false,
+    }
+}
+
+/// Propagate inert tuple slots without duplicating their syntax. At most one
+/// computed or repeatedly used slot keeps the original binding and eager
+/// evaluation point. Other computations, escapes, or capture risks are no-ops.
+fn propagate_bound_tuple_slots(mut e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+    let plan = (|| {
+        let Expr::Let {
+            name, value, body, ..
+        } = &mut e
+        else {
+            return None;
+        };
+        let Expr::EnrichedTuple {
+            items, synth_ty, ..
+        } = value.as_ref()
+        else {
+            return None;
+        };
+        if !tuple_slots_preserve_literal_boundary(items) {
+            return None;
+        }
+        let slot_types = explicit_tuple_slots(synth_ty, items.len())?;
+        let binders = body_binders(body);
+        if binders.contains(name.as_str()) {
+            return None;
+        }
+        let mut forbidden = binders
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<std::collections::HashSet<_>>();
+        forbidden.insert(name.clone());
+        let mut uses = vec![0usize; items.len()];
+        if !visit_bound_tuple_slots(body, name, synth_ty, items.len(), |index, _| {
+            uses[index] = (uses[index] + 1).min(2);
+            true
+        }) {
+            return None;
+        }
+        let mut retained = None;
+        for (index, item) in items.iter().enumerate() {
+            let keep = !movable_tuple_slot(item)
+                || (uses[index] > 1 && !matches!(item, Expr::Unit { .. }));
+            if keep {
+                if retained.replace(index).is_some() {
+                    return None;
+                }
+            } else if uses[index] != 0
+                && free_vars(item).iter().any(|name| forbidden.contains(name))
+            {
+                return None;
+            }
+        }
+        Some(retained.map(|index| (index, (*slot_types[index]).clone())))
+    })();
+    let Some(retained) = plan else { return e };
+    let Expr::Let {
+        name,
+        name_span,
+        pattern,
+        value,
+        mut body,
+        meta,
+        ..
+    } = e
+    else {
+        unreachable!("slot propagation requires a let")
+    };
+    let Expr::EnrichedTuple {
+        items, synth_ty, ..
+    } = *value
+    else {
+        unreachable!("slot propagation requires a tuple")
+    };
+    let arity = items.len();
+    let mut items = items.into_iter().map(Some).collect::<Vec<_>>();
+    let complete = visit_bound_tuple_slots(&mut body, &name, &synth_ty, arity, |index, slot| {
+        if retained.as_ref().is_some_and(|(kept, _)| *kept == index) {
+            let projection = std::mem::replace(
+                slot,
+                Expr::Unit {
+                    source_trivia: Default::default(),
+                    occurrence: Default::default(),
+                    meta: crate::ast::Meta::new(name_span),
+                },
+            );
+            let Expr::EnrichedProject { target, .. } = projection else {
+                unreachable!("visitor supplies a projection")
+            };
+            *slot = *target;
+        } else if matches!(items[index], Some(Expr::Unit { .. })) {
+            *slot = items[index]
+                .as_ref()
+                .expect("unit slot retained for repeated use")
+                .clone();
+        } else {
+            *slot = items[index]
+                .take()
+                .expect("non-unit movable slot has one use");
+        }
+        true
+    });
+    assert!(complete, "validated tuple slot plan must remain applicable");
+    *changed = true;
+    match retained {
+        Some((index, ty)) => Expr::Let {
+            occurrence: Default::default(),
+            name,
+            name_span,
+            ty: Some(ty),
+            pattern,
+            value: Box::new(
+                items[index]
+                    .take()
+                    .expect("retained slot was not substituted"),
+            ),
+            body,
+            meta,
+        },
+        None => *body,
+    }
 }
 
 fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
@@ -1013,6 +1428,134 @@ fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enr
             .map(|index| bound_items[index].clone())
             .collect(),
         synth_ty,
+        meta,
+        ext,
+    }
+}
+
+/// Recover a conditional whose condition and literal thunks were first
+/// evaluated together in a let-bound tuple. Only pure non-condition slots may
+/// be discarded; the condition itself stays at the conditional entry.
+fn recover_bound_conditional(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+    fn branch_index(
+        branch: &Expr<Enriched>,
+        name: &str,
+        items: &[Expr<Enriched>],
+    ) -> Option<usize> {
+        let Expr::Call { callee, args, .. } = branch else {
+            return None;
+        };
+        if !matches!(args.as_slice(), [] | [CallArg::Value(Expr::Unit { .. })]) {
+            return None;
+        }
+        let (index, arity, _) = projection_from_bound(callee, name)?;
+        if arity != items.len() {
+            return None;
+        }
+        let Expr::FnExpr { sig, .. } = items.get(index)? else {
+            return None;
+        };
+        if !sig.params.is_empty()
+            || !matches!(
+                sig.groups.as_slice(),
+                [crate::ast::SignatureGroupKind::Value { len: 0 }]
+            )
+        {
+            return None;
+        }
+        Some(index)
+    }
+
+    let indices = (|| {
+        let Expr::Let {
+            name, value, body, ..
+        } = &e
+        else {
+            return None;
+        };
+        let Expr::EnrichedTuple { items, .. } = value.as_ref() else {
+            return None;
+        };
+        let Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = body.as_ref()
+        else {
+            return None;
+        };
+        let (condition, arity, _) = projection_from_bound(cond, name)?;
+        if arity != items.len() || condition >= items.len() {
+            return None;
+        }
+        let then = branch_index(then_branch, name, items)?;
+        let otherwise = branch_index(else_branch, name, items)?;
+        if condition == then
+            || condition == otherwise
+            || then == otherwise
+            || items
+                .iter()
+                .enumerate()
+                .any(|(index, item)| index != condition && !is_pure(item))
+        {
+            return None;
+        }
+        Some((condition, then, otherwise))
+    })();
+    let Some((condition_index, then_index, else_index)) = indices else {
+        return e;
+    };
+    let Expr::Let { value, body, .. } = e else {
+        unreachable!("guard requires a let")
+    };
+    let Expr::EnrichedTuple { items, .. } = *value else {
+        unreachable!("guard requires a tuple")
+    };
+    let Expr::EnrichedConditional {
+        mut then_branch,
+        mut else_branch,
+        result_ty,
+        meta,
+        ext,
+        ..
+    } = *body
+    else {
+        unreachable!("guard requires a conditional")
+    };
+    let (mut condition, mut then_thunk, mut else_thunk) = (None, None, None);
+    for (index, item) in items.into_iter().enumerate() {
+        if index == condition_index {
+            condition = Some(item);
+        } else if index == then_index {
+            then_thunk = Some(item);
+        } else if index == else_index {
+            else_thunk = Some(item);
+        }
+    }
+    let Expr::Call {
+        callee: then_callee,
+        ..
+    } = then_branch.as_mut()
+    else {
+        unreachable!("guard requires a then call")
+    };
+    let Expr::Call {
+        callee: else_callee,
+        ..
+    } = else_branch.as_mut()
+    else {
+        unreachable!("guard requires an else call")
+    };
+    **then_callee = then_thunk.expect("guard checks then slot");
+    **else_callee = else_thunk.expect("guard checks else slot");
+    *changed = true;
+    Expr::EnrichedConditional {
+        occurrence: Default::default(),
+        cond: Box::new(condition.expect("guard checks condition slot")),
+        then_branch,
+        else_branch,
+        result_ty,
         meta,
         ext,
     }
@@ -1455,12 +1998,8 @@ fn walk_count_free(e: &Expr<Enriched>, name: &str, count: &mut usize) {
             walk_count_free(else_branch, name, count);
         }
         // Pre-Enriched variants are uninhabited.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
+        Expr::Tuple { ext, .. } | Expr::FnPlaceholder { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
@@ -1729,14 +2268,10 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
             ext,
         },
         // Pre-Enriched variants are uninhabited.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::Ufcs { ext, .. } => match ext {},
+        Expr::Tuple { ext, .. } | Expr::FnPlaceholder { ext, .. } => match ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::Ufcs { ext, .. } => {
+            match ext {}
+        }
         Expr::OpChain { ext, .. } => match ext {},
     }
 }
@@ -2071,12 +2606,8 @@ fn collect_free_vars(
             collect_free_vars(else_branch, bound, out);
         }
         // Pre-Enriched variants are uninhabited.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
+        Expr::Tuple { ext, .. } | Expr::FnPlaceholder { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
@@ -2181,12 +2712,8 @@ fn collect_binders<'a>(e: &'a Expr<Enriched>, out: &mut std::collections::HashSe
             collect_binders(else_branch, out);
         }
         // Pre-Enriched variants are uninhabited.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
+        Expr::Tuple { ext, .. } | Expr::FnPlaceholder { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
@@ -2821,12 +3348,8 @@ fn ir_node_count(e: &Expr<Enriched>) -> usize {
         } => ir_node_count(cond) + ir_node_count(then_branch) + ir_node_count(else_branch),
         // Pre-enriched / surface variants are uninhabited at
         // `Enriched`.
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
+        Expr::Tuple { ext, .. } | Expr::FnPlaceholder { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
@@ -3044,6 +3567,619 @@ mod tests {
         }
     }
 
+    fn packet_product(types: Vec<Type<Enriched>>) -> Type<Enriched> {
+        let mut types = types.into_iter().rev();
+        let tail = types.next().expect("nonempty product");
+        types.fold(tail, |right, left| Type::Product {
+            left: Box::new(left),
+            right: Box::new(right),
+            meta: test_meta(),
+        })
+    }
+
+    fn packet_projection(ty: &Type<Enriched>, index: usize, arity: usize) -> Expr<Enriched> {
+        Expr::EnrichedProject {
+            occurrence: Default::default(),
+            target: Box::new(test_path("packet")),
+            index,
+            arity,
+            target_ty: ty.clone(),
+            meta: test_meta(),
+            ext: (),
+        }
+    }
+
+    fn packet_fixture(
+        items: Vec<(Expr<Enriched>, Type<Enriched>)>,
+        body: impl FnOnce(&Type<Enriched>) -> Expr<Enriched>,
+    ) -> Expr<Enriched> {
+        let (items, types): (Vec<_>, Vec<_>) = items.into_iter().unzip();
+        let ty = packet_product(types);
+        let body = body(&ty);
+        Expr::Let {
+            occurrence: Default::default(),
+            name: "packet".into(),
+            name_span: Span::new(0, 0),
+            ty: Some(ty.clone()),
+            pattern: (),
+            value: Box::new(Expr::EnrichedTuple {
+                occurrence: Default::default(),
+                items,
+                synth_ty: ty,
+                meta: test_meta(),
+                ext: (),
+            }),
+            body: Box::new(body),
+            meta: test_meta(),
+        }
+    }
+
+    fn packet_unit() -> Expr<Enriched> {
+        Expr::Unit {
+            source_trivia: Default::default(),
+            occurrence: Default::default(),
+            meta: test_meta(),
+        }
+    }
+
+    fn packet_call(name: &str, args: Vec<Expr<Enriched>>) -> Expr<Enriched> {
+        Expr::synth_call(
+            test_path(name),
+            args.into_iter().map(CallArg::Value).collect(),
+            Span::new(0, 0),
+        )
+    }
+
+    fn packet_lambda(body: Expr<Enriched>) -> Expr<Enriched> {
+        Expr::FnExpr {
+            occurrence: Default::default(),
+            sig: crate::ast::Signature::new(vec![crate::ast::SignatureParam::Value(
+                crate::ast::Param {
+                    name: "payload".into(),
+                    ty: Some(test_unit_ty()),
+                    pattern: (),
+                    meta: test_meta(),
+                },
+            )]),
+            ret_ty: Some(test_unit_ty()),
+            body: Box::new(body),
+            meta: test_meta(),
+            caps: (),
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum PacketTestValue {
+        Unit,
+        Pair(Box<Self>, Box<Self>),
+    }
+
+    // Independent strict evaluator for the unit-valued effect witnesses below.
+    // An ordinary call evaluates every argument before recording its effect.
+    fn packet_evaluate(
+        e: &Expr<Enriched>,
+        env: &mut std::collections::HashMap<String, PacketTestValue>,
+        events: &mut Vec<String>,
+    ) -> PacketTestValue {
+        match e {
+            Expr::Unit { .. } => PacketTestValue::Unit,
+            Expr::Path { segments, .. } => env[&segments[0].name].clone(),
+            Expr::Call { callee, args, .. } => {
+                for arg in args {
+                    if let CallArg::Value(value) = arg {
+                        packet_evaluate(value, env, events);
+                    }
+                }
+                let Expr::Path { segments, .. } = callee.as_ref() else {
+                    panic!("named test effect")
+                };
+                events.push(segments[0].name.clone());
+                PacketTestValue::Unit
+            }
+            Expr::Let {
+                name, value, body, ..
+            } => {
+                let value = packet_evaluate(value, env, events);
+                let old = env.insert(name.clone(), value);
+                let result = packet_evaluate(body, env, events);
+                if let Some(old) = old {
+                    env.insert(name.clone(), old);
+                } else {
+                    env.remove(name);
+                }
+                result
+            }
+            Expr::Seq { value, body, .. } => {
+                packet_evaluate(value, env, events);
+                packet_evaluate(body, env, events)
+            }
+            Expr::EnrichedTuple { items, .. } => {
+                let values = items
+                    .iter()
+                    .map(|item| packet_evaluate(item, env, events))
+                    .collect::<Vec<_>>();
+                let mut values = values.into_iter().rev();
+                let last = values.next().expect("nonempty test tuple");
+                values.fold(last, |right, left| {
+                    PacketTestValue::Pair(Box::new(left), Box::new(right))
+                })
+            }
+            Expr::EnrichedProject {
+                target,
+                index,
+                arity,
+                ..
+            } => {
+                let mut value = packet_evaluate(target, env, events);
+                for _ in 0..*index {
+                    let PacketTestValue::Pair(_, right) = value else {
+                        panic!("product spine")
+                    };
+                    value = *right;
+                }
+                if index + 1 == *arity {
+                    value
+                } else {
+                    let PacketTestValue::Pair(left, _) = value else {
+                        panic!("product slot")
+                    };
+                    *left
+                }
+            }
+            other => panic!("unsupported test expression: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bound_tuple_identity_keeps_effects_and_complete_suffix() {
+        let input = packet_fixture(
+            ["first", "second", "third"]
+                .into_iter()
+                .map(|name| (packet_call(name, vec![]), test_unit_ty()))
+                .collect(),
+            |ty| Expr::EnrichedTuple {
+                occurrence: Default::default(),
+                items: vec![packet_projection(ty, 0, 3), packet_projection(ty, 1, 2)],
+                synth_ty: ty.clone(),
+                meta: test_meta(),
+                ext: (),
+            },
+        );
+        let mut changed = false;
+        let output = let_tuple_reconstruction(input.clone(), &mut changed);
+        assert!(changed, "complete head-plus-suffix identity must fire");
+        assert!(!contains(&output, &|e| matches!(
+            e,
+            Expr::Let { .. } | Expr::EnrichedProject { .. }
+        )));
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        assert_eq!(
+            packet_evaluate(&input, &mut Default::default(), &mut before),
+            packet_evaluate(&output, &mut Default::default(), &mut after)
+        );
+        assert_eq!(before, ["first", "second", "third"]);
+        assert_eq!(after, before);
+        for indices in [[1, 0], [0, 0]] {
+            let wrong = packet_fixture(vec![(packet_unit(), test_unit_ty()); 2], |ty| {
+                Expr::EnrichedTuple {
+                    occurrence: Default::default(),
+                    items: indices
+                        .into_iter()
+                        .map(|i| packet_projection(ty, i, 2))
+                        .collect(),
+                    synth_ty: ty.clone(),
+                    meta: test_meta(),
+                    ext: (),
+                }
+            });
+            let mut changed = false;
+            assert_eq!(let_tuple_reconstruction(wrong.clone(), &mut changed), wrong);
+            assert!(!changed, "permuted or duplicate projection is not identity");
+        }
+    }
+
+    #[test]
+    fn bound_tuple_slots_move_literal_handler_without_cloning() {
+        let handler = packet_lambda(packet_call("chosen", vec![test_path("payload")]));
+        let handler_ty =
+            Type::synth_function(vec![test_unit_ty()], test_unit_ty(), Span::new(0, 0));
+        let input = packet_fixture(
+            vec![
+                (packet_unit(), test_unit_ty()),
+                (handler.clone(), handler_ty),
+            ],
+            |ty| {
+                Expr::synth_call(
+                    packet_projection(ty, 1, 2),
+                    vec![CallArg::Value(packet_projection(ty, 0, 2))],
+                    Span::new(0, 0),
+                )
+            },
+        );
+        let nodes = ir_node_count(&input);
+        let mut changed = false;
+        let output = propagate_bound_tuple_slots(input, &mut changed);
+        assert!(changed);
+        let Expr::Call { callee, args, .. } = &output else {
+            panic!("ordinary call remains")
+        };
+        assert_eq!(callee.as_ref(), &handler);
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Unit { .. })]
+        ));
+        assert!(ir_node_count(&output) < nodes);
+        assert!(!contains(&output, &|e| matches!(
+            e,
+            Expr::Let { .. } | Expr::EnrichedProject { .. } | Expr::EnrichedTuple { .. }
+        )));
+    }
+
+    #[test]
+    fn repeated_literal_handler_keeps_one_existing_binding() {
+        let handler = packet_lambda(packet_call("chosen", vec![test_path("payload")]));
+        let handler_ty =
+            Type::synth_function(vec![test_unit_ty()], test_unit_ty(), Span::new(0, 0));
+        let input = packet_fixture(
+            vec![
+                (packet_unit(), test_unit_ty()),
+                (handler.clone(), handler_ty.clone()),
+            ],
+            |ty| {
+                packet_call(
+                    "consume",
+                    vec![packet_projection(ty, 1, 2), packet_projection(ty, 1, 2)],
+                )
+            },
+        );
+        let before_nodes = ir_node_count(&input);
+        let mut changed = false;
+        let output = propagate_bound_tuple_slots(input, &mut changed);
+        assert!(changed);
+        let Expr::Let {
+            name,
+            ty,
+            value,
+            body,
+            ..
+        } = &output
+        else {
+            panic!("shared handler binding")
+        };
+        assert_eq!(name, "packet");
+        assert!(structural_type_equal(ty.as_ref().unwrap(), &handler_ty));
+        assert_eq!(value.as_ref(), &handler);
+        assert_eq!(count_free_uses(body, "packet"), 2);
+        assert!(!contains(body, &|e| matches!(
+            e,
+            Expr::FnExpr { .. } | Expr::EnrichedProject { .. }
+        )));
+        assert!(ir_node_count(&output) < before_nodes);
+    }
+
+    #[test]
+    fn bound_tuple_slots_retain_one_factory_once_even_unused() {
+        for factory_index in [0, 1] {
+            for uses in [0, 1, 2] {
+                let items = (0..2)
+                    .map(|index| {
+                        (
+                            if index == factory_index {
+                                packet_call("factory", vec![])
+                            } else {
+                                packet_unit()
+                            },
+                            test_unit_ty(),
+                        )
+                    })
+                    .collect();
+                let input = packet_fixture(items, |ty| {
+                    packet_call(
+                        "consume",
+                        (0..uses)
+                            .map(|_| packet_projection(ty, factory_index, 2))
+                            .collect(),
+                    )
+                });
+                let mut changed = false;
+                let output = propagate_bound_tuple_slots(input.clone(), &mut changed);
+                assert!(changed);
+                let Expr::Let {
+                    name, ty, value, ..
+                } = &output
+                else {
+                    panic!("factory remains staged")
+                };
+                assert_eq!(name, "packet");
+                assert!(
+                    matches!(ty, Some(Type::Unit { .. })),
+                    "retained binding gets leaf type"
+                );
+                assert_eq!(value.as_ref(), &packet_call("factory", vec![]));
+                let (mut before, mut after) = (Vec::new(), Vec::new());
+                assert_eq!(
+                    packet_evaluate(&input, &mut Default::default(), &mut before),
+                    packet_evaluate(&output, &mut Default::default(), &mut after)
+                );
+                assert_eq!(before, ["factory", "consume"]);
+                assert_eq!(after, before);
+            }
+        }
+        let input = packet_fixture(
+            vec![
+                (packet_call("first", vec![]), test_unit_ty()),
+                (packet_call("second", vec![]), test_unit_ty()),
+            ],
+            |ty| {
+                packet_call(
+                    "consume",
+                    vec![packet_projection(ty, 1, 2), packet_projection(ty, 0, 2)],
+                )
+            },
+        );
+        let mut changed = false;
+        let output = propagate_bound_tuple_slots(input.clone(), &mut changed);
+        assert!(!changed, "two factories stay in their ordered packet");
+        assert_eq!(output, input);
+        let mut events = Vec::new();
+        packet_evaluate(&output, &mut Default::default(), &mut events);
+        assert_eq!(events, ["first", "second", "consume"]);
+    }
+
+    #[test]
+    fn bound_tuple_slots_decline_literal_conversion_boundaries() {
+        let carrier = Type::synth_path(vec!["Carrier".into()], vec![], Span::new(0, 0));
+        let literals = vec![
+            Expr::StrLit {
+                occurrence: Default::default(),
+                value: "text".into(),
+                annotation: carrier.clone(),
+                meta: test_meta(),
+            },
+            Expr::IntLit {
+                occurrence: Default::default(),
+                diagnostic: Default::default(),
+                digits: "1".into(),
+                annotation: carrier.clone(),
+                meta: test_meta(),
+            },
+            Expr::FloatLit {
+                occurrence: Default::default(),
+                digits: "1.0".into(),
+                annotation: carrier.clone(),
+                meta: test_meta(),
+            },
+            Expr::BoolLit {
+                occurrence: Default::default(),
+                value: true,
+                annotation: carrier.clone(),
+                meta: test_meta(),
+            },
+        ];
+        for literal in literals {
+            let input = packet_fixture(
+                vec![
+                    (literal.clone(), carrier.clone()),
+                    (packet_unit(), test_unit_ty()),
+                ],
+                |_| packet_unit(),
+            );
+            let mut changed = false;
+            let output = propagate_bound_tuple_slots(input.clone(), &mut changed);
+            assert!(!changed, "literal slot keeps its whole original packet");
+            assert_eq!(output, input);
+            let input = packet_fixture(vec![(literal.clone(), carrier.clone()); 2], |_| {
+                packet_unit()
+            });
+            let mut changed = false;
+            assert_eq!(
+                propagate_bound_tuple_slots(input.clone(), &mut changed),
+                input
+            );
+            assert!(
+                !changed,
+                "two literal conversions retain their original packet"
+            );
+            let nested_ty = packet_product(vec![carrier.clone(), test_unit_ty()]);
+            let nested = Expr::EnrichedTuple {
+                occurrence: Default::default(),
+                items: vec![literal.clone(), packet_unit()],
+                synth_ty: nested_ty.clone(),
+                meta: test_meta(),
+                ext: (),
+            };
+            let input = packet_fixture(
+                vec![(nested, nested_ty), (packet_unit(), test_unit_ty())],
+                |_| packet_unit(),
+            );
+            let mut changed = false;
+            assert_eq!(
+                propagate_bound_tuple_slots(input.clone(), &mut changed),
+                input
+            );
+            assert!(!changed, "eager nested conversion keeps its packet");
+
+            let mut deferred = packet_lambda(literal.clone());
+            let Expr::FnExpr { ret_ty, .. } = &mut deferred else {
+                unreachable!()
+            };
+            *ret_ty = Some(carrier.clone());
+            let deferred_ty =
+                Type::synth_function(vec![test_unit_ty()], carrier.clone(), Span::new(0, 0));
+            let input = packet_fixture(
+                vec![
+                    (deferred.clone(), deferred_ty),
+                    (packet_unit(), test_unit_ty()),
+                ],
+                |ty| packet_projection(ty, 0, 2),
+            );
+            let mut changed = false;
+            assert_eq!(propagate_bound_tuple_slots(input, &mut changed), deferred);
+            assert!(
+                changed,
+                "a literal inside a deferred function is not evaluated at packet construction"
+            );
+
+            let invoked = Expr::synth_call(
+                deferred,
+                vec![CallArg::Value(packet_unit())],
+                Span::new(0, 0),
+            );
+            let input = packet_fixture(
+                vec![(invoked, carrier.clone()), (packet_unit(), test_unit_ty())],
+                |_| packet_unit(),
+            );
+            let mut changed = false;
+            assert_eq!(
+                propagate_bound_tuple_slots(input.clone(), &mut changed),
+                input
+            );
+            assert!(
+                !changed,
+                "a syntactically invoked literal-function body is inspected"
+            );
+        }
+    }
+
+    #[test]
+    fn bound_tuple_slot_propagation_declines_capture_escapes_and_suffixes() {
+        let make = |captured: &str, body: Expr<Enriched>| {
+            packet_fixture(
+                vec![
+                    (test_path(captured), test_unit_ty()),
+                    (packet_unit(), test_unit_ty()),
+                ],
+                |_| body,
+            )
+        };
+        let shadow = |name: &str, body: Expr<Enriched>| Expr::Let {
+            occurrence: Default::default(),
+            name: name.into(),
+            name_span: Span::new(0, 0),
+            ty: Some(test_unit_ty()),
+            pattern: (),
+            value: Box::new(packet_unit()),
+            body: Box::new(body),
+            meta: test_meta(),
+        };
+        let projection = || packet_projection(&test_pair_ty(), 0, 2);
+        let mut polymorphic = packet_lambda(projection());
+        let Expr::FnExpr { sig, .. } = &mut polymorphic else {
+            unreachable!()
+        };
+        let mut params = vec![crate::ast::SignatureParam::Type(crate::ast::TypeParam {
+            name: "T".into(),
+            span: Span::new(0, 0),
+            kind: None,
+            presentation: Default::default(),
+        })];
+        params.extend(std::mem::take(&mut sig.params));
+        *sig = crate::ast::Signature::new(params);
+        let cases = vec![
+            make("outer", test_path("packet")),
+            make("outer", shadow("packet", projection())),
+            make("outer", shadow("outer", projection())),
+            make("packet", projection()),
+            packet_fixture(
+                vec![
+                    (test_path("packet"), test_unit_ty()),
+                    (packet_call("factory", vec![]), test_unit_ty()),
+                ],
+                |ty| {
+                    packet_call(
+                        "consume",
+                        vec![packet_projection(ty, 0, 2), packet_projection(ty, 1, 2)],
+                    )
+                },
+            ),
+            make("outer", packet_lambda(projection())),
+            make("outer", polymorphic),
+            make(
+                "outer",
+                Expr::EnrichedFieldGet {
+                    occurrence: Default::default(),
+                    target: Box::new(test_path("packet")),
+                    field_name: "Nominal".into(),
+                    index: 0,
+                    arity: 2,
+                    target_ty: test_pair_ty(),
+                    meta: test_meta(),
+                    ext: (),
+                },
+            ),
+            make(
+                "outer",
+                Expr::EnrichedMatch {
+                    occurrence: Default::default(),
+                    scrutinee: Box::new(packet_unit()),
+                    arms: vec![crate::ast::EnrichedArm {
+                        param: "outer".into(),
+                        body: projection(),
+                        meta: test_meta(),
+                    }],
+                    scrutinee_ty: test_unit_ty(),
+                    result_ty: test_unit_ty(),
+                    meta: test_meta(),
+                    ext: (),
+                },
+            ),
+            packet_fixture(vec![(packet_unit(), test_unit_ty()); 3], |ty| {
+                packet_projection(ty, 1, 2)
+            }),
+            make(
+                "outer",
+                packet_projection(&Type::Bottom { meta: test_meta() }, 0, 2),
+            ),
+        ];
+        for input in cases {
+            let mut changed = false;
+            assert_eq!(
+                propagate_bound_tuple_slots(input.clone(), &mut changed),
+                input
+            );
+            assert!(
+                !changed,
+                "unsupported binding or layout must remain unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn bound_tuple_slot_growth_is_bounded_for_wide_and_nested_candidates() {
+        for width in [2, 8, 32, 128] {
+            let input = packet_fixture(vec![(packet_unit(), test_unit_ty()); width], |ty| {
+                packet_call(
+                    "consume",
+                    (0..width)
+                        .map(|i| packet_projection(ty, i, width))
+                        .collect(),
+                )
+            });
+            let before_nodes = ir_node_count(&input);
+            let mut changed = false;
+            let output = propagate_bound_tuple_slots(input, &mut changed);
+            assert!(changed);
+            assert!(ir_node_count(&output) < before_nodes);
+            let mut changed = false;
+            let again = propagate_bound_tuple_slots(output.clone(), &mut changed);
+            assert!(!changed);
+            assert_eq!(again, output);
+        }
+        let mut input = test_path("packet");
+        for _ in 0..64 {
+            input = packet_fixture(vec![(packet_unit(), test_unit_ty()); 2], |_| input);
+        }
+        let before_nodes = ir_node_count(&input);
+        let mut output = input.clone();
+        for _ in 0..FIXPOINT_CAP {
+            let mut changed = false;
+            output = propagate_bound_tuple_slots(output, &mut changed);
+            assert!(!changed, "shadowed nested packet must remain a no-op");
+        }
+        assert_eq!(output, input);
+        assert_eq!(ir_node_count(&output), before_nodes);
+    }
+
     fn contains<F>(e: &Expr<Enriched>, pred: &F) -> bool
     where
         F: Fn(&Expr<Enriched>) -> bool,
@@ -3227,6 +4363,106 @@ mod tests {
     }
 
     #[test]
+    fn final_tuple_slot_folding_preserves_prefix_and_suffix_effect_order() {
+        fn calls(expr: &Expr<Enriched>, out: &mut Vec<String>) {
+            match expr {
+                Expr::Call { callee, .. } => {
+                    let Expr::Path { segments, .. } = callee.as_ref() else {
+                        panic!("named effect");
+                    };
+                    out.push(segments[0].name.clone());
+                }
+                Expr::Seq { value, body, .. } => {
+                    calls(value, out);
+                    calls(body, out);
+                }
+                Expr::EnrichedTuple { items, .. } => {
+                    for item in items {
+                        calls(item, out);
+                    }
+                }
+                Expr::Path { .. } => {}
+                other => panic!("unexpected straight-line term: {other:?}"),
+            }
+        }
+        let names = ["first", "second", "third", "last"];
+        let tuple_ty = Type::Product {
+            left: Box::new(test_unit_ty()),
+            right: Box::new(Type::Product {
+                left: Box::new(test_unit_ty()),
+                right: Box::new(test_pair_ty()),
+                meta: test_meta(),
+            }),
+            meta: test_meta(),
+        };
+        for mask in 0..16 {
+            for index in [1, 2] {
+                let items = names
+                    .iter()
+                    .enumerate()
+                    .map(|(position, name)| {
+                        if mask & (1 << position) == 0 {
+                            test_path(name)
+                        } else {
+                            Expr::synth_call(test_path(name), vec![], Span::new(0, 0))
+                        }
+                    })
+                    .collect();
+                let projection = Expr::EnrichedProject {
+                    occurrence: Default::default(),
+                    target: Box::new(Expr::EnrichedTuple {
+                        occurrence: Default::default(),
+                        items,
+                        synth_ty: tuple_ty.clone(),
+                        meta: test_meta(),
+                        ext: (),
+                    }),
+                    index,
+                    arity: index + 1,
+                    target_ty: tuple_ty.clone(),
+                    meta: test_meta(),
+                    ext: (),
+                };
+                let mut changed = false;
+                let result = project_after_tuple(projection, &mut changed);
+                assert!(changed, "final slot retains the constructed suffix");
+                let mut actual = Vec::new();
+                calls(&result, &mut actual);
+                let expected: Vec<_> = names
+                    .iter()
+                    .enumerate()
+                    .filter(|(position, _)| mask & (1 << position) != 0)
+                    .map(|(_, name)| *name)
+                    .collect();
+                assert_eq!(actual, expected, "mask={mask}, index={index}");
+                let mut tail = &result;
+                while let Expr::Seq { body, .. } = tail {
+                    tail = body;
+                }
+                let Expr::EnrichedTuple {
+                    items, synth_ty, ..
+                } = tail
+                else {
+                    panic!("retained suffix tuple: {result:?}");
+                };
+                assert_eq!(items.len(), names.len() - index);
+                for (item, expected) in items.iter().zip(&names[index..]) {
+                    let value = match item {
+                        Expr::Call { callee, .. } => callee.as_ref(),
+                        other => other,
+                    };
+                    assert!(is_path_ref(value, expected));
+                }
+                let expected_ty = (0..index).fold(&tuple_ty, |ty, _| match ty {
+                    Type::Product { right, .. } => right.as_ref(),
+                    _ => unreachable!(),
+                });
+                assert!(structural_type_equal(synth_ty, expected_ty));
+            }
+        }
+    }
+
+    #[test]
     fn project_after_tuple_retains_effects_exposed_by_substitution_and_beta() {
         let module = optimize_one(
             "x/main",
@@ -3257,102 +4493,302 @@ mod tests {
         }
     }
 
-    /// `Hed.get(__fst__(__pair__({hed = x}, ())))` may recover as a
-    /// folded field-get or as canonical administrative lets around the
-    /// constructor, tuple, and projection. Either route may collapse
-    /// the complete constructor/projector round-trip, but it must yield
-    /// the payload `x`, not the raw tuple slot `Hed.mk(x)`.
+    /// Selecting a nominal tuple slot must retain its projector. Complete
+    /// constructor/projector elision may yield `x`; otherwise the recovered
+    /// field-get must still unwrap exactly `Hed.mk(x)`, not return that wrapper.
     #[test]
     fn field_get_after_tuple_preserves_projector_semantics() {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; \
              host type I32 role(i32); \
-             labels { hed: I32 }; \
+             type { Hed: I32; }; \
              fn t(x: I32) -> I32 { \
-               Hed.get(__fst__[Hed][ .]( __pair__[Hed][ .]( {hed = x}, ()))) \
+               Hed.get(__fst__[Hed][ .]( __pair__[Hed][ .]( Hed.mk(x), ()))) \
              }",
         );
         let body = fn_body(&m, "t");
+        if is_path_ref(body, "x") {
+            return;
+        }
+        let Expr::EnrichedFieldGet {
+            target,
+            field_name,
+            index,
+            arity,
+            target_ty,
+            ..
+        } = body
+        else {
+            panic!("expected payload `x` or its retained nominal projector, got {body:?}");
+        };
+        assert_eq!((field_name.as_str(), *index, *arity), ("Hed", 0, 2));
         assert!(
-            is_path_ref(body, "x"),
-            "expected the selected label slot to be unwrapped to `x`, got {body:?}"
+            matches!(target_ty,
+                Type::Product { left, right, .. }
+                if matches!(left.as_ref(), Type::Path { segments, args, .. }
+                    if segments.len() == 1 && segments[0].name == "Hed" && args.is_empty())
+                    && matches!(right.as_ref(), Type::Unit { .. })
+            ),
+            "unexpected selected nominal type: {target_ty:?}"
+        );
+        let Expr::EnrichedTuple {
+            items, synth_ty, ..
+        } = target.as_ref()
+        else {
+            panic!("expected the original nominal tuple, got {target:?}");
+        };
+        assert!(super::structural_type_equal(synth_ty, target_ty));
+        assert!(
+            matches!(items.as_slice(),
+                [Expr::Call { callee, args, .. }, Expr::Unit { .. }]
+                if matches!(callee.as_ref(), Expr::Path { segments, .. }
+                    if segments.len() == 2 && segments[0].name == "Hed" && segments[1].name == "mk")
+                    && matches!(args.as_slice(), [CallArg::Value(payload)] if is_path_ref(payload, "x"))
+            ),
+            "projector must unwrap exactly Hed.mk(x) in the selected slot: {items:?}"
         );
     }
 
     #[test]
     fn field_get_over_recovered_tail_composes_to_original_product() {
-        let m = optimize_one(
+        let module = optimize_one(
             "x/main",
-            "module x/main; \
-             labels { a: ., b: ., c: . }; \
-             type Wide = A & B & C; \
-             fn read(r: Wide) -> . { r.?{c} }",
+            "module x/main; import __intrinsics__; type { A: .; B: .; C: .; } type Wide = A & B & C; fn read(r: Wide) -> . { C.get(__snd__[B][C](__snd__[A][B & C](r))) }",
         );
-        let body = fn_body(&m, "read");
-        match body {
-            Expr::EnrichedFieldGet {
-                target,
-                index,
-                arity,
-                ..
-            } => {
-                assert_eq!(*index, 2, "field access should target the flat slot");
-                assert_eq!(
-                    *arity, 3,
-                    "field access should keep the outer product arity"
-                );
-                assert!(
-                    is_path_ref(target, "r"),
-                    "field access should read from the original product: {target:?}"
-                );
-            }
-            other => panic!("expected EnrichedFieldGet, got {other:?}"),
-        }
+        let body = fn_body(&module, "read");
         assert!(
-            !contains(body, &|e| matches!(e, Expr::Let { .. })),
-            "tail materialization should not survive under field access: {body:?}"
+            matches!(body, Expr::EnrichedFieldGet { target, index: 2, arity: 3, .. }
+            if is_path_ref(target, "r")),
+            "{body:?}"
         );
+        assert!(!contains(body, &|expr| matches!(expr, Expr::Let { .. })));
     }
 
     #[test]
     fn field_update_preserved_tail_slots_compose_to_original_product() {
-        let m = optimize_one(
+        let module = optimize_one(
             "x/main",
-            "module x/main; \
-             labels { a: ., b: ., c: ., d: . }; \
-             type Wide = A & B & C & D; \
-             fn update(r: Wide) -> Wide { r.!{c = ()} }",
+            "module x/main; import __intrinsics__; type { A: .; B: .; C: .; D: .; } type Wide = A & B & C & D; fn update(r: Wide) -> Wide { (__fst__(r), __fst__(__snd__(r)), C.mk(()), __snd__(__snd__(__snd__(r)))) }",
         );
-        let body = fn_body(&m, "update");
+        let body = fn_body(&module, "update");
         assert!(
-            !contains(body, &|e| matches!(
-                e,
-                Expr::EnrichedProject { target, .. }
-                    if matches!(target.as_ref(), Expr::Let { .. })
-            )),
-            "preserved slots should not project from rebuilt tail tuples: {body:?}"
+            !contains(
+                body,
+                &|expr| matches!(expr, Expr::EnrichedProject { target, .. }
+            if matches!(target.as_ref(), Expr::Let { .. }))
+            ),
+            "{body:?}"
         );
-        let Expr::Let {
-            name: receiver,
-            body: update,
-            ..
-        } = body
-        else {
-            panic!("field update should bind its receiver once: {body:?}");
+        assert!(
+            contains(body, &|expr| matches!(expr,
+            Expr::EnrichedProject { target, index: 3, arity: 4, .. } if is_path_ref(target, "r"))),
+            "last preserved slot reads the original receiver: {body:?}"
+        );
+    }
+
+    #[test]
+    fn direct_tail_composition_preserves_bounded_values_and_effects() {
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        enum Value {
+            Atom(&'static str),
+            Unit,
+            Function,
+            Nominal(Box<Value>),
+            Pair(Box<Value>, Box<Value>),
+        }
+        fn pair(left: Value, right: Value) -> Value {
+            Value::Pair(Box::new(left), Box::new(right))
+        }
+        fn value_type(value: &Value) -> Type<Enriched> {
+            match value {
+                Value::Unit => test_unit_ty(),
+                Value::Function => Type::synth_function(vec![], test_unit_ty(), Span::new(0, 0)),
+                Value::Pair(left, right) => Type::Product {
+                    left: Box::new(value_type(left)),
+                    right: Box::new(value_type(right)),
+                    meta: test_meta(),
+                },
+                Value::Atom(_) => Type::synth_path(vec!["Scalar".into()], vec![], Span::new(0, 0)),
+                Value::Nominal(payload) => Type::synth_path(
+                    vec!["Opaque".into()],
+                    vec![value_type(payload)],
+                    Span::new(0, 0),
+                ),
+            }
+        }
+        fn select(mut value: Value, index: usize, arity: usize) -> Value {
+            assert!(arity >= 2 && index < arity);
+            for _ in 0..index {
+                let Value::Pair(_, right) = value else {
+                    panic!("right-spine step requires a pair");
+                };
+                value = *right;
+            }
+            if index + 1 == arity {
+                value
+            } else {
+                let Value::Pair(left, _) = value else {
+                    panic!("nonterminal slot requires a pair");
+                };
+                *left
+            }
+        }
+        fn source_call() -> Expr<Enriched> {
+            Expr::synth_call(test_path("source"), vec![], Span::new(0, 0))
+        }
+        fn project(
+            target: Expr<Enriched>,
+            value: &Value,
+            index: usize,
+            arity: usize,
+        ) -> Expr<Enriched> {
+            Expr::EnrichedProject {
+                occurrence: Default::default(),
+                target: Box::new(target),
+                index,
+                arity,
+                target_ty: value_type(value),
+                meta: test_meta(),
+                ext: (),
+            }
+        }
+        fn evaluate(
+            expr: &Expr<Enriched>,
+            source: &Value,
+            effects: &mut Vec<&'static str>,
+        ) -> Value {
+            match expr {
+                Expr::Call { callee, args, .. } => {
+                    assert!(is_path_ref(callee, "source") && args.is_empty());
+                    effects.push("source");
+                    source.clone()
+                }
+                Expr::EnrichedProject {
+                    target,
+                    index,
+                    arity,
+                    ..
+                } => select(evaluate(target, source, effects), *index, *arity),
+                Expr::EnrichedFieldGet {
+                    target,
+                    index,
+                    arity,
+                    ..
+                } => {
+                    let Value::Nominal(payload) =
+                        select(evaluate(target, source, effects), *index, *arity)
+                    else {
+                        panic!("field getter unwraps its nominal slot");
+                    };
+                    *payload
+                }
+                other => panic!("unexpected evaluator term: {other:?}"),
+            }
+        }
+        let source = pair(
+            pair(Value::Atom("left"), Value::Unit),
+            pair(
+                Value::Unit,
+                pair(
+                    Value::Nominal(Box::new(Value::Atom("payload"))),
+                    pair(Value::Function, pair(Value::Atom("tail"), Value::Unit)),
+                ),
+            ),
+        );
+        for inner_arity in 2..=5 {
+            let inner_index = inner_arity - 1;
+            let tail = select(source.clone(), inner_index, inner_arity);
+            for outer_arity in 2..=6 - inner_index {
+                for outer_index in 0..outer_arity {
+                    let before = project(
+                        project(source_call(), &source, inner_index, inner_arity),
+                        &tail,
+                        outer_index,
+                        outer_arity,
+                    );
+                    let mut changed = false;
+                    let after = compose_recovered_tail_access(before.clone(), &mut changed);
+                    assert!(changed);
+                    let mut before_effects = Vec::new();
+                    let mut after_effects = Vec::new();
+                    assert_eq!(
+                        evaluate(&before, &source, &mut before_effects),
+                        evaluate(&after, &source, &mut after_effects)
+                    );
+                    assert_eq!(before_effects, ["source"]);
+                    assert_eq!(after_effects, before_effects);
+                    assert!(
+                        matches!(&after, Expr::EnrichedProject { target, index, arity, target_ty, .. }
+                        if *index == inner_index + outer_index && *arity == inner_index + outer_arity
+                            && matches!(target.as_ref(), Expr::Call { .. }) && structural_type_equal(target_ty, &value_type(&source)))
+                    );
+                }
+            }
+        }
+        let left = select(source.clone(), 0, 6);
+        let before = project(project(source_call(), &source, 0, 6), &left, 1, 2);
+        let mut changed = false;
+        let after = compose_recovered_tail_access(before.clone(), &mut changed);
+        assert!(!changed, "a compound nonterminal left slot is not a tail");
+        assert_eq!(
+            evaluate(&before, &source, &mut Vec::new()),
+            evaluate(&after, &source, &mut Vec::new())
+        );
+
+        let tail = select(source.clone(), 2, 3);
+        let getter = Expr::EnrichedFieldGet {
+            occurrence: Default::default(),
+            target: Box::new(project(source_call(), &source, 2, 3)),
+            field_name: "Opaque".into(),
+            index: 0,
+            arity: 2,
+            target_ty: value_type(&tail),
+            meta: test_meta(),
+            ext: (),
         };
-        assert!(
-            contains(update, &|e| matches!(
-                e,
-                Expr::EnrichedProject { target, index: 3, arity: 4, .. }
-                    if matches!(
-                        target.as_ref(),
-                        Expr::Path { segments, .. }
-                            if segments.len() == 1 && segments[0].name == *receiver
-                    )
-            )),
-            "last preserved slot should read directly from the bound receiver: {body:?}"
+        let mut changed = false;
+        let after = compose_recovered_tail_access(getter.clone(), &mut changed);
+        assert!(changed);
+        let mut effects = Vec::new();
+        assert_eq!(
+            evaluate(&after, &source, &mut effects),
+            Value::Atom("payload")
         );
+        assert_eq!(effects, ["source"]);
+        assert!(
+            matches!(after, Expr::EnrichedFieldGet { field_name, index: 2, arity: 4, .. } if field_name == "Opaque")
+        );
+    }
+
+    #[test]
+    fn direct_tail_composition_rejects_invalid_views_and_overflow() {
+        for (inner_index, inner_arity, index, arity) in [
+            (0, 1, 0, 2),
+            (1, 2, 2, 2),
+            (1, 2, 0, 1),
+            (usize::MAX, usize::MAX, 0, 2),
+            (usize::MAX - 1, usize::MAX, 0, 2),
+        ] {
+            let mut inner = test_project("source", inner_index);
+            let Expr::EnrichedProject { arity: stored, .. } = &mut inner else {
+                unreachable!()
+            };
+            *stored = inner_arity;
+            let before = Expr::EnrichedProject {
+                occurrence: Default::default(),
+                target: Box::new(inner),
+                index,
+                arity,
+                target_ty: test_pair_ty(),
+                meta: test_meta(),
+                ext: (),
+            };
+            let mut changed = false;
+            let after = compose_recovered_tail_access(before.clone(), &mut changed);
+            assert!(!changed);
+            assert_eq!(after, before);
+        }
     }
 
     /// `let x = E in F[x]` with `x` used exactly once and `E` pure
@@ -3674,7 +5110,7 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import match(macro match, match_checked); \
-             macro choose : [Source] Source -> [Clauses] Clauses -> [Target] Target \
+             macro choose : [Source][Clauses] (Source & Clauses) -> [Target] Target \
              { trailing product; impl(fills) match_checked } \
              host type Left; host type Middle; host type Right; \
              host fn chosen[A](payload: A) -> .; \
@@ -3998,12 +5434,12 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             newtype Red : . { constructor mk_red; projector un_red; }; \
-             newtype Green : . { constructor mk_green; projector un_green; }; \
-             newtype Blue : . { constructor mk_blue; projector un_blue; }; \
+             type { Red: . { mk; get; }; }; \
+             type { Green: . { mk; get; }; }; \
+             type { Blue: . { mk; get; }; }; \
              host fn consume[A](value: A) -> .; \
              fn t() -> . { \
-               let green = Green.mk_green(()); \
+               let green = Green.mk(()); \
                let inner = __left__[Green][ Blue]( green); \
                let widened = __right__[Red][ Green | Blue]( inner); \
                consume[Red | Green | Blue](widened) \
@@ -4169,6 +5605,240 @@ mod tests {
         assert_selected_branch_value(body, "a");
     }
 
+    #[test]
+    fn bound_conditional_recovers_dynamic_literal_thunks_and_captures() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import control(Bool, macro if); \
+             fn t[A](flag: Bool, outer: A, other: A) -> A { \
+               if(flag) { outer } else { other } \
+             }",
+        );
+        let body = fn_body(&m, "t");
+        let Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = body
+        else {
+            panic!("expected a native conditional without thunk calls: {body:?}")
+        };
+        assert!(is_path_ref(cond, "flag"));
+        assert!(is_path_ref(then_branch, "outer"));
+        assert!(is_path_ref(else_branch, "other"));
+    }
+
+    #[test]
+    fn bound_conditional_preserves_shadowed_branch_captures() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import control(Bool, macro if); \
+             fn t[A](flag: Bool, outer: A, other: A) -> A { \
+               if(flag) { .(outer: A) { outer }(other) } else { outer } \
+             }",
+        );
+        let body = fn_body(&m, "t");
+        let Expr::EnrichedConditional {
+            then_branch,
+            else_branch,
+            ..
+        } = body
+        else {
+            panic!("expected a recovered conditional: {body:?}")
+        };
+        assert!(is_path_ref(then_branch, "other"));
+        assert!(is_path_ref(else_branch, "outer"));
+    }
+
+    #[test]
+    fn bound_conditional_keeps_effectful_condition_once() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import control(Bool, macro if); \
+             host fn condition() -> Bool; \
+             fn t[A](left: A, right: A) -> A { \
+               if(condition()) { left } else { right } \
+             }",
+        );
+        let body = fn_body(&m, "t");
+        let Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = body
+        else {
+            panic!("expected one conditional with its condition call: {body:?}")
+        };
+        assert!(matches!(cond.as_ref(), Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path { segments, .. }
+                if segments.last().is_some_and(|part| part.name == "condition"))));
+        assert!(is_path_ref(then_branch, "left"));
+        assert!(is_path_ref(else_branch, "right"));
+    }
+
+    #[test]
+    fn bound_conditional_keeps_effectful_unselected_thunk_factory() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import control(Bool, macro if); \
+             host fn factory() -> . -> .; \
+             fn t(flag: Bool) { if(flag, .() { () }, factory()) }",
+        );
+        let body = fn_body(&m, "t");
+        let Expr::Let {
+            name,
+            value,
+            body: dispatch,
+            ..
+        } = body
+        else {
+            panic!("the eager factory binding must remain: {body:?}")
+        };
+        assert!(
+            matches!(value.as_ref(), Expr::Call { callee, args, .. }
+            if matches!(callee.as_ref(), Expr::Path { segments, .. }
+                if segments.last().is_some_and(|part| part.name == "factory"))
+                && matches!(args.as_slice(), [] | [CallArg::Value(Expr::Unit { .. })])),
+            "the factory must run exactly once in the eager initializer: {value:?}"
+        );
+        let Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = dispatch.as_ref()
+        else {
+            panic!("the factory must run before the conditional: {dispatch:?}")
+        };
+        assert!(is_path_ref(cond, "flag"));
+        assert!(matches!(then_branch.as_ref(), Expr::Unit { .. }));
+        assert!(
+            matches!(else_branch.as_ref(), Expr::Call { callee, args, .. }
+            if is_path_ref(callee, name)
+                && matches!(args.as_slice(), [] | [CallArg::Value(Expr::Unit { .. })]))
+        );
+        assert_eq!(count_free_uses(dispatch, name), 1);
+    }
+
+    #[test]
+    fn bound_conditional_guard_keeps_a_unary_unit_thunk() {
+        let m = recover_one(
+            "x/main",
+            "module x/main; import control(Bool, macro if); \
+             fn t(flag: Bool) { if(flag, .(unit: .) { unit }, .() { () }) }",
+        );
+        let mut body = fn_body(&m, "t").clone();
+        // The catalog composes child tail projections before this parent rule.
+        // Prepare that exact input without running the conditional rewrite.
+        let Expr::Let { body: dispatch, .. } = &mut body else {
+            panic!("expected a bound packet: {body:?}")
+        };
+        let Expr::EnrichedConditional {
+            then_branch,
+            else_branch,
+            ..
+        } = dispatch.as_mut()
+        else {
+            panic!("expected a recovered conditional: {dispatch:?}")
+        };
+        let mut access_changed = false;
+        for branch in [then_branch, else_branch] {
+            let Expr::Call { callee, args, .. } = branch.as_mut() else {
+                panic!("expected an ordinary branch call: {branch:?}")
+            };
+            assert!(matches!(
+                args.as_slice(),
+                [] | [CallArg::Value(Expr::Unit { .. })]
+            ));
+            **callee = compose_recovered_tail_access((**callee).clone(), &mut access_changed);
+        }
+        let Expr::Let {
+            name,
+            value,
+            body: dispatch,
+            ..
+        } = &body
+        else {
+            panic!("expected a bound packet: {body:?}")
+        };
+        let Expr::EnrichedTuple { items, .. } = value.as_ref() else {
+            panic!("expected a tuple packet: {value:?}")
+        };
+        let Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = dispatch.as_ref()
+        else {
+            panic!("expected a packet-projection conditional: {dispatch:?}")
+        };
+        let (condition_index, condition_arity, _) =
+            projection_from_bound(cond, name).expect("condition projects the bound packet");
+        let Expr::Call {
+            callee: then_callee,
+            ..
+        } = then_branch.as_ref()
+        else {
+            panic!("then branch calls the projected function")
+        };
+        let Expr::Call {
+            callee: else_callee,
+            ..
+        } = else_branch.as_ref()
+        else {
+            panic!("else branch calls the projected function")
+        };
+        let (then_index, then_arity, _) = projection_from_bound(then_callee, name)
+            .expect("then callee projects the bound packet");
+        let (else_index, else_arity, _) = projection_from_bound(else_callee, name)
+            .expect("else callee projects the bound packet");
+        assert_eq!(
+            (condition_arity, then_arity, else_arity),
+            (items.len(), items.len(), items.len())
+        );
+        assert_ne!(condition_index, then_index);
+        assert_ne!(condition_index, else_index);
+        assert_ne!(then_index, else_index);
+        assert!(matches!(&items[then_index], Expr::FnExpr { sig, .. }
+            if matches!(sig.groups.as_slice(), [crate::ast::SignatureGroupKind::Value { len: 1 }])));
+        assert!(matches!(&items[else_index], Expr::FnExpr { sig, .. }
+            if matches!(sig.groups.as_slice(), [crate::ast::SignatureGroupKind::Value { len: 0 }])));
+        // Every other guard is satisfied: replacing only the unary literal
+        // with the already typed nullary literal must make the rule fire.
+        let nullary = items[else_index].clone();
+        let mut positive = body.clone();
+        let Expr::Let { value, .. } = &mut positive else {
+            unreachable!("the positive control preserves the packet")
+        };
+        let Expr::EnrichedTuple { items, .. } = value.as_mut() else {
+            unreachable!("the positive control preserves the tuple")
+        };
+        items[then_index] = nullary;
+        let mut changed = false;
+        let output = recover_bound_conditional(positive, &mut changed);
+        assert!(
+            changed,
+            "the nullary counterpart must reach and fire the rule"
+        );
+        assert!(matches!(output, Expr::EnrichedConditional { .. }));
+
+        let mut changed = false;
+        let output = recover_bound_conditional(body.clone(), &mut changed);
+        assert!(
+            !changed,
+            "a unary Unit function is outside the nullary rule"
+        );
+        assert!(matches!(output, Expr::Let { .. }));
+        assert_eq!(
+            serde_json::to_value(&output).unwrap(),
+            serde_json::to_value(&body).unwrap(),
+            "declining the unary literal must preserve the complete input"
+        );
+    }
+
     /// Symmetric: `if .f { a } else { b }` folds to the `else`
     /// branch `b`.
     #[test]
@@ -4203,7 +5873,7 @@ mod tests {
     }
 
     /// `newtype_identity_elision` firing coverage:
-    /// `Foo.un_foo[A](Foo.mk_foo[A](x))` collapses to the bare `x`.
+    /// `Foo.get[A](Foo.mk[A](x))` collapses to the bare `x`.
     /// The optimizer is observationally a no-op (the round-trip is
     /// identity in every backend), so no runtime golden can pin it.
     #[test]
@@ -4211,8 +5881,8 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             newtype Foo[A] : A { pub constructor mk_foo; pub projector un_foo; }; \
-             fn t[A](x: A) -> A { Foo.un_foo[A](Foo.mk_foo[A](x)) }",
+             type { Foo[A]: A { pub mk; pub get; }; }; \
+             fn t[A](x: A) -> A { Foo.get[A](Foo.mk[A](x)) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -4234,13 +5904,13 @@ mod tests {
             (
                 "a.kio",
                 "module a; \
-                 newtype Foo : . { pub constructor make_a; pub projector un_a; };",
+                 type { Foo: . { pub mk; pub get; }; };",
             ),
             (
                 "b.kio",
                 "module b; \
-                 newtype Foo : . { pub constructor wrap; pub projector unwrap; }; \
-                 fn t(value: .) -> . { Foo.unwrap(Foo.wrap(value)) }",
+                 type { Foo: . { pub mk; pub get; }; }; \
+                 fn t(value: .) -> . { Foo.get(Foo.mk(value)) }",
             ),
         ]
         .into_iter()
@@ -4261,6 +5931,26 @@ mod tests {
             .expect("check in-body resolution");
         let prime = check_package(&package).expect("check package");
         let recovered = recover_package(&prime);
+        let consumer = &recovered.module("b").expect("module b").module;
+        let declaration = consumer
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Newtype(declaration) if declaration.name == "Foo" => Some(declaration),
+                _ => None,
+            })
+            .expect("b.Foo declaration");
+        let context = super::OptimizerCtx::for_module(&recovered, consumer);
+        let head = [PathSegment::new("Foo", Span::new(0, 0))];
+        let selected = context
+            .newtype_members
+            .get(&head)
+            .expect("local Foo selection");
+        assert_eq!(
+            selected.identity,
+            crate::pass::resolve::ResolvedNewtypeIdentity::new(&consumer.path, declaration),
+            "the consumer must resolve its own Foo identity"
+        );
         let optimized = super::optimize_package(recovered);
         let b = &optimized.module("b").expect("module b").module;
         let body = fn_body(b, "t");
@@ -4278,22 +5968,22 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; \
-                 pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                 pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
                 "module decoy; \
-                 pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+                 pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
                 "module consumer; \
                  import provider(Box); \
                  import provider as p; import provider as q; import decoy as d; \
-                 fn same_provider(value: .) -> . { p.Box.unwrap(q.Box.wrap(value)) } \
-                 fn mixed_route(value: .) -> . { Box.unwrap(p.Box.wrap(value)) } \
+                 fn same_provider(value: .) -> . { p.Box.get(q.Box.mk(value)) } \
+                 fn mixed_route(value: .) -> . { Box.get(p.Box.mk(value)) } \
                  fn distinct_provider(value: d.Box) -> p.Box { \
-                   p.Box.wrap(d.Box.unwrap(value)) \
+                   p.Box.mk(d.Box.get(value)) \
                  }",
             ),
         ]

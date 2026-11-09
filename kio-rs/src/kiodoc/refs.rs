@@ -26,7 +26,7 @@
 //!
 //! Two forms are accepted, mirroring imports:
 //!
-//! - **Simple name** — a single identifier (bare name, label, imported
+//! - **Simple name** — a single identifier (declaration name, imported
 //!   alias). Operators are spelled as their token sequence.
 //! - **Qualified path** — a module-qualified item (`pkg/mod.name`),
 //!   the module segments `/`-separated and the item reached with `.`,
@@ -84,8 +84,7 @@ pub struct ModuleScope {
     /// Whether `import __intrinsics__;` is in scope — lets `` [`__left__`] ``
     /// etc. resolve.
     pub intrinsics_in_scope: bool,
-    /// Non-value declaration selectors: ordinary type names and braced
-    /// label-forwarding names. The `` [`@type term`] `` directive rejects
+    /// Type declaration names. The `` [`@type term`] `` directive rejects
     /// these selectors; constructor and projector value paths are separate.
     pub type_level: Vec<(String, TypeLevelKind)>,
 }
@@ -96,26 +95,23 @@ pub struct ModuleScope {
 pub enum TypeLevelKind {
     /// A `type Name = …;` declaration.
     TypeAlias,
-    /// A `labels Name = { … };` declaration.
+    /// A named compact `type Name = { … };` alias.
     Labels,
-    /// A `newtype Name = …;` declaration.
+    /// A nominal `type { Name: …; }` declaration.
     Newtype,
     /// A `host type Name;` declaration.
     HostType,
-    /// A nonminting `type {label} = {target};` declaration.
-    LabelForward,
 }
 
 impl TypeLevelKind {
     /// A human-readable description of the kind, for diagnostics —
-    /// e.g. "a type alias", "a `labels` declaration".
+    /// e.g. "a type alias", "a nominal type".
     pub fn describe(self) -> &'static str {
         match self {
             TypeLevelKind::TypeAlias => "a type alias",
-            TypeLevelKind::Labels => "a `labels` declaration",
-            TypeLevelKind::Newtype => "a `newtype`",
+            TypeLevelKind::Labels => "a type alias",
+            TypeLevelKind::Newtype => "a nominal type",
             TypeLevelKind::HostType => "a `host type`",
-            TypeLevelKind::LabelForward => "a label declaration",
         }
     }
 }
@@ -472,7 +468,6 @@ pub fn module_scope_from_surface_for_boundary(
             DocEntry::TypeAlias(_, _) => Some(TypeLevelKind::TypeAlias),
             DocEntry::Newtype(_, _) | DocEntry::LabelNominal { .. } => Some(TypeLevelKind::Newtype),
             DocEntry::Labels(_, _, _) => Some(TypeLevelKind::Labels),
-            DocEntry::LabelForward(_, _) => Some(TypeLevelKind::LabelForward),
             DocEntry::HostType(_) => Some(TypeLevelKind::HostType),
             DocEntry::Fn(_)
             | DocEntry::RecFn(_)
@@ -488,23 +483,28 @@ pub fn module_scope_from_surface_for_boundary(
         match entry {
             DocEntry::Newtype(newtype, _) => {
                 if newtype.constructor.vis.is_exported() {
-                    scope.top_level.push(newtype.constructor.name.clone());
+                    scope
+                        .top_level
+                        .push(format!("{}.{}", newtype.name, newtype.constructor.name));
                 }
                 if newtype.projector.vis.is_exported() {
-                    scope.top_level.push(newtype.projector.name.clone());
+                    scope
+                        .top_level
+                        .push(format!("{}.{}", newtype.name, newtype.projector.name));
                 }
             }
             DocEntry::Labels(labels, _, _) => {
-                scope.top_level.extend(
-                    labels
-                        .entries
-                        .iter()
-                        .filter(|entry| !entry.is_reuse_marker())
-                        .map(|entry| entry.name.clone()),
-                );
+                if let Some(entry) = crate::ast::named_labels_identity_alias_entry(labels) {
+                    add_compact_member_names(
+                        &mut scope,
+                        entry,
+                        labels.type_alias_name.as_ref().unwrap(),
+                        true,
+                    );
+                }
             }
-            DocEntry::LabelNominal { labels, entry, .. } if labels.type_alias_name.is_none() => {
-                scope.top_level.push(entry.name.clone());
+            DocEntry::LabelNominal { entry, .. } => {
+                add_compact_member_names(&mut scope, entry, &entry.name, true);
             }
             _ => {}
         }
@@ -513,16 +513,42 @@ pub fn module_scope_from_surface_for_boundary(
 }
 
 fn add_label_nominals(scope: &mut ModuleScope, labels: &crate::ast::Labels) {
-    for entry in labels
-        .entries
-        .iter()
-        .filter(|entry| !entry.is_reuse_marker())
-    {
-        let name = crate::ast::mint_label_newtype_name(&entry.name);
+    for entry in labels.entries.iter() {
+        let name = entry.name.clone();
         if labels.type_alias_name.as_ref() != Some(&name) {
             scope.top_level.push(name.clone());
             scope.type_level.push((name, TypeLevelKind::Newtype));
         }
+        add_compact_member_names(scope, entry, &entry.name, false);
+    }
+    if let Some(entry) = crate::ast::named_labels_identity_alias_entry(labels) {
+        add_compact_member_names(
+            scope,
+            entry,
+            labels.type_alias_name.as_ref().unwrap(),
+            false,
+        );
+    }
+}
+
+fn add_compact_member_names(
+    scope: &mut ModuleScope,
+    entry: &crate::ast::LabelEntry,
+    owner_name: &str,
+    exported_only: bool,
+) {
+    if let Some(members) = &entry.members {
+        for member in [&members.constructor, &members.projector] {
+            if !exported_only || member.vis.is_exported() {
+                scope
+                    .top_level
+                    .push(format!("{owner_name}.{}", member.name));
+            }
+        }
+    } else {
+        scope
+            .top_level
+            .extend([format!("{owner_name}.mk"), format!("{owner_name}.get")]);
     }
 }
 
@@ -542,9 +568,6 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
                 for item in items {
                     if let Some(name) = item.as_local_name() {
                         scope.imported.push(name.to_owned());
-                    } else if let Some((name, _)) = item.as_label() {
-                        scope.imported.push(name.to_owned());
-                        scope.imported.push(format!("{{{name}}}"));
                     } else if let crate::ast::ImportItem::OperatorPattern {
                         grammar, alias, ..
                     } = item
@@ -587,16 +610,14 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
                     crate::ast::TypeRecMember::Newtype(newtype) => Some(newtype.name.clone()),
                     crate::ast::TypeRecMember::Labels(labels, _) => labels.type_alias_name.clone(),
                 }));
-        } else if let crate::ast::Item::LabelForward(forward, _) = item {
-            scope.top_level.push(format!("{{{}}}", forward.name));
         } else {
             let name = surface_item_name(item);
             if !name.is_empty() {
                 scope.top_level.push(name.to_owned());
             }
         }
-        // Record the type-level names — `type` / `labels` type-alias /
-        // `newtype` — so the `@type` directive can reject them. The
+        // Record aliases and nominal types so the `@type` directive can
+        // reject non-value selectors. The
         // `op` item's resolvable name is the bound function, a
         // value-level name, so `op` is not type-level.
         match item {
@@ -614,9 +635,6 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
                 }
                 add_label_nominals(&mut scope, labels);
             }
-            crate::ast::Item::LabelForward(forward, _) => scope
-                .type_level
-                .push((format!("{{{}}}", forward.name), TypeLevelKind::LabelForward)),
             crate::ast::Item::HostType(h) => scope
                 .type_level
                 .push((h.name.clone(), TypeLevelKind::HostType)),
@@ -640,44 +658,28 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
             }
             _ => {}
         }
-        // Collect label names from `labels { … }` items — labels are valid
-        // intra-doc ref targets.
-        if let crate::ast::Item::Labels(labels, _ext) = item {
-            // The type-alias name for `labels T = { … }`.
-            if let Some(alias_name) = &labels.type_alias_name {
-                scope.top_level.push(alias_name.clone());
-            }
-            // Individual label names from `labels { name: T, … }`.
-            for entry in labels
-                .entries
-                .iter()
-                .filter(|entry| !entry.is_reuse_marker())
-            {
-                scope.top_level.push(entry.name.clone());
-            }
-        }
-        // Newtype constructors and projectors are also in scope.
+        // Nominal constructors and projectors retain their qualified owner.
         if let crate::ast::Item::Newtype(nt) = item {
-            scope.top_level.push(nt.constructor.name.clone());
-            scope.top_level.push(nt.projector.name.clone());
+            scope
+                .top_level
+                .push(format!("{}.{}", nt.name, nt.constructor.name));
+            scope
+                .top_level
+                .push(format!("{}.{}", nt.name, nt.projector.name));
         }
         if let crate::ast::Item::TypeRecGroup(group) = item {
             for member in &group.members {
                 match member {
                     crate::ast::TypeRecMember::Newtype(newtype) => {
-                        scope.top_level.push(newtype.constructor.name.clone());
-                        scope.top_level.push(newtype.projector.name.clone());
+                        scope
+                            .top_level
+                            .push(format!("{}.{}", newtype.name, newtype.constructor.name));
+                        scope
+                            .top_level
+                            .push(format!("{}.{}", newtype.name, newtype.projector.name));
                     }
-                    crate::ast::TypeRecMember::Labels(labels, _) => {
-                        for entry in labels
-                            .entries
-                            .iter()
-                            .filter(|entry| !entry.is_reuse_marker())
-                        {
-                            scope.top_level.push(entry.name.clone());
-                        }
-                    }
-                    crate::ast::TypeRecMember::TypeAlias(_) => {}
+                    crate::ast::TypeRecMember::TypeAlias(_)
+                    | crate::ast::TypeRecMember::Labels(_, _) => {}
                 }
             }
         }
@@ -700,7 +702,7 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
 }
 
 /// Extract the declared name for a `Surface` item. Returns `""` for
-/// anonymous items (anonymous `labels`, `equiv`, `op`).
+/// anonymous items (unnamed compact groups, `equiv`, `op`).
 fn surface_item_name(item: &crate::ast::Item<crate::ast::Surface>) -> &str {
     match item {
         crate::ast::Item::FnDef(d) => &d.name,
@@ -709,7 +711,6 @@ fn surface_item_name(item: &crate::ast::Item<crate::ast::Surface>) -> &str {
         crate::ast::Item::Newtype(d) => &d.name,
         crate::ast::Item::Macro(s, _ext) => &s.name,
         crate::ast::Item::Labels(t, _ext) => t.type_alias_name.as_deref().unwrap_or(""),
-        crate::ast::Item::LabelForward(_, _) => "",
         crate::ast::Item::Equiv(e, _ext) => &e.name,
         crate::ast::Item::RecGroup(g, _ext) => g
             .members
@@ -830,19 +831,6 @@ fn edit_distance(a: &str, b: &str) -> usize {
 /// ASCII letters, digits, or underscores. This is a loose syntactic
 /// check — we don't validate paths outside the documented package.
 fn looks_like_qualified_path(name: &str) -> bool {
-    if let Some((module, selector)) = name.rsplit_once('.')
-        && let Some(label) = selector.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
-    {
-        return !label.is_empty()
-            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            && !module.is_empty()
-            && module.split(['/', '.']).all(|segment| {
-                !segment.is_empty()
-                    && segment
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            });
-    }
     if name.is_empty() {
         return false;
     }
@@ -1079,48 +1067,65 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_selectors_keep_label_visibility_and_nonvalue_identity() {
+    fn alias_selectors_keep_visibility_and_nonvalue_identity() {
         let module = crate::pass::parser::parse(concat!(
             "module pkg/api; pub fn field() -> . { () } ",
-            "pub type {field} = {original}; type {hidden} = {original};",
+            "pub type Field = Original; type Hidden = Original;",
         ))
         .unwrap();
         let local = module_scope_from_surface(&module);
         let boundary = module_scope_from_surface_for_boundary(&module);
         for scope in [&local, &boundary] {
             assert_eq!(resolve_in_module("field", scope), RefOutcome::Resolved);
-            assert_eq!(resolve_in_module("{field}", scope), RefOutcome::Resolved);
-            assert_eq!(resolve_in_module("Field", scope), RefOutcome::Unresolved);
+            assert_eq!(resolve_in_module("Field", scope), RefOutcome::Resolved);
+            assert_eq!(resolve_in_module("{field}", scope), RefOutcome::Unresolved);
             assert_eq!(type_level_kind_in_module("field", scope), None);
             assert_eq!(
-                type_level_kind_in_module("{field}", scope),
-                Some(TypeLevelKind::LabelForward)
+                type_level_kind_in_module("Field", scope),
+                Some(TypeLevelKind::TypeAlias)
             );
         }
-        assert_eq!(resolve_in_module("{hidden}", &local), RefOutcome::Resolved);
+        assert_eq!(resolve_in_module("Hidden", &local), RefOutcome::Resolved);
         assert_eq!(
-            resolve_in_module("{hidden}", &boundary),
+            resolve_in_module("Hidden", &boundary),
             RefOutcome::Unresolved
         );
         assert_eq!(resolve_in_module("hidden", &local), RefOutcome::Unresolved);
         let consumer =
-            crate::pass::parser::parse("module pkg/main; import pkg/api({field});").unwrap();
+            crate::pass::parser::parse("module pkg/main; import pkg/api(Field);").unwrap();
         assert_eq!(
-            resolve_in_module("{field}", &module_scope_from_surface(&consumer)),
+            resolve_in_module("Field", &module_scope_from_surface(&consumer)),
             RefOutcome::Resolved
         );
-        assert!(looks_like_qualified_path("pkg/api.{field}"));
-        for invalid in ["pkg/api.{}", "pkg/api.{a.b}", "pkg/api.{{field}}"] {
+        for name in ["pkg/api.Field", "pkg/api.Field.mk", "pkg/api.Field.get"] {
+            assert!(looks_like_qualified_path(name), "{name}");
+            assert_eq!(
+                resolve_in_module(name, &local),
+                RefOutcome::Resolved,
+                "{name}"
+            );
+        }
+        for invalid in [
+            "pkg/api.{field}",
+            "pkg/api.{}",
+            "pkg/api.{a.b}",
+            "pkg/api.{{field}}",
+        ] {
             assert!(!looks_like_qualified_path(invalid), "{invalid}");
+            assert_eq!(
+                resolve_in_module(invalid, &local),
+                RefOutcome::Unresolved,
+                "{invalid}"
+            );
         }
     }
 
     #[test]
-    fn module_scope_indexes_only_explicit_label_declarations() {
+    fn module_scope_indexes_each_nominal_declaration_once() {
         let module = crate::pass::parser::parse(
-            "module x; labels { field: . }; labels Row = { field: _, other: . };",
+            "module x; type { Field: .; } type Row = Field & { Other: .; };",
         )
-        .expect("parse labels");
+        .expect("parse compact declarations");
         let scope = module_scope_from_surface(&module);
         assert_eq!(
             scope
@@ -1128,7 +1133,7 @@ mod tests {
                 .iter()
                 .filter(|name| name.as_str() == "field")
                 .count(),
-            1
+            0
         );
         assert_eq!(
             scope
@@ -1153,12 +1158,12 @@ mod tests {
     }
 
     #[test]
-    fn label_nominal_scope_uses_only_local_declarations_and_exact_visibility() {
+    fn nominal_scope_uses_only_local_declarations_and_exact_visibility() {
         let module = crate::pass::parser::parse(
-            "module pkg/main; import pkg/other({imported}); \
-             labels { local: . }; pub(pkg) labels { scoped: . }; \
-             pub labels Public = { exported: . }; \
-             newtype Explicit : . { constructor make; projector read; };",
+            "module pkg/main; import pkg/other(Imported); \
+             type { Local: .; } pub(pkg) type { Scoped: .; } \
+             pub type Public = { Exported: .; }; \
+             type { Explicit: . { mk; get; }; }",
         )
         .unwrap();
         let local = module_scope_from_surface(&module);
@@ -1168,9 +1173,9 @@ mod tests {
                 Some(TypeLevelKind::Newtype)
             );
         }
-        assert_eq!(resolve_in_module("imported", &local), RefOutcome::Resolved);
+        assert_eq!(resolve_in_module("Imported", &local), RefOutcome::Resolved);
         assert_eq!(
-            resolve_in_module("Imported", &local),
+            resolve_in_module("imported", &local),
             RefOutcome::Unresolved
         );
 
@@ -1185,10 +1190,10 @@ mod tests {
     }
 
     #[test]
-    fn label_nominal_scope_does_not_duplicate_an_alias_head() {
+    fn nominal_scope_does_not_duplicate_an_alias_head() {
         // Scope extraction precedes duplicate-declaration validation; it must
         // not manufacture a second kind for the same written alias name.
-        let module = crate::pass::parser::parse("module x; labels Field = { field: . };").unwrap();
+        let module = crate::pass::parser::parse("module x; type Field = { Field: .; };").unwrap();
         let scope = module_scope_from_surface(&module);
         let kinds = scope
             .type_level
@@ -1204,25 +1209,21 @@ mod tests {
             for constructor in ["", "pub(api) ", "pub "] {
                 for projector in ["", "pub(api) ", "pub "] {
                     let module = crate::pass::parser::parse(&format!(
-                        "module api; {outer}newtype Box : . {{ {constructor}constructor make; {projector}projector read; }};"
+                        "module api; {outer}type {{ Box: . {{ {constructor}mk; {projector}get; }}; }}"
                     )).unwrap();
                     let local = module_scope_from_surface(&module);
                     let public = module_scope_from_surface_for_boundary(&module);
-                    for name in ["Box", "make", "read"] {
+                    for name in ["Box", "Box.mk", "Box.get"] {
                         assert_eq!(resolve_in_module(name, &local), RefOutcome::Resolved);
                     }
                     for (name, visible) in [
                         ("Box", outer == "pub "),
-                        ("make", outer == "pub " && constructor == "pub "),
-                        ("read", outer == "pub " && projector == "pub "),
+                        ("Box.mk", outer == "pub " && constructor == "pub "),
+                        ("Box.get", outer == "pub " && projector == "pub "),
                     ] {
                         assert_eq!(
-                            resolve_in_module(name, &public),
-                            if visible {
-                                RefOutcome::Resolved
-                            } else {
-                                RefOutcome::Unresolved
-                            },
+                            public.top_level.iter().any(|selected| selected == name),
+                            visible,
                             "{outer}/{constructor}/{projector}: {name}"
                         );
                     }
@@ -1232,15 +1233,66 @@ mod tests {
     }
 
     #[test]
+    fn compact_nominal_members_keep_each_explicit_visibility() {
+        let module = crate::pass::parser::parse(
+            "module api; pub type Alias = { Token: . { mk; pub get; }; }; \
+             pub type { Default: .; Scoped: . { pub(api) mk; pub get; }; }",
+        )
+        .unwrap();
+        let local = module_scope_from_surface(&module);
+        let public = module_scope_from_surface_for_boundary(&module);
+        for name in [
+            "Token.mk",
+            "Token.get",
+            "Alias.mk",
+            "Alias.get",
+            "Default.mk",
+            "Default.get",
+            "Scoped.mk",
+            "Scoped.get",
+        ] {
+            assert!(
+                local.top_level.iter().any(|selected| selected == name),
+                "{name}"
+            );
+        }
+        for name in [
+            "Token.get",
+            "Alias.get",
+            "Default.mk",
+            "Default.get",
+            "Scoped.get",
+        ] {
+            assert!(
+                public.top_level.iter().any(|selected| selected == name),
+                "{name}"
+            );
+        }
+        for name in ["mk", "get", "Token.mk", "Alias.mk", "Scoped.mk"] {
+            assert!(
+                !public.top_level.iter().any(|selected| selected == name),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
     fn boundary_imports_and_private_recursive_roles_are_not_reexports() {
         let module = crate::pass::parser::parse(
-            "module api; import other(imported, {field}); import elsewhere as alias; import __intrinsics__; \
-             rec { pub newtype Visible : . | Hidden { constructor hide_make; pub projector read; }; \
-             newtype Hidden : . | Visible { pub constructor hidden_make; pub projector hidden_read; }; } \
-             pub labels Row = { reused: _, owned: . };"
+            "module api; import other(imported, Field); import elsewhere as alias; import __intrinsics__; \
+             rec { pub type { Visible: . | Hidden { mk; pub get; }; }; \
+             type { Hidden: . | Visible { pub mk; pub get; }; }; } \
+             pub type Row = Field & { Owned: .; };"
         ).unwrap();
         let scope = module_scope_from_surface_for_boundary(&module);
-        for name in ["Visible", "read", "Row", "owned", "Owned"] {
+        for name in [
+            "Visible",
+            "Visible.get",
+            "Row",
+            "Owned",
+            "Owned.mk",
+            "Owned.get",
+        ] {
             assert_eq!(
                 resolve_in_module(name, &scope),
                 RefOutcome::Resolved,
@@ -1252,16 +1304,15 @@ mod tests {
             "field",
             "alias",
             "__left__",
-            "hide_make",
+            "Visible.mk",
             "Hidden",
-            "hidden_make",
-            "hidden_read",
+            "Hidden.mk",
+            "Hidden.get",
             "reused",
             "Reused",
         ] {
-            assert_eq!(
-                resolve_in_module(name, &scope),
-                RefOutcome::Unresolved,
+            assert!(
+                !scope.top_level.iter().any(|selected| selected == name),
                 "{name}"
             );
         }

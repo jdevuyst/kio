@@ -2,6 +2,7 @@ module store/commands;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import store/history as history;
 import store/transactions as tx;
@@ -10,9 +11,9 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
-pub labels Command = { opcode: String, key: String, argument: String };
+pub type Command = { Opcode: String; Key: String; Argument: String };
 
-pub labels Read = { parsed: Command } | { end: . } | { malformed: String };
+pub type Read = { Parsed: Command } | { End: . } | { Malformed: String };
 
 pub fn read() -> Read {
   match(io.read_ascii_line()) {
@@ -20,26 +21,30 @@ pub fn read() -> Read {
       match(io.read_ascii_line()) {
         .(key: String) {
           match(io.read_ascii_line()) {
-            .(argument: String) { widen_sum({parsed = {opcode, key, argument}})[Read] };
-            .() { widen_sum({malformed = "missing argument line"})[Read] }
+            .(argument: String) {
+              widen_sum(Parsed.mk((Opcode.mk(opcode), Key.mk(key), Argument.mk(argument))))[Read]
+            };
+            .() { widen_sum(Malformed.mk("missing argument line"))[Read] }
           }
         };
-        .() { widen_sum({malformed = "missing key line"})[Read] }
+        .() { widen_sum(Malformed.mk("missing key line"))[Read] }
       }
     };
-    .() { widen_sum({end=})[Read] }
+    .() { widen_sum(End.mk(()))[Read] }
   }
 }
 
 pub fn apply(s: tx.State, c: Command) -> tx.Reply {
-  let op = c.?{opcode};
-  let key = c.?{key};
+  let op = c.>select { Opcode.get };
+  let key = c.>select { Key.get };
   if(text.string_eq(op, "BEGIN")) {
     tx.begin(s)
   } else if(text.string_eq(op, "PUT")) {
-    match(fmt.string_to_int(c.?{argument})) {
+    match(fmt.string_to_int(c.>select { Argument.get })) {
       .(value: I32) { tx.put(s, key, value) };
-      .() { tx.rejected(s, text.string_concat("invalid integer ", c.?{argument})) }
+      .() {
+        tx.rejected(s, text.string_concat("invalid integer ", c.>select { Argument.get }))
+      }
     }
   } else if(text.string_eq(op, "DELETE")) {
     tx.delete(s, key)
@@ -60,7 +65,10 @@ pub fn apply(s: tx.State, c: Command) -> tx.Reply {
       , "get "
       , text.string_concat(
         , key
-        , text.string_concat("=", history.show_value(history.get(s.?{tx.working}, key)))
+        , text.string_concat(
+          , "="
+          , history.show_value(history.get(s.>select { tx.Working.get }, key))
+          )
         )
       )
     )

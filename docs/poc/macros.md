@@ -61,7 +61,7 @@ layout:
   [`sequence.kio`](../../test-data/poc/macros/workdir/sequence.kio)
   (`Bind`, `Sequence`, and `do`),
   [`spine_macros.kio`](../../test-data/poc/macros/workdir/spine_macros.kio)
-  (the twelve spine forms),
+  (the twelve spine operation families),
   [`algebraic_macros.kio`](../../test-data/poc/macros/workdir/algebraic_macros.kio)
   (the six algebraic forms),
   [`match.kio`](../../test-data/poc/macros/workdir/match.kio) (`match`),
@@ -83,14 +83,24 @@ type — `[Source] Source -> [Target] Target`: a single value parameter (the
 source) and a target type-argument after that value stage, as in
 `fit(value)[Target]`, exactly
 the source-to-target shape the language mechanism specifies. Not every
-macro shares that shape — `match`, `zip` / `map`, and `set` / `get`
-have additional value stages, and `type_of` takes a type argument and a
-Unit value. A block call supplies each successive final function stage through
-one declared block: `match(value) { clauses }` projects its product block into the clause
-argument. The direct named call (`iso`, `fit`, `match`, …)
-runs the declared `impl` over the reflected source value and target type;
+macro shares that shape — `match`, `zip` / `map`, and `with` / `select`
+have different public types, and `type_of` takes a type argument and a
+Unit value. In `match(value) { clauses }`, the prefix and projected product
+block form one product argument. The direct named call (`iso`, `fit`, `match`, …)
+runs the declared `impl` over reflected source inputs. A required-result
+implementation also receives the determined target type; a natural-result
+implementation derives its result from the source. In both cases,
 what the implementation returns is the Kio' glue the substitute pass swaps in
 at the Lowered → Prime boundary. None of these forms survives into Kio'.
+
+Paired operations use a trailing underscore for the natural result:
+`record_`, `with_`, `narrow_sum_`, `one_prod_`, and `one_sum_`. The names
+without that suffix require a target supplied explicitly or by ordinary
+context. A natural call can still carry a faithful explicit type argument;
+that argument validates its result and cannot redirect the operation. Operations
+with only one useful mode keep one name: for example, `head` derives its
+result, while `fit` requires a target. There are no identity-only natural
+variants of `narrow_prod` or `widen_sum`; use the original value for identity.
 
 The laws in this case study are the package's `equiv` blocks shown verbatim
 (as non-validated `text` fences, since they are discharged by `kio test` over
@@ -103,7 +113,7 @@ macro call on the first line elaborates to exactly the explicit
 `__intrinsics__` term on the second." Those explicit core terms explain what
 the macro expands to, and some law inputs use core-shaped fixtures to pin
 a structural branch. They are not authoring examples for ordinary programs.
-When modeling domain data, use labels/newtypes, tuple syntax, `widen_sum`,
+When modeling domain data, use nominal types, tuple syntax, `widen_sum`,
 and `match` at the source level.
 
 ## Library-defined control and sequencing
@@ -121,8 +131,11 @@ how the written body becomes an ordinary value argument:
 
 Both control declarations use `impl(fills)`. `if_checked` constructs a
 branching term with `__intrinsic_if_then_else__`; its operands come from the
-checked condition and projected thunks. `scope_checked` builds an ordinary
-call to its thunk. Each returns its generated term paired with a fill context.
+checked condition and projected thunks. The generated `if` evaluates its
+input product once in order: the condition and both thunk-producing expressions.
+It invokes only the selected thunk body. In the block spelling the thunk
+expressions are lambdas, so only the selected block body runs. `scope_checked`
+builds an ordinary call to its thunk. Each returns its generated term paired with a fill context.
 The public types connect their body results to the overall result.
 They use ordinary reflected constructors, so neither declaration needs a
 compiler hook keyed to its name.
@@ -130,7 +143,7 @@ compiler hook keyed to its name.
 `sequence` exports the transparent aliases
 `Bind[*F] = [A][B] (F[A] & (A -> F[B])) -> F[B]` and
 `Sequence[*F][Result] = Bind[F] -> F[Result]`. `do` has public type
-`[Receiver][Result] Receiver -> (Receiver -> Result) -> Result`.
+`[Receiver][Result] (Receiver & (Receiver -> Result)) -> Result`.
 Its `do_checked` implementation constructs an ordinary application of the
 projected sequence to the supplied bind function and returns an explicit fill
 relating that application's type to the declared result. The receiver is
@@ -167,16 +180,15 @@ independent: learning one does not require the other.
 
 The right-spine walk both engines lean on is defined in
 [`specs/backends/README.md` § The right-spine walk](../../specs/backends/README.md#the-right-spine-walk).
-Three slot rules hold for every form in both palettes: a `newtype` (including
-a `labels`-generated newtype) is a single opaque slot — the walk never enters
+Three slot rules hold for every form in both palettes: a nominal type is a single opaque slot — the walk never enters
 its payload; a `Forall` is a single opaque slot compared by structural
 equality; and a `host type` is a single slot keyed on its declaration site.
-Crossing into or out of a label or host type is never a macro's job —
+Crossing into or out of a nominal or host type is never a macro's job —
 use the generated `mk` / `get` members or a host conversion.
 
 ## The spine palette
 
-Twelve forms: ten **axis-specific** primitives (each operating on one axis —
+Twelve operation families: ten **axis-specific** primitives (each operating on one axis —
 sum or product — treating slot types as opaque), the identity form
 `spine_identity`, and the recursive composer `fit`. The 2×5 grid of the
 axis-specific forms, by axis and operation:
@@ -232,14 +244,12 @@ equiv narrow_prod_law[A][B](a: A, b: B) {
 }
 ```
 
-**Forward type rule (default).** With no explicit target and no surrounding
-expected type, `narrow_prod` keeps every slot (the maximal sub-multiset is
-the source itself), so `narrow_prod((a, b))` is `(a, b)` — overridden when a
-context requests a proper sub-product:
+`narrow_prod` requires a target. Requesting the original type preserves every
+slot:
 
 ```text
-equiv narrow_prod_default_law[A][B](a: A, b: B) {
-  narrow_prod((a, b));
+equiv narrow_prod_identity_target_law[A][B](a: A, b: B) {
+  narrow_prod((a, b))[A & B];
   (a, b)
 }
 ```
@@ -265,12 +275,12 @@ equiv narrow_sum_drops_bottom_law[A](a: A) {
 }
 ```
 
-The forward type rule (default) infers the maximal narrowing — the source's
-non-`!` arms deduplicated by type:
+`narrow_sum_` derives the maximal narrowing: the source's non-`!` arms
+deduplicated by type in first-occurrence order. An all-`!` source yields `!`:
 
 ```text
 equiv narrow_sum_default_law[A][B](a: A) {
-  narrow_sum(__left__[A][B](a));
+  narrow_sum_(__left__[A][B](a));
   __left__[A][B](a)
 }
 ```
@@ -288,13 +298,13 @@ equiv widen_sum_law[A][B](a: A) {
   __right__[B][A](a)
 }
 
-equiv widen_sum_default_law[A](a: A) {
-  widen_sum(a);
+equiv widen_sum_identity_target_law[A](a: A) {
+  widen_sum(a)[A];
   a
 }
 ```
 
-`widen_sum` is the single most-used spine form in adopter code: it is how a
+`widen_sum` requires a target. It is the single most-used spine form in adopter code: it is how a
 value enters a sum at all (the optics library builds every `(A | .)` "hit"
 and "miss" arm with it).
 
@@ -343,11 +353,31 @@ equiv flatten_sum_law[A][B][C](b: B) {
 ### `one_prod` / `one_sum` — focused pickers
 
 `one_prod` picks the **first** source product slot whose type equals the
-target (first-wins); `one_sum` forwards a sum whose arms all produce the
-same target type (the target has sum-spine length 1). An atomic source
-degenerates to identity. Both carry a **strict** forward type rule: when the
-source pins a unique target (a single slot type, or a uniform arm type), a
-call supplying a different `T` is an error.
+target (first-wins). `one_sum` requires a target whose reflected outer type
+is not a sum. Every non-`!` source spine arm must have that type; `!` arms
+are eliminated by absurdity. A single non-sum source is returned unchanged
+when requested at its own type. `one_prod_` selects
+the first right-spine slot; a product nested in that slot stays intact.
+For example, `(A & B) & C` yields `A & B`, while tuple `head` recursively
+flattens that source and yields `A`. Unit is a single spine slot, so
+`one_prod_(())` yields Unit. A faithful explicit target checks that selected
+result without choosing another slot.
+
+`one_sum_` chooses the first non-`!` arm on the right sum spine and checks
+that every other non-`!` arm has the same non-sum type. Thus `! | A` and
+`A | !` both yield `A` when the reflected `A` is a non-sum slot. If all
+arms are `!`, including a plain `!` source, the natural result is `!`;
+`one_sum` can instead eliminate that source to any determined non-sum
+target. An explicit result argument on `one_sum_` checks its natural result
+without changing the choice.
+
+These rules inspect the reflected spine, without flattening nested sums.
+`(A | A) | A` is rejected because its first slot is itself a sum. Products,
+functions, nominal types, and forall types remain opaque slots even when
+they contain sums. Rigid generic variables and saturated higher-kinded
+applications are known slots; distinct variables do not count as equal.
+Unit is also a single slot. Only actual `!` slots receive Bottom handling;
+the macros do not search for other uninhabited types.
 
 ```text
 equiv one_prod_law[A][B](a: A, b: B) {
@@ -356,7 +386,7 @@ equiv one_prod_law[A][B](a: A, b: B) {
 }
 
 equiv one_prod_default_law[A][B](a: A, b: B) {
-  one_prod((a, b));
+  one_prod_((a, b));
   a
 }
 
@@ -367,6 +397,11 @@ equiv one_sum_left_law[A](a: A) {
 
 equiv one_sum_ignores_bottom_law[A](a: A) {
   one_sum(__left__[A][!](a))[A];
+  a
+}
+
+equiv one_sum_natural_leading_bottom_law[A](a: A) {
+  one_sum_(__right__[!][A](a));
   a
 }
 ```
@@ -604,10 +639,13 @@ an explicit return annotation or a complete expected function type; the
 explains that distinction.
 
 The implementation uses `impl(fills)` to connect these clause results to the
-common target. `match_checked` visits clauses in written order, specializes
-polymorphic clauses against compatible source branches, and records their
-result types with `__fill__`. It returns the generated dispatch term together
-with that fill context. These compile-time checks consider all clause results;
+call's terminal result. Its private natural entry visits clauses in written
+order, specializes polymorphic clauses against compatible source branches,
+and records every result type with `__fill_result__`. A source-derived result
+handle supplies the dispatch recipe; the relations are adopted together.
+It returns the generated dispatch term with that fill context. The public
+`match_checked` helper retains its explicit target argument and shares the
+same traversal using `__fill__`. These compile-time checks consider all clause results;
 the generated runtime dispatch calls only the first fitting handler for the
 active branch. [Defining macros](../guides/macros.md) explains the
 fill API for readers who want to follow or adapt the implementation.
@@ -665,8 +703,8 @@ anger to eliminate option arms and destructure pairs.
 
 `derive(<candidates>)[<TargetType>]` constructs a value of a requested target
 type by composing caller-supplied candidate `fn`s, threading each candidate's
-logical value slots as sub-goals to discharge from the same set, until the
-target is produced. The candidate argument is `()` for no candidates, one
+semantic domain components as sub-goals to discharge from the same set,
+until the target is produced. The candidate argument is `()` for no candidates, one
 function expression for a singleton, or a product tuple for multiple
 functions; every candidate must be function-typed. `derive` finds the
 **unique** composition — two distinct derivations is an error, none is an
@@ -700,12 +738,31 @@ equiv derive_unit_parameter_law() {
 
 Only candidate rules produce values. Consequently `derive(())[T]` reports
 that no candidate rule derives `T` for every target `T`, including `.`,
-structurally inhabited product or sum types, and opaque `newtype`s. A candidate
+structurally inhabited product or sum types, and opaque nominal types. A candidate
 with no source parameters and one whose sole source parameter is `.` both have
 the logical zero-slot shape `. -> R`, so each is an ordinary base rule. Such a
 rule can explicitly produce any `R`, including `.`, a host type, a product, a
-sum, or a unit-payload `newtype`. A Unit parameter within a multi-slot value
-group remains an ordinary precondition.
+sum, or a Unit-payload nominal type. A Unit parameter within a multi-slot value
+group remains an ordinary precondition. Every non-Unit domain is traversed
+using the right product spine: each left component is one prerequisite and
+the traversal continues through the right component. Declaration parameter
+grouping does not affect these prerequisites. Thus split parameters, one
+product parameter, and a grouped final product tail obey the same rule.
+
+The paired laws exercise both product grouping and a grouped final tail:
+
+```text
+equiv derive_product_domain_law() {
+  derive((derive_split_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive((derive_tuple_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive_split_domain_rule(derive_base_rule(), derive_base_rule())
+}
+
+equiv derive_grouped_tail_law() {
+  derive((derive_tail_domain_rule, derive_base_rule))[Derived_wrap[Derived_base]];
+  derive_tail_domain_rule(derive_base_rule(), (derive_base_rule(), derive_base_rule()))
+}
+```
 
 A candidate with a precondition makes resolution **recursive** — the
 precondition is a sub-goal discharged from the same candidate set:
@@ -770,8 +827,8 @@ The package ships more imported macros, each `equiv`-pinned in `main` and
 mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
 - **`lookup` / `contains`** ([`lookup.kio`](../../test-data/poc/macros/workdir/lookup.kio))
-  — look a label up in a sum by its generated nominal type, returning the
-  labeled value or absence (`lookup`) or a structural yes/no result
+  — look up a requested type in a sum, returning the value with that
+  type or absence (`lookup`) or a structural yes/no result
   (`contains`). For a requested `Foo`, `lookup` returns `Foo | .`,
   preserving the `Foo` wrapper; use `Foo.get` after matching the present arm
   to read its payload. `contains` returns `Lookup_bool = . | .`: the left
@@ -807,25 +864,30 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   ```
 
 - **Row macros** ([`row_macros.kio`](../../test-data/poc/macros/workdir/row_macros.kio))
-  — `mk` / `set` / `get` for constructing, upserting, and projecting label
-  products (the machinery behind the optics row-update operator):
+  — `record` / `record_`, `with` / `with_`, and `select` construct, update, and select ordinary
+  product slots. Selectors are functions, such as nominal projectors:
 
   ```text
-  equiv row_set_single_update_law(old: I32, new: I32, b: String) {
-    (Foo.mk(old), Bar.mk(b)).>set((Foo.mk, new));
+  equiv row_with_single_update_law(old: I32, new: I32, b: String) {
+    (Foo.mk(old), Bar.mk(b)).>with_ { Foo.mk(new) };
     (Foo.mk(new), Bar.mk(b))
   }
-  ```
 
-  A single `set` / `get` can address several fields at once by joining
-  selectors with the `*` (row_pair) combinator:
-
-  ```text
-  equiv row_get_multi_law(a: I32, b: String) {
-    (Foo.mk(a), Bar.mk(b)).>get(Foo.get * Bar.get);
+  equiv row_select_multi_law(a: I32, b: String) {
+    (Foo.mk(a), Bar.mk(b)).>select { Foo.get; Bar.get };
     (a, b)
   }
   ```
+
+  `with_` matches exact field types and puts updates first; `record_` keeps
+  written field order. `record` and `with` require a target and can permute
+  their results to that product type. `select` returns its
+  results in selector order. See the [row guide](../guides/products.md) for a
+  complete example and the rules for repeated slots and evaluation order.
+  The same module exports the ordinary `row_pair[A][B]` function, which
+  constructs `A & B` from its two arguments. Its right-associative
+  `op _ * __` calls that function; select the operator explicitly in an import
+  when using that spelling.
 
 - **`type_of`** ([`type_of.kio`](../../test-data/poc/macros/workdir/type_of.kio))
   — reflects a type argument into the library's `Type_rep` tree. Its nodes
@@ -834,7 +896,7 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   leaves (`Rep_opaque`). Products and sums carry two child trees; functions
   carry parameter and result trees. The `rep_unit`, `rep_bottom`,
   `rep_product`, `rep_sum`, `rep_function`, and `rep_opaque` builders construct
-  these values, and `Type_rep.un_type_rep` opens a tree for inspection:
+  these values, and `Type_rep.get` opens a tree for inspection:
 
   ```text
   equiv type_of_product_law() {

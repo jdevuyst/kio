@@ -13,6 +13,7 @@ import cellar/state as state;
 import cellar/world as world;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, String);
 
 /// One turn's result: the state the cellar is left in, and what to tell the
@@ -41,9 +42,11 @@ fn through_lock(g: state.Game, d: ids.Dir_id, to: ids.Room_id, key: ids.Item_id)
 fn step(g: state.Game, d: ids.Dir_id) -> Turn {
   match(world.exit_of(state.room_of(g), d)) {
     (
-    , .(o: world.Open_to) { enter(g, o.?{world.open_to}) }
+    , .(o: world.Open_to) {
+        enter(g, o.>select { world.Open_to.get })
+      }
     , .(t: world.Locked_to, k: world.Locked_by) {
-        through_lock(g, d, t.?{world.locked_to}, k.?{world.locked_by})
+        through_lock(g, d, t.>select { world.Locked_to.get }, k.>select { world.Locked_by.get })
       }
     , .(_w: world.No_way) { (g, outcome.no_exit()) }
     )
@@ -100,7 +103,9 @@ fn unlock_way(g: state.Game, d: ids.Dir_id) -> Turn {
   match(world.exit_of(state.room_of(g), d)) {
     (
     , .(_o: world.Open_to) { (g, outcome.nothing_to_unlock()) }
-    , .(_t: world.Locked_to, k: world.Locked_by) { turn_key(g, d, k.?{world.locked_by}) }
+    , .(_t: world.Locked_to, k: world.Locked_by) {
+        turn_key(g, d, k.>select { world.Locked_by.get })
+      }
     , .(_w: world.No_way) { (g, outcome.nothing_to_unlock()) }
     )
   }
@@ -119,14 +124,24 @@ fn do_look(g: state.Game) -> Turn {
 fn dispatch(g: state.Game, c: command.Command) -> Turn {
   match(c) {
     (
-    , .(x: command.Go_cmd) { do_go(g, x.?{command.go_cmd}) }
-    , .(x: command.Take_cmd) { do_take(g, x.?{command.take_cmd}) }
-    , .(x: command.Drop_cmd) { do_drop(g, x.?{command.drop_cmd}) }
-    , .(x: command.Unlock_cmd) { do_unlock(g, x.?{command.unlock_cmd}) }
+    , .(x: command.Go_cmd) {
+        do_go(g, x.>select { command.Go_cmd.get })
+      }
+    , .(x: command.Take_cmd) {
+        do_take(g, x.>select { command.Take_cmd.get })
+      }
+    , .(x: command.Drop_cmd) {
+        do_drop(g, x.>select { command.Drop_cmd.get })
+      }
+    , .(x: command.Unlock_cmd) {
+        do_unlock(g, x.>select { command.Unlock_cmd.get })
+      }
     , .(_l: command.Look_cmd) { do_look(g) }
     , .(_b: command.Bag_cmd) { (g, outcome.held_items()) }
     , .(_q: command.Quit_cmd) { (state.finish(g), outcome.left_cellar()) }
-    , .(x: command.Unknown_cmd) { (g, outcome.unknown_verb(x.?{command.unknown_cmd})) }
+    , .(x: command.Unknown_cmd) {
+        (g, outcome.unknown_verb(x.>select { command.Unknown_cmd.get }))
+      }
     )
   }
 }

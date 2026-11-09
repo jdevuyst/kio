@@ -208,7 +208,7 @@ function while threading effects through `m`; any body representation is
 internal and never replaces a concrete host type or native boundary shape
 in the wrapper's public signature.
 
-Every exported `pub newtype` contributes one declaration-specific host
+Every public nominal type contributes one declaration-specific host
 surface, even when it exports no member wrappers. It exposes exactly the
 constructor and projector whose declarations are `pub`:
 

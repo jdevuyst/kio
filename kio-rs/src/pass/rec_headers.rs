@@ -173,24 +173,6 @@ fn type_shape_eq<P: Phase>(a: &Type<P>, b: &Type<P>) -> bool {
                 && a_param.kind == b_param.kind
                 && type_shape_eq(a_body, b_body)
         }
-        (
-            Type::LabelSugar {
-                labels: a_labels, ..
-            },
-            Type::LabelSugar {
-                labels: b_labels, ..
-            },
-        ) => {
-            a_labels.len() == b_labels.len()
-                && a_labels.iter().zip(b_labels).all(|(a, b)| {
-                    a.label == b.label
-                        && match (&a.payload, &b.payload) {
-                            (Some(a), Some(b)) => type_shape_eq(a, b),
-                            (None, None) => true,
-                            _ => false,
-                        }
-                })
-        }
         (Type::Infer { .. }, Type::Infer { .. }) => true,
         _ => false,
     }

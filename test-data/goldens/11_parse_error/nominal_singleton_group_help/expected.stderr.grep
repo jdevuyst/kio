@@ -1,0 +1,3 @@
+one recursive data declaration uses a `rec` modifier, not a group
+this is the group's only declaration
+unwrap the group and write `rec type` for this recursive singleton

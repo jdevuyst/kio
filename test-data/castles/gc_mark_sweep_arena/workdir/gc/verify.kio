@@ -13,12 +13,13 @@
 module gc/verify;
 
 import gc/heap(field_slot, fold_fields, fold_objects, header_map, in_arena);
-import gc/mark(mark_heap, {mark_bits});
+import gc/mark(Mark_bits, mark_heap);
 import gc/num(and, int_eq, int_lt);
-import gc/slot(Imm, Ptr, {ptr});
-import gc/sweep(sweep, {live_objects});
+import gc/slot(Imm, Ptr);
+import gc/sweep(Live_objects, sweep);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32);
@@ -27,16 +28,16 @@ import testapi/iter(loop);
 
 /// `reachable` is absent exactly when the pointer check failed and the
 /// re-walk was refused.
-pub labels Audit = {
-, arena_objects: I32
-, checked_roots: I32
-, checked_pointers: I32
-, reachable: I32 | .
-, expected_live: I32
-, dangling: I32
+pub type Audit = {
+  Arena_objects: I32;
+  Checked_roots: I32;
+  Checked_pointers: I32;
+  Reachable: I32 | .;
+  Expected_live: I32;
+  Dangling: I32
 };
 
-pub labels Verdict = { verified: Audit } | { broken: Audit };
+pub type Verdict = { Verified: Audit } | { Broken: Audit };
 
 /// In range is not enough: the address has to start an object.
 fn lands_on_header(cells: Array[I32], headers: Array[Bool], addr: I32) -> Bool {
@@ -53,7 +54,7 @@ fn check_fields(cells: Array[I32], headers: Array[Bool], addr: I32, seen: I32 & 
       match(field_slot(cells, addr, index)) {
         (
         , .(p: Ptr) {
-            if(lands_on_header(cells, headers, p.?{ptr})) {
+            if(lands_on_header(cells, headers, p.>select { Ptr.get })) {
               (add_i32(pointers, 1), bad)
             } else {
               (add_i32(pointers, 1), add_i32(bad, 1))
@@ -90,7 +91,7 @@ rec(loop) fn check_roots(
 /// the roots still reach. Safe only once every pointer is known to land
 /// on a header.
 fn reachable_objects(cells: Array[I32], roots: Array[I32]) -> I32 {
-  sweep(cells, mark_heap(cells, roots).?{mark_bits}).?{live_objects}
+  sweep(cells, mark_heap(cells, roots).>select { Mark_bits.get }).>select { Live_objects.get }
 }
 
 pub fn audit(cells: Array[I32], roots: Array[I32], expected: I32) -> Verdict {
@@ -114,21 +115,21 @@ pub fn audit(cells: Array[I32], roots: Array[I32], expected: I32) -> Verdict {
       widen_sum(())[I32 | .]
     };
   let report =
-    {
-    , arena_objects = objects
-    , checked_roots = array_len(roots)
-    , checked_pointers = pointers
-    , reachable = reached
-    , expected_live = expected
-    , dangling = bad
-    };
+    (
+    , Arena_objects.mk(objects)
+    , Checked_roots.mk(array_len(roots))
+    , Checked_pointers.mk(pointers)
+    , Reachable.mk(reached)
+    , Expected_live.mk(expected)
+    , Dangling.mk(bad)
+    );
   let intact =
     match(reached) {
       (.(count: I32) { int_eq(count, expected) }, .(_untraversed: .) { .f })
     };
   if(and(sound, intact)) {
-    ({verified = report}.>widen_sum)[Verdict]
+    (Verified.mk(report).>widen_sum)[Verdict]
   } else {
-    ({broken = report}.>widen_sum)[Verdict]
+    (Broken.mk(report).>widen_sum)[Verdict]
   }
 }

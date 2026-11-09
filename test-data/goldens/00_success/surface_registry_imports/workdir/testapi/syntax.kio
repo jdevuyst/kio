@@ -4,7 +4,7 @@ import testapi(String);
 
 pub literal word = "ok\n";
 
-pub labels { message: String };
+pub type { Message: String { pub mk; pub get } }
 
 pub fn id(value: String) -> String { value }
 

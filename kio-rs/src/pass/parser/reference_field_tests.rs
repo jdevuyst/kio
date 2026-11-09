@@ -116,6 +116,7 @@ fn optional_finalizer_unit_is_absence_but_still_present_for_duplicates() {
 
 #[test]
 fn grouped_references_preserve_name_only_boundaries() {
+    canonical("module main; type { Box: . { mk; get; }; };");
     for target in [
         "()",
         "(())",
@@ -140,8 +141,8 @@ fn grouped_references_preserve_name_only_boundaries() {
         assert!(parse(&format!("module main; macro inspect : . -> . {{ {body} }}")).is_err());
     }
     for source in [
-        "module main; newtype Box : . { constructor (make); projector get }",
-        "module main; newtype Box : . { constructor make; projector (get) }",
+        "module main; type { Box: . { (mk); get; }; }",
+        "module main; type { Box: . { mk; (get); }; }",
         "module main; fn f(x: .) { x.>(helper)! }",
         "module main; fn f(x: .) { x.>(helper()) }",
     ] {

@@ -5,9 +5,7 @@
 //! asserts it exits 0. This guards the init template against drifting
 //! out of sync with the language: a freshly-init'd package must use
 //! the host/bridge model (`host type` / `host fn` in a module, a
-//! package `bridge { … }` glob list) and check clean, not the old
-//! `env {}` / `bridge <name> {}` / `export {}` model that `kio check`
-//! now rejects.
+//! package `bridge { … }` glob list) and check clean.
 //!
 //! Gated on `feature = "surface"` — the `kio` binary
 //! (`CARGO_BIN_EXE_kio`) only exists in builds that include it.
@@ -61,8 +59,7 @@ fn kio(dir: &Path, args: &[&str]) -> (i32, String, String) {
 }
 
 /// `kio init` scaffolds a package whose generated files check clean.
-/// This is the regression for the init template emitting an old-model
-/// package file (`env {}` / `export {}`) that `kio check` rejects.
+/// Package scaffolding and the parser must agree on the package format.
 #[test]
 fn init_scaffolds_a_package_that_checks_clean() {
     let pkg = TempPkg::new();

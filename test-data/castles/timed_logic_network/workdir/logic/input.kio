@@ -5,6 +5,7 @@ import logic/model as model;
 import logic/queue as queue;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
@@ -13,19 +14,31 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-labels Line = { edge: model.Event } | { end: . } | { invalid: String };
+type Line = { Edge: model.Event } | { End: . } | { Invalid: String };
 
-pub labels Parsed = { stimulus: lists.List[model.Event] } | { problem: String };
+pub type Parsed = { Stimulus: lists.List[model.Event] } | { Problem: String };
 
 fn parse_bit(at: I32, serial: I32, line: String) -> Line {
   if(text.string_eq(line, "0")) {
-    {edge = {model.at, model.serial, model.target = 0, model.value = .f, model.source = .t}}
+    Edge.mk((
+    , model.At.mk(at)
+    , model.Serial.mk(serial)
+    , model.Target.mk(0)
+    , model.Value.mk(.f)
+    , model.Source.mk(.t)
+    ))
       .>widen_sum
   } else if(text.string_eq(line, "1")) {
-    {edge = {model.at, model.serial, model.target = 0, model.value = .t, model.source = .t}}
+    Edge.mk((
+    , model.At.mk(at)
+    , model.Serial.mk(serial)
+    , model.Target.mk(0)
+    , model.Value.mk(.t)
+    , model.Source.mk(.t)
+    ))
       .>widen_sum
   } else {
-    {invalid = "source value must be 0 or 1"}.>widen_sum
+    Invalid.mk("source value must be 0 or 1").>widen_sum
   }
 }
 
@@ -33,7 +46,7 @@ fn read_edge(previous: I32, serial: I32) -> Line {
   match(io.read_ascii_line()) {
     .(line: String) {
       if(arith.leq_i32(16, serial)) {
-        {invalid = "at most 16 source transitions"}.>widen_sum
+        Invalid.mk("at most 16 source transitions").>widen_sum
       } else match(fmt.string_to_int(line)) {
         .(at: I32) {
           let valid =
@@ -45,27 +58,33 @@ fn read_edge(previous: I32, serial: I32) -> Line {
           if(valid) {
             match(io.read_ascii_line()) {
               .(bit: String) { parse_bit(at, serial, bit) };
-              .() { {invalid = "missing source value"}.>widen_sum }
+              .() { Invalid.mk("missing source value").>widen_sum }
             }
           } else {
-            {invalid = "times must be nondecreasing integers from 1 through 30"}.>widen_sum
+            Invalid.mk("times must be nondecreasing integers from 1 through 30").>widen_sum
           }
         };
-        .() { {invalid = "time must be an integer"}.>widen_sum }
+        .() { Invalid.mk("time must be an integer").>widen_sum }
       }
     };
-    .() { {end=}.>widen_sum }
+    .() { End.mk(()).>widen_sum }
   }
 }
 
 rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List[model.Event]) -> Parsed {
   match(read_edge(previous, serial)) {
     .(next: Edge) {
-      let event = next.?{edge};
-      recur read_all(event.?{model.at}, arith.add_i32(serial, 1), queue.insert(event, events))
+      let event = next.>select { Edge.get };
+      recur read_all(
+      , event.>select { model.At.get }
+      , arith.add_i32(serial, 1)
+      , queue.insert(event, events)
+      )
     };
-    .(_end: End) { {stimulus = events}.>widen_sum };
-    .(error: Invalid) { {problem = error.?{invalid}}.>widen_sum }
+    .(_end: End) { Stimulus.mk(events).>widen_sum };
+    .(error: Invalid) {
+      Problem.mk(error.>select { Invalid.get }).>widen_sum
+    }
   }
 }
 

@@ -1,0 +1,12 @@
+module main;
+
+/// Nominal documentation.
+type // header
+{ Token: . { mk; get; }; }
+// before explicit suffix
+;
+// after explicit suffix
+type { Other: . }
+// before compact suffix
+;
+// after compact suffix

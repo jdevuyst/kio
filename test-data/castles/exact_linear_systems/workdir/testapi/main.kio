@@ -1,6 +1,7 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import systems/input as input;
 import systems/report as report;
 import testapi(I32, String);
@@ -12,9 +13,12 @@ import testapi/text as text;
 
 rec(loop) fn workbench(count: I32) {
   match(input.next()) {
-    .(item: input.Loaded) { report.run(item.?{input.loaded}); recur workbench(a.add_i32(count, 1)) };
+    .(item: input.Loaded) {
+      report.run(item.>select { input.Loaded.get });
+      recur workbench(a.add_i32(count, 1))
+    };
     .(error: input.Input_error) {
-      io.print(error.?{input.input_error}
+      io.print(error.>select { input.Input_error.get }
         .>text.string_concat("\n")
         .>>text.string_concat("input error: "))
     };

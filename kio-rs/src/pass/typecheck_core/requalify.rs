@@ -248,7 +248,6 @@ impl PrimeTypeRequalifier {
                 meta: meta.clone(),
                 ext: ext.clone(),
             },
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -738,7 +737,6 @@ where
             meta: meta.clone(),
             ext: ext.clone(),
         },
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 

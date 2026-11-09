@@ -1,16 +1,17 @@
 module csv_reconcile/model;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 
-pub labels Ledger = {
-, balance: I32
-, credits: I32
-, debits: I32
-, checks: I32
-, errors: I32
-, started: Bool
+pub type Ledger = {
+  Balance: I32;
+  Credits: I32;
+  Debits: I32;
+  Checks: I32;
+  Errors: I32;
+  Started: Bool
 };
 
 pub type State = Balance & Credits & Debits & Checks & Errors & Started;
@@ -23,29 +24,41 @@ pub fn make_state(
 , new_errors: I32
 , new_started: Bool
 ) -> State {
-  {
-  , balance = new_balance
-  , credits = new_credits
-  , debits = new_debits
-  , checks = new_checks
-  , errors = new_errors
-  , started = new_started
-  }
+  (
+  , Balance.mk(new_balance)
+  , Credits.mk(new_credits)
+  , Debits.mk(new_debits)
+  , Checks.mk(new_checks)
+  , Errors.mk(new_errors)
+  , Started.mk(new_started)
+  )
 }
 
 pub fn init() -> State { make_state(0, 0, 0, 0, 0, .f) }
 
-pub fn get_balance(state: State) -> I32 { state.?{balance} }
+pub fn get_balance(state: State) -> I32 {
+  state.>select { Balance.get }
+}
 
-pub fn get_credits(state: State) -> I32 { state.?{credits} }
+pub fn get_credits(state: State) -> I32 {
+  state.>select { Credits.get }
+}
 
-pub fn get_debits(state: State) -> I32 { state.?{debits} }
+pub fn get_debits(state: State) -> I32 {
+  state.>select { Debits.get }
+}
 
-pub fn get_checks(state: State) -> I32 { state.?{checks} }
+pub fn get_checks(state: State) -> I32 {
+  state.>select { Checks.get }
+}
 
-pub fn get_errors(state: State) -> I32 { state.?{errors} }
+pub fn get_errors(state: State) -> I32 {
+  state.>select { Errors.get }
+}
 
-pub fn is_started(state: State) -> Bool { state.?{started} }
+pub fn is_started(state: State) -> Bool {
+  state.>select { Started.get }
+}
 
 pub fn begin(_state: State) -> State { make_state(0, 0, 0, 0, 0, .t) }
 

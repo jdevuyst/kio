@@ -3,25 +3,25 @@ module testapi/main;
 import macros/sequence(macro do);
 import testapi/io as io;
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
 fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
   io.print("bind\n");
-  next(Box.unbox(value))
+  next(Box.get(value))
 }
 
 fn make_bind() -> [A][B] (Box[A] & (A -> Box[B])) -> Box[B] { io.print("factory\n"); bind }
 
-fn action() -> Box[.] { io.print("action\n"); Box.box(()) }
+fn action() -> Box[.] { io.print("action\n"); Box.mk(()) }
 
 pub fn main() {
   io.print("zero\n");
-  let zero = do(make_bind()) { Box.box(()) };
-  Box.unbox(zero);
+  let zero = do(make_bind()) { Box.mk(()) };
+  Box.get(zero);
   io.print("one\n");
-  let one = do(make_bind()) { let value <- action(); Box.box(value) };
-  Box.unbox(one);
+  let one = do(make_bind()) { let value <- action(); Box.mk(value) };
+  Box.get(one);
   io.print("two\n");
-  let two = do(make_bind()) { let first <- action(); let second <- action(); Box.box(second) };
-  Box.unbox(two)
+  let two = do(make_bind()) { let first <- action(); let second <- action(); Box.mk(second) };
+  Box.get(two)
 }

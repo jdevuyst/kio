@@ -1,10 +1,9 @@
 //! LSP `textDocument/documentHighlight` handler.
 //!
 //! Highlights every occurrence of the binder under the cursor within
-//! the current file. Surface label-reuse markers are paired with their
-//! earlier explicit local declaration; other names use the structural
-//! binder-key matching shared with [`super::references`]
-//! ([`binder_key_pub`] / [`binder_matches_key_pub`]). Neither path walks
+//! the current file using the structural binder-key matching shared with
+//! [`super::references`] ([`binder_key_pub`] / [`binder_matches_key_pub`]).
+//! The handler never walks
 //! other files, so the handler stays cheap enough for cursor movement.
 //!
 //! Every occurrence is reported with [`DocumentHighlightKind::TEXT`].
@@ -15,9 +14,7 @@
 use lsp_types::{DocumentHighlight, DocumentHighlightKind, Position, Range, Uri};
 
 use crate::cmd::check::LspAnalysis;
-use crate::lsp::label_reuse::{
-    LabelReuseSnapshot, snapshot_for, typed_label_positions_are_current,
-};
+use crate::lsp::live_syntax::{LiveSyntaxSnapshot, snapshot_for, typed_positions_are_current};
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::references::{binder_key_pub, binder_matches_key_pub};
 use crate::lsp::util::{smallest_containing_span, uri_to_canonical};
@@ -33,7 +30,7 @@ pub fn handle_document_highlight(
     uri: &Uri,
     position: &Position,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
 ) -> Option<Vec<DocumentHighlight>> {
     let canonical = uri_to_canonical(uri)?;
     let module_path = analysis.file_to_module.get(canonical.as_path())?;
@@ -64,18 +61,7 @@ pub fn handle_document_highlight(
         );
     }
 
-    if let Some(binding) = syntax.index.and_then(|index| index.binding_at(byte_offset)) {
-        let highlights = binding
-            .occurrences
-            .into_iter()
-            .map(|span| DocumentHighlight {
-                range: to_lsp_range(line_index.to_range(span)),
-                kind: Some(DocumentHighlightKind::TEXT),
-            })
-            .collect();
-        return Some(highlights);
-    }
-    if !typed_label_positions_are_current(canonical.as_path(), byte_offset, analysis, syntax) {
+    if !typed_positions_are_current(canonical.as_path(), analysis, syntax) {
         return None;
     }
 
@@ -170,10 +156,8 @@ mod tests {
         LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,
@@ -227,67 +211,6 @@ mod tests {
         let result = handle_document_highlight(&uri, &pos, &analysis, None).expect("some");
         assert_eq!(result.len(), 2, "both occurrences highlighted");
         assert_eq!(result[0].range.start.line, 1);
-    }
-
-    #[test]
-    fn highlight_connects_label_declaration_and_reuse() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let analysis = make_analysis(vec![(
-            "pkg/main",
-            Span::new(0, 1),
-            ResolvedBinder::Intrinsic {
-                name: "__absurd__".to_owned(),
-            },
-            source,
-        )]);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-        let pos = Position {
-            line: 2,
-            character: 15,
-        };
-        let result = handle_document_highlight(&uri, &pos, &analysis, None).expect("binding");
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].range.start.line, 1);
-        assert_eq!(result[1].range.start.line, 2);
-    }
-
-    #[test]
-    fn highlight_rejects_shifted_expression_label_typed_span() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { {field=()} }\n";
-        let live_source = "module pkg/main;\nfn f() -> . { { field=()} }\n";
-        let stale_start = analyzed_source.find("field").expect("stale label") as u32;
-        let analysis = make_analysis(vec![(
-            "pkg/main",
-            Span::new(stale_start, stale_start + 5),
-            ResolvedBinder::Newtype {
-                module_path: "pkg/main".to_owned(),
-                name: crate::ast::mint_label_newtype_name("field"),
-            },
-            analyzed_source,
-        )]);
-        let parsed = crate::pass::parser::parse(live_source).expect("parse live overlay");
-        let overlay_index =
-            crate::lsp::label_reuse::LabelReuseIndex::from_module(&parsed, live_source);
-        let live_start = live_source.find("field").expect("live label") as u32;
-        let cursor = LineIndex::new(live_source).to_position(live_start);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-
-        assert!(
-            handle_document_highlight(
-                &uri,
-                &Position {
-                    line: cursor.line,
-                    character: cursor.character,
-                },
-                &analysis,
-                Some(LabelReuseSnapshot {
-                    source: live_source,
-                    index: Some(&overlay_index),
-                }),
-            )
-            .is_none()
-        );
     }
 
     #[test]

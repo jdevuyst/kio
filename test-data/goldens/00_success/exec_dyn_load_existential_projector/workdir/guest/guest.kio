@@ -4,7 +4,7 @@ import __intrinsics__;
 
 import hostapi(I32, add_i32);
 
-pub labels { boxed <U> : I32 & U };
+pub type { Boxed <U>: I32 & U { pub mk; pub get } }
 
 pub fn make(n: I32) -> Boxed { Boxed.mk((n, add_i32(n, 1))) }
 

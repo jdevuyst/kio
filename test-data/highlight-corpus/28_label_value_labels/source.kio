@@ -1,12 +1,15 @@
 module m;
 
-labels { red: ., blue: ., tone: String };
+import macros/row_macros(macro select, macro with_);
 
-fn pick() -> Red { {red=} }
+host type String role(str);
+type { Red: . { mk; get }; Blue: . { mk; get }; Tone: String { mk; get }; }
+
+fn pick() -> Red { Red.mk(()) }
 
 fn row(r: Red & Blue & Tone) -> String {
-  let .({tone as payload, red}) = r;
-  let updated = r.!{blue=};
-  let _ = updated.?{red};
+  let payload = r.>select { Tone.get };
+  let updated = r.>with_ { Blue.mk(()) };
+  let _ = updated.>select { Red.get };
   payload
 }

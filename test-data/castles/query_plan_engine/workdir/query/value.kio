@@ -2,6 +2,7 @@
 module query/value;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import query/text as text;
 import testapi(I32, String);
@@ -13,42 +14,63 @@ import testapi/fmt(int_to_string);
 /// stores one: the characters, plus the length that was known when the
 /// datum was written. Nothing downstream can recover that length
 /// otherwise.
-pub labels Value = { v_int: I32 } | { v_text: String, v_width: I32 };
+pub type Value = { V_int: I32 } | { V_text: String; V_width: I32 };
 
 /// The answer to "read this value as an integer". Text has no integer
 /// reading. Every comparison the engine performs goes through this, so a
 /// predicate, join key, or sort key aimed at a text column is
 /// well-defined and simply never matches, rather than inventing an order
 /// for data the host cannot compare.
-pub labels Maybe_int = { some_int: I32 } | { no_int: . };
+pub type Maybe_int = { Some_int: I32 } | { No_int: . };
 
-pub fn int_val(n: I32) -> Value { ({v_int = n}.>widen_sum)[Value] }
+pub fn int_val(n: I32) -> Value { (V_int.mk(n).>widen_sum)[Value] }
 
 pub fn text_val(s: String, width: I32) -> Value {
-  ({v_text = s, v_width = width}.>widen_sum)[Value]
+  ((V_text.mk(s), V_width.mk(width)).>widen_sum)[Value]
 }
 
-pub fn some_int(n: I32) -> Maybe_int { ({some_int = n}.>widen_sum)[Maybe_int] }
+pub fn some_int(n: I32) -> Maybe_int { (Some_int.mk(n).>widen_sum)[Maybe_int] }
 
-pub fn no_int() -> Maybe_int { ({no_int=}.>widen_sum)[Maybe_int] }
+pub fn no_int() -> Maybe_int { (No_int.mk(()).>widen_sum)[Maybe_int] }
 
-pub fn some_int_of(n: Some_int) -> I32 { n.?{some_int} }
+pub fn some_int_of(n: Some_int) -> I32 {
+  n.>select { Some_int.get }
+}
 
 pub fn value_int(v: Value) -> Maybe_int {
   match(v) {
-    (.(n: V_int) { some_int(n.?{v_int}) }, .(_s: V_text, _w: V_width) { no_int() })
+    (
+    , .(n: V_int) {
+        some_int(n.>select { V_int.get })
+      }
+    , .(_s: V_text, _w: V_width) { no_int() }
+    )
   }
 }
 
 pub fn value_text(v: Value) -> String {
   match(v) {
-    (.(n: V_int) { int_to_string(n.?{v_int}) }, .(s: V_text, _w: V_width) { s.?{v_text} })
+    (
+    , .(n: V_int) {
+        int_to_string(n.>select { V_int.get })
+      }
+    , .(s: V_text, _w: V_width) {
+        s.>select { V_text.get }
+      }
+    )
   }
 }
 
 pub fn value_width(v: Value) -> I32 {
   match(v) {
-    (.(n: V_int) { text.digits(n.?{v_int}) }, .(_s: V_text, w: V_width) { w.?{v_width} })
+    (
+    , .(n: V_int) {
+        text.digits(n.>select { V_int.get })
+      }
+    , .(_s: V_text, w: V_width) {
+        w.>select { V_width.get }
+      }
+    )
   }
 }
 
@@ -58,10 +80,12 @@ pub fn value_cell(v: Value, width: I32) -> String {
   match(v) {
     (
     , .(n: V_int) {
-        let shown = int_to_string(n.?{v_int});
-        text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+        let shown = int_to_string(n.>select { V_int.get });
+        text.pad_left(shown, sub_i32(width, text.digits(n.>select { V_int.get })))
       }
-    , .(s: V_text, w: V_width) { text.pad_right(s.?{v_text}, sub_i32(width, w.?{v_width})) }
+    , .(s: V_text, w: V_width) {
+        text.pad_right(s.>select { V_text.get }, sub_i32(width, w.>select { V_width.get }))
+      }
     )
   }
 }
@@ -73,10 +97,12 @@ pub fn value_tail(v: Value, width: I32) -> String {
   match(v) {
     (
     , .(n: V_int) {
-        let shown = int_to_string(n.?{v_int});
-        text.pad_left(shown, sub_i32(width, text.digits(n.?{v_int})))
+        let shown = int_to_string(n.>select { V_int.get });
+        text.pad_left(shown, sub_i32(width, text.digits(n.>select { V_int.get })))
       }
-    , .(s: V_text, _w: V_width) { s.?{v_text} }
+    , .(s: V_text, _w: V_width) {
+        s.>select { V_text.get }
+      }
     )
   }
 }

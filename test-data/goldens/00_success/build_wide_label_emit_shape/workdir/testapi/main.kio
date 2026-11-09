@@ -1,26 +1,31 @@
 module testapi/main;
 
+import macros/row_macros(macro select, macro with);
 import testapi(I32);
 
-pub labels {
-, a: I32
-, b: I32
-, c: I32
-, d: I32
-, e: I32
-, f: I32
-, g: I32
-, h: I32
-, i: I32
-, j: I32
-, k: I32
-, l: I32
-};
+pub type {
+  A: I32 { pub mk; pub get };
+  B: I32 { pub mk; pub get };
+  C: I32 { pub mk; pub get };
+  D: I32 { pub mk; pub get };
+  E: I32 { pub mk; pub get };
+  F: I32 { pub mk; pub get };
+  G: I32 { pub mk; pub get };
+  H: I32 { pub mk; pub get };
+  I: I32 { pub mk; pub get };
+  J: I32 { pub mk; pub get };
+  K: I32 { pub mk; pub get };
+  L: I32 { pub mk; pub get }
+}
 
 pub type Wide = A & B & C & D & E & F & G & H & I & J & K & L;
 
-fn last(row: Wide) -> I32 { row.?{l} }
+fn last(row: Wide) -> I32 {
+  row.>select { L.get }
+}
 
-fn revise(row: Wide) -> Wide { row.!{k = 120[I32]} }
+fn revise(row: Wide) -> Wide {
+  row.>with { K.mk(120[I32]) }
+}
 
 pub fn entry(row: Wide) -> I32 { last(revise(row)) }

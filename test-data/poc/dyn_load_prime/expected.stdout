@@ -11,7 +11,7 @@ classify(4) = small
 classify(42) = 42
 greet(3) = dyn_load_prime: the call got stuck — host fn `string_concat` expected two string arguments
 apply_cb(host_double, 21) = 42
-un_tag(mk_tag(11)) = 11
+get(mk(11)) = 11
 exports:
   guest.greet : (h{hostapi.String}) -> h{hostapi.String}
   guest.double : (h{hostapi.I32}) -> h{hostapi.I32}
@@ -26,8 +26,8 @@ exports:
   guest.divmod : (h{hostapi.I32} & h{hostapi.I32}) -> (h{hostapi.I32} & h{hostapi.I32})
   guest.classify : (h{hostapi.I32}) -> (h{hostapi.String} | h{hostapi.I32})
   guest.apply_cb : ((h{hostapi.I32} -> h{hostapi.I32}) & h{hostapi.I32}) -> h{hostapi.I32}
-  guest.Tag.mk_tag : [#0] (#0) -> n{guest.Tag}(#0)
-  guest.Tag.un_tag : [#0] (n{guest.Tag}(#0)) -> #0
+  guest.Tag.mk : [#0] (#0) -> n{guest.Tag}(#0)
+  guest.Tag.get : [#0] (n{guest.Tag}(#0)) -> #0
 contract (match) = ok
 contract (missing export) = dyn_load_prime: the image's surface declares no exported `triple`
 contract (signature) = dyn_load_prime: contract mismatch — export `guest.add3` declares `(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}` but the host expects `(h{hostapi.I32} & h{hostapi.I32}) -> h{hostapi.I32}`

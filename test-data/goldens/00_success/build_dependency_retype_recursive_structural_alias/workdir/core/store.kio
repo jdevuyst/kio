@@ -2,7 +2,7 @@ module core/store;
 
 rec {
   pub type Payload = . | Node;
-  pub newtype Node : Payload { pub constructor mk; pub projector get }
+  pub type { Node: Payload { pub mk; pub get } }
 }
 
 pub fn accept(_value: Node) { () }

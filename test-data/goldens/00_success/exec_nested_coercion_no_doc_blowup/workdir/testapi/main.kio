@@ -28,15 +28,15 @@ import testapi/iter(loop);
 // `test-data/poc/list/`). The point is that the compiler must stay
 // bounded on the un-factored shape too: a user is free to write it, and
 // the spec admits it.
-rec newtype List[A] : . | (A & List[A]) { pub constructor mk_cell; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.mk_cell(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
 fn cons[A](head: A, tail: List[A]) -> List[A] {
-  List.mk_cell(widen_sum((head, tail))[. | (A & List[A])])
+  List.mk(widen_sum((head, tail))[. | (A & List[A])])
 }
 
-fn uncons[A](xs: List[A]) -> . | (A & List[A]) { List.un_list(xs) }
+fn uncons[A](xs: List[A]) -> . | (A & List[A]) { List.get(xs) }
 
 // `drop3(n, xs)` drops the first `n` elements. The loop step nests
 // three decision levels: an outer guard `n > 0`, a middle guard `n > 1`,

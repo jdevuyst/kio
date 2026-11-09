@@ -1,1 +1,1 @@
-module app; elab make: . { impl f; captures ((Type) }
+module app; macro make: . { impl f; captures ((Type) }

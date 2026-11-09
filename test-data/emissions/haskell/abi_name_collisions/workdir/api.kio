@@ -1,5 +1,5 @@
 module api;
 
-pub newtype A_b : . { pub constructor c; projector un_a_b }
+pub type { A_b: . { pub mk; get } }
 
-pub newtype A : . { pub constructor b_c; projector un_a }
+pub type { A: . { pub mk; get } }

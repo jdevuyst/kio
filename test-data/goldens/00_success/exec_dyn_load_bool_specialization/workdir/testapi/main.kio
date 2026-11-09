@@ -4,12 +4,13 @@ import host_descriptor(Host_type, Role_host_type, Roleless_host_type);
 import host_descriptor(bool_role, host_id_local, host_type_id, host_type_shape, i32_role, role_name);
 import host_descriptor(host_types_cons, host_types_nil, mk_host_id, mk_role_host_type);
 import hostrec(make_lit_default, serve_default);
+import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
 import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
 import loader(Host_adapter, host_fn_bindings_nil, instantiate, mk_host_adapter);
-import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, Scalar, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -71,13 +72,13 @@ fn test_boolean(ty: Host_type, scalar: Scalar) -> Side {
 }
 
 fn call_value[P](surface: Surface[P]) -> String {
-  match(surface.?{lookup}("value"[String])) {
+  match((surface.>select { Lookup.get[P] })("value"[String])) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
               }
             }
@@ -142,8 +143,8 @@ pub fn main() {
             "package guest; bridge { guest; hostapi; }"[String]);
   evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
             "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
-            "Ignore[*F] = Flag; newtype Box[A] : A { constructor mk; projector get } "
-            "pub fn value() -> I32 { .[*F](condition: Flag) -> I32 { "
+            "Ignore[*F] = Flag; type { Box[A]: A { mk; get } } pub fn value() -> I32 "
+            "{ .[*F](condition: Flag) -> I32 { "
             "__if_then_else__[Ignore[F]][I32](condition, .() -> I32 { 76[I32] }, .() "
             "-> I32 { 0[I32] }) }[Box](.t[Flag]) } package guest; bridge { guest; "
             "hostapi; }"[String]);

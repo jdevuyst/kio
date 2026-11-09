@@ -965,7 +965,7 @@ fn lower_module_item(item: &Item, top: &TopLevel) -> Result<Vec<ModuleItemJs>, E
         }
         // Statically uninhabited in `Lowered`.
         Item::LiteralAlias(_, ext) => match *ext {},
-        Item::Labels(_, ext) | Item::LabelForward(_, ext) => match *ext {},
+        Item::Labels(_, ext) => match *ext {},
         // Statically uninhabited in `Prime`; substitution filters
         // `Equiv` items before codegen.
         Item::Equiv(_, ext) => match *ext {},
@@ -2151,16 +2151,6 @@ fn lower_expr(
         // `Expr::FnPlaceholder` is uninhabited (the desugar pass
         // lowered every `.stem. { e }` to a regular `fn`).
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        // `Expr::LabelValue` is uninhabited (`pass/label_elab` lowered
-        // every `{f = e}` to a constructor-member call).
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        // `Expr::Elaborator` is uninhabited: the
-        // typer's substitution pass (`pass/substitute`) replaced each
-        // surface node with its elaborated Kio' tree, so codegen
-        // sees only the elaborated form. Each arm here is a
-        // type-system proof.
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         // `Expr::Ufcs` is uninhabited: typechecking records the
@@ -3185,8 +3175,8 @@ mod tests {
     fn host_values_keep_stages_without_admission_metadata() {
         let package = typed_package_routed_with_package(
             "module main; host type N; \
-             pub newtype Visible : N & (N | .) { pub constructor make; pub projector read; }; \
-             pub newtype Hidden : N { constructor make; projector read; }; \
+             pub type { Visible: N & (N | .) { pub mk; pub get; }; }; \
+             pub type { Hidden: N { mk; get; }; }; \
              host fn observe(value: Hidden & Visible) -> Hidden & Visible; \
              pub fn relay(callback: (Hidden & Visible) -> (Hidden & Visible), value: Hidden & Visible) -> Hidden & Visible { callback(observe(value)) } \
              pub fn identity[A](value: A) -> A { value }",
@@ -3220,7 +3210,7 @@ mod tests {
         for count in [4, 32] {
             let mut source = String::from(
                 "module main; host type N role(i32); \
-                 pub newtype Box[A] : A & N { pub constructor make; pub projector get; };",
+                 pub type { Box[A]: A & N { pub mk; pub get; }; };",
             );
             for index in 0..count {
                 source.push_str(&format!(
@@ -3382,8 +3372,8 @@ mod tests {
     /// `lower_module` consumes. Bypasses the typer because most
     /// `backends::js::emit` tests exercise pure Kio'-shape lowering and don't
     /// need (or have host types in scope for) literal-type checking.
-    /// Tests that rely on substitution of `Expr::Elaborator` or
-    /// `Expr::UserMacro` carriers — surface macro calls such as `iso`,
+    /// Tests that rely on substitution of `Expr::UserMacro` carriers —
+    /// surface macro calls such as `iso`,
     /// `into`, `onto`, or `match` — use the full pipeline via end-to-end
     /// golden cases instead.
     fn prime_package_routed(
@@ -3545,15 +3535,15 @@ mod tests {
     }
 
     #[test]
-    fn field_projection_keeps_lexical_binders_and_alias_identity() {
+    fn nominal_projection_keeps_lexical_binders_and_alias_identity() {
         let package = typed_package_routed_many(
             &[
-                "module origin; pub labels { field[A]: A }; pub type Row[A] = Field[A] & .;",
-                "module main; import origin as source; import origin(Row, {field}); \
+                "module origin; pub type { Field[A]: A; }; pub type Row[A] = Field[A] & .;",
+                "module main; import __intrinsics__; import origin as source; import origin(Row, Field); \
                  pub fn scopes[A](value: Row[A]) -> A { \
-                   let first = .[Row](other: source.Row[Row]) -> Row { other.?{field} }; \
-                   let second = .[A](other: Row[A]) -> A { other.?{field} }; \
-                   let _ = first[A]( value); let _ = second[A]( value); value.?{field} \
+                   let first = .[Row](other: source.Row[Row]) -> Row { Field.get(__fst__(other)) }; \
+                   let second = .[A](other: Row[A]) -> A { Field.get(__fst__(other)) }; \
+                   let _ = first[A]( value); let _ = second[A]( value); Field.get(__fst__(value)) \
                  }",
             ],
             Some("bridge { origin; main; }"),
@@ -3582,7 +3572,7 @@ mod tests {
             "module main; \
              host type Box[A]; \
              host fn get[A](box: Box[A]) -> A; \
-             newtype N : . { constructor make; projector read; }; \
+             type { N: . { mk; get; }; }; \
              fn local(f: N -> N, value: N) -> N { f(value) } \
              fn specialized(box: Box[N]) -> N { get(box) } \
              fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
@@ -3603,11 +3593,11 @@ mod tests {
     fn type_and_cps_results_preserve_written_stages() {
         let package = typed_package_routed_with_package(
             "module main; \
-             newtype N : . { constructor make; projector read; }; \
-             newtype Pack <A> : A { constructor pack; projector unpack; }; \
+             type { N: . { mk; get; }; }; \
+             type { Pack <A>: A { mk; get; }; }; \
              fn stage(value: [A] N) -> N { value[.] } \
              fn cps(value: Pack, continuation: [A] A -> N) -> N { \
-               Pack.unpack(value)[N]( continuation) \
+               Pack.get(value)[N]( continuation) \
              }",
             Some("bridge { main; }"),
         );
@@ -3625,7 +3615,7 @@ mod tests {
     fn nested_specialization_advances_once() {
         let package = typed_package_routed_with_package(
             "module main; \
-             newtype N : . { constructor make; projector get; }; \
+             type { N: . { mk; get; }; }; \
              fn id[A](value: A) -> A { value } \
              fn generic() -> [A] A -> A { id } \
              fn consume(function: . -> (N -> N)) -> . -> (N -> N) { function } \
@@ -4153,11 +4143,9 @@ mod tests {
     }
     #[test]
     fn nominal_declarations_preserve_existential_stages_and_storage() {
-        let js = lower(
-            "module x; pub newtype Box[A] <B> : B { pub constructor pack; pub projector open; };",
-        );
+        let js = lower("module x; pub type { Box[A] <B>: B { pub mk; pub get; }; };");
         assert!(
-            js.contains("pack: __kioPoly(() => (__kioPoly(() => ("),
+            js.contains("mk: __kioPoly(() => (__kioPoly(() => ("),
             "{js}"
         );
         assert!(js.contains("__kioOpaqueOut("), "{js}");
@@ -4171,7 +4159,7 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              host type Str role(str); \
-             pub newtype T : Str { pub constructor make_t; pub projector un_t; }; \
+             pub type { T: Str { pub mk; pub get; }; }; \
              host fn apply_poly(f: [T] T -> T) -> Str; \
              host fn opaque_return[A](value: A) -> A; \
              pub fn poly_echo[T](x: T) -> T { x } \
@@ -4370,18 +4358,18 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              host type I32 role(i32); \
-             pub newtype Opaque : I32 { constructor make_opaque; projector read_opaque; }; \
-             pub newtype Constructor_only : I32 { \
-               pub constructor make_constructor_only; projector read_constructor_only; \
-             }; \
-             pub newtype Projector_only : I32 { \
-               constructor make_projector_only; pub projector read_projector_only; \
-             }; \
-             pub newtype Both_public : I32 { \
-               pub constructor make_both_public; pub projector read_both_public; \
-             }; \
-             pub fn make_opaque_value(value: I32) -> Opaque { Opaque.make_opaque(value) } \
-             pub fn read_opaque_value(value: Opaque) -> I32 { Opaque.read_opaque(value) }",
+             pub type { Opaque: I32 { mk; get; }; }; \
+             pub type { Constructor_only: I32 { \
+               pub mk; get; \
+             }; }; \
+             pub type { Projector_only: I32 { \
+               mk; pub get; \
+             }; }; \
+             pub type { Both_public: I32 { \
+               pub mk; pub get; \
+             }; }; \
+             pub fn make_opaque_value(value: I32) -> Opaque { Opaque.mk(value) } \
+             pub fn read_opaque_value(value: Opaque) -> I32 { Opaque.get(value) }",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
@@ -4393,26 +4381,24 @@ mod tests {
 
         assert!(compact.contains("KioType_Opaque:{}"), "{export_record}");
         assert!(
-            compact.contains("KioType_ConstructorOnly:{makeConstructorOnly:__export_fn_"),
+            compact.contains("KioType_ConstructorOnly:{mk:__export_fn_"),
             "{export_record}"
         );
         assert!(
-            compact.contains("KioType_ProjectorOnly:{readProjectorOnly:__export_fn_"),
+            compact.contains("KioType_ProjectorOnly:{get:__export_fn_"),
             "{export_record}"
         );
+        let both_public = compact
+            .split("KioType_BothPublic:{")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("Both_public export record");
         assert!(
-            compact.contains("KioType_BothPublic:{makeBothPublic:__export_fn_")
-                && compact.contains(",readBothPublic:__export_fn_"),
+            both_public.starts_with("mk:__export_fn_") && both_public.contains(",get:__export_fn_"),
             "{export_record}"
         );
-        assert!(
-            !compact.contains("KioType_Opaque:{make_opaque"),
-            "{export_record}"
-        );
-        assert!(
-            !compact.contains("KioType_Opaque:{read_opaque"),
-            "{export_record}"
-        );
+        assert!(!compact.contains("KioType_Opaque:{mk"), "{export_record}");
+        assert!(!compact.contains("KioType_Opaque:{get"), "{export_record}");
         for name in ["Opaque", "Constructor_only", "Projector_only"] {
             assert_eq!(emitted_nominal_view(&js, "main", name)["sealed"], true);
         }
@@ -4426,13 +4412,11 @@ mod tests {
             "{js}"
         );
         assert!(
-            js.contains("MAIN.Constructor_only.make_constructor_only)")
-                && js.contains("MAIN.Projector_only.read_projector_only)"),
+            js.contains("MAIN.Constructor_only.mk)") && js.contains("MAIN.Projector_only.get)"),
             "{js}"
         );
         assert!(
-            js.contains("MAIN.Both_public.make_both_public)")
-                && js.contains("MAIN.Both_public.read_both_public)"),
+            js.contains("MAIN.Both_public.mk)") && js.contains("MAIN.Both_public.get)"),
             "{js}"
         );
     }
@@ -4441,9 +4425,9 @@ mod tests {
     fn public_existential_projector_preserves_result_and_continuation_stages() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Hidden <U> <V> : U & V { \
-               constructor make_hidden; pub projector reveal_hidden; \
-             };",
+             pub type { Hidden <U> <V>: U & V { \
+               mk; pub get; \
+             }; };",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
@@ -4453,7 +4437,7 @@ mod tests {
             .find(|line| line.contains("function __export_fn_0"))
             .unwrap();
         assert!(
-            wrapper.contains("MAIN.Hidden.reveal_hidden)(__kioExportArg0)"),
+            wrapper.contains("MAIN.Hidden.get)(__kioExportArg0)"),
             "{wrapper}"
         );
         assert!(
@@ -4469,29 +4453,29 @@ mod tests {
             &[
                 "module left; \
                  host type I32 role(i32); \
-                 pub newtype Shared : I32 { \
-                   pub constructor make_shared; pub projector read_shared; \
-                 };",
+                 pub type { Shared: I32 { \
+                   pub mk; pub get; \
+                 }; };",
                 "module right; \
                  host type I32 role(i32); \
-                 pub newtype Shared : I32 { \
-                   pub constructor make_shared; pub projector read_shared; \
-                 };",
+                 pub type { Shared: I32 { \
+                   pub mk; pub get; \
+                 }; };",
                 "module shapes; \
                  host type I32 role(i32); \
-                 pub newtype Nested : I32 & (I32 | I32) { \
-                   pub constructor make_nested; pub projector read_nested; \
-                 }; \
-                 pub newtype Box[A] : A { \
-                   pub constructor make_box; pub projector read_box; \
-                 }; \
-                 pub newtype Packed <A> : A { \
-                   pub constructor make_packed; pub projector read_packed; \
-                 }; \
-                 pub labels { field: I32 }; \
-                 pub rec newtype Recursive : . | (I32 & Recursive) { \
-                   pub constructor make_recursive; pub projector read_recursive; \
-                 };",
+                 pub type { Nested: I32 & (I32 | I32) { \
+                   pub mk; pub get; \
+                 }; }; \
+                 pub type { Box[A]: A { \
+                   pub mk; pub get; \
+                 }; }; \
+                 pub type { Packed <A>: A { \
+                   pub mk; pub get; \
+                 }; }; \
+                 pub type { Field: I32; }; \
+                 pub rec type { Recursive: . | (I32 & Recursive) { \
+                   pub mk; pub get; \
+                 }; };",
             ],
             Some("bridge { left; right; shapes; }"),
         );
@@ -4516,14 +4500,14 @@ mod tests {
         );
         assert_recursive_view(&pkg, "shapes", "Recursive", true);
         for member in [
-            "LEFT.Shared.make_shared",
-            "RIGHT.Shared.make_shared",
-            "SHAPES.Nested.make_nested",
-            "SHAPES.Box.make_box",
-            "SHAPES.Packed.make_packed",
+            "LEFT.Shared.mk",
+            "RIGHT.Shared.mk",
+            "SHAPES.Nested.mk",
+            "SHAPES.Box.mk",
+            "SHAPES.Packed.mk",
             "SHAPES.Field.mk",
-            "SHAPES.Recursive.make_recursive",
-            "SHAPES.Recursive.read_recursive",
+            "SHAPES.Recursive.mk",
+            "SHAPES.Recursive.get",
         ] {
             assert!(js.contains(&format!("{member})")), "{member}");
         }
@@ -4534,16 +4518,16 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              host type I32 role(i32); \
-             pub newtype Box[A] : A { \
-               pub constructor make_box; pub projector read_box; \
-             }; \
+             pub type { Box[A]: A { \
+               pub mk; pub get; \
+             }; }; \
              pub fn round(value: Box[I32 & I32]) -> Box[I32 & I32] { value }",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
 
         assert_eq!(emitted_nominal_view(&js, "main", "Box")["sealed"], false);
-        assert!(js.contains("MAIN.Box.make_box") && js.contains("MAIN.Box.read_box"));
+        assert!(js.contains("MAIN.Box.mk") && js.contains("MAIN.Box.get"));
         assert!(js.contains("MAIN.round)(__kioExportArg0)"), "{js}");
     }
 
@@ -4558,12 +4542,12 @@ mod tests {
             let pkg = typed_package_routed_with_package(
                 &format!(
                     "module main; \
-                     pub newtype Box[A] : A {{ \
-                       pub constructor make_box; pub projector read_box; \
-                     }}; \
-                     pub newtype Container[{parameters}] : {payload} {{ \
-                       pub constructor make_container; pub projector read_container; \
-                     }}; \
+                     pub type {{ Box[A]: A {{ \
+                       pub mk; pub get; \
+                     }}; }}; \
+                     pub type {{ Container[{parameters}]: {payload} {{ \
+                       pub mk; pub get; \
+                     }}; }}; \
                      pub fn round(value: Container[{argument}]) -> Container[{argument}] {{ value }}"
                 ),
                 Some("bridge { main; }"),
@@ -4630,20 +4614,20 @@ mod tests {
     fn prepared_catalog_is_the_sole_public_newtype_inventory() {
         let catalog_package = typed_package_routed_with_package(
             "module main; \
-             pub newtype Kept : . { \
-               pub constructor make_kept; pub projector read_kept; \
-             };",
+             pub type { Kept: . { \
+               pub mk; pub get; \
+             }; };",
             Some("bridge { main; }"),
         );
         let prepared = prepare_js_boundary(&catalog_package);
         let raw_package = typed_package_routed_with_package(
             "module main; \
-             pub newtype Kept : . { \
-               pub constructor make_kept; pub projector read_kept; \
-             }; \
-             pub newtype Raw_only : . { \
-               pub constructor make_raw_only; pub projector read_raw_only; \
-             };",
+             pub type { Kept: . { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Raw_only: . { \
+               pub mk; pub get; \
+             }; };",
             Some("bridge { main; }"),
         );
         let package_file = &raw_package
@@ -4664,12 +4648,12 @@ mod tests {
         let pkg = typed_package_routed_many(
             &[
                 "module left; \
-                 newtype Secret : . { constructor make_secret; projector read_secret; }; \
-                 pub newtype Token : Secret { constructor make_token; projector read_token; }; \
+                 type { Secret: . { mk; get; }; }; \
+                 pub type { Token: Secret { mk; get; }; }; \
                  pub fn echo_token(value: Token) -> Token { value } \
                  pub fn echo_pair(value: Token & .) -> Token & . { value }",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  pub fn echo_token(value: Token) -> Token { value }",
             ],
             Some("bridge { left; right; }"),
@@ -4807,11 +4791,11 @@ mod tests {
         let pkg = typed_package_routed_many(
             &[
                 "module left; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn keep(value: Token) -> Token; \
                  pub fn call(value: Token) -> Token { keep(value) }",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn keep(value: Token) -> Token; \
                  pub fn call(value: Token) -> Token { keep(value) }",
             ],
@@ -4835,8 +4819,8 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              rec { \
-               pub newtype Outer : Hidden { pub constructor make_outer; pub projector read_outer; }; \
-               pub newtype Hidden : Outer { constructor make_hidden; projector read_hidden; }; \
+               pub type { Outer: Hidden { pub mk; pub get; }; }; \
+               pub type { Hidden: Outer { mk; get; }; }; \
              } \
              pub fn echo(value: Outer) -> Outer { value }",
             Some("bridge { main; }"),
@@ -4851,10 +4835,10 @@ mod tests {
     fn hidden_generic_argument_does_not_make_enclosing_newtype_recursive() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Hidden[A] : . { constructor make_hidden; projector read_hidden; }; \
-             pub rec newtype Root : Hidden[Root] { \
-               pub constructor make_root; pub projector read_root; \
-             }; \
+             pub type { Hidden[A]: . { mk; get; }; }; \
+             pub rec type { Root: Hidden[Root] { \
+               pub mk; pub get; \
+             }; }; \
              pub fn keep(value: Root) -> Root { value }",
             Some("bridge { main; }"),
         );
@@ -4869,15 +4853,15 @@ mod tests {
     fn alias_hidden_recursive_payload_uses_sealed_nominal_view() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Unit_rep : . { pub constructor mk_unit_rep; pub projector un_unit_rep; }; \
+             pub type { Unit_rep: . { pub mk; pub get; }; }; \
              rec { \
-               pub newtype Pair_rep : Type_rep & Type_rep { \
-                 pub constructor mk_pair_rep; pub projector un_pair_rep; \
-               }; \
+               pub type { Pair_rep: Type_rep & Type_rep { \
+                 pub mk; pub get; \
+               }; }; \
                pub type Type_rep_tail = Pair_rep; \
-               pub newtype Type_rep : Unit_rep | Type_rep_tail { \
-                 pub constructor mk_type_rep; pub projector un_type_rep; \
-               }; \
+               pub type { Type_rep: Unit_rep | Type_rep_tail { \
+                 pub mk; pub get; \
+               }; }; \
              } \
              pub fn keep(rep: Type_rep) -> Type_rep { rep }",
             Some("bridge { main; }"),
@@ -4889,10 +4873,16 @@ mod tests {
             js.contains("keep: __export_fn_") && js.contains("MAIN.keep)(__kioExportArg0)"),
             "{js}"
         );
+        let nominal = js
+            .split_once("KioType_TypeRep: {")
+            .expect("TypeRep namespace")
+            .1
+            .split_once('}')
+            .expect("TypeRep namespace closes")
+            .0;
         assert!(
-            js.contains("KioType_TypeRep: { mkTypeRep: __export_fn_")
-                && js.contains("unTypeRep: __export_fn_"),
-            "{js}"
+            nominal.contains("mk: __export_fn_") && nominal.contains("get: __export_fn_"),
+            "{nominal}"
         );
     }
 
@@ -4900,12 +4890,12 @@ mod tests {
     fn transparent_phantom_argument_does_not_make_enclosing_newtype_recursive() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Phantom[A] : . { \
-               pub constructor make_phantom; pub projector read_phantom; \
-             }; \
-             pub rec newtype Root : Phantom[Root] { \
-               pub constructor make_root; pub projector read_root; \
-             }; \
+             pub type { Phantom[A]: . { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Root: Phantom[Root] { \
+               pub mk; pub get; \
+             }; }; \
              pub fn keep(value: Root) -> Root { value }",
             Some("bridge { main; }"),
         );
@@ -4924,9 +4914,9 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              pub type Const[A] = .; \
-             pub rec newtype Token : Const[Token] { \
-               pub constructor mk_token; pub projector un_token; \
-             }; \
+             pub rec type { Token: Const[Token] { \
+               pub mk; pub get; \
+             }; }; \
              pub fn keep(value: Token) -> Token { value }",
             Some("bridge { main; }"),
         );
@@ -4941,13 +4931,13 @@ mod tests {
     fn generic_newtype_sibling_descent_still_finds_recursive_instantiation() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Unit_rep : . { pub constructor mk_unit_rep; pub projector un_unit_rep; }; \
-             pub newtype Id[A] : A { pub constructor mk_id; pub projector un_id; }; \
+             pub type { Unit_rep: . { pub mk; pub get; }; }; \
+             pub type { Id[A]: A { pub mk; pub get; }; }; \
              rec { \
                pub type Tail = Id[.] & Id[Node]; \
-               pub newtype Node : Unit_rep | Tail { \
-                 pub constructor mk_node; pub projector un_node; \
-               }; \
+               pub type { Node: Unit_rep | Tail { \
+                 pub mk; pub get; \
+               }; }; \
              } \
              pub fn keep(value: Node) -> Node { value }",
             Some("bridge { main; }"),
@@ -4959,10 +4949,16 @@ mod tests {
             js.contains("keep: __export_fn_") && js.contains("MAIN.keep)(__kioExportArg0)"),
             "{js}"
         );
+        let nominal = js
+            .split_once("KioType_Node: {")
+            .expect("Node namespace")
+            .1
+            .split_once('}')
+            .expect("Node namespace closes")
+            .0;
         assert!(
-            js.contains("KioType_Node: { mkNode: __export_fn_")
-                && js.contains("unNode: __export_fn_"),
-            "{js}"
+            nominal.contains("mk: __export_fn_") && nominal.contains("get: __export_fn_"),
+            "{nominal}"
         );
     }
 
@@ -4970,12 +4966,12 @@ mod tests {
     fn transparent_used_argument_preserves_enclosing_newtype_recursion() {
         let pkg = typed_package_routed_with_package(
             "module main; \
-             pub newtype Relay[A] : A { \
-               pub constructor make_relay; pub projector read_relay; \
-             }; \
-             pub rec newtype Root : Relay[Root] { \
-               pub constructor make_root; pub projector read_root; \
-             }; \
+             pub type { Relay[A]: A { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Root: Relay[Root] { \
+               pub mk; pub get; \
+             }; }; \
              pub fn keep(value: Root) -> Root { value }",
             Some("bridge { main; }"),
         );
@@ -4993,11 +4989,11 @@ mod tests {
         let pkg = typed_package_routed_many(
             &[
                 "module list/core; \
-                 pub rec newtype List[A] : . | (A & List[A]) { \
-                   pub constructor make_list; pub projector read_list; \
-                 };",
+                 pub rec type { List[A]: . | (A & List[A]) { \
+                   pub mk; pub get; \
+                 }; };",
                 "module facade; \
-                 newtype List : . { constructor make_list; projector read_list; };",
+                 type { List: . { mk; get; }; };",
             ],
             Some("bridge { facade; list/**; }"),
         );
@@ -5017,23 +5013,23 @@ mod tests {
             &[
                 "module visible; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   pub constructor make_bool; pub projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
                 "module hidden; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   constructor make_bool; projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   mk; get; \
+                 }; }; \
                  pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
                 "module generic; \
                  pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
                 "module hostish; \
                  host type Comptime_bool role(i32); \
-                 pub newtype Wrapped : Comptime_bool { \
-                   pub constructor make_wrapped; pub projector read_wrapped; \
-                 }; \
+                 pub type { Wrapped: Comptime_bool { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } \
                  pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
                 "module aliasing; \
@@ -5078,19 +5074,19 @@ mod tests {
     fn visible_newtype_payloads_use_exact_module_identity_and_stay_open_world() {
         let zed = "module zed; \
                    host type I32 role(i32); \
-                   pub newtype Nested : I32 { \
-                     pub constructor make_nested; pub projector read_nested; \
-                   }; \
-                   pub newtype Outer : Nested { \
-                     pub constructor make_outer; pub projector read_outer; \
-                   }; \
+                   pub type { Nested: I32 { \
+                     pub mk; pub get; \
+                   }; }; \
+                   pub type { Outer: Nested { \
+                     pub mk; pub get; \
+                   }; }; \
                    pub fn round(value: Outer) -> Outer { value }";
         let base = typed_package_routed_many(&[zed], Some("bridge { zed; }"));
         let base_js = lower_package_to_factory_module(&base, "facade").expect("lower base");
         let extended = typed_package_routed_many(
             &[
                 "module aaa; \
-                 pub newtype Nested : . { constructor make_nested; projector read_nested; };",
+                 pub type { Nested: . { mk; get; }; };",
                 zed,
             ],
             Some("bridge { zed; }"),
@@ -5133,19 +5129,14 @@ mod tests {
 
     #[test]
     fn nullary_newtype_emits_namespace_object() {
-        let js =
-            lower("module x; newtype Foo : . { pub constructor mk_foo; pub projector un_foo; };");
+        let js = lower("module x; type { Foo: . { pub mk; pub get; }; };");
         assert!(js.contains("const Foo = {"), "got: {js}");
         assert!(
-            js.contains(
-                "mk_foo: (__kioPayload => (__kioOpaqueOut(\"M1_C1_xN3_Foo\", __kioPayload)))"
-            ),
+            js.contains("mk: (__kioPayload => (__kioOpaqueOut(\"M1_C1_xN3_Foo\", __kioPayload)))"),
             "got: {js}"
         );
         assert!(
-            js.contains(
-                "un_foo: (__kioNominal => (__kioOpaqueIn(\"M1_C1_xN3_Foo\", __kioNominal)))"
-            ),
+            js.contains("get: (__kioNominal => (__kioOpaqueIn(\"M1_C1_xN3_Foo\", __kioNominal)))"),
             "got: {js}"
         );
     }
@@ -5154,12 +5145,10 @@ mod tests {
     fn parametric_newtype_preserves_stages_and_exact_storage() {
         // Erased binders retain explicit stages; all instances share their
         // declaration's private nominal store.
-        let js = lower(
-            "module x; newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };",
-        );
+        let js = lower("module x; type { Box[A]: A { pub mk; pub get; }; };");
         assert!(js.contains("const Box = {"), "got: {js}");
-        assert!(js.contains("mk_box: __kioPoly(() => ("), "got: {js}");
-        assert!(js.contains("un_box: __kioPoly(() => ("), "got: {js}");
+        assert!(js.contains("mk: __kioPoly(() => ("), "got: {js}");
+        assert!(js.contains("get: __kioPoly(() => ("), "got: {js}");
         assert!(
             js.contains("__kioOpaqueOut(\"M1_C1_xN3_Box\", __kioPayload)")
                 && js.contains("__kioOpaqueIn(\"M1_C1_xN3_Box\", __kioNominal)"),
@@ -5171,20 +5160,20 @@ mod tests {
     fn nullary_newtype_constructor_call() {
         let js = lower(
             "module x; \
-             newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
-             fn make() -> Foo { Foo.mk_foo(()) }",
+             type { Foo: . { pub mk; pub get; }; }; \
+             fn make() -> Foo { Foo.mk(()) }",
         );
-        assert!(js.contains("Foo.mk_foo(null)"), "got: {js}");
+        assert!(js.contains("Foo.mk(null)"), "got: {js}");
     }
 
     #[test]
     fn nullary_newtype_projector_call() {
         let js = lower(
             "module x; \
-             newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
-             fn open(w: Foo) -> . { Foo.un_foo(w) }",
+             type { Foo: . { pub mk; pub get; }; }; \
+             fn open(w: Foo) -> . { Foo.get(w) }",
         );
-        assert!(js.contains("Foo.un_foo(w)"), "got: {js}");
+        assert!(js.contains("Foo.get(w)"), "got: {js}");
     }
 
     #[test]
@@ -5192,11 +5181,11 @@ mod tests {
         // The written type argument advances once without a runtime type value.
         let js = lower_typed(
             "module x; \
-             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-             fn wrap[A](x: A) -> Box[A] { Box.mk_box[A]( x) }",
+             type { Box[A]: A { pub mk; pub get; }; }; \
+             fn wrap[A](x: A) -> Box[A] { Box.mk[A]( x) }",
         );
-        assert!(js.contains("Box.mk_box.advance()(x)"), "got: {js}");
-        assert!(!js.contains("Box.mk_box(A"), "got: {js}");
+        assert!(js.contains("Box.mk.advance()(x)"), "got: {js}");
+        assert!(!js.contains("Box.mk(A"), "got: {js}");
     }
 
     #[test]
@@ -5204,18 +5193,18 @@ mod tests {
         let package = typed_package_routed_many(
             &[
                 "module actual; \
-                 pub newtype Box[A] : . { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: . { \
+                     pub mk; pub get; \
+                 }; };",
                 "module selected; \
-                 pub newtype Box[A] : A { \
-                     pub constructor mk_box; pub projector un_box; \
-                 };",
+                 pub type { Box[A]: A { \
+                     pub mk; pub get; \
+                 }; };",
                 "module consumer; \
                  import selected as actual; \
                  import actual as selected; \
                  fn wrap[A](value: A) -> actual.Box[A] { \
-                     actual.Box.mk_box[A]( value) \
+                     actual.Box.mk[A]( value) \
                  }",
             ],
             None,
@@ -5224,23 +5213,17 @@ mod tests {
         let js = lower_module_with_key(&consumer.module, "consumer", None, None, None)
             .expect("lower consumer without ambient package context");
 
-        assert!(
-            js.contains("SELECTED.Box.mk_box.advance()(value)"),
-            "got: {js}"
-        );
-        assert!(
-            !js.contains("ACTUAL.Box.mk_box.advance()(value)"),
-            "got: {js}"
-        );
+        assert!(js.contains("SELECTED.Box.mk.advance()(value)"), "got: {js}");
+        assert!(!js.contains("ACTUAL.Box.mk.advance()(value)"), "got: {js}");
     }
 
     #[test]
     fn local_cps_projector_uses_exact_declaration_without_package_context() {
         let js = lower_typed(
             "module x; \
-             newtype Box <A> : A & . { constructor mk_box; projector inspect; }; \
+             type { Box <A>: A & . { mk; get; }; }; \
              fn open(v: Box) -> . { \
-               Box.inspect(v)(.[A](_value: A, _unit: .) { () }) \
+               Box.get(v)(.[A](_value: A, _unit: .) { () }) \
              }",
         );
         let unique_position = |needle: &str| {
@@ -5278,7 +5261,7 @@ mod tests {
         let first_product_slot = unique_position(", 0, 2)");
         let second_product_slot = unique_position(", 1, 2)");
         let projector_call = unique_position(
-            "return Box.inspect(__kio_cps_receiver).advance()(__kio_cps_continuation);",
+            "return Box.get(__kio_cps_receiver).advance()(__kio_cps_continuation);",
         );
 
         assert_eq!(js.matches("__kio_cps_receiver").count(), 2, "got: {js}");
@@ -5298,7 +5281,7 @@ mod tests {
             "CPS expression construction must preserve receiver-before-continuation order: {js}"
         );
         assert!(js.contains("return __kioPoly(() => (__kioContinuation => ((__kioContinuation).advance())(__kioPayload)))"), "{js}");
-        assert!(!js.contains("Box.box("), "got: {js}");
+        assert!(!js.contains("Box.mk("), "got: {js}");
     }
 
     // ---- Host-item codegen + literals + __if_then_else__ ---------------

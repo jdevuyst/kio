@@ -6,12 +6,12 @@ bundle those capabilities with `&`, and build the bundle at the edge of the
 package.
 
 That fits Kio especially well because product types are structural. A
-dependency bundle can be positional when it is small and local, labeled when the
-names matter, and row-shaped when a helper should accept "at least these
+dependency bundle can be positional when it is small and local, use nominal
+field types when the names matter, and row-shaped when a helper should accept "at least these
 capabilities" without caring what else the caller carries.
 
 The examples form one module whose host supplies `String`, `print`, and
-`string_concat`. They also use `one_prod` and `narrow_prod` from the
+`string_concat`. They also use `one_prod` and the row macros from the
 [`macros` library](using-libraries.md#the-minimal-dependency-workflow). Materialize
 that dependency under the local name `macros`; the first snippet shows the import
 and host declarations used throughout.
@@ -32,7 +32,8 @@ A dependency is usually just a function value. If a service needs a logger and
 a configuration loader, write those two function types down and pass them in:
 
 ```kio {@di}
-import macros/spine_macros(macro narrow_prod, macro one_prod);
+import macros/row_macros(macro record, macro select);
+import macros/spine_macros(macro one_prod);
 
 host type String role(str);
 
@@ -58,23 +59,27 @@ The tradeoff is ambiguity. `Raw_deps` works because the two function types are
 different. If two dependencies share a type, or if this bundle crosses a module
 boundary, give the slots names.
 
-## Name public bundles with labels
+## Name public bundles with nominal fields
 
-Labels turn a product into a record-shaped dependency bundle. The type is still a
-product under the hood, but each slot has a stable field name:
+Nominal types give the slots of a product distinct identities. The bundle is
+still an ordinary product:
 
 ```kio {@di}
-labels App_deps = { log: String -> ., config: . -> String };
+type App_deps = { Log: String -> .; Config: . -> String };
 
-fn app_log(deps: App_deps) -> String -> . { deps.?{log} }
+fn app_log(deps: App_deps) -> String -> . {
+  deps.>select { Log.get }
+}
 
-fn app_config(deps: App_deps) -> . -> String { deps.?{config} }
+fn app_config(deps: App_deps) -> . -> String {
+  deps.>select { Config.get }
+}
 
 fn start(deps: App_deps) { app_log(deps)(app_config(deps)()) }
 ```
 
-`App_deps` is the product `Log & Config`. `deps.?{log}` finds the visible
-`Log` slot and unwraps the function payload.
+`App_deps` is the product `Log & Config`. `deps.>select { Log.get }` finds the first `Log` slot and projects its
+function payload.
 
 This is the shape to prefer for API-facing dependency bundles:
 
@@ -91,7 +96,9 @@ bundle through the rest of the program:
 ```kio {@di}
 fn default_config() -> String { "production\n" }
 
-fn production_deps() -> App_deps { {log = print, config = default_config} }
+fn production_deps() -> App_deps {
+  record { Log.mk(print); Config.mk(default_config) }
+}
 
 pub fn main() { start(production_deps()) }
 ```
@@ -104,7 +111,9 @@ fn quiet_log(_s: String) { () }
 
 fn test_config() -> String { "test\n" }
 
-fn test_deps() -> App_deps { {log = quiet_log, config = test_config} }
+fn test_deps() -> App_deps {
+  record { Log.mk(quiet_log); Config.mk(test_config) }
+}
 ```
 
 This is the core DI move in Kio: dependencies are ordinary values, and swapping
@@ -116,7 +125,9 @@ A helper does not have to name the whole application bundle. It can accept a
 bundle with `Log` as its first slot and leave the remaining type generic:
 
 ```kio {@di}
-fn log_line[Rest](deps: Log & Rest, msg: String) { deps.?{log}(string_concat(msg, "\n")) }
+fn log_line[Rest](deps: Log & Rest, msg: String) {
+  (deps.>select { Log.get })(string_concat(msg, "\n"))
+}
 
 fn call_log_line(deps: App_deps) { log_line(deps, "ready") }
 ```
@@ -126,11 +137,11 @@ capabilities." `App_deps` is `Log & Config`, so `call_log_line` passes it with
 `Rest` inferred as `Config`; `log_line` projects out the capability it needs.
 Products are ordered: `Config & Log` does not match this parameter. For a
 different order, import and call `reorder_prod` explicitly before passing the
-bundle, as shown in [Product order](products.md#product-order).
+bundle, as shown in [Product order and grouping](products.md#product-order-and-grouping).
 
 This keeps dependency parameters narrow without making callers rebuild tiny
 one-off bundles. It is the same row-typed-record pattern described in
-[Structural products and row types](products.md), applied to capability passing.
+[Row-typed records with ordinary products](products.md), applied to capability passing.
 
 ## Split bundles by boundary
 
@@ -139,11 +150,11 @@ whole package. A parser, a storage layer, and a notification workflow usually
 need different capabilities. Separate bundles make those boundaries visible:
 
 ```kio {@di}
-labels Parse_deps = { report_error: String -> . };
+type Parse_deps = { Report_error: String -> . };
 
-labels Store_deps = { save: String -> ., load: . -> String };
+type Store_deps = { Save: String -> .; Load: . -> String };
 
-labels Notify_deps = { send: String -> ., template: . -> String };
+type Notify_deps = { Send: String -> .; Template: . -> String };
 ```
 
 When a workflow really does need several bundles, compose them with `&` and let
@@ -155,7 +166,7 @@ type Workflow_deps = Parse_deps & Store_deps & Notify_deps;
 
 The important rule is that the bundle should describe the caller-callee
 contract. If a function only logs, take `(Log & rest)`. If a module owns a
-coherent subsystem, define a named `labels ...` bundle for that subsystem. If a
+coherent subsystem, define a named `type` bundle for that subsystem. If a
 single private helper needs two distinct functions, a small positional product
 is fine.
 
@@ -179,7 +190,7 @@ harder to read.
 
 ## Where this leads
 
-- [Structural products and row types](products.md) explains the `(Field & rest)` pattern directly.
+- [Row-typed records with ordinary products](products.md) explains the `(Field & rest)` pattern directly.
 - [Using libraries](using-libraries.md) points to the product projection helpers used here.
 - [Package files and bridges](pkg.md) shows the
   package-level version of the same idea: adapting a root module's host

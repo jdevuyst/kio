@@ -9,29 +9,30 @@ import host_descriptor(host_fn_eq);
 import host_descriptor(mk_host_fn, mk_host_id);
 import hostrec(make_lit_default, serve_default, test_bool_default);
 import loader(
-, {apply}
-, {bool_in}
-, {exports}
-, {f64_out}
-, {hostfn_in}
-, {i32_in}
-, {i32_out}
-, {lookup}
-, {pair_in}
-, {pair_out}
+, Apply
+, Bool_in
+, Exports
+, F64_out
+, Hostfn_in
+, I32_in
+, I32_out
+, Lookup
+, Pair_in
+, Pair_out
 );
 import loader(Contract, Diag, Host_adapter, Image, Loaded, Surface, contract_check);
 import loader(Export_info, Export_infos, un_export_infos);
 import loader(Lr_diag, Lr_image);
+import loader(Str_in, Str_out, Sum_is_left, Sum_payload, Unit_in);
 import loader(contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
 import loader(export_info_name, export_info_sig);
 import loader(host_adapter_functions, host_adapter_types);
 import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
 import loader(instantiate);
-import loader({str_in}, {str_out}, {sum_is_left}, {sum_payload}, {unit_in});
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
@@ -79,10 +80,10 @@ fn guest_image() -> String {
   "an exported newtype.\nmodule guest;\n\nimport __intrinsics__;\n\nimport "
   "hostapi(Bool, F64, I32, String);\nimport hostapi(add_i32, div_i32, "
   "leq_i32, mod_i32, mul_f64, string_concat);\n\n/// A tagged value: the "
-  "newtype and both members are `pub` in a\n/// bridge-matched module, so "
-  "the constructor and projector are loadable\n/// entries (a member-export "
-  "demo).\npub newtype Tag[A] : A { pub constructor mk_tag; pub projector "
-  "un_tag; };\n\n/// Greets by name.\npub fn greet(name: String) -> String { "
+  "nominal type and both members are `pub` in a\n/// bridge-matched module, "
+  "so the constructor and projector are loadable\n/// entries (a "
+  "member-export demo).\npub type { Tag[A] : A { pub mk; pub get; }; };\n\n/// "
+  "Greets by name.\npub fn greet(name: String) -> String { "
   "string_concat(\"Hello, \"[String], name) }\n\n/// Doubles an integer.\npub fn "
   "double(x: I32) -> I32 { add_i32(x, x) }\n\n/// Quadruples via a cross-fn "
   "call.\npub fn quad(x: I32) -> I32 { double(double(x)) }\n\n/// The "
@@ -120,20 +121,20 @@ fn guest_image() -> String {
 // Calling exports through the record surface
 // =====================================================================
 //
-// Each helper takes the whole `Surface(P)` record and reads just the
-// operations it needs by field name (`surf.?{lookup}` …); nothing is
+// Each helper takes the whole `Surface[P]` record and reads just the
+// operations it needs by field name (`surf.>select { Lookup.get[P] }` …); nothing is
 // positional, so widening the surface never touches a consumer.
 
 // Look up an export and apply it to one marshalled argument, projecting
 // the result through `out`; any diagnostic renders as its message.
 fn run_i32[P](surf: Surface[P], name: String, arg: I32) -> String {
-  match(surf.?{lookup}(name)) {
+  match((surf.>select { Lookup.get[P] })(name)) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{i32_in}(arg)))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { I32_in.get[P] })(arg)))) {
           (
           , .(r: P) {
-              match(surf.?{i32_out}(r)) {
+              match((surf.>select { I32_out.get[P] })(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -147,13 +148,13 @@ fn run_i32[P](surf: Surface[P], name: String, arg: I32) -> String {
 }
 
 fn run_greet[P](surf: Surface[P], who: String) -> String {
-  match(surf.?{lookup}("greet"[String])) {
+  match((surf.>select { Lookup.get[P] })("greet"[String])) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{str_in}(who)))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { Str_in.get[P] })(who)))) {
           (
           , .(r: P) {
-              match(surf.?{str_out}(r)) {
+              match((surf.>select { Str_out.get[P] })(r)) {
                 (.(s: String) { s }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -169,10 +170,10 @@ fn run_greet[P](surf: Surface[P], who: String) -> String {
 // A deliberately ill-shaped call — a host-string export applied to an
 // i32 — whose failure names the offending host fn and expected shape.
 fn run_greet_wrong[P](surf: Surface[P]) -> String {
-  match(surf.?{lookup}("greet"[String])) {
+  match((surf.>select { Lookup.get[P] })("greet"[String])) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{i32_in}(3[I32])))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { I32_in.get[P] })(3[I32])))) {
           (.(_r: P) { "unexpectedly succeeded"[String] }, .(d: Diag) { diag_message(d) })
         }
       }
@@ -184,18 +185,21 @@ fn run_greet_wrong[P](surf: Surface[P]) -> String {
 // The multi-value-param export `add3` called directly: its product domain
 // `(I32 & (I32 & I32))` is folded with `pair_in`.
 fn run_add3[P](surf: Surface[P], a: I32, b: I32, c: I32) -> String {
-  match(surf.?{lookup}("add3"[String])) {
+  match((surf.>select { Lookup.get[P] })("add3"[String])) {
     (
     , .(g: P) {
         let arg =
-          surf.?{pair_in}((
-          , surf.?{i32_in}(a)
-          , surf.?{pair_in}((surf.?{i32_in}(b), surf.?{i32_in}(c)))
+          (surf.>select { Pair_in.get[P] })((
+          , (surf.>select { I32_in.get[P] })(a)
+          , (surf.>select { Pair_in.get[P] })((
+            , (surf.>select { I32_in.get[P] })(b)
+            , (surf.>select { I32_in.get[P] })(c)
+            ))
           ));
-        match(surf.?{apply}((g, arg))) {
+        match((surf.>select { Apply.get[P] })((g, arg))) {
           (
           , .(r: P) {
-              match(surf.?{i32_out}(r)) {
+              match((surf.>select { I32_out.get[P] })(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -210,18 +214,21 @@ fn run_add3[P](surf: Surface[P], a: I32, b: I32, c: I32) -> String {
 
 // The branching export over both arms: bool marshalling in.
 fn run_pick[P](surf: Surface[P], b: Bool, x: I32, y: I32) -> String {
-  match(surf.?{lookup}("pick"[String])) {
+  match((surf.>select { Lookup.get[P] })("pick"[String])) {
     (
     , .(g: P) {
         let arg =
-          surf.?{pair_in}((
-          , surf.?{bool_in}(b)
-          , surf.?{pair_in}((surf.?{i32_in}(x), surf.?{i32_in}(y)))
+          (surf.>select { Pair_in.get[P] })((
+          , (surf.>select { Bool_in.get[P] })(b)
+          , (surf.>select { Pair_in.get[P] })((
+            , (surf.>select { I32_in.get[P] })(x)
+            , (surf.>select { I32_in.get[P] })(y)
+            ))
           ));
-        match(surf.?{apply}((g, arg))) {
+        match((surf.>select { Apply.get[P] })((g, arg))) {
           (
           , .(r: P) {
-              match(surf.?{i32_out}(r)) {
+              match((surf.>select { I32_out.get[P] })(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -237,19 +244,19 @@ fn run_pick[P](surf: Surface[P], b: Bool, x: I32, y: I32) -> String {
 // A zero-parameter float export (`unit_in`), scaled by a second float
 // export (`f64_in` / `f64_out` marshalling).
 fn run_scaled_gain[P](surf: Surface[P]) -> String {
-  match(surf.?{lookup}("default_gain"[String])) {
+  match((surf.>select { Lookup.get[P] })("default_gain"[String])) {
     (
     , .(gain_fn: P) {
-        match(surf.?{apply}((gain_fn, surf.?{unit_in}))) {
+        match((surf.>select { Apply.get[P] })((gain_fn, surf.>select { Unit_in.get[P] }))) {
           (
           , .(gain: P) {
-              match(surf.?{lookup}("scale"[String])) {
+              match((surf.>select { Lookup.get[P] })("scale"[String])) {
                 (
                 , .(scale_fn: P) {
-                    match(surf.?{apply}((scale_fn, gain))) {
+                    match((surf.>select { Apply.get[P] })((scale_fn, gain))) {
                       (
                       , .(r: P) {
-                          match(surf.?{f64_out}(r)) {
+                          match((surf.>select { F64_out.get[P] })(r)) {
                             (.(x: F64) { f64_to_string(x) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -272,22 +279,26 @@ fn run_scaled_gain[P](surf: Surface[P]) -> String {
 
 // A product-returning export decomposed with `pair_out`.
 fn run_divmod[P](surf: Surface[P], a: I32, b: I32) -> String {
-  match(surf.?{lookup}("divmod"[String])) {
+  match((surf.>select { Lookup.get[P] })("divmod"[String])) {
     (
     , .(g: P) {
-        let arg = surf.?{pair_in}((surf.?{i32_in}(a), surf.?{i32_in}(b)));
-        match(surf.?{apply}((g, arg))) {
+        let arg =
+          (surf.>select { Pair_in.get[P] })((
+          , (surf.>select { I32_in.get[P] })(a)
+          , (surf.>select { I32_in.get[P] })(b)
+          ));
+        match((surf.>select { Apply.get[P] })((g, arg))) {
           (
           , .(r: P) {
-              match(surf.?{pair_out}(r)) {
+              match((surf.>select { Pair_out.get[P] })(r)) {
                 (
                 , .(parts: P & P) {
                     match(parts) {
                       .(q: P, m: P) {
-                        match(surf.?{i32_out}(q)) {
+                        match((surf.>select { I32_out.get[P] })(q)) {
                           (
                           , .(qn: I32) {
-                              match(surf.?{i32_out}(m)) {
+                              match((surf.>select { I32_out.get[P] })(m)) {
                                 (
                                 , .(mn: I32) {
                                     string_concat(
@@ -320,23 +331,23 @@ fn run_divmod[P](surf: Surface[P], a: I32, b: I32) -> String {
 
 // A sum-returning export consumed with `sum_is_left` / `sum_payload`.
 fn run_classify[P](surf: Surface[P], n: I32) -> String {
-  match(surf.?{lookup}("classify"[String])) {
+  match((surf.>select { Lookup.get[P] })("classify"[String])) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{i32_in}(n)))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { I32_in.get[P] })(n)))) {
           (
           , .(r: P) {
-              match(surf.?{sum_is_left}(r)) {
+              match((surf.>select { Sum_is_left.get[P] })(r)) {
                 (
                 , .(is_left: Bool) {
-                    match(surf.?{sum_payload}(r)) {
+                    match((surf.>select { Sum_payload.get[P] })(r)) {
                       (
                       , .(payload: P) {
                           if(is_left) {
-                            match(surf.?{str_out}(payload)) {
+                            match((surf.>select { Str_out.get[P] })(payload)) {
                               (.(s: String) { s }, .(d: Diag) { diag_message(d) })
                             }
-                          } else match(surf.?{i32_out}(payload)) {
+                          } else match((surf.>select { I32_out.get[P] })(payload)) {
                             (.(m: I32) { int_to_string(m) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -382,28 +393,28 @@ fn render_exports[P](surf: Surface[P]) -> String {
         }
       }
     }
-  , (surf.?{exports}, ""[String])
+  , (surf.>select { Exports.get }, ""[String])
   )
 }
 
-// The guest newtype's members are loadable entries: `Tag.mk_tag` (the
-// bare spelling) tags the payload and `guest.Tag.un_tag` (the
+// The guest newtype's members are loadable entries: `Tag.mk` (the
+// bare spelling) tags the payload and `guest.Tag.get` (the
 // module-qualified spelling) projects it back; both erase to the
 // identity, so the i32 rides through unchanged.
 fn run_tag_roundtrip[P](surf: Surface[P], x: I32) -> String {
-  match(surf.?{lookup}("Tag.mk_tag"[String])) {
+  match((surf.>select { Lookup.get[P] })("Tag.mk"[String])) {
     (
     , .(mk: P) {
-        match(surf.?{apply}((mk, surf.?{i32_in}(x)))) {
+        match((surf.>select { Apply.get[P] })((mk, (surf.>select { I32_in.get[P] })(x)))) {
           (
           , .(tagged: P) {
-              match(surf.?{lookup}("guest.Tag.un_tag"[String])) {
+              match((surf.>select { Lookup.get[P] })("guest.Tag.get"[String])) {
                 (
                 , .(un: P) {
-                    match(surf.?{apply}((un, tagged))) {
+                    match((surf.>select { Apply.get[P] })((un, tagged))) {
                       (
                       , .(r: P) {
-                          match(surf.?{i32_out}(r)) {
+                          match((surf.>select { I32_out.get[P] })(r)) {
                             (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -471,7 +482,7 @@ fn with_surface(handle: Loaded, arg: I32, which: I32) -> String {
 //
 // A matching contract copies the exact canonical signatures advertised by
 // `image_exports`. Member exports are stated like any other entry —
-// `Tag.mk_tag` bare, `guest.Tag.un_tag` qualified. The mismatch contracts name
+// `Tag.mk` bare, `guest.Tag.get` qualified. The mismatch contracts name
 // an absent export and a wrong canonical signature.
 fn good_contract() -> Contract {
   contract_cons(
@@ -486,9 +497,9 @@ fn good_contract() -> Contract {
           , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"[String]
           )
         , contract_cons(
-          , mk_expect("Tag.mk_tag"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
+          , mk_expect("Tag.mk"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
           , contract_cons(
-            , mk_expect("guest.Tag.un_tag"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
+            , mk_expect("guest.Tag.get"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
             , contract_nil()
             )
           )
@@ -568,16 +579,19 @@ fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
 // Mint the callback handle with `hostfn_in` and pass it into the
 // higher-order export.
 fn run_apply_cb[P](surf: Surface[P], x: I32) -> String {
-  match(surf.?{hostfn_in}(host_double_descriptor())) {
+  match((surf.>select { Hostfn_in.get[P] })(host_double_descriptor())) {
     (
     , .(cb: P) {
-        match(surf.?{lookup}("apply_cb"[String])) {
+        match((surf.>select { Lookup.get[P] })("apply_cb"[String])) {
           (
           , .(f: P) {
-              match(surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x)))))) {
+              match((surf.>select { Apply.get[P] })((
+              , f
+              , (surf.>select { Pair_in.get[P] })((cb, (surf.>select { I32_in.get[P] })(x)))
+              ))) {
                 (
                 , .(r: P) {
-                    match(surf.?{i32_out}(r)) {
+                    match((surf.>select { I32_out.get[P] })(r)) {
                       (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                     }
                   }
@@ -660,7 +674,7 @@ fn run_image(image: Image) {
   print(line("classify(42) = "[String], flow(default_loaded, 0[I32], 10[I32])));
   print(line("greet(3) = "[String], flow(default_loaded, 0[I32], 11[I32])));
   print(line("apply_cb(host_double, 21) = "[String], callback_demo(image, 21[I32])));
-  print(line("un_tag(mk_tag(11)) = "[String], flow(default_loaded, 11[I32], 12[I32])));
+  print(line("get(mk(11)) = "[String], flow(default_loaded, 11[I32], 12[I32])));
   print(flow(default_loaded, 0[I32], 13[I32])
     .>>string_concat("\n"[String])
     .>>string_concat("exports:"[String]));

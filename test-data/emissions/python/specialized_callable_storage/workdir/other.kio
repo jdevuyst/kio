@@ -2,4 +2,4 @@ module other;
 
 import api as a;
 
-pub newtype N : a.Number { pub constructor wrap; pub projector unwrap }
+pub type { N: a.Number { pub mk; pub get } }

@@ -27,8 +27,9 @@ if else fn type literal alias
   (identifier)
   (ERROR
     (keyword_type)
-    (entity_name_label)
-    (entity_name_label)))
+    (identifier)
+    (identifier)))
+
 
 ================================================================================
 callable words
@@ -547,16 +548,7 @@ import app/as // provider leaf
   as // separator
   as;
 
-fn row(row: .) -> . {
-  let .({
-    ,, as // label
-       as // separator
-       as ,,, owner. // path
-                 as // label leaf
-                 as local ,,
-  }) = row;
-  local
-}
+fn row(as: .) -> . { as }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -595,48 +587,14 @@ fn row(row: .) -> . {
       (separator_dot))
     (expression_block
       (bracket_lbrace)
-      (row_let_stmt
-        (keyword_let)
-        (separator_dot)
-        (bracket_lparen)
-        (bracket_lbrace)
-        (separator_comma)
-        (separator_comma)
-        (row_let_entry
-          (label_path
-            (entity_name_label))
-          (comment_line)
-          (keyword_declaration)
-          (comment_line)
-          (variable_parameter))
-        (separator_comma)
-        (separator_comma)
-        (separator_comma)
-        (row_let_entry
-          (label_path
-            (identifier)
-            (separator_dot)
-            (comment_line)
-            (entity_name_label))
-          (comment_line)
-          (keyword_declaration)
-          (variable_parameter))
-        (separator_comma)
-        (separator_comma)
-        (bracket_rbrace)
-        (bracket_rparen)
-        (operator_builtin)
-        (expression_path
-          (identifier)))
-      (separator_semicolon)
       (expression_path
         (identifier))
       (bracket_rbrace))))
 
 ================================================================================
-selective label import is structural
+selective nominal import is structural
 ================================================================================
-import source(Item, item, {item});
+import source(Item, item, Field);
 --------------------------------------------------------------------------------
 
 (source_file
@@ -651,10 +609,8 @@ import source(Item, item, {item});
     (import_named_item
       (identifier))
     (separator_comma)
-    (import_label_item
-      (bracket_lbrace)
-      (entity_name_label)
-      (bracket_rbrace))
+    (import_named_item
+      (identifier))
     (bracket_rparen)
     (separator_semicolon)))
 
@@ -741,8 +697,8 @@ bridge { env; }
 pure is a function-only declaration modifier
 ================================================================================
 pure type Alias;
-pure newtype Box : . {};
-pure labels Row = { field: . };
+pure type { Box: . {}; };
+pure type Row = { Field: .; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -752,28 +708,33 @@ pure labels Row = { field: . };
     (uppercase_identifier))
   (separator_semicolon)
   (identifier)
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (separator_dot)
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot))
+      (ERROR
+        (bracket_lbrace))
       (bracket_rbrace)))
   (separator_semicolon)
+  (bracket_rbrace)
+  (separator_semicolon)
   (identifier)
-  (labels_decl_head
-    (keyword_labels)
+  (type_alias_decl_head
+    (keyword_type)
     (entity_name_type)
     (operator_builtin)
-    (labels_arms
-      (labels_block
-        (bracket_lbrace)
-        (label_entry
-          (entity_name_label)
-          (operator_builtin)
-          (separator_dot))
-        (bracket_rbrace)))
+    (nominal_group
+      (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot))
+      (separator_semicolon)
+      (bracket_rbrace))
     (separator_semicolon)))
 
 ================================================================================
@@ -833,51 +794,54 @@ pure pub fn third() -> . {}
 ================================================================================
 recursive data markers and mutual type groups are structural
 ================================================================================
-rec newtype Cell : . | Cell { constructor mk; projector get; };
-rec labels Tree = { branch: Tree };
+rec type { Cell: . | Cell { mk; get; }; };
+rec type Tree = { Branch: Tree; };
 rec {
   pub type Link = Node;
-  pub newtype Node : Link { pub constructor mk_node; pub projector un_node; };
+  pub type { Node: Link { pub mk; pub get; }; };
 }
 --------------------------------------------------------------------------------
 
 (source_file
-  (newtype_decl_head
+  (nominal_decl_head
     (keyword_rec)
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (type_product
-      (separator_dot)
-      (operator_builtin)
-      (type_path
-        (entity_name_type)))
-    (newtype_body
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (newtype_member
-        (keyword_constructor)
-        (entity_name_function))
-      (separator_semicolon)
-      (newtype_member
-        (keyword_projector)
-        (entity_name_function))
-      (separator_semicolon)
-      (bracket_rbrace)))
-  (separator_semicolon)
-  (labels_decl_head
-    (keyword_rec)
-    (keyword_labels)
-    (entity_name_type)
-    (operator_builtin)
-    (labels_arms
-      (labels_block
-        (bracket_lbrace)
-        (label_entry
-          (entity_name_label)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (type_product
+          (separator_dot)
           (operator_builtin)
           (type_path
             (entity_name_type)))
-        (bracket_rbrace)))
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (bracket_rbrace)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon)
+  (type_alias_decl_head
+    (keyword_rec)
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (nominal_group
+      (bracket_lbrace)
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (type_path
+          (entity_name_type)))
+      (separator_semicolon)
+      (bracket_rbrace))
     (separator_semicolon))
   (type_rec_group
     (keyword_rec)
@@ -890,24 +854,27 @@ rec {
       (type_path
         (entity_name_type)))
     (separator_semicolon)
-    (newtype_decl_head
+    (nominal_decl_head
       (keyword_pub)
-      (keyword_newtype)
-      (entity_name_type)
-      (operator_builtin)
-      (type_path
-        (entity_name_type))
-      (newtype_body
+      (keyword_type)
+      (nominal_group
         (bracket_lbrace)
-        (newtype_member
-          (keyword_pub)
-          (keyword_constructor)
-          (entity_name_function))
-        (separator_semicolon)
-        (newtype_member
-          (keyword_pub)
-          (keyword_projector)
-          (entity_name_function))
+        (nominal_entry
+          (entity_name_type)
+          (operator_builtin)
+          (type_path
+            (entity_name_type))
+          (nominal_members
+            (bracket_lbrace)
+            (nominal_member
+              (keyword_pub)
+              (entity_name_function))
+            (separator_semicolon)
+            (nominal_member
+              (keyword_pub)
+              (entity_name_function))
+            (separator_semicolon)
+            (bracket_rbrace)))
         (separator_semicolon)
         (bracket_rbrace)))
     (separator_semicolon)
@@ -1294,9 +1261,9 @@ ordinary and marked type names share structural roles
 ================================================================================
 type Alias[A] = A;
 type _Alias[_A] = _A;
-newtype Box[B] : B { constructor mk_box; projector un_box; };
-newtype _Box[_B] : _B { constructor mk_marked; projector un_marked; };
-fn use_types[A][_A](x: Box[A], y: _Box[_A]) -> _Alias[_A] { let _ = Box.un_box[A](x); _Box.un_marked[_A](y) }
+type { Box[B]: B { mk; get; }; };
+type { _Box[_B]: _B { mk; get; }; };
+fn use_types[A][_A](x: Box[A], y: _Box[_A]) -> _Alias[_A] { let _ = Box.get[A](x); _Box.get[_A](y) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1326,51 +1293,57 @@ fn use_types[A][_A](x: Box[A], y: _Box[_A]) -> _Alias[_A] { let _ = Box.un_box[A
     (type_path
       (entity_name_type))
     (separator_semicolon))
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (type_param_list
-      (type_param_group
-        (bracket_lbracket)
-        (type_param_binder
-          (variable_parameter))
-        (bracket_rbracket)))
-    (operator_builtin)
-    (type_path
-      (entity_name_type))
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (newtype_member
-        (keyword_constructor)
-        (entity_name_function))
-      (separator_semicolon)
-      (newtype_member
-        (keyword_projector)
-        (entity_name_function))
+      (nominal_entry
+        (entity_name_type)
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (operator_builtin)
+        (type_path
+          (entity_name_type))
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (bracket_rbrace)))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (type_param_list
-      (type_param_group
-        (bracket_lbracket)
-        (type_param_binder
-          (variable_parameter))
-        (bracket_rbracket)))
-    (operator_builtin)
-    (type_path
-      (entity_name_type))
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (newtype_member
-        (keyword_constructor)
-        (entity_name_function))
-      (separator_semicolon)
-      (newtype_member
-        (keyword_projector)
-        (entity_name_function))
+      (nominal_entry
+        (entity_name_type)
+        (type_param_list
+          (type_param_group
+            (bracket_lbracket)
+            (type_param_binder
+              (variable_parameter))
+            (bracket_rbracket)))
+        (operator_builtin)
+        (type_path
+          (entity_name_type))
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (nominal_member
+            (entity_name_function))
+          (separator_semicolon)
+          (bracket_rbrace)))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)

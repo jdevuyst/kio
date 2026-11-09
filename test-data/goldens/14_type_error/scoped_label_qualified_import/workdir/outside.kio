@@ -1,0 +1,5 @@
+module outside;
+
+import scope/origin as origin;
+
+fn make() { let _hidden = origin.Item.mk(()); () }

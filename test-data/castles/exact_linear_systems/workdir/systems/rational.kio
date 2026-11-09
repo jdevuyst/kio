@@ -2,13 +2,14 @@ module systems/rational;
 
 import list_host as integers;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Rational = { numerator: I32, denominator: I32 };
+pub type Rational = { Numerator: I32; Denominator: I32 };
 
 fn absolute(n: I32) -> I32 {
   if(a.lt_i32(n, 0)) { a.sub_i32(0, n) } else { n }
@@ -20,7 +21,7 @@ rec(loop) fn gcd(a0: I32, b: I32) -> I32 {
 
 fn normalized(n: I32, d: I32) -> Rational {
   let divisor = gcd(absolute(n), d);
-  {numerator = a.div_i32(n, divisor), denominator = a.div_i32(d, divisor)}
+  (Numerator.mk(a.div_i32(n, divisor)), Denominator.mk(a.div_i32(d, divisor)))
 }
 
 pub fn make(n: I32, d: I32) -> Rational {
@@ -31,37 +32,47 @@ pub fn integer(n: I32) -> Rational { make(n, 1) }
 
 pub fn zero() -> Rational { integer(0) }
 
-pub fn is_zero(q: Rational) -> Bool { integers.eq_i32(q.?{numerator}, 0) }
+pub fn is_zero(q: Rational) -> Bool {
+  integers.eq_i32(q.>select { Numerator.get }, 0)
+}
 
-pub fn negate(q: Rational) -> Rational { make(a.sub_i32(0, q.?{numerator}), q.?{denominator}) }
+pub fn negate(q: Rational) -> Rational {
+  make(a.sub_i32(0, q.>select { Numerator.get }), q.>select { Denominator.get })
+}
 
 pub fn add(x: Rational, y: Rational) -> Rational {
   make(
   , a.add_i32(
-    , a.mul_i32(x.?{numerator}, y.?{denominator})
-    , a.mul_i32(y.?{numerator}, x.?{denominator})
+    , a.mul_i32(x.>select { Numerator.get }, y.>select { Denominator.get })
+    , a.mul_i32(y.>select { Numerator.get }, x.>select { Denominator.get })
     )
-  , a.mul_i32(x.?{denominator}, y.?{denominator})
+  , a.mul_i32(x.>select { Denominator.get }, y.>select { Denominator.get })
   )
 }
 
 pub fn subtract(x: Rational, y: Rational) -> Rational { add(x, negate(y)) }
 
 pub fn multiply(x: Rational, y: Rational) -> Rational {
-  make(a.mul_i32(x.?{numerator}, y.?{numerator}), a.mul_i32(x.?{denominator}, y.?{denominator}))
+  make(
+  , a.mul_i32(x.>select { Numerator.get }, y.>select { Numerator.get })
+  , a.mul_i32(x.>select { Denominator.get }, y.>select { Denominator.get })
+  )
 }
 
 pub fn divide(x: Rational, y: Rational) -> Rational {
-  make(a.mul_i32(x.?{numerator}, y.?{denominator}), a.mul_i32(x.?{denominator}, y.?{numerator}))
+  make(
+  , a.mul_i32(x.>select { Numerator.get }, y.>select { Denominator.get })
+  , a.mul_i32(x.>select { Denominator.get }, y.>select { Numerator.get })
+  )
 }
 
 pub fn show(q: Rational) -> String {
-  if(integers.eq_i32(q.?{denominator}, 1)) {
-    fmt.int_to_string(q.?{numerator})
+  if(integers.eq_i32(q.>select { Denominator.get }, 1)) {
+    fmt.int_to_string(q.>select { Numerator.get })
   } else {
     text.string_concat(
-    , fmt.int_to_string(q.?{numerator})
-    , text.string_concat("/", fmt.int_to_string(q.?{denominator}))
+    , fmt.int_to_string(q.>select { Numerator.get })
+    , text.string_concat("/", fmt.int_to_string(q.>select { Denominator.get }))
     )
   }
 }

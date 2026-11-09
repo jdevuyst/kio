@@ -17,14 +17,14 @@ if [ "$status" -ne 14 ]; then
   printf 'private_newtype_member_guidance: expected exit 14, got %s\n' "$status" >&2
   exit 1
 fi
-if grep -Fq 'seal' "$scratch/stderr"; then
+if grep -Fq 'get' "$scratch/stderr"; then
   # shellcheck disable=SC2016 # backticks are literal diagnostic text
-  printf 'private_newtype_member_guidance: diagnostic exposed private member `seal`\n' >&2
+  printf 'private_newtype_member_guidance: diagnostic exposed private member `get`\n' >&2
   exit 1
 fi
-if ! grep -Fq 'make' "$scratch/stderr"; then
+if ! grep -Fq 'mk' "$scratch/stderr"; then
   # shellcheck disable=SC2016 # backticks are literal diagnostic text
-  printf 'private_newtype_member_guidance: diagnostic omitted accessible member `make`\n' >&2
+  printf 'private_newtype_member_guidance: diagnostic omitted accessible member `mk`\n' >&2
   exit 1
 fi
 

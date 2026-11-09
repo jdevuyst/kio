@@ -5,6 +5,7 @@ import list/list as l;
 import list_host as integers;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import systems/input as input;
 import systems/matrix as m;
 import systems/rational as q;
@@ -60,9 +61,9 @@ fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots
 }
 
 fn family(original: m.Matrix, variables: I32, pivots: c.List[I32], values: solution.Family) {
-  let particular = values.?{solution.particular};
-  let nullspace = values.?{solution.directions};
-  let free = values.?{solution.free_columns};
+  let particular = values.>select { solution.Particular.get };
+  let nullspace = values.>select { solution.Directions.get };
+  let free = values.>select { solution.Free_columns.get };
   line(
   , "  classification = "
   , if(integers.eq_i32(l.length(pivots), variables)) { "unique" } else { "underdetermined" }
@@ -81,28 +82,28 @@ fn family(original: m.Matrix, variables: I32, pivots: c.List[I32], values: solut
 }
 
 pub fn run(system: input.System) {
-  let name = system.?{input.name};
-  let variables = system.?{input.variables};
-  let original = system.?{input.original};
+  let name = system.>select { input.Name.get };
+  let variables = system.>select { input.Variables.get };
+  let original = system.>select { input.Original.get };
   let reduced = reduction.rref(original, variables);
-  let pivots = reduced.?{reduction.pivots};
+  let pivots = reduced.>select { reduction.Pivots.get };
   let rank = l.length(pivots);
   line("system ", name);
   line("  equations = ", fmt.int_to_string(l.length(original)));
   line("  variables = ", fmt.int_to_string(variables));
   matrix_rows("  original augmented row = ", original);
-  matrix_rows("  reduced augmented row = ", reduced.?{reduction.reduced});
-  line("  row swaps = ", fmt.int_to_string(reduced.?{reduction.swaps}));
+  matrix_rows("  reduced augmented row = ", reduced.>select { reduction.Reduced.get });
+  line("  row swaps = ", fmt.int_to_string(reduced.>select { reduction.Swaps.get }));
   line("  rank(A) = ", fmt.int_to_string(rank));
   match(solution.solve(reduced, variables)) {
     .(success: solution.Solved) {
       line("  rank([A|b]) = ", fmt.int_to_string(rank));
-      family(original, variables, pivots, success.?{solution.solved})
+      family(original, variables, pivots, success.>select { solution.Solved.get })
     };
     .(failure: solution.Inconsistent) {
       line("  rank([A|b]) = ", fmt.int_to_string(a.add_i32(rank, 1)));
       line("  classification = ", "inconsistent");
-      line("  contradiction: 0 = ", q.show(failure.?{solution.inconsistent}))
+      line("  contradiction: 0 = ", q.show(failure.>select { solution.Inconsistent.get }))
     }
   }
 }

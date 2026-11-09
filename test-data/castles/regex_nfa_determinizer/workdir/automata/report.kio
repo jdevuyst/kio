@@ -48,7 +48,7 @@ pub fn cell(value: I32, slot: I32) -> String {
 }
 
 rec(loop) fn set_body(xs: Ints, lead: Bool, acc: String) -> String {
-  match(xs.>List.unpack) {
+  match(xs.>List.get) {
     (
     , .(x: I32, rest: Ints) {
         let .(sep: String) = if(lead) { "" } else { "," };

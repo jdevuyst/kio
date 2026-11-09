@@ -1,0 +1,12 @@
+package later_compact_nominal_member_from_function_body;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

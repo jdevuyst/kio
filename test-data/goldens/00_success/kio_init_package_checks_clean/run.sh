@@ -7,9 +7,7 @@
 # This guards the init template against drifting out of sync with the
 # language. A freshly-init'd package must use the host/bridge model
 # (package `bridge { … }` glob list, `host type` / `host fn` in a
-# module) and check clean. The old `env {}` / `bridge <name> {}` /
-# `export {}` model that `kio check` now rejects would make
-# `kio check` exit non-zero and fail this golden.
+# module) and check clean.
 #
 # `kio init` / `kio check` / `kio fmt --check` are backend-agnostic
 # (check and fmt emit no target), so the case carries no workdir/ and

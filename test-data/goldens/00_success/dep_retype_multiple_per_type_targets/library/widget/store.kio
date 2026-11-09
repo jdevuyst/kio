@@ -1,7 +1,7 @@
 module store;
 
-pub newtype A : . { pub constructor mk_a; pub projector un_a }
+pub type { A: . { pub mk; pub get } }
 
-pub newtype B : . { pub constructor mk_b; pub projector un_b }
+pub type { B: . { pub mk; pub get } }
 
-pub newtype C : . { pub constructor mk_c; pub projector un_c }
+pub type { C: . { pub mk; pub get } }

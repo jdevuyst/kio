@@ -97,8 +97,8 @@ func main() {
 
 	secret := first.Api.MakeSecret(23, 29)
 	checkEvents(&events, "first.NumberIn", "first.CountIn")
-	outer := first.Api.KioType_Outer.Wrap(secret)
-	secret = first.Api.KioType_Outer.Unwrap(outer)
+	outer := first.Api.KioType_Outer.Mk(secret)
+	secret = first.Api.KioType_Outer.Get(outer)
 	secret = first.Api.ThroughOuter(outer)
 	secret = first.Forward.Unwrap(outer)
 	secret = first.Api.Field(artifact.Exp_Api__field_arg0[int, int, any]{SecretSlot: first.Api.Labelled(secret), F1: artifact.Unit{}})

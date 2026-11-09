@@ -4,35 +4,35 @@ import testapi(String);
 import testapi/io(print);
 import testapi/remote as remote;
 
-newtype Pack <U> : U { constructor mk_pack; projector unpack }
+type { Pack <U>: U { mk; get } }
 
-fn pack() -> Pack { Pack.mk_pack(()) }
+fn pack() -> Pack { Pack.mk(()) }
 
 fn module_thunk() { print("module\n") }
 
 fn direct() {
-  Pack.unpack(pack())[. -> .](.[U](_value: U) {
+  Pack.get(pack())[. -> .](.[U](_value: U) {
     .() { print("direct\n") }
   })()
 }
 
 fn sequenced() {
-  Pack.unpack(pack())[. -> .](.[U](_value: U) {
+  Pack.get(pack())[. -> .](.[U](_value: U) {
     print("seq-prefix\n");
     .() { print("seq-tail\n") }
   })()
 }
 
 fn named_module_result() {
-  Pack.unpack(pack())[. -> .](.[U](_value: U) { module_thunk })()
+  Pack.get(pack())[. -> .](.[U](_value: U) { module_thunk })()
 }
 
 fn named_host_result() {
-  Pack.unpack(pack())[String -> .](.[U](_value: U) { print })("host\n")
+  Pack.get(pack())[String -> .](.[U](_value: U) { print })("host\n")
 }
 
 fn qualified() {
-  remote.Pack.unpack(remote.pack())[. -> .](.[U](_value: U) {
+  remote.Pack.get(remote.pack())[. -> .](.[U](_value: U) {
     .() { print("qualified\n") }
   })()
 }

@@ -4,7 +4,7 @@ import macros/sequence(Bind, macro do);
 import testapi(String);
 import testapi/io(print);
 
-newtype Box[A] : A { constructor mk; projector get }
+type { Box[A]: A { mk; get } }
 
 fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 

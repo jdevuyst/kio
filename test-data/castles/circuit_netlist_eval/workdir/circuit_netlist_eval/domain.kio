@@ -2,22 +2,22 @@ module circuit_netlist_eval/domain;
 
 import testapi(Bool, I32);
 
-pub labels State = {
-, stage: I32
-, pin_a: Bool
-, pin_b: Bool
-, pin_c: Bool
-, enable: Bool
-, gate_ab_and: Bool
-, gate_bc_or: Bool
-, gate_enable_a: Bool
-, gate_xor: Bool
-, gate_mask: Bool
-, fanout_probe: Bool
-, probe_carry: Bool
-, probe_alarm: Bool
-, checksum: I32
-, fanout_ok: Bool
-, truth_ok: Bool
-, warning_count: I32
+pub type State = {
+  Stage: I32;
+  Pin_a: Bool;
+  Pin_b: Bool;
+  Pin_c: Bool;
+  Enable: Bool;
+  Gate_ab_and: Bool;
+  Gate_bc_or: Bool;
+  Gate_enable_a: Bool;
+  Gate_xor: Bool;
+  Gate_mask: Bool;
+  Fanout_probe: Bool;
+  Probe_carry: Bool;
+  Probe_alarm: Bool;
+  Checksum: I32;
+  Fanout_ok: Bool;
+  Truth_ok: Bool;
+  Warning_count: I32
 };

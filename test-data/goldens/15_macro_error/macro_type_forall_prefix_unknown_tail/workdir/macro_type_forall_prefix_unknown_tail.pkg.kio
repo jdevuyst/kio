@@ -1,0 +1,10 @@
+package macro_type_forall_prefix_unknown_tail;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

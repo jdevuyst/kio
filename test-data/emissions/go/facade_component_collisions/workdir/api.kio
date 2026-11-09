@@ -1,10 +1,10 @@
 module api;
 
-pub newtype Child : . { pub constructor make_child; pub projector read_child }
+pub type { Child: . { pub mk; pub get } }
 
-pub newtype Foo_bar : . { pub constructor make_x; pub projector _make_x }
+pub type { Foo_bar: . { pub mk; pub get } }
 
-pub newtype _Foo_bar : . { pub constructor mk; pub projector un }
+pub type { _Foo_bar: . { pub mk; pub get } }
 
 pub fn child() { () }
 

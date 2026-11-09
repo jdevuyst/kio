@@ -36,6 +36,7 @@ import forge/text as t;
 import forge/vm(int_eq);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
@@ -51,22 +52,42 @@ fn text(i: Ins) -> String {
   match(i) {
     (
     , .(x: Loadi) {
-        let .(r: Reg, n: I32) = x.?{isa.loadi};
+        let .(r: Reg, n: I32) = x.>select { isa.Loadi.get };
         t.cat4("LOADI  ", isa.reg_name(r), ", ", t.num(n))
       }
-    , .(x: Mov) { t.cat("MOV    ", two(x.?{isa.mov})) }
-    , .(x: Add) { t.cat("ADD    ", two(x.?{isa.add})) }
-    , .(x: Sub) { t.cat("SUB    ", two(x.?{isa.sub})) }
-    , .(x: Mul) { t.cat("MUL    ", two(x.?{isa.mul})) }
-    , .(x: Div) { t.cat("DIV    ", two(x.?{isa.div})) }
-    , .(x: Mod) { t.cat("MOD    ", two(x.?{isa.mod})) }
-    , .(x: Push) { t.cat("PUSH   ", isa.reg_name(x.?{isa.push})) }
-    , .(x: Pop) { t.cat("POP    ", isa.reg_name(x.?{isa.pop})) }
-    , .(x: Emit) { t.cat("EMIT   ", isa.reg_name(x.?{isa.emit})) }
+    , .(x: Mov) {
+        t.cat("MOV    ", two(x.>select { isa.Mov.get }))
+      }
+    , .(x: Add) {
+        t.cat("ADD    ", two(x.>select { isa.Add.get }))
+      }
+    , .(x: Sub) {
+        t.cat("SUB    ", two(x.>select { isa.Sub.get }))
+      }
+    , .(x: Mul) {
+        t.cat("MUL    ", two(x.>select { isa.Mul.get }))
+      }
+    , .(x: Div) {
+        t.cat("DIV    ", two(x.>select { isa.Div.get }))
+      }
+    , .(x: Mod) {
+        t.cat("MOD    ", two(x.>select { isa.Mod.get }))
+      }
+    , .(x: Push) {
+        t.cat("PUSH   ", isa.reg_name(x.>select { isa.Push.get }))
+      }
+    , .(x: Pop) {
+        t.cat("POP    ", isa.reg_name(x.>select { isa.Pop.get }))
+      }
+    , .(x: Emit) {
+        t.cat("EMIT   ", isa.reg_name(x.>select { isa.Emit.get }))
+      }
     , .(_x: Halt) { "HALT" }
-    , .(x: Jmp_addr) { t.cat("JMP    ", t.addr(x.?{isa.jmp_addr})) }
+    , .(x: Jmp_addr) {
+        t.cat("JMP    ", t.addr(x.>select { isa.Jmp_addr.get }))
+      }
     , .(x: Jmpz_addr) {
-        let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
+        let .(r: Reg, at: I32) = x.>select { isa.Jmpz_addr.get };
         t.cat4("JMPZ   ", isa.reg_name(r), ", ", t.addr(at))
       }
     )
@@ -77,8 +98,8 @@ rec(loop) fn marks_at(syms: Symbols, at: I32) {
   match(l.un_cons(syms)) {
     (
     , .(s: Symbol, rest: Symbols) {
-        if(int_eq(s.?{p.sym_addr}, at)) {
-          t.line(t.cat3("  ", s.?{p.sym_name}, ":"));
+        if(int_eq(s.>select { p.Sym_addr.get }, at)) {
+          t.line(t.cat3("  ", s.>select { p.Sym_name.get }, ":"));
           recur marks_at(rest, at)
         } else {
           recur marks_at(rest, at)
@@ -109,7 +130,7 @@ rec(loop) fn joined(syms: Symbols, acc: String, first: Bool) -> String {
   match(l.un_cons(syms)) {
     (
     , .(s: Symbol, rest: Symbols) {
-        let entry = t.cat3(s.?{p.sym_name}, "=", t.addr(s.?{p.sym_addr}));
+        let entry = t.cat3(s.>select { p.Sym_name.get }, "=", t.addr(s.>select { p.Sym_addr.get }));
         let next = if(first) { entry } else { t.cat3(acc, " ", entry) };
         recur joined(rest, next, .f)
       }

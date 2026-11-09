@@ -1,0 +1,48 @@
+module main;
+
+import __comptime__;
+
+type Start = __Type__ & . & . & . & .;
+
+type Next = __Type__ & __Type__;
+
+type Fuel = Start | Next;
+
+pure fn retain_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, target: __Type__
+, source: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let t = __type_product__(ct, __type_unit__(ct), target);
+  let selected =
+    __structural_recur__(ct)[Fuel][__Checked_term__][__Checked_term__](
+    , __left__[Start][Next]((t, (), (), (), ()))
+    , source
+    , .(recur: (Fuel & __Checked_term__) -> __Checked_term__, fuel: Fuel, input: __Checked_term__) -> __Checked_term__ {
+        __either__[Start][Next][__Checked_term__](
+        , fuel
+        , .(first: Start) -> __Checked_term__ {
+            let item = __fst__[__Type__][. & . & . & .](first);
+            recur(__right__[Start][Next]((item, item)), input)
+          }
+        , .(_last: Next) -> __Checked_term__ { input }
+        )
+      }
+    );
+  (selected, fills)
+}
+
+macro retain : [Source] Source -> Source { impl(fills) retain_impl }
+
+fn inferred() {
+  let selected = retain(.() { ((), (), (), (), ()) });
+  let _ = selected();
+  ()
+}
+
+fn explicit() {
+  let selected = retain(.() -> . & . & . & . & . { ((), (), (), (), ()) });
+  let _ = selected();
+  ()
+}

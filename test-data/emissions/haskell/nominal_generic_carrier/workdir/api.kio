@@ -1,6 +1,6 @@
 module api;
 
-pub labels { some[A]: A };
+pub type { Some[A]: A }
 
 pub type Maybe[A] = Some[A] | .;
 

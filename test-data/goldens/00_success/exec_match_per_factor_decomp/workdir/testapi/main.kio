@@ -5,17 +5,17 @@ import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 import testapi/io(print);
 
-newtype A : I32 { pub constructor mk_a; pub projector a }
+type { A: I32 { pub mk; pub get } }
 
-newtype B : I32 { pub constructor mk_b; pub projector b }
+type { B: I32 { pub mk; pub get } }
 
-newtype C : I32 { pub constructor mk_c; pub projector c }
+type { C: I32 { pub mk; pub get } }
 
-newtype D : I32 { pub constructor mk_d; pub projector d }
+type { D: I32 { pub mk; pub get } }
 
-newtype E : I32 { pub constructor mk_e; pub projector e }
+type { E: I32 { pub mk; pub get } }
 
-newtype F : I32 { pub constructor mk_f; pub projector f }
+type { F: I32 { pub mk; pub get } }
 
 // Stress: a 3-way product of binary sums has 8 distinct atomic
 // leaves under spine-walk per-factor decomposition (one for each
@@ -43,6 +43,6 @@ fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
 
 pub fn main() {
   // Build (B, C, F) — exercises the "bcf" clause.
-  let p = (widen_sum(B.mk_b(0))[A | B], widen_sum(C.mk_c(0))[C | D], widen_sum(F.mk_f(0))[E | F]);
+  let p = (widen_sum(B.mk(0))[A | B], widen_sum(C.mk(0))[C | D], widen_sum(F.mk(0))[E | F]);
   print(handle(p))
 }

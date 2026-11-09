@@ -1245,7 +1245,7 @@ elif PROTOCOL == "generic-nominal-opaque-roundtrip":
     main = _base("main")
     def print_number(value):
         _print(str(_native_role("testapi", "I32", value)) + "\n")
-    nominal = _type(main, "Wrapped").mkWrapped(_public_role("testapi", "I32", 37))
+    nominal = _type(main, "Wrapped").mk(_public_role("testapi", "I32", 37))
     print_number(main.read(_carrier_out({box_frame}, nominal)))
     kio = main.make(_public_role("testapi", "I32", 61))
     print_number(main.read(kio))
@@ -1275,7 +1275,7 @@ elif PROTOCOL == "opaque-compound-roundtrip":
     if calls != [2]:
         raise RuntimeError("opaque callback count changed")
     print_number(main.call(main.makeCallable(), i32(47)))
-    nominal = _type(main, "Wrapped").mkWrapped({{"left": i32(41), "right": i32(43)}})
+    nominal = _type(main, "Wrapped").mk({{"left": i32(41), "right": i32(43)}})
     for value in (main.readNominal(box(nominal)), main.readNominal(main.makeNominal())):
         _print(str(native_i32(value["left"])) + " " + str(native_i32(value["right"])) + "\n")
 elif PROTOCOL == "export-structural-roundtrip":
@@ -1314,7 +1314,7 @@ elif PROTOCOL == "host-existential-roundtrip":
         def open_payload(payload):
             counts[1] += 1
             return payload["right"](payload["left"])
-        return _type(_base("types"), "Packed").readPacked(value).advance()(
+        return _type(_base("types"), "Packed").get(value).advance()(
             _stage(lambda: module.kio_lift(open_payload)))
     result = _base("main").exercise()
     if type(result["left"]) is not int or type(result["right"]) is not int or result["left"] != 37 or result["right"] != 83 or counts != [2, 2]:
@@ -1334,9 +1334,9 @@ elif PROTOCOL == "export-functor-dict-roundtrip":
     to_text = module.kio_lift(to_text)
     to_integer = module.kio_lift(to_integer)
     def wrap(value):
-        return box.mkBox({{"left": value, "right": None}})
+        return box.mk({{"left": value, "right": None}})
     def unwrap(value):
-        row = box.unBox(value)
+        row = box.get(value)
         if row["right"] is not None:
             raise RuntimeError("functor box Unit changed")
         return row["left"]
@@ -1346,7 +1346,7 @@ elif PROTOCOL == "export-functor-dict-roundtrip":
     dictionary = main.echoFunctor(main.boxFunctor())
     check(unwrap(main.applyFunctor(dictionary, to_text, wrap(42))), "v:42")
     check(unwrap(main.applyFunctor(dictionary, to_integer, wrap("apple"))), 5)
-    mapping = functor.fmap(dictionary)
+    mapping = functor.get(dictionary)
     check(unwrap(mapping.advance().advance()({{"left": to_text, "right": wrap(7)}})), "v:7")
     check(unwrap(mapping.advance().advance()({{"left": to_integer, "right": wrap("pear")}})), 4)
     check(integers, [42, 7])
@@ -1354,7 +1354,7 @@ elif PROTOCOL == "export-functor-dict-roundtrip":
     _print("functor dictionary ok\n")
 elif PROTOCOL == "export-type-roundtrip":
     pair = _type(_base("types"), "Pair")
-    payload = pair.unPair(pair.mkPair({{ "left": "export-type-left", "right": "export-type-right" }}))
+    payload = pair.get(pair.mk({{ "left": "export-type-left", "right": "export-type-right" }}))
     _print(str(payload["left"]) + "\n")
     _print(str(payload["right"]) + "\n")
 elif PROTOCOL == "export-newtype-sum-roundtrip":
@@ -1363,8 +1363,8 @@ elif PROTOCOL == "export-newtype-sum-roundtrip":
 elif PROTOCOL == "export-newtype-scalar-roundtrip":
     main = _base("main")
     wrap = _type(main, "Wrap")
-    out = main.bump(wrap.mkWrap(7))
-    _print(str(wrap.unWrap(out)) + "\n")
+    out = main.bump(wrap.mk(7))
+    _print(str(wrap.get(out)) + "\n")
 elif PROTOCOL == "newtype-visibility-facade":
     facade = _base("types")
     left = _base("left")
@@ -1373,45 +1373,45 @@ elif PROTOCOL == "newtype-visibility-facade":
     native_i32 = lambda value: _native_role("testapi", "I32", value)
     a = facade.makeA(i32(11))
     b = facade.makeB(i32(22))
-    c = _type(facade, "Constructor_only").makeConstructorOnly(i32(33))
+    c = _type(facade, "Constructor_only").mk(i32(33))
     p = facade.makeProjectorOnlyValue(i32(44))
-    d = _type(facade, "Both_public").makeBothPublic(i32(55))
+    d = _type(facade, "Both_public").mk(i32(55))
     l = left.make(i32(66))
     r = right.make(i32(77))
     out_a = facade.readA(a)
     out_b = facade.readB(b)
     out_c = facade.readConstructorOnlyValue(c)
-    out_p = _type(facade, "Projector_only").readProjectorOnly(p)
-    out_d = _type(facade, "Both_public").readBothPublic(d)
-    out_l = _type(left, "Shared").readShared(_type(left, "Shared").makeShared(left.read(l)))
-    out_r = _type(right, "Shared").readShared(_type(right, "Shared").makeShared(right.read(r)))
-    constructor_pair = _type(facade, "Constructor_pair").makeConstructorPair(
+    out_p = _type(facade, "Projector_only").get(p)
+    out_d = _type(facade, "Both_public").get(d)
+    out_l = _type(left, "Shared").get(_type(left, "Shared").mk(left.read(l)))
+    out_r = _type(right, "Shared").get(_type(right, "Shared").mk(right.read(r)))
+    constructor_pair = _type(facade, "Constructor_pair").mk(
         {{ "left": i32(81), "right": i32(82) }})
     constructor_pair_out = facade.readConstructorPairValue(constructor_pair)
     projector_pair = facade.makeProjectorPairValue(constructor_pair_out)
-    projector_pair_out = _type(facade, "Projector_pair").readProjectorPair(projector_pair)
+    projector_pair_out = _type(facade, "Projector_pair").get(projector_pair)
     constructor_generic_out = facade.readConstructorGenericValue(
-        _type(facade, "Constructor_generic").makeConstructorGeneric(i32(85)))
-    projector_generic_out = _type(facade, "Projector_generic").readProjectorGeneric(
+        _type(facade, "Constructor_generic").mk(i32(85)))
+    projector_generic_out = _type(facade, "Projector_generic").get(
         facade.makeProjectorGenericValue(i32(86)))
-    packed = _type(facade, "Packed_function").makePackedFunction(module.kio_lift(
+    packed = _type(facade, "Packed_function").mk(module.kio_lift(
         lambda value: i32(native_i32(value["left"]) + native_i32(value["right"]))))
-    unpacked = _type(facade, "Packed_function").readPackedFunction(packed)
+    unpacked = _type(facade, "Packed_function").get(packed)
     packed_out = unpacked(constructor_pair_out)
-    existential_out = _type(facade, "Existential_unit").readExistentialUnit(
+    existential_out = _type(facade, "Existential_unit").get(
         facade.makeExistentialUnitValue()).advance()(_stage(lambda: module.kio_lift(lambda _value: i32(89))))
-    existential_empty_out = _type(facade, "Existential_empty").readExistentialEmpty(
+    existential_empty_out = _type(facade, "Existential_empty").get(
         facade.makeExistentialEmptyValue()).advance()(_stage(lambda: module.kio_lift(lambda _unit: i32(90))))
-    recursive_both = _type(facade, "Recursive_both").makeRecursiveBoth(
+    recursive_both = _type(facade, "Recursive_both").mk(
         facade.recursiveBothBasePayload())
     recursive_both_out = facade.recursiveBothPayloadIsBase(
-        _type(facade, "Recursive_both").readRecursiveBoth(recursive_both))
-    recursive_constructor = _type(facade, "Recursive_constructor").makeRecursiveConstructor(
+        _type(facade, "Recursive_both").get(recursive_both))
+    recursive_constructor = _type(facade, "Recursive_constructor").mk(
         facade.recursiveConstructorBasePayload())
     recursive_constructor_out = facade.recursiveConstructorPayloadIsBase(
         facade.readRecursiveConstructorValue(recursive_constructor))
     recursive_projector_out = facade.recursiveProjectorPayloadIsBase(
-        _type(facade, "Recursive_projector").readRecursiveProjector(
+        _type(facade, "Recursive_projector").get(
             facade.makeRecursiveProjectorBase()))
     constructor_inputs = []
     def constructor_step(value):
@@ -1419,10 +1419,10 @@ elif PROTOCOL == "newtype-visibility-facade":
         constructor_inputs.append(seed)
         return i32(seed + 3)
     constructor_step = module.kio_lift(constructor_step)
-    constructed = _type(facade, "Constructor_spread").makeConstructorSpread(_stage(lambda: constructor_step))
+    constructed = _type(facade, "Constructor_spread").mk(_stage(lambda: constructor_step))
     if native_i32(facade.invokeConstructorSpreadI32(constructed, i32(101))) != 104 or native_i32(facade.invokeConstructorSpreadUnit(constructed, i32(102))) != 105 or constructor_inputs != [101, 102]:
         raise RuntimeError("constructor-only polymorphic callback changed")
-    projected = _type(facade, "Projector_spread").readProjectorSpread(facade.makeProjectorSpreadValue())
+    projected = _type(facade, "Projector_spread").get(facade.makeProjectorSpreadValue())
     if native_i32(projected.advance()({{"left": i32(111), "right": i32(1)}})) != 111 or native_i32(projected.advance()({{"left": i32(112), "right": None}})) != 112:
         raise RuntimeError("projector-only polymorphic callback changed")
     spread_payloads = []
@@ -1437,19 +1437,19 @@ elif PROTOCOL == "newtype-visibility-facade":
             raise RuntimeError("existential payload is not callable")
         recursive_payloads.append(value)
         return i32(92)
-    opened_spread = _type(facade, "Existential_spread").readExistentialSpread(facade.makeExistentialSpreadValue()).advance()(_stage(lambda: module.kio_lift(open_spread)))
-    opened_recursive = _type(facade, "Recursive_existential_function").readRecursiveExistentialFunction(facade.makeRecursiveExistentialFunctionValue()).advance()(_stage(lambda: module.kio_lift(open_recursive)))
+    opened_spread = _type(facade, "Existential_spread").get(facade.makeExistentialSpreadValue()).advance()(_stage(lambda: module.kio_lift(open_spread)))
+    opened_recursive = _type(facade, "Recursive_existential_function").get(facade.makeRecursiveExistentialFunctionValue()).advance()(_stage(lambda: module.kio_lift(open_recursive)))
     if native_i32(opened_spread) != 91 or native_i32(opened_recursive) != 92 or len(spread_payloads) != 1 or len(recursive_payloads) != 1:
         raise RuntimeError("existential continuation count changed")
     cycle_outer = facade.makeVisibleCycleOuterBase()
     cycle = _type(facade, "Visible_cycle_outer")
-    cycle_inner = cycle.readVisibleCycleOuter(cycle_outer)
-    if type(cycle.readVisibleCycleOuter(cycle.makeVisibleCycleOuter(cycle_inner))) is not type(cycle_inner):
+    cycle_inner = cycle.get(cycle_outer)
+    if type(cycle.get(cycle.mk(cycle_inner))) is not type(cycle_inner):
         raise RuntimeError("hidden carrier did not cut the visible outer recursion")
     comptime_outer = facade.makeVisibleComptimeOuterBase()
     comptime = _type(facade, "Visible_comptime_outer")
-    comptime_inner = comptime.readVisibleComptimeOuter(comptime_outer)
-    if type(comptime.readVisibleComptimeOuter(comptime.makeVisibleComptimeOuter(comptime_inner))) is not type(comptime_inner):
+    comptime_inner = comptime.get(comptime_outer)
+    if type(comptime.get(comptime.mk(comptime_inner))) is not type(comptime_inner):
         raise RuntimeError("hidden compile-time payload changed the visible outer boundary")
     for reader, wrong in [(facade.readA, b), (facade.readB, a)]:
         try:
@@ -1525,17 +1525,17 @@ elif PROTOCOL == "public-word-names":
     _print(str(word_api._readWord_()) + "\n")
     _print(str(word_api.readWord__()) + "\n")
     word_nodes = word_api.KioModule_wordNodes
-    boxed = word_nodes.KioType__uWordBox_u_u.wrapWord(55)
-    if word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed) != 55:
+    boxed = word_nodes.KioType__uWordBox_u_u.mk(55)
+    if word_nodes.KioType__uWordBox_u_u.get(boxed) != 55:
         raise RuntimeError("incorrect public nominal wrapper payload")
-    _print(str(word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed)) + "\n")
+    _print(str(word_nodes.KioType__uWordBox_u_u.get(boxed)) + "\n")
     _print(str(word_nodes.keepWord(66)) + "\n")
     other_nodes = word_api.KioModule_otherNodes
-    pair = word_api.keepPair({{"left": word_nodes.KioType__uWordBox_u_u.wrapWord(77), "right": other_nodes.KioType__uWordBox_u_u.wrapWord(88)}})
-    _print(str(word_nodes.KioType__uWordBox_u_u.unwrapWord(pair["left"])) + "\n")
-    _print(str(other_nodes.KioType__uWordBox_u_u.unwrapWord(pair["right"])) + "\n")
+    pair = word_api.keepPair({{"left": word_nodes.KioType__uWordBox_u_u.mk(77), "right": other_nodes.KioType__uWordBox_u_u.mk(88)}})
+    _print(str(word_nodes.KioType__uWordBox_u_u.get(pair["left"])) + "\n")
+    _print(str(other_nodes.KioType__uWordBox_u_u.get(pair["right"])) + "\n")
     try:
-        other_nodes.KioType__uWordBox_u_u.unwrapWord(pair["left"])
+        other_nodes.KioType__uWordBox_u_u.get(pair["left"])
     except TypeError:
         pass
     else:
@@ -1561,29 +1561,29 @@ elif PROTOCOL == "export-compound-input-once":
     inner_type = _type(api, "Inner")
     outer_type = _type(api, "Outer")
     choice_type = _type(api, "Choice")
-    inner = inner_type.inner({{"left": 11, "right": 13}})
-    outer = outer_type.outer({{"left": "nest", "right": inner}})
-    nested = outer_type.unOuter(api.echoOuter(outer))
-    nested_inner = inner_type.unInner(nested["right"])
+    inner = inner_type.mk({{"left": 11, "right": 13}})
+    outer = outer_type.mk({{"left": "nest", "right": inner}})
+    nested = outer_type.get(api.echoOuter(outer))
+    nested_inner = inner_type.get(nested["right"])
     line(nested["left"])
     line(nested_inner["left"])
     line(nested_inner["right"])
     for index, choice in enumerate([api.first(17), api.middle(19, 23), api.last("choice", 29, 31)]):
-        payload = choice_type.unChoice(choice)
-        rebuilt = choice_type.choice(payload)
-        returned = choice_type.unChoice(api.echoChoice(rebuilt))
+        payload = choice_type.get(choice)
+        rebuilt = choice_type.mk(payload)
+        returned = choice_type.get(api.echoChoice(rebuilt))
         arm, value = _sum_view(returned, 3)
         if arm != index:
             raise RuntimeError("compound-input-once: selected arm changed")
         if arm == 0:
             line(value)
         elif arm == 1:
-            inner = inner_type.unInner(value)
+            inner = inner_type.get(value)
             line(inner["left"])
             line(inner["right"])
         else:
-            outer = outer_type.unOuter(value)
-            inner = inner_type.unInner(outer["right"])
+            outer = outer_type.get(value)
+            inner = inner_type.get(outer["right"])
             line(outer["left"])
             line(inner["left"])
             line(inner["right"])
@@ -1616,12 +1616,12 @@ elif PROTOCOL == "returned-forall-host-failure":
 elif PROTOCOL == "export-newtype-ignored-argument-roundtrip":
     main = _base("main")
     wrapped = main.fromI32(7)
-    constant = _type(main, "Wrap").unWrap(wrapped)
-    scalar = _type(main, "Const").unConst(constant)
+    constant = _type(main, "Wrap").get(wrapped)
+    scalar = _type(main, "Const").get(constant)
     if type(scalar) is not int or scalar != 7:
         raise RuntimeError("ignored type argument changed the public newtype carrier")
     try:
-        _type(main, "Wrap").unWrap({{"Wrap": {{"Const": 7}}}})
+        _type(main, "Wrap").get({{"Wrap": {{"Const": 7}}}})
     except TypeError:
         pass
     else:
@@ -1631,9 +1631,9 @@ elif PROTOCOL == "recursive-newtype-boundary":
     main = _base("main")
     root_type = _type(main, "Root")
     payload = main.basePayload()
-    root = root_type.makeRoot(payload)
+    root = root_type.mk(payload)
     kept = main.keep(root)
-    projected = root_type.readRoot(kept)
+    projected = root_type.get(kept)
     _print(str(main.acceptPayload(projected)) + "\n")
 elif PROTOCOL == "facade-selector-collisions":
     api = _base("api")
@@ -1650,8 +1650,8 @@ elif PROTOCOL == "facade-selector-collisions":
     getattr(api, MODULE_SELECTORS["child"]).value()
     _print("api/child module\n")
     child_type = _type(api, "Child")
-    child = child_type.makeChild(30)
-    child_type.readChild(child)
+    child = child_type.mk(30)
+    child_type.get(child)
     _print("api.Child type\n")
 elif PROTOCOL == "module-alias-scope-collision":
     a = _base("a")
@@ -2091,14 +2091,14 @@ mod tests {
             "word_api._readWord_()",
             "word_api.readWord__()",
             "word_nodes = word_api.KioModule_wordNodes",
-            "word_nodes.KioType__uWordBox_u_u.wrapWord(55)",
-            "word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
+            "word_nodes.KioType__uWordBox_u_u.mk(55)",
+            "word_nodes.KioType__uWordBox_u_u.get(boxed)",
             "word_nodes.keepWord(66)",
             "other_nodes = word_api.KioModule_otherNodes",
-            "pair = word_api.keepPair({\"left\": word_nodes.KioType__uWordBox_u_u.wrapWord(77), \"right\": other_nodes.KioType__uWordBox_u_u.wrapWord(88)})",
-            "word_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"left\"])",
-            "other_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"right\"])",
-            "try:\n        other_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"left\"])\n    except TypeError:\n        pass\n    else:\n        raise RuntimeError(\"public same-leaf nominal identities collapsed\")",
+            "pair = word_api.keepPair({\"left\": word_nodes.KioType__uWordBox_u_u.mk(77), \"right\": other_nodes.KioType__uWordBox_u_u.mk(88)})",
+            "word_nodes.KioType__uWordBox_u_u.get(pair[\"left\"])",
+            "other_nodes.KioType__uWordBox_u_u.get(pair[\"right\"])",
+            "try:\n        other_nodes.KioType__uWordBox_u_u.get(pair[\"left\"])\n    except TypeError:\n        pass\n    else:\n        raise RuntimeError(\"public same-leaf nominal identities collapsed\")",
         ] {
             assert!(script.contains(literal), "{script}");
         }

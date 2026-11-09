@@ -49,6 +49,8 @@ build {
 }
 
 bridge {
+  middle;
+  origin;
   testapi;
   testapi/**
 }

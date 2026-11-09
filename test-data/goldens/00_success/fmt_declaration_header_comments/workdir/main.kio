@@ -23,11 +23,11 @@ equal() // marker_13
 
 /// Labels documentation.
 pub // marker_14
-labels { ready: . };
+type { Ready: . };
 
 /// Forward documentation.
 pub // marker_15
-type {forward} = {ready};
+type Forward = Ready;
 
 /// Literal documentation.
 pub // marker_16

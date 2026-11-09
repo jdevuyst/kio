@@ -78,7 +78,7 @@ mod facade_consumer_tests {
             /// HOST-FN-DOC\n\
             host fn effect() -> .;\n\
             /// OPAQUE-DOC\n\
-            pub newtype Token : . { pub constructor make; projector read; };\n\
+            pub type { Token: . { pub mk; get; }; };\n\
             /// EXPORT-DOC big.Int\n\
             pub fn call() -> . { effect() }\n\
             /// PRIVATE-DOC\n\
@@ -460,11 +460,11 @@ mod facade_consumer_tests {
     fn stage_selection_uses_lexical_names_and_only_semantic_captures() {
         let package = package(
             "module api; \
-             pub newtype Box[A] : A { pub constructor make; projector open; }; \
-             pub newtype Poly : [B] B -> Box[B] { pub constructor make; pub projector open; }; \
-             pub newtype Keep[A] : [C] C -> (A & C) { pub constructor make; pub projector open; }; \
-             pub fn outer[A](a: A) -> Poly { Poly.make(.[B](b: B) { Box.make(b) }) } \
-             pub fn sparse[A][B](a: A, b: B) -> Keep[B] { Keep.make(.[C](c: C) { (b, c) }) }",
+             pub type { Box[A]: A { pub mk; get; }; }; \
+             pub type { Poly: [B] B -> Box[B] { pub mk; pub get; }; }; \
+             pub type { Keep[A]: [C] C -> (A & C) { pub mk; pub get; }; }; \
+             pub fn outer[A](a: A) -> Poly { Poly.mk(.[B](b: B) { Box.mk(b) }) } \
+             pub fn sparse[A][B](a: A, b: B) -> Keep[B] { Keep.mk(.[C](c: C) { (b, c) }) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit selected transparent stages");
         assert!(
@@ -565,7 +565,7 @@ mod facade_consumer_tests {
         let package = package(
             "module api; host type Number role(i32); host type Vault[A]; \
              host fn store[A](value: Vault[A]) -> Vault[A]; \
-             pub newtype Box[A] : A { pub constructor make; projector open; }; \
+             pub type { Box[A]: A { pub mk; get; }; }; \
              pub fn round(value: Box[Number]) -> Box[Number] { value } \
              pub fn identity[A](value: A) -> A { value }",
         );
@@ -611,12 +611,12 @@ mod facade_consumer_tests {
 
     #[test]
     fn generic_public_member_preparation_is_owned_by_host_declarations() {
-        let package = package(
+        let private_package = package(
             "module api; host type Number role(i32); host type Vault[A]; \
-             pub newtype Applied[*F][A] : F[A] { pub constructor make; projector open; };",
+             pub type { Applied[*F][A]: F[A] { pub mk; get; }; };",
         );
         let emitted =
-            lower_package(&package, "pkg").expect("emit constructor-only host preparation");
+            lower_package(&private_package, "pkg").expect("emit constructor-only host preparation");
         assert!(emitted.ffi_go.contains("func PrepareHost_api_Number["));
         assert!(emitted.ffi_go.contains("func PrepareHost_api_Vault["));
         assert!(emitted.ffi_go.contains("value KioHostType_api__Vault[KioI0]) Prepared[KioIndexApply_ASS[KioIndexNominal_M1_C3_apiN5_Vault, KioI0]]"));
@@ -626,7 +626,15 @@ mod facade_consumer_tests {
                 .contains("type Index_api__Number[Native any] = ")
         );
         assert!(emitted.shapes_go.contains("type Index_api__Vault = "));
-        assert!(!emitted.pkg_go.contains("Api__open"));
+        assert!(!emitted.pkg_go.contains("Api__Applied_get"));
+
+        let public_projector = package(
+            "module api; host type Number role(i32); host type Vault[A]; \
+             pub type { Applied[*F][A]: F[A] { pub mk; pub get; }; };",
+        );
+        let public_emitted =
+            lower_package(&public_projector, "pkg").expect("emit public projector control");
+        assert!(public_emitted.pkg_go.contains("Api__Applied_get"));
     }
 
     #[test]
@@ -769,9 +777,7 @@ mod facade_consumer_tests {
 
     #[test]
     fn opaque_newtype_keeps_a_handle_without_callable_members() {
-        let package = package(
-            "module api; pub newtype Token : . { constructor make_token; projector read_token; };",
-        );
+        let package = package("module api; pub type { Token: . { mk; get; }; };");
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
             emitted
@@ -792,12 +798,12 @@ mod facade_consumer_tests {
         let package = package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Wrapped_sum : I32 | I32 { \
-               pub constructor make_sum; pub projector read_sum; \
-             }; \
-             pub newtype Wrapped_fn : I32 -> I32 { \
-               pub constructor make_fn; pub projector read_fn; \
-             }; \
+             pub type { Wrapped_sum: I32 | I32 { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Wrapped_fn: I32 -> I32 { \
+               pub mk; pub get; \
+             }; }; \
              host fn consume(sum: Wrapped_sum, callback: Wrapped_fn) -> .;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit transparent aliases");
@@ -1018,7 +1024,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Token : . { pub constructor make_token; projector read_token; };
+        type { Token: . { pub mk; get; }; };
         host fn old(value: Token) -> .;
       }
     }
@@ -1195,27 +1201,31 @@ v(2) {
     fn generic_newtype_heads_replay_and_church_payload_stays_an_ordinary_projector() {
         let package = package(
             "module api; \
-             pub newtype Generic[A] : A { \
-               pub constructor make_generic; pub projector read_generic; \
-             }; \
-             pub newtype Church : [R] ([Hidden] . -> R) -> R { \
-               pub constructor make_church; pub projector read_church; \
-             };",
+             pub type { Generic[A]: A { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Church: [R] ([Hidden] . -> R) -> R { \
+               pub mk; pub get; \
+             }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit generic newtype members");
 
-        let make_generic = emitted_method(&emitted.pkg_go, "CallExp_Api__Generic_makeGeneric");
+        let make_generic = emitted_method(&emitted.pkg_go, "CallExp_Api__Generic_mk");
         assert!(make_generic.contains(".(func() any)()"), "{make_generic}");
 
-        let read_church = emitted_method(&emitted.pkg_go, "ReadChurch");
+        let read_church = emitted_method(&emitted.pkg_go, "Get");
         let header = read_church.lines().next().expect("Church projector header");
-        assert!(header.contains("ReadChurch(arg0 "), "{header}");
+        assert!(
+            header.contains("func (ns exportNs_M_api__T_Church) Get("),
+            "{header}"
+        );
+        assert!(header.contains("Get(arg0 "), "{header}");
         assert!(!header.contains(", arg1 "), "{header}");
         assert!(header.contains(") TypeStage["), "{header}");
         for alias in [
-            "type Exp_Api__Church_readChurch_ret = TypeStage[",
-            "type Exp_Api__Church_readChurch_ret_result_cbarg0 = func(",
-            "type Exp_Api__Church_readChurch_ret_result_cbret = Value",
+            "type Exp_Api__Church_get_ret = TypeStage[",
+            "type Exp_Api__Church_get_ret_result_cbarg0 = func(",
+            "type Exp_Api__Church_get_ret_result_cbret = Value",
         ] {
             assert!(
                 emitted.ffi_go.contains(alias),
@@ -1224,7 +1234,7 @@ v(2) {
             );
         }
         assert!(
-            !emitted.ffi_go.contains("Exp_Api__Church_readChurch_arg1"),
+            !emitted.ffi_go.contains("Exp_Api__Church_get_arg1"),
             "{}",
             emitted.ffi_go
         );
@@ -1234,19 +1244,23 @@ v(2) {
     fn existential_projectors_share_one_grouped_signature_alias_and_invocation_cut() {
         let package = package(
             "module api; \
-             pub newtype Single <Hidden> : Hidden { \
-               pub constructor make_single; pub projector read_single; \
-             }; \
-             pub newtype Packed[A] <Hidden> <Secret> : A & Hidden & Secret { \
-               pub constructor make_packed; pub projector read_packed; \
-             };",
+             pub type { Single <Hidden>: Hidden { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { \
+               pub mk; pub get; \
+             }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit existential projectors");
 
-        let single = emitted_method(&emitted.pkg_go, "ReadSingle");
+        let single = emitted_method(&emitted.pkg_go, "Get");
         let single_header = single.lines().next().expect("Single projector header");
         assert!(
-            single_header.contains("ReadSingle(arg0 ")
+            single_header.contains("func (ns exportNs_M_api__T_Single) Get("),
+            "{single_header}"
+        );
+        assert!(
+            single_header.contains("Get(arg0 ")
                 && single_header.contains(", arg1 func() func(Value) Value) Value"),
             "{single_header}"
         );
@@ -1265,10 +1279,10 @@ v(2) {
         );
         assert_selected_result_is_returned(single);
 
-        let packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_readPacked");
+        let packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_get");
         let packed_header = packed.lines().next().expect("Packed projector header");
         assert!(
-            packed_header.contains("CallExp_Api__Packed_readPacked[")
+            packed_header.contains("CallExp_Api__Packed_get[")
                 && packed_header.contains(
                     ", arg1 func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value) Value"
                 ),
@@ -1300,26 +1314,26 @@ v(2) {
             "{packed}"
         );
         assert_selected_result_is_returned(packed);
-        let make_packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_makePacked");
+        let make_packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_mk");
         assert!(
             make_packed.matches(".(func() any)()").count() >= 3,
             "{make_packed}"
         );
 
         for alias in [
-            "type Exp_Api__Single_readSingle_arg0 = ",
-            "type Exp_Api__Single_readSingle_arg1 = func() func(Value) Value",
-            "type Exp_Api__Single_readSingle_arg1_result_cbarg0 = Value",
-            "type Exp_Api__Single_readSingle_arg1_result_cbret = Value",
-            "type Exp_Api__Single_readSingle_ret = Value",
-            "type Exp_Api__Packed_readPacked_arg0[KioI0 KioIndexKind_S] = ",
-            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field0[KioI0 KioIndexKind_S] = Prepared[KioI0]",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field1[KioI0 KioIndexKind_S] = Value",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field2[KioI0 KioIndexKind_S] = Value",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbret[KioI0 KioIndexKind_S] = Value",
-            "type Exp_Api__Packed_readPacked_ret[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Single_get_arg0 = ",
+            "type Exp_Api__Single_get_arg1 = func() func(Value) Value",
+            "type Exp_Api__Single_get_arg1_result_cbarg0 = Value",
+            "type Exp_Api__Single_get_arg1_result_cbret = Value",
+            "type Exp_Api__Single_get_ret = Value",
+            "type Exp_Api__Packed_get_arg0[KioI0 KioIndexKind_S] = ",
+            "type Exp_Api__Packed_get_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
+            "type Exp_Api__Packed_get_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
+            "type Exp_Api__Packed_get_arg1_result_result_cbarg0_field0[KioI0 KioIndexKind_S] = Prepared[KioI0]",
+            "type Exp_Api__Packed_get_arg1_result_result_cbarg0_field1[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_get_arg1_result_result_cbarg0_field2[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_get_arg1_result_result_cbret[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_get_ret[KioI0 KioIndexKind_S] = Value",
         ] {
             assert!(
                 emitted.ffi_go.contains(alias),
@@ -1334,12 +1348,20 @@ v(2) {
         let package = package(
             "module api; \
              pub type Erased[A] = .; \
-             pub newtype Empty <Hidden> : Erased[Hidden] { \
-               pub constructor make_empty; pub projector read_empty; \
-             };",
+             pub type { Empty <Hidden>: Erased[Hidden] { \
+               pub mk; pub get; \
+             }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit nullary existential projector");
-        let projector = emitted_method(&emitted.pkg_go, "ReadEmpty");
+        let projector = emitted_method(&emitted.pkg_go, "Get");
+        assert!(
+            projector
+                .lines()
+                .next()
+                .unwrap()
+                .contains("func (ns exportNs_M_api__T_Empty) Get("),
+            "{projector}"
+        );
 
         assert!(
             projector.contains("(__kio_member_continuation).(func() any)()"),
@@ -3976,9 +3998,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             | Expr::Call { ext, .. }
             | Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
-            | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }

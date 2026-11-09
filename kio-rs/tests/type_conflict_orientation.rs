@@ -65,7 +65,7 @@ fn independent_results_report_the_incoming_expression_as_found() {
 fn ordinary_shared_arguments_keep_their_directional_requirement() {
     for (arguments, expected, found) in [("(), W.mk(())", ".", "W"), ("W.mk(()), ()", "W", ".")] {
         let source = format!(
-            "module main;\nnewtype W : . {{ constructor mk; projector get; }};\nfn same[A](a: A, b: A) -> A {{ a }}\nfn caller() {{ let result = same({arguments}); () }}\n"
+            "module main;\ntype {{ W: . {{ mk; get; }} }};\nfn same[A](a: A, b: A) -> A {{ a }}\nfn caller() {{ let result = same({arguments}); () }}\n"
         );
         let (status, stderr) = check(&source);
         assert_eq!(status, 14, "{stderr}");

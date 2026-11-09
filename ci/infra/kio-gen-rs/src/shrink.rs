@@ -34,7 +34,7 @@ pub fn minimize_body(prog: &Program) -> Program {
         // generation-time bit that controls generated helper content) stays
         // pinned to the parent's value: the shrunk program inherits
         // the parent's label-wrapper exposure regardless of whether
-        // the new body actually uses labels.
+        // the new body actually uses surface forms.
         uses_surface: prog.uses_surface && term_uses_surface_forms(&body),
         surface_mode: prog.surface_mode,
         body,
@@ -44,7 +44,7 @@ pub fn minimize_body(prog: &Program) -> Program {
 /// A minimal inhabitant of `t`: a literal for bases, `()` for Unit,
 /// a constant lambda for functions, `__pair__` of minimums for
 /// products, `__left__` of the left minimum for sums, and the
-/// declared constructor for nominal newtypes.
+/// declared constructor for nominal nominal types.
 fn minimum_for(t: &Type) -> Term {
     match t {
         Type::Base(b) => match b {
@@ -99,16 +99,6 @@ fn minimum_for(t: &Type) -> Term {
             name: constructor.clone(),
             type_args: vec![(**payload).clone()],
             args: vec![minimum_for(payload)],
-        },
-        Type::Label {
-            label,
-            constructor,
-            payload,
-            ..
-        } => Term::LabelConstruct {
-            label: label.clone(),
-            constructor: constructor.clone(),
-            payload: Box::new(minimum_for(payload)),
         },
     }
 }

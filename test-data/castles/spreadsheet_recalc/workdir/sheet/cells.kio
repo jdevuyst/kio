@@ -8,45 +8,56 @@
 module sheet/cells;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr);
 import sheet/formula(Expr);
 import sheet/table(Table, empty, get_or, put);
 import testapi(I32);
 
-pub labels Content = { blank: . } | { number: I32 } | { formula: Expr };
+pub type Content = { Blank: . } | { Number: I32 } | { Formula: Expr };
 
-pub labels Value = { num: I32 } | { void: . } | { cycle: . };
+pub type Value = { Num: I32 } | { Void: . } | { Cycle: . };
 
 pub type Sheet = Table[Content];
 
 pub type Values = Table[Value];
 
-pub fn blank_content() -> Content { ({blank=}.>widen_sum)[Content] }
+pub fn blank_content() -> Content { (Blank.mk(()).>widen_sum)[Content] }
 
-pub fn number_content(n: I32) -> Content { ({number = n}.>widen_sum)[Content] }
+pub fn number_content(n: I32) -> Content { (Number.mk(n).>widen_sum)[Content] }
 
-pub fn formula_content(e: Expr) -> Content { ({formula = e}.>widen_sum)[Content] }
+pub fn formula_content(e: Expr) -> Content { (Formula.mk(e).>widen_sum)[Content] }
 
-pub fn num_value(n: I32) -> Value { ({num = n}.>widen_sum)[Value] }
+pub fn num_value(n: I32) -> Value { (Num.mk(n).>widen_sum)[Value] }
 
-pub fn void_value() -> Value { ({void=}.>widen_sum)[Value] }
+pub fn void_value() -> Value { (Void.mk(()).>widen_sum)[Value] }
 
-pub fn cycle_value() -> Value { ({cycle=}.>widen_sum)[Value] }
+pub fn cycle_value() -> Value { (Cycle.mk(()).>widen_sum)[Value] }
 
 pub fn fold_content[R](c: Content, on_blank: R, on_number: I32 -> R, on_formula: Expr -> R) -> R {
   match(c) {
     (
     , .(_b: Blank) { on_blank }
-    , .(n: Number) { on_number(n.?{number}) }
-    , .(f: Formula) { on_formula(f.?{formula}) }
+    , .(n: Number) {
+        on_number(n.>select { Number.get })
+      }
+    , .(f: Formula) {
+        on_formula(f.>select { Formula.get })
+      }
     )
   }
 }
 
 pub fn fold_value[R](v: Value, on_num: I32 -> R, on_void: R, on_cycle: R) -> R {
   match(v) {
-    (.(n: Num) { on_num(n.?{num}) }, .(_v: Void) { on_void }, .(_c: Cycle) { on_cycle })
+    (
+    , .(n: Num) {
+        on_num(n.>select { Num.get })
+      }
+    , .(_v: Void) { on_void }
+    , .(_c: Cycle) { on_cycle }
+    )
   }
 }
 

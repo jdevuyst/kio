@@ -796,7 +796,6 @@ fn validate_scoped_prepared_scheme(
                     tasks.push(Task::ExitBinder);
                     tasks.push(Task::Enter(body));
                 }
-                Type::LabelSugar { ext, .. } => match *ext {},
                 Type::Infer { ext, .. } => match *ext {},
                 Type::Goal { ext, .. } => match *ext {},
             },
@@ -1467,7 +1466,6 @@ impl<'a> PlanBuilder<'a> {
                 });
                 tasks.push(BuildTask::Enter(body));
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -4698,7 +4696,6 @@ fn erase_live_comptime_type_names(ty: Type<Routed>, mut scope: Vec<String>) -> T
                     meta,
                 }
             }
-            Type::LabelSugar { ext, .. } => match ext {},
             Type::Infer { ext, .. } => match ext {},
             Type::Goal { ext, .. } => match ext {},
         }
@@ -5534,13 +5531,6 @@ impl FrozenRootTypeResolver<'_> {
                     kind: Kind::Star,
                 })
             }
-            Type::LabelSugar { .. } => {
-                Err(BoundaryFacadeCollectionError::InconsistentRetainedRoot {
-                    module_path: module_path.to_owned(),
-                    name: "<type>".to_owned(),
-                    reason: "a frozen Kio' type contains surface label sugar",
-                })
-            }
             Type::Infer { .. } => Err(BoundaryFacadeCollectionError::InconsistentRetainedRoot {
                 module_path: module_path.to_owned(),
                 name: "<type>".to_owned(),
@@ -5702,7 +5692,6 @@ impl FrozenRootTypeResolver<'_> {
                 }
                 Ok(Kind::Star)
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -5990,7 +5979,6 @@ fn substitute_retained_type(
                 meta: crate::ast::Meta::new(meta.span),
             })
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -7778,7 +7766,6 @@ mod tests {
                             Item::RecGroup(_, ext)
                             | Item::LiteralAlias(_, ext)
                             | Item::Labels(_, ext)
-                            | Item::LabelForward(_, ext)
                             | Item::Equiv(_, ext)
                             | Item::Macro(_, ext)
                             | Item::Op(_, ext)
@@ -8480,6 +8467,8 @@ mod tests {
         else {
             unreachable!("the helper constructs a newtype")
         };
+        payload.constructor.name = "mk".to_owned();
+        payload.projector.name = "get".to_owned();
         payload.type_params.push(TypeParam {
             presentation: Default::default(),
             name: "A".to_owned(),
@@ -8493,7 +8482,7 @@ mod tests {
             .site(&newtype_site(
                 "api",
                 "Payload",
-                "wrap",
+                "mk",
                 NewtypeMemberRole::Constructor,
             ))
             .expect("live payload constructor");
@@ -8508,10 +8497,10 @@ v(1) {
     add {
       module api {
         type Capture[X] = [A_n2][A] (X & A_n2 & A);
-        newtype Payload[A] : Capture[A] {
-          pub constructor wrap;
-          pub projector unwrap;
-        };
+        type { Payload[A]: Capture[A] {
+          pub mk;
+          pub get;
+        }; };
         host fn consume[A](value: Payload[A]) -> .;
       }
     }
@@ -9709,11 +9698,11 @@ v(1) {
         host type Count role(i32);
         host type Token;
         host type Box[A];
-        newtype Inner : Token | . { pub constructor make_inner; pub projector read_inner; };
-        newtype Wrapper[A] <Hidden> : (A & Inner & Hidden) {
-          pub constructor wrap;
-          pub projector unwrap;
-        };
+        type { Inner: Token | . { pub mk; pub get; }; };
+        type { Wrapper[A] <Hidden>: (A & Inner & Hidden) {
+          pub mk;
+          pub get;
+        }; };
         host fn old(value: (Count & Token & Box[.] & Wrapper[.])) -> .;
       }
     }
@@ -9782,8 +9771,8 @@ v(2) {
                 && type_params[0].kind() == &Kind::Star
                 && existential_params.len() == 1
                 && existential_params[0].name() == "Hidden"
-                && constructor == "wrap"
-                && projector == "unwrap"
+                && constructor == "mk"
+                && projector == "get"
         ));
         assert!(matches!(
             nominal_declaration(old, "api", "Inner"),
@@ -9816,7 +9805,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Token[A] : A { pub constructor make_token; projector read_token; };
+        type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Token[.]) -> .;
       }
     }
@@ -9849,7 +9838,7 @@ v(2) {
         assert!(carrier.existential_params().is_empty());
         assert!(matches!(
             carrier.surface(),
-            BoundaryNewtypeSurface::Constructor { member } if member == "make_token"
+            BoundaryNewtypeSurface::Constructor { member } if member == "mk"
         ));
         assert_eq!(
             prepared.retained_public_newtype_removed_at(carrier.name()),
@@ -9867,8 +9856,8 @@ v(1) {
     add {
       module api {
         host type Str role(str);
-        newtype Box[A] : A { pub constructor make_box; pub projector un_box; };
-        newtype Lift[*F] : F[Str] { pub constructor make_lift; pub projector un_lift; };
+        type { Box[A]: A { pub mk; pub get; }; };
+        type { Lift[*F]: F[Str] { pub mk; pub get; }; };
         host fn old(value: Lift[Box]) -> Lift[Box];
       }
     }
@@ -9899,7 +9888,7 @@ v(2) {
         assert!(matches!(
             carrier.surface(),
             BoundaryNewtypeSurface::Both { constructor, projector }
-                if constructor == "make_box" && projector == "un_box"
+                if constructor == "mk" && projector == "get"
         ));
         assert_eq!(
             prepared.retained_public_newtype_removed_at(carrier.name()),
@@ -9916,7 +9905,7 @@ v(1) {
     add {
       module api {
         host type Raw;
-        newtype Wrapper : Raw { pub constructor wrap; pub projector unwrap; };
+        type { Wrapper: Raw { pub mk; pub get; }; };
         host fn old(value: Wrapper) -> .;
       }
     }
@@ -9958,7 +9947,7 @@ v(1) {
     add {
       module api {
         host type Secret;
-        newtype Carrier : (Secret & .) { constructor make; projector read; };
+        type { Carrier: (Secret & .) { mk; get; }; };
         host fn old(value: Carrier) -> .;
       }
     }
@@ -10250,7 +10239,7 @@ v(1) {
   nonbreaking {
     add {
       module old {
-        newtype Nominal : . { pub constructor wrap; pub projector unwrap; };
+        type { Nominal: . { pub mk; pub get; }; };
       };
       module api {
         import old(Nominal);
@@ -10264,7 +10253,7 @@ v(2) {
   breaking {
     modify {
       module api {
-        newtype Wrapped : . { pub constructor make; pub projector read; };
+        type { Wrapped: . { pub mk; pub get; }; };
       }
     };
     remove {
@@ -10321,7 +10310,7 @@ v(1) {
     add {
       module api {
         host type Raw;
-        newtype Wrapped : Raw { pub constructor wrap; pub projector unwrap; };
+        type { Wrapped: Raw { pub mk; pub get; }; };
         host fn consume(value: Wrapped) -> (Wrapped & Raw);
       }
     }
@@ -10402,7 +10391,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Epoch : . { pub constructor make; pub projector read; };
+        type { Epoch: . { pub mk; pub get; }; };
         host fn first(value: Epoch) -> .;
       }
     }
@@ -10417,7 +10406,7 @@ v(2) {
     };
     modify {
       module api {
-        newtype Epoch : (. & .) { pub constructor make; pub projector read; };
+        type { Epoch: (. & .) { pub mk; pub get; }; };
       }
     };
     remove {
@@ -10456,7 +10445,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Box[A] : A { pub constructor make; pub projector read; };
+        type { Box[A]: A { pub mk; pub get; }; };
         host fn old(value: Box[.]) -> .;
       }
     }
@@ -10488,8 +10477,8 @@ v(2) {
                 }],
                 existential_params: Vec::new(),
                 payload: bare("B"),
-                constructor: member("make", Visibility::Public),
-                projector: member("read", Visibility::Public),
+                constructor: member("mk", Visibility::Public),
+                projector: member("get", Visibility::Public),
                 meta: meta(),
                 editable_span: None,
                 doc: None,
@@ -10508,7 +10497,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Box[A] : A { pub constructor wrap; pub projector unwrap; };
+        type { Box[A]: A { pub mk; pub get; }; };
         host fn first(value: Box[.]) -> .;
       }
     }
@@ -10519,7 +10508,7 @@ v(2) {
     add { module api { host fn second(value: Box[.]) -> .; } };
     modify {
       module api {
-        newtype Box[B] : B { pub constructor wrap; pub projector unwrap; };
+        type { Box[B]: B { pub mk; pub get; }; };
       }
     };
     remove { module api { first; } }
@@ -10546,7 +10535,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Token[A] : A { constructor make; projector read; };
+        type { Token[A]: A { mk; get; }; };
         host fn old(value: Token[.]) -> .;
       }
     }
@@ -10586,8 +10575,8 @@ v(2) {
                 ],
                 existential_params: Vec::new(),
                 payload: product(bare("A"), bare("B")),
-                constructor: member("make", Visibility::Private),
-                projector: member("read", Visibility::Private),
+                constructor: member("mk", Visibility::Private),
+                projector: member("get", Visibility::Private),
                 meta: meta(),
                 editable_span: None,
                 doc: None,
@@ -10607,7 +10596,7 @@ v(1) {
     add {
       module api {
         host type Str role(str);
-        newtype Token : . { pub constructor wrap; pub projector unwrap; };
+        type { Token: . { pub mk; pub get; }; };
         host fn a_old(value: Token) -> .;
       }
     }
@@ -10617,7 +10606,7 @@ v(2) {
   breaking {
     modify {
       module api {
-        newtype Token : Str { pub constructor wrap; pub projector unwrap; };
+        type { Token: Str { pub mk; pub get; }; };
       }
     };
     remove {
@@ -10637,11 +10626,16 @@ v(4) {
 }
 "#,
         );
+        let Item::Newtype(mut live_token) = public_newtype("Token", nominal("api", "Str")) else {
+            unreachable!("the helper constructs a newtype")
+        };
+        live_token.constructor.name = "mk".to_owned();
+        live_token.projector.name = "get".to_owned();
         let package = package_with_items(
             "api",
             vec![
                 host_type("Str", Vec::new(), Some(Role::Str)),
-                public_newtype("Token", nominal("api", "Str")),
+                Item::Newtype(live_token),
                 host_function("current", nominal("api", "Token"), nominal("api", "Token")),
             ],
         );
@@ -11048,12 +11042,12 @@ v(2) {
             ),
             (
                 "under-applied newtype",
-                "newtype Box[A] : . { pub constructor wrap; pub projector unwrap; };",
+                "type { Box[A]: . { pub mk; pub get; }; };",
                 "host fn old(value: Box) -> .;",
             ),
             (
                 "over-applied newtype",
-                "newtype Box[A] : . { pub constructor wrap; pub projector unwrap; };",
+                "type { Box[A]: . { pub mk; pub get; }; };",
                 "host fn old(value: Box[.][.]) -> .;",
             ),
         ];
@@ -11350,7 +11344,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Onlyone : . { pub constructor wrap; pub projector unwrap; };
+        type { Onlyone: . { pub mk; pub get; }; };
         host fn first(value: Onlyone) -> .;
         host fn second(value: Onlyone) -> .;
       }

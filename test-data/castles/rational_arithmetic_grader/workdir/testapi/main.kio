@@ -13,22 +13,23 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import rational/expr as expr;
 import rational/fixture as fixture;
 import rational/grader as grader;
 import rational/grader(
+, Equivalent_count
+, Exact_count
 , Exercise
+, Note
+, Outcome
+, Question
 , Roster
+, Submitted
 , Tally
+, Undefined_count
 , Verdict
-, {equivalent_count}
-, {exact_count}
-, {note}
-, {outcome}
-, {question}
-, {submitted}
-, {undefined_count}
-, {wrong_count}
+, Wrong_count
 );
 import rational/render as render;
 import rational/text as text;
@@ -46,9 +47,9 @@ fn num(value: I32) -> String { fmt.int_to_string(value) }
 
 /// Print one exercise's block and hand the verdict back for the tally.
 fn report(index: I32, item: Exercise) -> Verdict {
-  let .({question, submitted}) = item;
+  let .(question, submitted) = item.>select { Question.get; Submitted.get };
   let correct = expr.eval(question);
-  let .({outcome, note}) = grader.assess(correct, submitted);
+  let .(outcome, note) = grader.assess(correct, submitted).>select { Outcome.get; Note.get };
   field(text.cat2("exercise ", num(index)), render.expr(question));
   field("  correct", render.outcome(correct));
   field("  submitted", render.fraction(submitted));
@@ -58,7 +59,7 @@ fn report(index: I32, item: Exercise) -> Verdict {
 }
 
 rec(loop) fn walk(index: I32, remaining: Roster, marks: Tally) -> Tally {
-  match(Roster.body(remaining)) {
+  match(Roster.get(remaining)) {
     (
     , .(item: Exercise, rest: Roster) {
         let verdict = report(index, item);
@@ -73,7 +74,8 @@ pub fn main() {
   line("rational_arithmetic_grader");
   line("");
   let marks = walk(1, fixture.exercises(), grader.no_marks());
-  let .({exact_count, equivalent_count, wrong_count, undefined_count}) = marks;
+  let .(exact_count, equivalent_count, wrong_count, undefined_count) =
+    marks.>select { Exact_count.get; Equivalent_count.get; Wrong_count.get; Undefined_count.get };
   line("summary");
   field("  exact", num(exact_count));
   field("  equivalent", num(equivalent_count));

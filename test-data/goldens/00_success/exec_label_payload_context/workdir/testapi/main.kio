@@ -1,24 +1,29 @@
 module testapi/main;
 
+import macros/row_macros(macro record, macro select, macro with_);
 import testapi(String);
 import testapi/io(print);
 
-newtype Box[A] : String { pub constructor make; pub projector unpack }
+type { Box[A]: String { pub mk; pub get } }
 
-fn empty[A]() -> Box[A] { Box.make("empty\n") }
+fn empty[A]() -> Box[A] { Box.mk("empty\n") }
 
-labels State = { first: Box[.], second: Box[. -> .] };
+type State = { First: Box[.]; Second: Box[. -> .] };
 
-fn initial() -> State { {first = empty(), second = empty()} }
+fn initial() -> State {
+  record { First.mk(empty()); Second.mk(empty()) }
+}
 
-fn show(value: First) { print(value.?{first}.>Box.unpack) }
+fn show(value: First) {
+  print(value.>select { First.get }.>Box.get)
+}
 
 pub fn main() {
-  show({first = empty()});
-  let single = {first = empty()};
+  show(First.mk(empty()));
+  let single = First.mk(empty());
   show(single);
   let state = initial();
-  print(state.?{second}.>Box.unpack);
-  let updated = state.!{first = empty()};
-  print(updated.?{first}.>Box.unpack)
+  print(state.>select { Second.get }.>Box.get);
+  let updated = state.>with_ { First.mk(empty()) };
+  print(updated.>select { First.get }.>Box.get)
 }

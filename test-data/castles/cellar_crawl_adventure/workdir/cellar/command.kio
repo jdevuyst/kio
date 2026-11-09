@@ -10,47 +10,50 @@ module cellar/command;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, String);
 import testapi/text(string_eq);
 
-pub labels Verb =
-  { go_verb: . }
-  | { take_verb: . }
-  | { drop_verb: . }
-  | { unlock_verb: . }
-  | { look_verb: . }
-  | { bag_verb: . }
-  | { quit_verb: . }
-  | { bad_verb: String };
+pub type Verb =
+  | { Go_verb: . }
+  | { Take_verb: . }
+  | { Drop_verb: . }
+  | { Unlock_verb: . }
+  | { Look_verb: . }
+  | { Bag_verb: . }
+  | { Quit_verb: . }
+  | { Bad_verb: String }
+  ;
 
-pub labels Command =
-  { go_cmd: String }
-  | { take_cmd: String }
-  | { drop_cmd: String }
-  | { unlock_cmd: String }
-  | { look_cmd: . }
-  | { bag_cmd: . }
-  | { quit_cmd: . }
-  | { unknown_cmd: String };
+pub type Command =
+  | { Go_cmd: String }
+  | { Take_cmd: String }
+  | { Drop_cmd: String }
+  | { Unlock_cmd: String }
+  | { Look_cmd: . }
+  | { Bag_cmd: . }
+  | { Quit_cmd: . }
+  | { Unknown_cmd: String }
+  ;
 
 pub fn verb_of(word: String) -> Verb {
   if(string_eq(word, "go")) {
-    ({go_verb=}.>widen_sum)[Verb]
+    (Go_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "take")) {
-    ({take_verb=}.>widen_sum)[Verb]
+    (Take_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "drop")) {
-    ({drop_verb=}.>widen_sum)[Verb]
+    (Drop_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "unlock")) {
-    ({unlock_verb=}.>widen_sum)[Verb]
+    (Unlock_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "look")) {
-    ({look_verb=}.>widen_sum)[Verb]
+    (Look_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "inventory")) {
-    ({bag_verb=}.>widen_sum)[Verb]
+    (Bag_verb.mk(()).>widen_sum)[Verb]
   } else if(string_eq(word, "quit")) {
-    ({quit_verb=}.>widen_sum)[Verb]
+    (Quit_verb.mk(()).>widen_sum)[Verb]
   } else {
-    ({bad_verb = word}.>widen_sum)[Verb]
+    (Bad_verb.mk(word).>widen_sum)[Verb]
   }
 }
 
@@ -72,14 +75,16 @@ pub fn verb_takes_object(v: Verb) -> Bool {
 pub fn command_of(v: Verb, object: String) -> Command {
   match(v) {
     (
-    , .(_g: Go_verb) { widen_sum({go_cmd = object})[Command] }
-    , .(_t: Take_verb) { widen_sum({take_cmd = object})[Command] }
-    , .(_d: Drop_verb) { widen_sum({drop_cmd = object})[Command] }
-    , .(_u: Unlock_verb) { widen_sum({unlock_cmd = object})[Command] }
-    , .(_l: Look_verb) { widen_sum({look_cmd=})[Command] }
-    , .(_b: Bag_verb) { widen_sum({bag_cmd=})[Command] }
-    , .(_q: Quit_verb) { widen_sum({quit_cmd=})[Command] }
-    , .(x: Bad_verb) { widen_sum({unknown_cmd = x.?{bad_verb}})[Command] }
+    , .(_g: Go_verb) { widen_sum(Go_cmd.mk(object))[Command] }
+    , .(_t: Take_verb) { widen_sum(Take_cmd.mk(object))[Command] }
+    , .(_d: Drop_verb) { widen_sum(Drop_cmd.mk(object))[Command] }
+    , .(_u: Unlock_verb) { widen_sum(Unlock_cmd.mk(object))[Command] }
+    , .(_l: Look_verb) { widen_sum(Look_cmd.mk(()))[Command] }
+    , .(_b: Bag_verb) { widen_sum(Bag_cmd.mk(()))[Command] }
+    , .(_q: Quit_verb) { widen_sum(Quit_cmd.mk(()))[Command] }
+    , .(x: Bad_verb) {
+        widen_sum(Unknown_cmd.mk(x.>select { Bad_verb.get }))[Command]
+      }
     )
   }
 }

@@ -95,7 +95,7 @@ try {
     assert.deepEqual(duplicate.items, []);
   }
   for (const [visibility, version] of [['pub ', 6], ['', 7]]) {
-    change(`module provider; pub labels { field: . }; pub labels { other: . }; ${visibility}type {field} = {other};`, version);
+    change(`module provider; pub type { Field: . }; pub type { Other: . }; ${visibility}type { Field: Other };`, version);
     const duplicate = await completion();
     assert.equal(duplicate.isIncomplete, true);
     assert.deepEqual(duplicate.items, []);

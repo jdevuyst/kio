@@ -1,1 +1,1 @@
-type alias `Hidden` must be at least as visible as constructor `Node.mk_node`
+type alias `Hidden` must be at least as visible as constructor `Node.mk`

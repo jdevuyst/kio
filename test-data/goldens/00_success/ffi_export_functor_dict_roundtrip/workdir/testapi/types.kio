@@ -1,8 +1,5 @@
 module testapi/types;
 
-pub newtype Box[A] : A & . { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A & . { pub mk; pub get } }
 
-pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
-  pub constructor mk_functor;
-  pub projector fmap
-  }
+pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { pub mk; pub get } }

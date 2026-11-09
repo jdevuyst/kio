@@ -14,7 +14,7 @@ pub type Keepers = Keeper & Keeper;
 
 type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 

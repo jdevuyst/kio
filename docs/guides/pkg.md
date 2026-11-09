@@ -124,8 +124,7 @@ generic host function has no value argument from which to infer a type
 parameter, pass the type argument and its Unit value at the call site, such as
 `array_make_empty[String](())`. When value arguments determine it, ordinary
 inference is enough, as in `array_push(names, "ada")`. Any ordinary type
-expression can fill the generic slot, including named aliases introduced by
-`labels`: a `labels Item = { sku : String, count : I32 };` declaration can be
+expression can fill the generic slot, including named aliases with nominal entries: a `type Item = { Sku: String; Count: I32; };` declaration can be
 used as `Array[Item]` and `array_make_empty[Item](())`.
 
 ### Mutable host arrays and `rec(loop)`
@@ -248,10 +247,10 @@ Three well-formedness rules keep the exposed contract self-contained:
 - **Type closure.** Every named type reached through a host requirement or
   callable export signature must itself be exposed (its module matched and the
   type plain `pub`), recursively through transparent aliases and compound
-  types. A public alias exposes its body. A public newtype exposes only its
+  types. A public alias exposes its body. A public nominal type exposes only its
   nominal identity until a public constructor or projector exposes the payload
   in that member's signature. This keeps the interface self-contained without
-  turning an opaque newtype into its payload.
+  turning an opaque nominal type into its payload.
 - **Duplicate export.** Two bridged exports may not collide on the same
   module-qualified path. Entries keep their module namespace, so such a
   collision would require duplicate same-leaf declarations in one module.
@@ -463,8 +462,8 @@ there; it does not move a Git dependency's locked commit.
 
 ### Reconciling a dependency diamond with `retype`
 
-Cross-package nominal types are **identity-exact**: a `newtype` is identified by
-its `(module, name)` pair, so the *same-named* `newtype` reached through two
+Cross-package nominal types are **identity-exact**: a nominal type is identified by
+its `(module, name)` pair, so the *same-named* nominal type reached through two
 different dependency paths is two **distinct** types. This is the property that
 makes a Kio package boundary honest — a type named `Tag` in one package is never
 silently the same as a `Tag` in another (the same module-qualified identity
@@ -473,7 +472,7 @@ consequence for **diamond dependencies**.
 
 Suppose a consumer `app` depends on two packages, `core` and `widget`, and each
 of them vendors its own copy of a shared `store` module that declares
-`newtype Tag : I32`. Re-rooted under the consumer, those become `core/store.Tag`
+`type { Tag: I32; }`. Re-rooted under the consumer, those become `core/store.Tag`
 and `widget/store.Tag` — distinct nominal copies. A value minted as one cannot
 flow where the other is expected:
 
@@ -489,9 +488,9 @@ module widget;
 module core/store;
 
 host type I32 role(i32);
-pub newtype Tag : I32 { pub constructor mk_tag; pub projector un_tag }
-pub fn make_tag(value: I32) -> Tag { Tag.mk_tag(value) }
-pub fn tag_val(value: Tag) -> I32 { Tag.un_tag(value) }
+pub type { Tag: I32; }
+pub fn make_tag(value: I32) -> Tag { Tag.mk(value) }
+pub fn tag_val(value: Tag) -> I32 { Tag.get(value) }
 -->
 
 <!--kio {file}
@@ -499,9 +498,9 @@ module widget/store;
 
 import core/store(I32);
 
-pub newtype Tag : I32 { pub constructor mk_tag; pub projector un_tag }
-pub fn make_tag(value: I32) -> Tag { Tag.mk_tag(value) }
-pub fn tag_val(value: Tag) -> I32 { Tag.un_tag(value) }
+pub type { Tag: I32; }
+pub fn make_tag(value: I32) -> Tag { Tag.mk(value) }
+pub fn tag_val(value: Tag) -> I32 { Tag.get(value) }
 -->
 
 <!--kio {file}
@@ -545,35 +544,29 @@ retype widget/store to core/store;
 
 `retype <local>/<mod> to <to>/<mod>;` names a re-rooted dependency module and a
 counterpart module — another dependency's module, or one of the consumer's own —
-that declares the same-named `newtype`s. During materialization, every `newtype`
+that declares the same-named nominal types. During materialization, every nominal type
 the named module declares is rebound to the counterpart. Public and scoped
 heads become ordinary type aliases at their original declaration positions,
 using a qualified provider import; private heads use a selective import instead.
 Each spelling is introduced once, and the dependency's constructors, projectors, and payload
 references all bind to the one shared nominal type instead of the dependency's
 own copy. A trailing `.<Name>` on **both** sides restricts the remap to one
-`newtype` (`retype widget/store.Tag to core/store.Tag;`); omitting it remaps
-every `newtype` under the module. Each exact source newtype may be selected by
+nominal type (`retype widget/store.Tag to core/store.Tag;`); omitting it remaps
+every nominal type under the module. Each exact source nominal type may be selected by
 only one statement: duplicate statements and module/per-type overlaps are
 rejected before dependency output is written, even if they name the same
 target. Separate per-type statements for distinct names are valid. The
 counterpart must declare a same-named
-`newtype` with the same universal and existential parameter counts, the same
+nominal type with the same universal and existential parameter counts, the same
 effective kind at each corresponding binder, and a structurally congruent
 payload. A missing or incongruent counterpart is a dependency error reported
 at materialization time, not a downstream typecheck failure.
 
-Retyping also covers the types generated by explicit `labels` entries. For
-example, `retype widget/store.Name to core/store.Name;` shares a label-generated
-`Name` with the corresponding label family in `core/store`. The target must
-come from an explicit label declaration, possibly reached through an ordinary
-type alias; a similar hand-written newtype is not enough. Materialized source
-keeps the lowercase spelling with a
-[label-forwarding declaration](products.md#giving-an-existing-label-another-name)
-and the public uppercase spelling with an ordinary type alias. Named record or
-sum declarations that reused the selected label become ordinary type aliases
-too, so later `_` entries do not depend on a removed declaration. Unselected
-label declarations keep their own identities, and function bodies are unchanged.
+Retyping applies to nominal entries introduced individually or in compact
+groups. A selected entry may correspond to a same-named nominal entry at the
+target, subject to the same kind, payload, visibility and member checks. The
+materialized source uses ordinary aliases or imports to retain the selected
+nominal identity; unselected entries keep their own identities.
 
 The target must also be visible wherever the source type was visible, and
 importable from each dependency module whose import is rewritten. Scoped
@@ -588,7 +581,7 @@ Public and scoped constructors and projectors must also keep their names and
 remain accessible to the same modules. A member is only as visible as its
 enclosing type: a public constructor in a private type is private, and one in
 a scoped type is scoped. Fetch rejects incompatible public or scoped members
-before changing the affected dependency tree. Private member differences do
+before changing the affected dependency tree. Private member visibility differences do
 not prevent fetch; `kio check` or `kio build` reports an error if the dependency
 still uses a member that the target no longer provides or makes accessible.
 
@@ -653,7 +646,7 @@ module app/internal;
 
 import app(I32);
 
-pub(app) newtype Token : I32 { pub constructor mk; pub projector un }
+pub(app) type { Token: I32; }
 ```
 
 <!--kio {file}
@@ -662,7 +655,7 @@ module app/check;
 import app(I32);
 import app/internal(Token);
 
-pub fn roundtrip(value: I32) -> I32 { Token.un(Token.mk(value)) }
+pub fn roundtrip(value: I32) -> I32 { Token.get(Token.mk(value)) }
 -->
 
 <!--kio {harness=scoped_consumer file placeholder="__INSERT_CODE_HERE__"}
@@ -691,40 +684,30 @@ interface: because the host sits outside every module path, a `pub(path)`
 definition is **not** exported to the host even when its module is bridged. Use
 it for package-internal surface you want to share across a subtree of modules
 without offering it to consumers or the host. The scope is admissible wherever
-`pub` is a genuine choice, including a `newtype`'s `constructor` / `projector`
+`pub` is a genuine choice, including a nominal type's `mk` / `get`
 members; only `host` declarations cannot be scoped, since they are always
 public.
 
-## Sharing a label across declarations
+## Sharing a nominal field across declarations
 
-The `labels` form (see [Structural products](products.md) and
-[Structural sums](sums.md)) mints a generated `newtype` from each label name and
-its payload type. When another named product or sum needs that same nominal
-field, write `_` instead of declaring the payload again:
+A nominal type can be used in multiple products without creating another
+identity. Write the existing type as an operand in the later declaration:
 
 ```kio {variant=module}
-module shared_labels;
+module shared_fields;
 
 host type String role(str);
 
 host type I32 role(i32);
 
-labels Item = { sku: String, count: I32 };
+type Item = { Sku: String; Count: I32 };
 
-labels Order = { sku: _, total: I32 };
+type Order = Sku & { Total: I32 };
 ```
 
-`sku: _` refers to the earlier `Sku`; it neither infers a payload nor creates a
-second type. The original declaration must appear earlier in the same module,
-and `_` is available only inside a named `labels` declaration. Repeating
-`sku: String` is a duplicate declaration error, as are forward, imported, and
-qualified attempts to reuse a label. This explicit spelling makes the shared
-identity visible without asking the compiler or reader to compare payloads.
-
-Generic reuse repeats the original label's universal binder arity and kinds
-using parameters from the enclosing alias. Existential binders remain solely on
-the original declaration. Visibility on the later declaration applies to its
-alias; it never changes the earlier generated nominal.
+Both aliases contain the same `Sku` type. See
+[Structural products](products.md) and [Structural sums](sums.md) for
+construction and use.
 
 ## Build blocks
 

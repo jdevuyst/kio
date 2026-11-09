@@ -1519,7 +1519,7 @@ mod tests {
             r#"signature lib v(2);
 v(1) {
   with { module api {
-    pub rec newtype Bad : (Bad -> .) { pub constructor mk; pub projector un; };
+    pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
 }

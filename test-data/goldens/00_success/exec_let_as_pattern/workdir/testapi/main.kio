@@ -8,11 +8,11 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get(m)) }
 
 fn describe(x: I32 & I32 & I32) -> String {
   match(x) {
@@ -70,6 +70,6 @@ pub fn main() {
   print("\n");
   print(nested_demo(((4, 5), 6)));
   print("\n");
-  print(Box.un_box(do_demo()));
+  print(Box.get(do_demo()));
   print("\n")
 }

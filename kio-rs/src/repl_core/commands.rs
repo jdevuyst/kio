@@ -885,7 +885,7 @@ fn plan_load(session: &Session, module_path: &str) -> Result<Vec<StagedModule>, 
 ///
 /// `:t` is the pure type query. A bare *name* resolves through the
 /// current scope (or by FQN) to a top-level item: a `fn`
-/// reports its function type. A `newtype` / `type` / `labels` is a
+/// reports its function type. A nominal type or type alias is a
 /// type-level name — it binds no value — and is a kind-aware error
 /// (the same message shape `kio doc check` produces for `@type`). A
 /// `literal` gets its concrete type from each use site, so the query must
@@ -965,7 +965,7 @@ fn cmd_type_name(session: &Session, name: &str, palette: Palette) -> String {
         found.doc_entry(),
         Some(crate::doc_entry::DocEntry::LabelNominal { .. })
     ) {
-        return type_level_error(&found.display_name, "a `newtype`");
+        return type_level_error(&found.display_name, "a nominal type");
     }
     match &found.item {
         Item::FnDef(f) => {
@@ -1001,10 +1001,10 @@ fn cmd_type_name(session: &Session, name: &str, palette: Palette) -> String {
                 type_level_error(&found.display_name, "a type alias")
             }
             Some(crate::ast::TypeRecMember::Newtype(_)) => {
-                type_level_error(&found.display_name, "a `newtype`")
+                type_level_error(&found.display_name, "a nominal type")
             }
             Some(crate::ast::TypeRecMember::Labels(_, _)) => {
-                type_level_error(&found.display_name, "a `labels` declaration")
+                type_level_error(&found.display_name, "a type alias")
             }
             None => unreachable!(
                 "resolved type-recursive group is missing member `{}`",
@@ -1013,11 +1013,11 @@ fn cmd_type_name(session: &Session, name: &str, palette: Palette) -> String {
         },
         // A type-level name binds no value — `:type` is a kind-aware
         // error, phrased the same way the Kiodoc `@type` directive is.
-        Item::Newtype(_) => type_level_error(&found.display_name, "a `newtype`"),
+        Item::Newtype(_) => type_level_error(&found.display_name, "a nominal type"),
         Item::TypeAlias(_) => type_level_error(&found.display_name, "a type alias"),
         Item::LiteralAlias(_, _) => literal_alias_type_error(&found.display_name),
-        Item::Labels(_, _) => type_level_error(&found.display_name, "a `labels` declaration"),
-        Item::LabelForward(_, _) => type_level_error(&found.display_name, "a label declaration"),
+        Item::Labels(_, _) => type_level_error(&found.display_name, "a type alias"),
+
         Item::Op(_, _) => format!(
             "`{}` is an operator binding — use `:source {}`",
             found.display_name, found.display_name
@@ -1113,7 +1113,7 @@ fn cmd_pure_name(session: &Session, name: &str) -> String {
         found.doc_entry(),
         Some(crate::doc_entry::DocEntry::LabelNominal { .. })
     ) {
-        return purity_kind_error(&found.display_name, "a `newtype`");
+        return purity_kind_error(&found.display_name, "a nominal type");
     }
 
     match found.selected_item() {
@@ -1127,11 +1127,11 @@ fn cmd_pure_name(session: &Session, name: &str) -> String {
         // Host functions are executable values whose implementation lies
         // outside the compiler's pure-function contract.
         Item::HostFn(_) => "impure".to_owned(),
-        Item::Newtype(_) => purity_kind_error(&found.display_name, "a `newtype`"),
+        Item::Newtype(_) => purity_kind_error(&found.display_name, "a nominal type"),
         Item::TypeAlias(_) => purity_kind_error(&found.display_name, "a type alias"),
         Item::LiteralAlias(_, _) => purity_kind_error(&found.display_name, "a literal alias"),
-        Item::Labels(_, _) => purity_kind_error(&found.display_name, "a `labels` declaration"),
-        Item::LabelForward(_, _) => purity_kind_error(&found.display_name, "a label declaration"),
+        Item::Labels(_, _) => purity_kind_error(&found.display_name, "a type alias"),
+
         Item::Op(_, _) => purity_kind_error(&found.display_name, "an operator binding"),
         Item::VariadicOperator(_, _) => {
             purity_kind_error(&found.display_name, "a variadic operator binding")
@@ -1419,7 +1419,7 @@ fn expr_parse_result(session: &Session, input: &str) -> Result<String, Option<Pr
 /// The header is the item's declaration line with no body — the same
 /// artifact Kiodoc's `` [`@signature term`] `` directive embeds. For
 /// a `fn` this is `fn name[type-params](value-params) -> Ret`; for a
-/// `newtype` / `type` / `literal` / `labels` / `op` the declaration is itself
+/// `type` / `literal` / `op` the declaration is itself
 /// header-shaped.
 fn cmd_signature(session: &Session, name: &str, palette: Palette) -> String {
     signature_of(session, name, palette)
@@ -1981,7 +1981,7 @@ fn cmd_ls(session: &Session, arg: Option<&str>, verbose: bool, palette: Palette)
 /// `:ls` / `:scope` lines for an item.
 ///
 /// In **terse** mode (the default) a value- or type-level item renders
-/// as its keyword + name (`fn view`, `newtype T`) — enough to see what
+/// as its keyword + name (`fn view`, `type T`) — enough to see what
 /// is declared without the full signature. In **verbose** mode
 /// (`:ls -v`) the same arms route through
 /// [`crate::pretty::pretty_item_signature`], so `fn view` becomes
@@ -1989,11 +1989,9 @@ fn cmd_ls(session: &Session, arg: Option<&str>, verbose: bool, palette: Palette)
 /// terse mode shows their canonical declaration name, while verbose mode
 /// also shows the callable clauses.
 ///
-/// The anonymous `labels { ... };` form is flag-independent and expands
-/// to one `label <name>` line per entry: each entry is the queryable
-/// declaration, whereas the anonymous container has no name of its own.
+/// Compact declarations list their ordinary type names in terse mode and
+/// retain the complete written declaration in verbose mode.
 fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
-    // The anonymous-labels expansion is flag-independent; handle it first.
     // An `op` follows the same terse/verbose split as the rest: terse
     // shows the operator's complete grammar (`op _ + _`), verbose the full
     // declaration pattern (`op _ + _ { impl add; };`).
@@ -2044,21 +2042,22 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
                     }
                     crate::ast::TypeRecMember::Newtype(newtype) => {
                         let vis = if newtype.vis.is_pub() {
-                            "pub newtype"
+                            "pub type"
                         } else {
-                            "newtype"
+                            "type"
                         };
                         vec![format!("{vis} {}", newtype.name)]
                     }
-                    crate::ast::TypeRecMember::Labels(labels, _) => match &labels.type_alias_name {
-                        Some(name) => vec![format!("labels {name}")],
-                        None => anonymous_label_lines(labels),
-                    },
+                    crate::ast::TypeRecMember::Labels(labels, _) => nominal_type_lines(labels),
                 })
                 .collect();
         }
-        Item::Labels(t, _) if t.type_alias_name.is_none() => {
-            return anonymous_label_lines(t);
+        Item::Labels(labels, _) => {
+            return if verbose {
+                vec![crate::pretty::pretty_item_signature(item)]
+            } else {
+                nominal_type_lines(labels)
+            };
         }
         _ => {}
     }
@@ -2077,28 +2076,13 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
             unreachable!("TypeRecGroup handled before the verbose split")
         }
         Item::Newtype(n) => {
-            let vis = if n.vis.is_pub() {
-                "pub newtype"
-            } else {
-                "newtype"
-            };
+            let vis = if n.vis.is_pub() { "pub type" } else { "type" };
             vec![format!("{vis} {}", n.name)]
         }
         Item::TypeAlias(a) => vec![format!("type {}", a.name)],
         Item::LiteralAlias(l, _) => vec![format!("literal {}", l.name)],
-        // Named: `labels T = { ... };` — render the alias name.
-        Item::Labels(t, _) => vec![format!(
-            "labels {}",
-            t.type_alias_name.as_deref().unwrap_or("")
-        )],
-        Item::LabelForward(forward, _) => {
-            let vis = if forward.vis.is_pub() {
-                "pub type"
-            } else {
-                "type"
-            };
-            vec![format!("{vis} {{{}}}", forward.name)]
-        }
+        Item::Labels(_, _) => unreachable!("compact declarations handled before the verbose split"),
+
         Item::Equiv(e, _) => vec![format!("equiv {}", e.name)],
         Item::Macro(s, _) => {
             let vis = if s.vis.is_pub() { "pub macro" } else { "macro" };
@@ -2106,27 +2090,20 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
         }
         Item::HostType(h) => vec![format!("host type {}", h.name)],
         Item::HostFn(h) => vec![format!("host fn {}", h.name)],
-        // `Op` / `Fold` (both modes) and anonymous `labels` are handled above.
+        // Operators and compact declarations are handled above.
         Item::Op(_, _) => unreachable!("Op handled before the verbose split"),
         Item::VariadicOperator(_, _) => unreachable!("Fold handled before the verbose split"),
     }
 }
 
-/// Render the value bindings introduced by an anonymous labels declaration.
-/// The same declaration may stand alone or be one atomic member of a type
-/// recursive group; both source containers expose the same entry bindings.
-fn anonymous_label_lines(labels: &crate::ast::Labels<Surface>) -> Vec<String> {
-    // Visibility lives at the Labels level (per-entry visibility is not part
-    // of the AST), so the `pub` prefix is shared across every entry.
-    let prefix = if labels.vis.is_pub() {
-        "pub label"
-    } else {
-        "label"
-    };
+/// List each declared type in source order, beginning with a named compact owner.
+fn nominal_type_lines(labels: &crate::ast::Labels<Surface>) -> Vec<String> {
+    let prefix = crate::pretty::pretty_visibility(&labels.vis);
     labels
-        .entries
+        .type_alias_name
         .iter()
-        .map(|entry| format!("{prefix} {}", entry.name))
+        .chain(labels.entries.iter().map(|entry| &entry.name))
+        .map(|name| format!("{prefix}type {name}"))
         .collect()
 }
 
@@ -2134,26 +2111,24 @@ fn anonymous_label_lines(labels: &crate::ast::Labels<Surface>) -> Vec<String> {
 /// signature — true when some item's terse form drops detail its
 /// verbose form would show. Drives the self-advertising `-v` footer:
 /// the trailer only earns its place when `-v` would actually add
-/// something. Anonymous `labels` and `equiv` render identically in both
-/// modes, so they do not count.
+/// something. An `equiv` renders identically in both modes.
 fn terse_elides_a_signature(items: &[Item<Surface>]) -> bool {
     items.iter().any(|it| match it {
         // `Op` now follows the terse/verbose split — terse shows the
         // name, `-v` the full declaration pattern — so it elides a
-        // signature in terse mode like a `fn` / `newtype` / `type`.
+        // signature in terse mode like a function or type declaration.
         Item::FnDef(_)
         | Item::RecGroup(_, _)
         | Item::TypeRecGroup(_)
         | Item::Newtype(_)
         | Item::TypeAlias(_)
         | Item::LiteralAlias(_, _)
-        | Item::LabelForward(_, _)
         | Item::Macro(_, _)
         | Item::Op(_, _)
         | Item::VariadicOperator(_, _)
         | Item::HostType(_)
         | Item::HostFn(_) => true,
-        Item::Labels(t, _) => t.type_alias_name.is_some(),
+        Item::Labels(_, _) => true,
         // An `equiv` has no header form distinct from its body.
         Item::Equiv(_, _) => false,
     })
@@ -2390,7 +2365,7 @@ fn section_header(label: &str, palette: Palette) -> String {
 ///
 /// Six sections, in order, each suppressed when empty:
 ///
-/// 1. **declared items** — `fn` / `newtype` / `type` / `literal` / `labels` / `op` /
+/// 1. **declared items** — `fn` / `type` / `literal` / `op` /
 ///    `equiv` declarations the current module body contains.
 /// 2. **imported names** — names brought in via `import` clauses, grouped
 ///    by source module. Both selective (`import m(a, b);`) and
@@ -2421,7 +2396,7 @@ fn cmd_scope(session: &Session, verbose: bool, palette: Palette) -> String {
         highlight(&surface_module_path(current), palette)
     );
 
-    // (1) Declared items — `fn` / `newtype` / `type` / `literal` / `labels` / `op` /
+    // (1) Declared items — `fn` / `type` / `literal` / `op` /
     // `equiv` declarations the module body contains.
     let mut declared_lines: Vec<String> = Vec::new();
     for item in &module.items {
@@ -2634,7 +2609,7 @@ fn cmd_which(session: &Session, name: &str) -> String {
 /// token walk `:source` highlighting and the LSP semantic-tokens
 /// provider use — over each loaded module's source, and reports
 /// matching name-bearing tokens, filtered by their resolved declaration.
-/// Erased declarations and braced labels use parsed source occurrences and
+/// Erased declarations use parsed source occurrences and
 /// their written binding identity. Operators retain their pre-folding grammar and explicit
 /// provider, independently of the implementation callable. References are reported as
 /// `module-path:line:col  in <kind> <name>`, where the trailing
@@ -2659,7 +2634,7 @@ fn cmd_refs(session: &Session, name: &str) -> String {
     let Some(found) = found else {
         return format!("no references to `{name}` in loaded modules");
     };
-    if matches!(selector, ImportItem::Label { .. }) || !found.has_typed_identity() {
+    if !found.has_typed_identity() {
         return cmd_source_refs(session, name, &selector, &found);
     }
     let index = session.analysis().map(|analysis| &analysis.position_index);
@@ -2674,7 +2649,6 @@ fn cmd_refs(session: &Session, name: &str) -> String {
             "checked declaration `{name}` has a source binder identity"
         );
     }
-    let label_name = short.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
     let mut hits: Vec<RefHit> = Vec::new();
     for m in session.modules_in_load_order() {
         let Some(source) = session.source_of(&m.file_path) else {
@@ -2685,28 +2659,15 @@ fn cmd_refs(session: &Session, name: &str) -> String {
         };
         for tok in tokens {
             // Only name-bearing token kinds count as references.
-            let label_token = matches!(
+            let counts = matches!(
                 tok.kind,
-                TokenKind::EntityNameLabel
-                    | TokenKind::EntityNameLabelReference
-                    | TokenKind::EntityNameQualifiedLabelReference
+                TokenKind::Identifier
+                    | TokenKind::EntityNameFunction
+                    | TokenKind::EntityNameFunctionReference
+                    | TokenKind::EntityNameType
+                    | TokenKind::EntityNameModule
+                    | TokenKind::VariableParameter
             );
-            let counts = if label_name.is_some() {
-                label_token
-            } else {
-                matches!(
-                    tok.kind,
-                    TokenKind::Identifier
-                        | TokenKind::EntityNameFunction
-                        | TokenKind::EntityNameFunctionReference
-                        | TokenKind::EntityNameType
-                        | TokenKind::EntityNameModule
-                        | TokenKind::EntityNameLabel
-                        | TokenKind::EntityNameLabelReference
-                        | TokenKind::EntityNameQualifiedLabelReference
-                        | TokenKind::VariableParameter
-                )
-            };
             if !counts {
                 continue;
             }
@@ -2732,7 +2693,7 @@ fn cmd_refs(session: &Session, name: &str) -> String {
                 if !same_identity && !selected_import {
                     continue;
                 }
-            } else if &source[start..end] != label_name.unwrap_or(short) {
+            } else if &source[start..end] != short {
                 continue;
             }
             let (line, col) = line_col(source, tok.span.start);
@@ -2756,18 +2717,13 @@ fn cmd_source_refs(
 ) -> String {
     use crate::tokens::{SourceNameKind, dump_with_module, source_references};
     let short = selector_name(selector);
-    let (kind, leaf) = match selector {
-        ImportItem::Label { name, .. } => (SourceNameKind::Label, name.as_str()),
-        _ => (
-            match found.selected_item() {
-                Item::LiteralAlias(_, _) => SourceNameKind::Value,
-                Item::Macro(_, _) => SourceNameKind::Macro,
-                Item::Equiv(_, _) => SourceNameKind::Equiv,
-                _ => unreachable!("source references select an erased declaration or label"),
-            },
-            found.short_name.as_str(),
-        ),
+    let kind = match found.selected_item() {
+        Item::LiteralAlias(_, _) => SourceNameKind::Value,
+        Item::Macro(_, _) => SourceNameKind::Macro,
+        Item::Equiv(_, _) => SourceNameKind::Equiv,
+        _ => unreachable!("source references select an erased declaration"),
     };
+    let leaf = found.short_name.as_str();
     let mut hits = Vec::new();
     for module in session.modules_in_load_order() {
         let Some(source) = session.source_of(&module.file_path) else {
@@ -2830,9 +2786,7 @@ fn cmd_source_refs(
 
 fn import_item_span(item: &ImportItem) -> crate::span::Span {
     match item {
-        ImportItem::Name { span, .. }
-        | ImportItem::Label { span, .. }
-        | ImportItem::OperatorPattern { span, .. } => *span,
+        ImportItem::Name { span, .. } | ImportItem::OperatorPattern { span, .. } => *span,
     }
 }
 
@@ -2932,8 +2886,7 @@ struct RefHit {
 
 /// Label for `:refs`: name the top-level item whose declaration span
 /// contains `offset`, formatted as `in <kind> <name>` — e.g.
-/// `in fn parse_op`, `in newtype Token`, `in op _ + _`, `in equiv id_eq`,
-/// `in type Foo`, `in labels T`. A reference outside every item — an
+/// `in fn parse_op`, `in type Token`, `in op _ + _`, `in equiv id_eq`. A reference outside every item — an
 /// `import` clause's name, the `module ...;` header — gets
 /// `in module <module-path>`. Each item's `meta.span` covers the
 /// whole declaration (header + body), so the first item whose span
@@ -2965,16 +2918,16 @@ fn enclosing_item_label(module: &Module<Surface>, module_path: &str, offset: u32
                             format!("in type {}", alias.name)
                         }
                         crate::ast::TypeRecMember::Newtype(newtype) => {
-                            format!("in newtype {}", newtype.name)
+                            format!("in type {}", newtype.name)
                         }
                         crate::ast::TypeRecMember::Labels(labels, _) => {
-                            labels.type_alias_name.as_ref().map_or_else(
-                                || format!("in module {module_path}"),
-                                |name| format!("in labels {name}"),
-                            )
+                            nominal_context_label(labels, module_path, offset)
                         }
                     })
                     .unwrap_or_else(|| format!("in module {module_path}"));
+            }
+            if let Item::Labels(labels, _) = item {
+                return nominal_context_label(labels, module_path, offset);
             }
             return item_label(item, module_path);
         }
@@ -2982,10 +2935,26 @@ fn enclosing_item_label(module: &Module<Surface>, module_path: &str, offset: u32
     format!("in module {module_path}")
 }
 
+fn nominal_context_label(
+    labels: &crate::ast::Labels<Surface>,
+    module_path: &str,
+    offset: u32,
+) -> String {
+    labels
+        .entries
+        .iter()
+        .find(|entry| entry.meta.span.start <= offset && offset < entry.meta.span.end)
+        .map(|entry| &entry.name)
+        .or(labels.type_alias_name.as_ref())
+        .map_or_else(
+            || format!("in module {module_path}"),
+            |name| format!("in type {name}"),
+        )
+}
+
 /// Render one item's `:refs` label. Fixed and variadic operators use
 /// their complete tagged grammar. Items without a declared name,
-/// such as an anonymous `labels { ... };` block, fall back to the
-/// module label.
+/// such as an anonymous nominal container, fall back to the module label.
 fn item_label(item: &Item<Surface>, module_path: &str) -> String {
     match item {
         Item::FnDef(d) => format!("in fn {}", d.name),
@@ -2993,18 +2962,17 @@ fn item_label(item: &Item<Surface>, module_path: &str) -> String {
         Item::TypeRecGroup(_) => {
             unreachable!("recursive type members are selected by their own span")
         }
-        Item::Newtype(n) => format!("in newtype {}", n.name),
+        Item::Newtype(n) => format!("in type {}", n.name),
         Item::TypeAlias(a) => format!("in type {}", a.name),
         Item::LiteralAlias(l, _) => format!("in literal {}", l.name),
         Item::Macro(s, _) => format!("in macro {}", s.name),
         Item::Equiv(e, _) => format!("in equiv {}", e.name),
         Item::Labels(t, _) => match &t.type_alias_name {
-            Some(n) => format!("in labels {n}"),
-            // An anonymous `labels { ... };` block has no name. Falling
-            // back to the module label keeps the label informative.
+            Some(n) => format!("in type {n}"),
+            // Entry-local references are selected by their spans above.
             None => format!("in module {module_path}"),
         },
-        Item::LabelForward(forward, _) => format!("in type {{{}}}", forward.name),
+
         Item::HostType(h) => format!("in host type {}", h.name),
         Item::HostFn(h) => format!("in host fn {}", h.name),
         // Name the op by its canonical name — covers variadics too.
@@ -3044,10 +3012,7 @@ impl Resolved {
             | Item::Newtype(_)
             | Item::Labels(_, _) => true,
             // These source declarations have no binder in the typed position index.
-            Item::LiteralAlias(_, _)
-            | Item::Equiv(_, _)
-            | Item::Macro(_, _)
-            | Item::LabelForward(_, _) => false,
+            Item::LiteralAlias(_, _) | Item::Equiv(_, _) | Item::Macro(_, _) => false,
             Item::Op(_, _) | Item::VariadicOperator(_, _) => {
                 unreachable!("operator references select their Surface grammar")
             }
@@ -3085,43 +3050,13 @@ impl Resolved {
         }
         match entry {
             DocEntry::Macro(def) => Some(def.name_span),
-            DocEntry::LabelForward(def, _) => Some(def.name_span),
+
             _ => entry.type_name_span(),
         }
     }
 
     fn doc_entry(&self) -> Option<crate::doc_entry::DocEntry<'_>> {
-        crate::doc_entry::doc_entry_for_name(&self.item, &self.short_name).or_else(|| {
-            let label = self.short_name.strip_prefix('{')?.strip_suffix('}')?;
-            let (labels, group) = match &self.item {
-                Item::Labels(labels, _) => (labels, None),
-                Item::TypeRecGroup(group) => {
-                    let labels = group.members.iter().find_map(|member| match member {
-                        crate::ast::TypeRecMember::Labels(labels, _)
-                            if labels
-                                .entries
-                                .iter()
-                                .any(|entry| entry.name == label && !entry.is_reuse_marker()) =>
-                        {
-                            Some(labels)
-                        }
-                        _ => None,
-                    })?;
-                    (labels, Some(group))
-                }
-                _ => return None,
-            };
-            let entry = labels
-                .entries
-                .iter()
-                .find(|entry| entry.name == label && !entry.is_reuse_marker())?;
-            Some(crate::doc_entry::DocEntry::LabelNominal {
-                labels,
-                entry,
-                name: crate::ast::mint_label_newtype_name(label),
-                group,
-            })
-        })
+        crate::doc_entry::doc_entry_for_name(&self.item, &self.short_name)
     }
 
     fn selected_item(&self) -> Item<Surface> {
@@ -3143,12 +3078,10 @@ impl Resolved {
                     crate::ast::TypeRecMember::Newtype(newtype) => newtype.name == self.short_name,
                     crate::ast::TypeRecMember::Labels(labels, _) => {
                         labels.type_alias_name.as_deref() == Some(self.short_name.as_str())
-                            || labels.entries.iter().any(|entry| {
-                                !entry.is_reuse_marker()
-                                    && (crate::ast::mint_label_newtype_name(&entry.name)
-                                        == self.short_name
-                                        || format!("{{{}}}", entry.name) == self.short_name)
-                            })
+                            || labels
+                                .entries
+                                .iter()
+                                .any(|entry| entry.name == self.short_name)
                     }
                 })
                 .cloned()
@@ -3166,7 +3099,7 @@ impl Resolved {
 pub(super) fn selector_name(selector: &ImportItem) -> String {
     match selector {
         ImportItem::Name { name, .. } => name.clone(),
-        ImportItem::Label { name, .. } => format!("{{{name}}}"),
+
         ImportItem::OperatorPattern { grammar, .. } => grammar.render(),
     }
 }
@@ -3185,17 +3118,7 @@ fn selector_matches(item: &Item<Surface>, selector: &ImportItem) -> bool {
             !matches!(item, Item::Op(_, _) | Item::VariadicOperator(_, _))
                 && surface_item_declares(item, name)
         }
-        ImportItem::Label { name, .. } => match item {
-            Item::LabelForward(forward, _) => forward.name == *name,
-            Item::Labels(labels, _) => labels.entries.iter().any(|entry| {
-                entry.name == *name && !entry.is_reuse_marker()
-            }),
-            Item::TypeRecGroup(group) => group.members.iter().any(|member| {
-                matches!(member, crate::ast::TypeRecMember::Labels(labels, _)
-                    if labels.entries.iter().any(|entry| entry.name == *name && !entry.is_reuse_marker()))
-            }),
-            _ => false,
-        },
+
         ImportItem::OperatorPattern { grammar, .. } => {
             matches!(item, Item::Op(_, _) | Item::VariadicOperator(_, _))
                 && crate::doc_entry::doc_entry_for_name(item, &grammar.render()).is_some()
@@ -3244,9 +3167,6 @@ fn resolve_declaration(session: &Session, query: &str) -> Option<Resolved> {
                         grammar: selected, ..
                     },
                 ) => alias.as_ref().map_or(grammar, |alias| &alias.local) == selected,
-                (ImportItem::Label { name, .. }, ImportItem::Label { name: selected, .. }) => {
-                    name == selected
-                }
                 _ => false,
             })
         {
@@ -3315,13 +3235,7 @@ fn resolve_name(session: &Session, name: &str) -> Option<Resolved> {
     // the source module if it is loaded.
     for u in &cur_entry.module.imports {
         if let ImportKind::Selective { items, from } = &u.kind {
-            let label_name = name.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
-            let imported = items.iter().find(|it| {
-                it.as_local_name() == Some(name)
-                    || label_name.is_some_and(|label| {
-                        it.as_label().is_some_and(|(imported, _)| imported == label)
-                    })
-            });
+            let imported = items.iter().find(|item| item.as_local_name() == Some(name));
             if let Some(imported) = imported {
                 let source = imported.as_name().unwrap_or(name);
                 let from_path = module_path_key(from);
@@ -3557,7 +3471,7 @@ fn surface_item_name(item: &Item<Surface>) -> Option<&str> {
         Item::Macro(s, _) => Some(&s.name),
         Item::Newtype(n) => Some(&n.name),
         Item::Labels(t, _) => t.type_alias_name.as_deref(),
-        Item::LabelForward(_, _) => None,
+
         Item::Equiv(e, _) => Some(&e.name),
         Item::HostType(h) => Some(&h.name),
         Item::HostFn(h) => Some(&h.name),
@@ -3574,9 +3488,7 @@ fn surface_item_declares(item: &Item<Surface>, name: &str) -> bool {
     match item {
         Item::RecGroup(g, _) => rec_group_module_members(g).any(|f| f.name == name),
         Item::TypeRecGroup(_) => crate::doc_entry::doc_entry_for_name(item, name).is_some(),
-        Item::Labels(_, _) | Item::LabelForward(_, _) => {
-            crate::doc_entry::doc_entry_for_name(item, name).is_some()
-        }
+        Item::Labels(_, _) => crate::doc_entry::doc_entry_for_name(item, name).is_some(),
         _ => surface_item_name(item) == Some(name),
     }
 }
@@ -3733,7 +3645,7 @@ path (X/a/b.name). `:scope` lists everything in scope.
 Declaration selectors (:signature, :source, :doc, :which, :refs):
   :sig name                 :sig X/a/b.name
   :sig op _ + _             :sig X/a/b.(op _ + _)
-  :sig {field}              :sig X/a/b.(varop [* *])
+  :sig Field                :sig X/a/b.(varop [* *])
 Qualified operators require the outer parentheses; inner pattern
 parentheses such as (=) keep their import meaning. Module aliases work too.
 These selectors are not expression syntax.",
@@ -3905,8 +3817,8 @@ mod tests {
             "varop",
             "demo/ops.op",
             "demo/ops.varop",
-            "{field}",
-            "demo/ops.{field}",
+            "Field",
+            "demo/ops.Field",
             "op _ + _",
             "op _ ? __ : ___",
             "demo/ops.(op _ (=) _)",
@@ -3928,6 +3840,8 @@ mod tests {
             "demo/ops.varop [* *]",
             "demo/ops.(op)",
             "demo/ops.(choose)",
+            "{field}",
+            "demo/ops.{field}",
             "demo/ops.({field})",
             "demo/ops.(op _ + _, choose)",
             "demo/ops.(op _ + _",
@@ -3955,7 +3869,7 @@ mod tests {
                 "arithmetic.(varop [**])",
                 "pub varop [* *] { foldr choose empty }",
             ),
-            ("arithmetic.{field}", "pub type {field} = {original};"),
+            ("arithmetic.Field", "pub type Field = Original;"),
             ("arithmetic.field", "pub fn field()"),
             ("arithmetic.op", "pub fn op()"),
             ("arithmetic.varop", "pub fn varop()"),
@@ -3985,9 +3899,9 @@ mod tests {
             !refs.contains("demo/other") && !refs.contains("in fn choose"),
             "{refs}"
         );
-        let refs = cmd_refs(&s, "arithmetic.{field}");
+        let refs = cmd_refs(&s, "arithmetic.Field");
         assert!(
-            refs.contains("in fn label_use") && refs.contains("in type {field}"),
+            refs.contains("in fn alias_use") && refs.contains("in type Field"),
             "{refs}"
         );
         assert!(
@@ -3996,7 +3910,7 @@ mod tests {
         );
         let refs = cmd_refs(&s, "arithmetic.field");
         assert!(
-            refs.contains("in fn function_use") && !refs.contains("in fn label_use"),
+            refs.contains("in fn function_use") && !refs.contains("in fn alias_use"),
             "{refs}"
         );
         for name in ["fn", "pub"] {
@@ -4020,7 +3934,7 @@ mod tests {
                 ("arithmetic.(op _", "arithmetic.(op _ + _)"),
                 ("demo/ops.(var", "demo/ops.(varop [* *])"),
                 ("op _", "op _ + _"),
-                ("arithmetic.{f", "arithmetic.{field}"),
+                ("arithmetic.F", "arithmetic.Field"),
             ] {
                 let line = format!(":{command} {prefix}");
                 let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
@@ -4069,26 +3983,24 @@ mod tests {
                 "{inserted}: {output}"
             );
         }
-        for command in ["sig", "src", "doc", "refs"] {
-            let line = format!(":{command} {{");
-            let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
-            assert!(
-                !result
-                    .candidates
-                    .iter()
-                    .any(|item| item.label == "{original}"),
-                "{result:?}"
-            );
-            assert!(
-                result.candidates.iter().any(|item| item.label == "{field}"),
-                "{result:?}"
-            );
-            let line = format!(":{command} arithmetic.{{ori");
+        for command in ["sig", "src", "doc", "refs", "which"] {
+            for prefix in ["{", "arithmetic.{ori"] {
+                let line = format!(":{command} {prefix}");
+                let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
+                assert!(
+                    result
+                        .candidates
+                        .iter()
+                        .all(|item| !item.label.contains('{')),
+                    "{result:?}"
+                );
+            }
+            let line = format!(":{command} arithmetic.Ori");
             let result = complete(&names, &AstScopeProvider::new(&names), &line, line.len());
             let selected = result
                 .candidates
                 .iter()
-                .find(|item| item.label == "arithmetic.{original}")
+                .find(|item| item.label == "arithmetic.Original")
                 .unwrap();
             let inserted = format!("{}{}", &line[..result.replace.start], selected.label);
             let mut session = declaration_selector_session();
@@ -4101,13 +4013,6 @@ mod tests {
                 "{inserted}: {output}"
             );
         }
-        let line = ":which {ori";
-        assert!(
-            complete(&names, &AstScopeProvider::new(&names), line, line.len())
-                .candidates
-                .iter()
-                .any(|item| item.label == "{original}")
-        );
     }
 
     fn slash_operator_session() -> Session {
@@ -4153,8 +4058,6 @@ mod tests {
 
 import __comptime__;
 
-pub type Target_request = __Type__ | .;
-
 pure fn run(ct: __Comptime__, k: . -> __Checked_term__, value: __Checked_term__) -> __Checked_term__ {
   __structural_recur__(ct)[__Type__][__Checked_term__][__Checked_term__](
     , __type_unit__(ct)
@@ -4181,7 +4084,7 @@ pub pure fn reentrant_checked(
   , ct: __Comptime__
   , _source: __Type__
   , value: __Checked_term__
-  , _target: Target_request
+  , _target: .
   ) -> __Checked_term__ { reenter(ct, value) }
 
 pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checked; };
@@ -4771,13 +4674,13 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn cmd_type_reports_labels_name_with_kind_aware_error() {
+    fn cmd_type_reports_compact_owner_as_type_alias() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub labels Color = { red: ., green: . };\n",
+            "module pkg/a;\npub type Color = { Red: .; Green: .; };\n",
         )]);
         let out = cmd_type_name(&s, "Color", Palette::plain());
-        assert!(out.contains("`labels`"), "got: {out}");
+        assert!(out.contains("type alias"), "got: {out}");
         assert!(out.contains("value binding"), "got: {out}");
     }
 
@@ -4865,44 +4768,37 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn forwarding_declaration_commands_keep_local_imported_and_qualified_selectors() {
+    fn alias_declaration_commands_keep_local_imported_and_qualified_selectors() {
         let provider = concat!(
-            "module pkg/api; pub fn field() -> . { () }\n",
-            "/// The forwarded field.\n",
-            "pub type {field} = {original};\n",
+            "module pkg/api; pub fn field() -> . { () } pub type { Original: .; }\n",
+            "/// The field alias.\n",
+            "pub type Field = Original;\n",
         );
         for modules in [
             vec![("pkg/api", provider)],
             vec![
                 ("pkg/api", provider),
-                (
-                    "pkg/main",
-                    "module pkg/main; import pkg/api(field, {field});",
-                ),
+                ("pkg/main", "module pkg/main; import pkg/api(field, Field);"),
             ],
         ] {
             let mut session = session_with(&modules);
-            for selector in ["{field}", "pkg/api.{field}"] {
+            for selector in ["Field", "pkg/api.Field"] {
                 for command in ["signature", "source"] {
                     let output = parse_command(&format!(":{command} {selector}"))
                         .unwrap()
                         .run(&mut session, Palette::plain())
                         .output;
-                    assert_eq!(output, "pub type {field} = {original};");
+                    assert_eq!(output, "pub type Field = Original;");
                 }
                 let output = parse_command(&format!(":doc {selector}"))
                     .unwrap()
                     .run(&mut session, Palette::plain())
                     .output;
-                assert!(output.contains("The forwarded field."), "{output}");
-                assert!(
-                    output.contains("pub type {field} = {original};"),
-                    "{output}"
-                );
-                assert!(!output.contains("newtype Field"), "{output}");
+                assert!(output.contains("The field alias."), "{output}");
+                assert!(output.contains("pub type Field = Original;"), "{output}");
             }
             assert!(cmd_signature(&session, "field", Palette::plain()).starts_with("pub fn field"));
-            assert!(resolve_name(&session, "Field").is_none());
+            assert!(resolve_name(&session, "Field").is_some());
         }
         assert!(matches!(
             classify_input("{field}"),
@@ -4912,17 +4808,17 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn forwarded_label_refs_do_not_select_a_same_spelled_function() {
+    fn alias_refs_do_not_select_the_lowercase_function() {
         let (_root, session) = session_with_analysis(
             "pkg/api",
             concat!(
-                "module pkg/api; labels { original: . };\n",
+                "module pkg/api; type { Original: .; }\n",
                 "fn field() -> . { () }\n",
-                "type {field} = {original};\n",
+                "type Field = Original;\n",
             ),
         );
-        let references = cmd_refs(&session, "{field}");
-        assert!(references.contains("in type {field}"), "{references}");
+        let references = cmd_refs(&session, "Field");
+        assert!(references.contains("in type Field"), "{references}");
         assert!(!references.contains("in fn field"), "{references}");
         assert_eq!(references.lines().count(), 2, "{references}");
     }
@@ -4980,28 +4876,28 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
                /// First member docs.\n\
                type First = Second;\n\
                /// Second member docs.\n\
-               newtype Second : First { constructor mk; projector un; };\n\
+               type { Second: First { mk; get; }; };\n\
              }\n",
         )]);
 
         for name in ["Second", "pkg/a.Second"] {
             let signature = cmd_signature(&s, name, Palette::plain());
-            assert!(signature.contains("newtype Second"), "got: {signature}");
+            assert!(signature.contains("Second: First"), "got: {signature}");
             assert!(signature.contains("rec {"), "got: {signature}");
             assert!(signature.contains("type First ="), "got: {signature}");
 
             let doc = cmd_doc(&s, name, Palette::plain());
             assert!(doc.contains("Second member docs"), "got: {doc}");
             assert!(!doc.contains("First member docs"), "got: {doc}");
-            assert!(doc.contains("newtype Second"), "got: {doc}");
+            assert!(doc.contains("Second: First"), "got: {doc}");
 
             let source = cmd_source(&s, name, Palette::plain());
-            assert!(source.contains("newtype Second"), "got: {source}");
+            assert!(source.contains("Second: First"), "got: {source}");
             assert!(source.contains("rec {"), "got: {source}");
             assert!(source.contains("type First ="), "got: {source}");
         }
 
-        for (name, kind) in [("First", "type alias"), ("pkg/a.Second", "`newtype`")] {
+        for (name, kind) in [("First", "type alias"), ("pkg/a.Second", "nominal type")] {
             let purity = cmd_pure(&mut s, name);
             assert!(purity.contains(kind), "got: {purity}");
             assert!(purity.contains("executable value binding"), "got: {purity}");
@@ -5262,9 +5158,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_ls_no_footer_when_nothing_to_expand() {
-        // An anonymous-labels-only module elides no signature, so the
-        // terse listing carries no `-v` footer.
-        let s = session_with(&[("pkg/a", "module pkg/a;\nlabels { red: ., green: . };\n")]);
+        let s = session_with(&[("pkg/a", "module pkg/a;\nequiv same { (); () }\n")]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert!(
             !out.contains(":ls -v"),
@@ -5273,30 +5167,26 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn cmd_ls_does_not_leak_label_braces_for_anonymous_labels() {
-        // Regression: an anonymous `labels { ... };` block used to
-        // render as the literal `labels { … }` entry — an internal
-        // structural fragment leaking through. The fix expands the
-        // anonymous form to one line per declared entry instead.
+    fn cmd_ls_lists_each_anonymous_nominal() {
         let s = session_with(&[(
             "pkg/a",
             "module pkg/a;\n\
              pub fn run() -> . { () }\n\
-             labels { red: ., green: . };\n",
+             type { Red: .; Green: .; };\n",
         )]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
-        // No literal `{ … }` or `labels { … }` in the output.
+        // Terse output lists names without rendering the anonymous container.
         assert!(
             !out.contains("{ … }"),
             "literal `{{ … }}` should not appear, got:\n{out}"
         );
         assert!(
-            !out.contains("labels { ... }") && !out.contains("labels { … }"),
-            "literal `labels {{ … }}` should not appear, got:\n{out}"
+            !out.contains("type {"),
+            "terse output lists each nominal name, got:\n{out}"
         );
         // The entries surface individually.
-        assert!(out.contains("label red"), "got:\n{out}");
-        assert!(out.contains("label green"), "got:\n{out}");
+        assert!(out.contains("type Red"), "got:\n{out}");
+        assert!(out.contains("type Green"), "got:\n{out}");
     }
 
     fn assert_fragments_once_in_order(output: &str, fragments: &[&str]) {
@@ -5315,69 +5205,56 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn cmd_ls_preserves_anonymous_recursive_labels_exactly_once_in_source_order() {
+    fn cmd_ls_preserves_anonymous_recursive_nominals_exactly_once_in_source_order() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
             "module pkg/a;\n\
              rec {\n\
-               pub labels { left: Right, right: Branch };\n\
-               pub newtype Branch : Left { pub constructor branch; pub projector un_branch; };\n\
+               pub type { Left: Right; Right: Branch; };\n\
+               pub type { Branch: Left { pub mk; pub get; }; };\n\
              }\n",
         );
 
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert_eq!(
             terse,
-            "pkg/a:\n  pub label left\n  pub label right\n  pub newtype Branch\n\
+            "pkg/a:\n  pub type Left\n  pub type Right\n  pub type Branch\n\
              (… :ls -v for full signatures)"
         );
 
         let verbose = cmd_ls(&s, Some("pkg/a"), true, Palette::plain());
-        assert_fragments_once_in_order(
-            &verbose,
-            &[
-                "pub labels",
-                "left: Right",
-                "right: Branch",
-                "pub newtype Branch : Left",
-            ],
-        );
+        assert_fragments_once_in_order(&verbose, &["Left: Right", "Right: Branch", "Branch: Left"]);
     }
 
     #[test]
-    fn cmd_ls_preserves_named_labels_inside_a_type_rec_group() {
+    fn cmd_ls_preserves_compact_names_inside_a_type_rec_group() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
             "module pkg/a;\n\
              rec {\n\
-               pub labels Node = { next: Tree };\n\
-               pub newtype Tree : Node { pub constructor tree; pub projector un_tree; };\n\
+               pub type Node = { Next: Tree; };\n\
+               pub type { Tree: Node { pub mk; pub get; }; };\n\
              }\n",
         );
 
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert_eq!(
             terse,
-            "pkg/a:\n  labels Node\n  pub newtype Tree\n(… :ls -v for full signatures)"
+            "pkg/a:\n  pub type Node\n  pub type Next\n  pub type Tree\n(… :ls -v for full signatures)"
         );
 
         let verbose = cmd_ls(&s, Some("pkg/a"), true, Palette::plain());
-        assert_fragments_once_in_order(
-            &verbose,
-            &["pub labels Node =", "next: Tree", "pub newtype Tree : Node"],
-        );
+        assert_fragments_once_in_order(&verbose, &["pub type Node =", "Next: Tree", "Tree: Node"]);
     }
 
     #[test]
-    fn cmd_ls_named_labels_renders_as_named_labels() {
-        // The named form `labels T = { ... };` still renders as one
-        // `labels T` entry — the alias name is the queryable handle.
+    fn cmd_ls_lists_named_compact_owner_and_entries() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\ntype Unit = .;\npub labels Color = { red: Unit, green: Unit };\n",
+            "module pkg/a;\ntype Unit = .;\npub type Color = { Red: Unit; Green: Unit; };\n",
         )]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
-        assert!(out.contains("labels Color"), "got:\n{out}");
+        assert_fragments_once_in_order(&out, &["pub type Color", "pub type Red", "pub type Green"]);
     }
 
     #[test]
@@ -5663,41 +5540,37 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn cmd_doc_renders_newtype_doc_comment() {
-        // A `///` doc-comment on a `newtype` is surfaced by `:doc`
-        // (previously silently dropped). Routes through the shared
-        // `doc_entry` chokepoint.
+    fn cmd_doc_renders_nominal_doc_comment() {
         let s = session_with(&[(
             "pkg/a",
             "module pkg/a;\n\
              /// Wraps a unit value.\n\
-             pub newtype Wrapped : . { constructor mk_w; projector un_w; };\n",
+             pub type { Wrapped: . { mk; get; }; };\n",
         )]);
         let out = cmd_doc(&s, "Wrapped", Palette::plain());
         assert!(out.contains("Wraps a unit value"), "got: {out}");
-        assert!(out.contains("newtype Wrapped"), "got: {out}");
+        assert!(out.contains("Wrapped: ."), "got: {out}");
     }
 
     #[test]
-    fn ordinary_label_nominal_queries_keep_the_written_owner() {
+    fn ordinary_nominal_queries_keep_the_written_owner() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n/// The field label.\npub labels { field: . };\n",
+            "module pkg/a;\n/// The field type.\npub type { Field: .; };\n",
         )]);
         let doc = cmd_doc(&s, "Field", Palette::plain());
-        assert!(doc.contains("pub labels { field: . };"), "{doc}");
-        assert!(doc.contains("The field label."), "{doc}");
-        assert!(!doc.contains("newtype Field"));
+        assert!(doc.contains("pub type { Field: . }"), "{doc}");
+        assert!(doc.contains("The field type."), "{doc}");
+        assert!(resolve_declaration(&s, "Field").is_some());
+        assert!(resolve_declaration(&s, "pkg/a.Field").is_some());
+        assert!(resolve_declaration(&s, "{Field}").is_none());
         let signature = cmd_signature(&s, "Field", Palette::plain());
-        assert!(
-            signature.contains("pub labels { field: . };"),
-            "{signature}"
-        );
+        assert!(signature.contains("pub type { Field: . }"), "{signature}");
         let ty = cmd_type_name(&s, "Field", Palette::plain());
-        assert!(ty.contains("is a `newtype`"), "{ty}");
+        assert!(ty.contains("is a nominal type"), "{ty}");
         assert!(ty.contains("expects a value binding"), "{ty}");
         let purity = cmd_pure_name(&s, "Field");
-        assert!(purity.contains("is a `newtype`"), "{purity}");
+        assert!(purity.contains("is a nominal type"), "{purity}");
         assert!(
             purity.contains("expects an executable value binding"),
             "{purity}"
@@ -5705,16 +5578,33 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn recursive_label_nominal_queries_distinguish_the_named_alias() {
+    fn compact_nominal_references_keep_entry_contexts() {
+        let (_root, session) = session_with_analysis(
+            "pkg/a",
+            "module pkg/a; type { Red: .; Green: Red; } fn use_red(value: Red) -> Red { value }",
+        );
+        let references = cmd_refs(&session, "Red");
+        assert!(references.contains("in type Red"), "{references}");
+        assert!(references.contains("in type Green"), "{references}");
+        assert!(references.contains("in fn use_red"), "{references}");
+        let qualified = cmd_refs(&session, "pkg/a.Red");
+        assert_eq!(references, qualified);
+        let green = cmd_refs(&session, "Green");
+        assert!(green.contains("in type Green"), "{green}");
+        assert!(!green.contains("in fn use_red"), "{green}");
+    }
+
+    #[test]
+    fn recursive_nominal_queries_distinguish_the_named_alias() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nrec { pub labels Row = { field: . }; }\n",
+            "module pkg/a;\npub rec type Row = { Field: Row; };\n",
         )]);
         for name in ["Field", "Row"] {
             let kind = if name == "Field" {
-                "a `newtype`"
+                "a nominal type"
             } else {
-                "a `labels` declaration"
+                "a type alias"
             };
             let ty = cmd_type_name(&s, name, Palette::plain());
             assert!(ty.contains(kind), "{ty}");
@@ -5829,38 +5719,47 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn forwarded_reference_identity_does_not_merge_terminal_labels() {
+    fn alias_reference_heads_stay_separate_from_terminal_members() {
         let (_root, session) = session_with_analysis(
             "pkg/api",
             concat!(
                 "module pkg/api;\n",
-                "labels { original: . };\n",
-                "type {first} = {original};\n",
-                "type {second} = {first};\n",
-                "fn first_use() -> Original { {first=} }\n",
-                "fn second_use() -> Original { {second=} }\n",
-                "fn original_use() -> Original { {original=} }\n",
+                "type { Original: .; }\n",
+                "type First = Original;\n",
+                "type Second = First;\n",
+                "fn first_use() { let _ = First.mk(()); () }\n",
+                "fn second_use() { let _ = Second.mk(()); () }\n",
+                "fn original_use() { let _ = Original.mk(()); () }\n",
             ),
         );
-        let first = cmd_refs(&session, "{first}");
-        assert_eq!(first.lines().count(), 4, "{first}");
-        assert!(
-            first.contains("in type {second}") && first.contains("in fn first_use"),
-            "{first}"
+        assert_eq!(
+            cmd_refs(&session, "First"),
+            concat!(
+                "references to `First`:\n",
+                "  pkg/api:3:6  in type First\n",
+                "  pkg/api:4:15  in type Second\n",
+                "  pkg/api:5:26  in fn first_use",
+            )
         );
-        assert!(
-            !first.contains("in fn second_use") && !first.contains("in fn original_use"),
-            "{first}"
+        assert_eq!(
+            cmd_refs(&session, "Second"),
+            concat!(
+                "references to `Second`:\n",
+                "  pkg/api:4:6  in type Second\n",
+                "  pkg/api:6:27  in fn second_use",
+            )
         );
-        let original = cmd_refs(&session, "{original}");
-        assert_eq!(original.lines().count(), 4, "{original}");
-        assert!(
-            original.contains("in type {first}") && original.contains("in fn original_use"),
-            "{original}"
-        );
-        assert!(
-            !original.contains("in fn first_use") && !original.contains("in fn second_use"),
-            "{original}"
+        assert_eq!(
+            cmd_refs(&session, "Original"),
+            concat!(
+                "references to `Original`:\n",
+                "  pkg/api:2:8  in type Original\n",
+                "  pkg/api:3:14  in type First\n",
+                "  pkg/api:5:32  in fn first_use\n",
+                "  pkg/api:6:34  in fn second_use\n",
+                "  pkg/api:7:29  in fn original_use\n",
+                "  pkg/api:7:38  in fn original_use",
+            )
         );
     }
 
@@ -5911,7 +5810,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let edited = files[2].1.replace("import demo/a(", "import demo/b(");
         std::fs::write(&main, &edited).unwrap();
         session.refresh().unwrap();
-        for query in ["truth", "build", "{field}"] {
+        for query in ["truth", "build", "Field"] {
             let refs = cmd_refs(&session, query);
             assert!(refs.contains("demo/b:"), "{query}: {refs}");
             assert!(!refs.contains("demo/a:"), "{query}: {refs}");
@@ -5963,12 +5862,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     }
 
     #[test]
-    fn cmd_refs_includes_label_reuse_markers() {
+    fn cmd_refs_includes_ordinary_nominal_rhs_references() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\nlabels { field: . };\nlabels Row = { field: _ };\n",
+            "module pkg/a;\ntype { Field: .; };\ntype Row = Field;\n",
         );
-        let out = cmd_refs(&s, "{field}");
+        let out = cmd_refs(&s, "Field");
         assert_eq!(out.matches("pkg/a:").count(), 2, "got: {out}");
     }
 
@@ -5981,8 +5880,8 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             "module pkg/a;\n\
              pub fn run() -> . { () }\n\
              type Foo = .;\n\
-             newtype Box[A] : A { constructor mk; projector get; };\n\
-             labels Color = { red: ., green: . };\n\
+             type { Box[A]: A { mk; get; }; };\n\
+             type Color = { Red: .; Green: .; };\n\
              equiv e { (); () }\n\
              op _ + __ { impl run; };\n",
         )
@@ -5992,8 +5891,8 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             let src = "module pkg/a;\n\
                        pub fn run() -> . { () }\n\
                        type Foo = .;\n\
-                       newtype Box[A] : A { constructor mk; projector get; };\n\
-                       labels Color = { red: ., green: . };\n\
+                       type { Box[A]: A { mk; get; }; };\n\
+                       type Color = { Red: .; Green: .; };\n\
                        equiv e { (); () }\n\
                        op _ + __ { impl run; };\n";
             src.find(needle).expect("needle present") as u32
@@ -6007,12 +5906,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             "in type Foo"
         );
         assert_eq!(
-            enclosing_item_label(&m, "pkg/a", pick("newtype Box")),
-            "in newtype Box"
+            enclosing_item_label(&m, "pkg/a", pick("Box[A]")),
+            "in type Box"
         );
         assert_eq!(
-            enclosing_item_label(&m, "pkg/a", pick("labels Color")),
-            "in labels Color"
+            enclosing_item_label(&m, "pkg/a", pick("type Color")),
+            "in type Color"
         );
         assert_eq!(
             enclosing_item_label(&m, "pkg/a", pick("equiv e")),

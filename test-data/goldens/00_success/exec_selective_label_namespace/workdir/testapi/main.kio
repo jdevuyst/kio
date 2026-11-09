@@ -1,10 +1,11 @@
 module testapi/main;
 
-import labels(item, {item});
+import labels as provider;
+import labels(item);
 import testapi(String);
 import testapi/io(print);
 import types(Item);
 
 pub fn keep(value: Item) -> Item { value }
 
-pub fn main() { print(item()); print({item = "label\n"[String]}.?{item}) }
+pub fn main() { print(item()); print(provider.Item.get(provider.Item.mk("label\n"[String]))) }

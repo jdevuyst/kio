@@ -4,15 +4,15 @@ import __intrinsics__;
 
 host type I32 role(i32);
 
-pub newtype Leaf : . { pub constructor leaf; pub projector un_leaf }
+pub type { Leaf: . { pub mk; pub get } }
 
 rec {
-  pub newtype Branch : Root & Root { pub constructor branch; pub projector un_branch };
+  pub type { Branch: Root & Root { pub mk; pub get } };
   pub type Root_tail = Branch;
-  pub newtype Root : Leaf | Root_tail { pub constructor make_root; pub projector read_root }
+  pub type { Root: Leaf | Root_tail { pub mk; pub get } }
 }
 
-pub fn base_payload() -> Leaf | Root_tail { __left__[Leaf][Root_tail](Leaf.leaf(())) }
+pub fn base_payload() -> Leaf | Root_tail { __left__[Leaf][Root_tail](Leaf.mk(())) }
 
 pub fn keep(root: Root) -> Root { root }
 

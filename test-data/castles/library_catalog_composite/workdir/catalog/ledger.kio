@@ -2,12 +2,13 @@ module catalog/ledger;
 
 import catalog/domain as dom;
 import catalog/domain(Call_list, Failure, Member, Member_index);
+import catalog/domain(Fines, Held);
 import catalog/domain(fine_rate);
-import catalog/domain({fines}, {held});
 import dict/dict as dict;
 import list/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, mul_i32);
@@ -21,11 +22,13 @@ pub fn find(members: Member_index, id: I32) -> Member_result {
   }
 }
 
-pub fn holds_copy(who: Member, call: I32) -> Bool { list.elem(dom.eq_pair, call, who.?{held}) }
+pub fn holds_copy(who: Member, call: I32) -> Bool {
+  list.elem(dom.eq_pair, call, who.>select { Held.get })
+}
 
 pub fn borrow(who: Member, call: I32) -> Member {
-  let .(holding: Call_list) = list.prepend(call, who.?{held});
-  who.!{held = holding}
+  let .(holding: Call_list) = list.prepend(call, who.>select { Held.get });
+  who.>with { Held.mk(holding) }
 }
 
 pub fn give_back(who: Member, call: I32, days_late: I32) -> Member {
@@ -34,17 +37,19 @@ pub fn give_back(who: Member, call: I32, days_late: I32) -> Member {
     , .(other: I32) {
         if(eq_i32(other, call)) { .f } else { .t }
       }
-    , who.?{held}
+    , who.>select { Held.get }
     );
-  let .(owed: I32) = add_i32(who.?{fines}, mul_i32(days_late, fine_rate));
-  who.!{fines = owed, held = holding}
+  let .(owed: I32) = add_i32(who.>select { Fines.get }, mul_i32(days_late, fine_rate));
+  who.>with { Fines.mk(owed); Held.mk(holding) }
 }
 
 pub fn save(members: Member_index, id: I32, who: Member) -> Member_index {
   dict.insert(dom.cmp_i32, members, id, who)
 }
 
-pub fn held_count(who: Member) -> I32 { list.length(who.?{held}) }
+pub fn held_count(who: Member) -> I32 {
+  list.length(who.>select { Held.get })
+}
 
 pub fn member_count(members: Member_index) -> I32 { dict.size(members) }
 
@@ -54,7 +59,7 @@ pub fn total_fines(members: Member_index) -> I32 {
   , 0
   , .(step: I32 & I32 & Member) {
       let .(running: I32, _id: I32, who: Member) = step;
-      add_i32(running, who.?{fines})
+      add_i32(running, who.>select { Fines.get })
     }
   )
 }

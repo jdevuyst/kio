@@ -1,0 +1,18 @@
+module macros;
+
+import __comptime__;
+
+pure fn required_checked(
+, ct: __Comptime__
+, _source: __Type__
+, value: __Checked_term__
+, _target: __Type__
+) -> __Checked_term__ { value }
+
+pure fn natural_checked(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  value
+}
+
+pub macro required : [Source] Source -> [Target] Target { impl required_checked }
+
+pub macro natural : [Source] Source -> [Target] Target { impl natural_checked }

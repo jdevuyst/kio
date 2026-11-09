@@ -8,8 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::{InternedType, RecordedElaboration, UserMacroReplayEnv};
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, Lowered, Meta, Param, PathSegment, RecQuotePlan, Signature,
-    SignatureParam, Type,
+    CallArg, Expr, Lowered, Meta, Param, PathSegment, RecQuotePlan, Signature, SignatureParam, Type,
 };
 use crate::error::Error;
 use crate::pass::substitute::{self, PrePrime};
@@ -470,17 +469,6 @@ pub(super) fn compose(
                                     }
                                 }
                             }
-                            Expr::Elaborator { call, .. } => match call {
-                                ElaboratorCall::FieldAccess { receiver, .. } => {
-                                    pending.push(Work::Enter(receiver));
-                                }
-                                ElaboratorCall::FieldUpdate { base, updates } => {
-                                    pending.extend(base.receiver().map(Work::Enter));
-                                    pending.extend(
-                                        updates.iter().map(|update| Work::Enter(&update.value)),
-                                    );
-                                }
-                            },
                             _ => {}
                         }
                         pending[start..].reverse();
@@ -550,10 +538,7 @@ pub(super) fn compose(
                     Expr::Call { .. }
                     | Expr::Ufcs {
                         macro_call: None, ..
-                    }
-                    | Expr::Elaborator { .. } => {
-                        replay_children(node, children, k, runtime, ambient, replay)?
-                    }
+                    } => replay_children(node, children, k, runtime, ambient, replay)?,
                     _ => {
                         unreachable!("suspension propagation follows ordinary expression children")
                     }

@@ -2,6 +2,6 @@ module testapi/types;
 
 import testapi(String);
 
-pub newtype Box <A> : String & A { pub constructor mk_box; pub projector un_box }
+pub type { Box <A>: String & A { pub mk; pub get } }
 
-pub fn make_box[A](s: String, w: A) -> Box { Box.mk_box[A]((s, w)) }
+pub fn make_box[A](s: String, w: A) -> Box { Box.mk[A]((s, w)) }

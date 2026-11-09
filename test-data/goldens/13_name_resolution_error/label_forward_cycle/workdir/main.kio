@@ -1,5 +1,0 @@
-module main;
-
-type {first} = {second};
-
-type {second} = {first};

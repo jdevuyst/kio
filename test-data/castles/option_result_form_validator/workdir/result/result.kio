@@ -21,16 +21,16 @@ pub type Result[T][E] = T | E;
 /// A pure two-state truth value, so the predicates below return a
 /// proper boolean without reaching for a host `Bool`. The two arms are
 /// labeled so `match` can tell them apart (a bare `. | .` could not).
-pub labels { btrue: ., bfalse: . };
+pub type { Btrue: .; Bfalse: . }
 
 /// Boolean-like result type used by pure predicates in this module.
 pub type Bool = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum({btrue=})[Btrue | Bfalse] }
+pub fn yes() -> Bool { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum({bfalse=})[Btrue | Bfalse] }
+pub fn no() -> Bool { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
 
 /// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
 /// labels inside this module — a consumer never has to name `Btrue` /

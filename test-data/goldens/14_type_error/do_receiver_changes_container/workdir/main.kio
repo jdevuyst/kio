@@ -2,12 +2,12 @@ module main;
 
 import macros/sequence(macro do);
 
-pub newtype Box[A] : A { constructor box; projector unbox }
+pub type { Box[A]: A { mk; get } }
 
-pub newtype Other[A] : A { constructor other; projector unother }
+pub type { Other[A]: A { mk; get } }
 
 host fn bind[A][B](value: Box[A], next: A -> Other[B]) -> Other[B];
 
 fn run() -> Other[.] {
-  do(bind) { let first <- Box.box(()); let second <- Box.box(()); Other.other(second) }
+  do(bind) { let first <- Box.mk(()); let second <- Box.mk(()); Other.mk(second) }
 }

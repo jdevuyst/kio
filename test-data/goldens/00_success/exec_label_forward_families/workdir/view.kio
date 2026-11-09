@@ -2,6 +2,6 @@ module view;
 
 import origin as original;
 
-pub type {entry} = {original.item};
+pub type Entry[A] = original.Item[A];
 
-pub type {packet} = {original.pack};
+pub type Packet[A] = original.Pack[A];

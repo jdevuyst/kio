@@ -1,6 +1,6 @@
 module main;
 
-newtype W : . { constructor mk; projector get; };
+type { W: . { mk; get } };
 
 fn caller() -> W {
 	()

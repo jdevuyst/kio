@@ -1,8 +1,8 @@
 # Structural sums and pattern matching
 
 A sum type `A | B` says a value is one of several shapes. Kio has no separate
-`enum` declaration: `|` composes structural alternatives, while `labels`
-creates nominally distinct names for alternatives that carry domain meaning.
+`enum` declaration: `|` composes structural alternatives, while nominal entries in a `type` declaration
+create distinct names for alternatives that carry domain meaning.
 
 Those two forms belong to the language. The convenient operations used below
 are library macros: `widen_sum` constructs a chosen arm and `match`
@@ -73,76 +73,72 @@ explains how nested sums and products are treated.
 
 ## When branches need names
 
-Sum branches are positional, and repeated payload types are allowed. If two branches mean different domain cases, do not use `String | String` and rely on position. Use labels to mint distinct generated types, then widen those labels into the named sum:
+Sum branches are positional, and repeated payload types are allowed. If two branches mean different domain cases, do not use `String | String` and rely on position. Use nominal types to give the alternatives distinct identities, then widen those values into the named sum:
 
 ```kio {@module}
-labels Channel = { primary: String } | { fallback: String };
+type Channel = { Primary: String } | { Fallback: String };
 
-fn primary_channel(s: String) -> Channel { ({primary = s}.>widen_sum)[Channel] }
+fn primary_channel(s: String) -> Channel { (Primary.mk(s).>widen_sum)[Channel] }
 
-fn fallback_channel(s: String) -> Channel { ({fallback = s}.>widen_sum)[Channel] }
+fn fallback_channel(s: String) -> Channel { (Fallback.mk(s).>widen_sum)[Channel] }
 
 fn describe_channel(c: Channel) -> String {
   match(c) {
-    .(p: Primary) { string_concat("primary:", p.?{primary}) };
-    .(f: Fallback) { string_concat("fallback:", f.?{fallback}) }
+    .(p: Primary) { string_concat("primary:", Primary.get(p)) };
+    .(f: Fallback) { string_concat("fallback:", Fallback.get(f)) }
   }
 }
 ```
 
-Inside each clause the parameter has one statically known label type:
-`p: Primary` or `f: Fallback`. Field access then uses the ordinary product
-operation `p.?{primary}` or `f.?{fallback}`. The access is not a conditional
-search across the whole sum; `match` first selects a branch, and `.?{field}`
-projects a field that the selected clause type guarantees is present.
+Inside each clause the parameter has one statically known nominal type:
+`p: Primary` or `f: Fallback`. The corresponding `get` member projects its
+payload after `match` selects the branch.
 
 The same pattern scales to several alternatives:
 
 ```kio {@module}
-labels Event = { text: String } | { code: Int } | { done: . };
+type Event = { Text: String } | { Code: Int } | { Done: . };
 
 fn describe_event(e: Event) -> String {
   match(e) {
-    .(t: Text) { string_concat("text:", t.?{text}) };
-    .(c: Code) { string_concat("code:", int_to_string(c.?{code})) };
+    .(t: Text) { string_concat("text:", Text.get(t)) };
+    .(c: Code) { string_concat("code:", int_to_string(Code.get(c))) };
     .(_d: Done) { "done" }
   }
 }
 ```
 
-## Enum-like sums with labels
+## Enum-like sums with nominal types
 
-Use a named `labels` sum when arms need stable names:
+Use named nominal entries when arms need distinct identities:
 
 ```kio {@module}
-labels Color = { red: . } | { green: . } | { blue: . };
+type Color = { Red: . } | { Green: . } | { Blue: . };
 
-fn red_color() -> Color { ({red=}.>widen_sum)[Color] }
+fn red_color() -> Color { (Red.mk(()).>widen_sum)[Color] }
 ```
 
 A case with data uses a non-unit payload:
 
 ```kio {@module}
-labels Message = { text: String } | { code: Int };
+type Message = { Text: String } | { Code: Int };
 ```
 
-An arm with several fields stays record-shaped. This type's error arm carries both `Err` and `Code` labels:
+An arm with several fields stays record-shaped. This type's error arm carries both `Err` and `Code` fields:
 
 ```kio {@module}
-labels Result = { ok: String } | { err: String, code: Int };
+type Result = { Ok: String } | { Err: String; Code: Int };
 ```
 
-When several alternatives carry the same previously declared field, mark each
-reuse explicitly:
+When alternatives share a field, use the existing nominal type in each arm:
 
 ```kio {@module}
-labels { correlation_id: Int };
+type { Correlation_id: Int }
 
-labels Reply = { correlation_id: _, reply_text: String } | { correlation_id: _, reply_code: Int };
+type Reply = (Correlation_id & { Reply_text: String }) | (Correlation_id & { Reply_code: Int });
 ```
 
-Both arms contain the same `Correlation_id` nominal. Writing the payload again
-would be a second declaration, not a reuse.
+Both arms contain the same `Correlation_id` nominal identity.
 
 ## Matching a sum
 
@@ -183,7 +179,7 @@ catch-alls, not tests for an empty arm: any branch can supply Unit by discarding
 its payload. Put them after more specific clauses. Every clause must handle
 at least one branch that earlier clauses leave uncovered; an unreachable clause
 is rejected. The scrutinee is still evaluated once. This differs from `Done`
-above: a label with a Unit payload
+above: a nominal type with a Unit payload
 remains a distinct nominal type, so `.(done: Done) { … }` matches that tag only.
 
 ## Destructuring product branches
@@ -203,15 +199,15 @@ This is not record-style matching. The first product slot goes to `label`; the s
 
 ## Recursive sums
 
-Anonymous sum types cannot mention themselves. Recursion is grounded at a `newtype`, which wraps and unwraps the recursive body:
+Anonymous sum types cannot mention themselves. Recursion is grounded at a nominal type, which wraps and unwraps the recursive body:
 
 ```kio {@module}
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) }
 
-fn nil[A] -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A] -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
 fn head_or[A](xs: List[A], default: A) -> A {
-  match(xs.>List.un_list) {
+  match(List.get(xs)) {
     .(x: A, _rest: List[A]) { x };
     .(_empty: .) { default }
   }
@@ -223,19 +219,19 @@ Unit argument. For a constructor that waits for an explicit Unit call, keep
 `()` in its signature as explained in
 [Type-only values](../tutorials/language.md#type-only-values).
 
-`rec labels` gives one label declaration an explicit atomic recursive scope.
-Its generated nominal heads are visible throughout the declaration, and a
+`rec type` gives one compact declaration an explicit atomic recursive scope.
+Its nominal heads are visible throughout the declaration, and a
 named form also sees its transparent alias head. This makes a recursive
 disjunction concise while keeping its cycles nominally grounded:
 
 ```kio {@module}
-rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list[A] };
+rec type Label_list[A] = { Nil[A]: . } | { Cons[A]: A & Label_list[A] };
 
 fn empty_label_list[A]() -> Label_list[A] { (Nil.mk[A](()).>widen_sum)[Label_list[A]] }
 ```
 
-`Label_list` remains a transparent alias; the generated `Cons` newtype is the
-nominal recursion knot. An unmarked `labels` declaration is source ordered and
+`Label_list` remains a transparent alias; the `Cons` nominal is the
+nominal recursion knot. An unmarked type declaration is source ordered and
 cannot see its own alias or later generated heads. `rec` is required for a
 genuine cycle and rejected when the declaration is acyclic.
 
@@ -244,7 +240,7 @@ genuine cycle and rejected when the declaration is acyclic.
 A clause can bind type parameters when the same body works for several branches:
 
 ```kio {@module}
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A }
 
 fn box_label[A](b: Box[A]) -> String { "boxed\n" }
 
@@ -316,7 +312,7 @@ see [trailing-block UFCS](ufcs.md#calls-with-trailing-blocks).
 
 - [Error handling](error-handling.md) uses sums and bottom for
   partial-function-style failure modeling.
-- [Structural products and row types](products.md) covers the product side of
+- [Row-typed records with ordinary products](products.md) covers the product side of
   the same structural type system.
 - [UFCS calls](ufcs.md) covers `.>`, `.>>`, `.<`, and `.<<` in detail.
 - [Using libraries](using-libraries.md) covers the dependency workflow and

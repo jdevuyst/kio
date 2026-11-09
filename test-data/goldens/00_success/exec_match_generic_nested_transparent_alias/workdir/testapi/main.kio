@@ -5,16 +5,16 @@ import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io(print);
 
-labels { left[A]: A, right[A]: A };
+type { Left[A]: A; Right[A]: A }
 
 type Branch[A] = Left[A] | Right[A];
 
 fn left[A](value: A) -> (Left[A] & .) | (Right[A] & .) {
-  widen_sum(({left = value}, ()))[(Left[A] & .) | (Right[A] & .)]
+  widen_sum((Left.mk(value), ()))[(Left[A] & .) | (Right[A] & .)]
 }
 
 fn right[A](value: A) -> (Left[A] & .) | (Right[A] & .) {
-  widen_sum(({right = value}, ()))[(Left[A] & .) | (Right[A] & .)]
+  widen_sum((Right.mk(value), ()))[(Left[A] & .) | (Right[A] & .)]
 }
 
 fn classify[A](source: (Left[A] & .) | (Right[A] & .), result: String) -> String {

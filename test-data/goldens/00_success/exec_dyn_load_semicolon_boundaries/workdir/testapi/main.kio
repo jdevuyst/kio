@@ -17,42 +17,26 @@ fn show(label: String, source: String) {
 }
 
 pub fn main() {
-  show(
-  , "canonical newtype: "[String]
-  , "module a; pub newtype Box : . { pub constructor make; pub projector take "
-    "}"[String]
-  );
-  show(
-  , "newtype edge runs: "[String]
-  , "module a; newtype Box : . { ;; constructor make;;; projector take;; }"[String]
-  );
-  show(
-  , "newtype reordered members: "[String]
-  , "module a; newtype Box : . { projector take; constructor make }"[String]
-  );
+  show("canonical newtype: "[String], "module a; pub type { Box: . { pub mk; pub get }; }"[String]);
+  show("newtype edge runs: "[String], "module a; type { Box: . { ;; mk;;; get;; }; }"[String]);
+  show("newtype reordered members: "[String], "module a; type { Box: . { get; mk }; }"[String]);
   show(
   , "newtype redundant suffix: "[String]
-  , "module a; newtype Box : . { constructor make; projector take; }; type "
-    "Unit = .;"[String]
+  , "module a; type { Box: . { mk; get; }; }; type Unit = .;"[String]
   );
-  show(
-  , "recursive singleton: "[String]
-  , "module a; rec newtype Box : . | Box { constructor make; projector take "
-    "};"[String]
-  );
+  show("recursive singleton: "[String], "module a; rec type { Box: . | Box { mk; get }; };"[String]);
   show(
   , "function redundant suffix: "[String]
   , "module a; pub fn first() { () }; pub fn second() { first() };"[String]
   );
   show(
   , "recursive final alias: "[String]
-  , "module a; rec { newtype Box : Link { constructor make; projector take }; "
-    "type Link = . | Box }"[String]
+  , "module a; rec { type { Box: Link { mk; get }; }; type Link = . | Box }"[String]
   );
   show(
   , "recursive edge separators: "[String]
-  , "module a; rec { ; type Link = . | Box; newtype Box : Link { constructor "
-    "make; projector take }; };"[String]
+  , "module a; rec { ; type Link = . | Box; type { Box: Link { mk; get }; }; "
+    "};"[String]
   );
   show(
   , "bridge leading separator: "[String]
@@ -69,34 +53,26 @@ pub fn main() {
   , "module a; pub fn run() { () } module b; pub fn run() { () } package p; "
     "bridge { a b }"[String]
   );
-  show(
-  , "newtype missing peer separator: "[String]
-  , "module a; newtype Box : . { constructor make projector take }"[String]
-  );
-  show("newtype empty: "[String], "module a; newtype Box : . {}"[String]);
-  show(
-  , "newtype duplicate member: "[String]
-  , "module a; newtype Box : . { constructor make; constructor other }"[String]
-  );
+  show("newtype missing peer separator: "[String], "module a; type { Box: . { mk get }; }"[String]);
+  show("newtype empty: "[String], "module a; type { Box: . {  }; }"[String]);
+  show("newtype duplicate member: "[String], "module a; type { Box: . { mk; mk }; }"[String]);
   show(
   , "newtype repeated outer suffix: "[String]
-  , "module a; newtype Box : . { constructor make; projector take };;"[String]
+  , "module a; type { Box: . { mk; get }; };;"[String]
   );
   show("function repeated outer suffix: "[String], "module a; fn run() { () };;"[String]);
   show(
   , "recursive missing peer separator: "[String]
-  , "module a; rec { newtype Box : Link { constructor make; projector take } "
-    "type Link = . | Box }"[String]
+  , "module a; rec { type { Box: Link { mk; get }; } type Link = . | Box }"[String]
   );
   show(
   , "recursive repeated peer separator: "[String]
-  , "module a; rec { newtype Box : Link { constructor make; projector take "
-    "};; type Link = . | Box }"[String]
+  , "module a; rec { type { Box: Link { mk; get }; };; type Link = . | Box }"[String]
   );
   show(
   , "recursive repeated leading separator: "[String]
-  , "module a; rec { ;; type Link = . | Box; newtype Box : Link { constructor "
-    "make; projector take } }"[String]
+  , "module a; rec { ;; type Link = . | Box; type { Box: Link { mk; get }; } "
+    "}"[String]
   );
   show("recursive empty: "[String], "module a; rec {}"[String]);
   show("recursive singleton group: "[String], "module a; rec { type Unit = . }"[String]);

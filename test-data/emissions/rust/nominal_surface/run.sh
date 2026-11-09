@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: Rust hosts use explicit, label-generated, roleless-payload, and same-leaf nominal types through declaration-keyed public paths.
+# SUBJECT: Rust hosts use explicit, compact, roleless-payload, and same-leaf nominal types through declaration-keyed public paths.
 set -eu
 
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.rust.XXXXXX")

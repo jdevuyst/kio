@@ -31,7 +31,7 @@ rec(loop) {
   /// is left open when the points run out.
   pub fn from_points(ps: lst.List[sweep.Point]) -> I32 { recur close(ps, 0, 0, 0) };
   fn close(ps: lst.List[sweep.Point], from: I32, height: I32, total: I32) -> I32 {
-    match(ps.>lst.List.un_list) {
+    match(ps.>lst.List.get) {
       (
       , .(p: sweep.Point, rest: lst.List[sweep.Point]) {
           let width = sub_i32(sweep.x_of(p), from);
@@ -58,7 +58,7 @@ rec(loop) fn paint(col: I32, stop: I32, h: I32, grid: Array[I32]) {
 }
 
 rec(loop) fn paint_all(bs: lst.List[city.Building], grid: Array[I32]) {
-  match(bs.>lst.List.un_list) {
+  match(bs.>lst.List.get) {
     (
     , .(b: city.Building, rest: lst.List[city.Building]) {
         paint(city.left_of(b), city.right_of(b), city.height_of(b), grid);
@@ -103,7 +103,7 @@ rec(loop) {
   /// either total. This one is not.
   pub fn advances(ps: lst.List[sweep.Point]) -> Bool { recur forward(ps, -1) };
   fn forward(ps: lst.List[sweep.Point], from: I32) -> Bool {
-    match(ps.>lst.List.un_list) {
+    match(ps.>lst.List.get) {
       (
       , .(p: sweep.Point, rest: lst.List[sweep.Point]) {
           if(logic.lt(from, sweep.x_of(p))) { recur forward(rest, sweep.x_of(p)) } else { .f }

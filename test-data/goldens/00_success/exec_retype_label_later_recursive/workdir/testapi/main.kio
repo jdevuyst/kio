@@ -9,19 +9,19 @@ pub fn main() {
   let later =
     (
     , target.Seed.mk("later-seed\n"[String])
-    , {source.branch = .(_next: source.Later[String] -> String) { "later-branch\n" }}
+    , source.Branch.mk(.(_next: source.Later[String] -> String) { "later-branch\n" })
     );
   print(source.later_seed(later));
   print(source.later_branch(later, .(_row: source.Later[String]) { "unused" }));
   let first =
     (
     , target.Seed.mk("first-seed\n"[String])
-    , {source.left = .(_next: source.Second[String] -> String) { "first-left\n" }}
+    , source.Left.mk(.(_next: source.Second[String] -> String) { "first-left\n" })
     );
   let second =
     (
     , target.Seed.mk("second-seed\n"[String])
-    , {source.right = .(_next: source.First[String] -> String) { "second-right\n" }}
+    , source.Right.mk(.(_next: source.First[String] -> String) { "second-right\n" })
     );
   print(source.first_seed(first));
   print(source.first_left(first, .(_row: source.Second[String]) { "unused" }));

@@ -4,11 +4,11 @@ host type T;
 
 host fn observe[A](value: A);
 
-newtype Left : T { constructor wrap; projector unwrap }
+type { Left: T { mk; get } }
 
-newtype Right : T { constructor wrap; projector unwrap }
+type { Right: T { mk; get } }
 
 equiv constructor_head_distinct(value: T) {
-  observe(Left.wrap(value));
-  observe(Right.wrap(value))
+  observe(Left.mk(value));
+  observe(Right.mk(value))
 }

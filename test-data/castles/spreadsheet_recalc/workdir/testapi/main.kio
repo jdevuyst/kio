@@ -48,7 +48,7 @@ fn report(index: I32, e: Edit, st: Step) {
 }
 
 rec(loop) fn run_edits(s: Sheet, vals: Values, script: List[Edit], index: I32) {
-  match(script.>List.unpack) {
+  match(script.>List.get) {
     (
     , .(e: Edit, rest: List[Edit]) {
         let st = recalc(s, vals, e);

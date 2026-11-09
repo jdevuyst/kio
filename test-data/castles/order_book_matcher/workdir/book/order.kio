@@ -9,15 +9,16 @@ module book/order;
 import book/num(int_lt);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select, macro with);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(leq_i32);
 
-pub labels Side = { buy: . } | { sell: . };
+pub type Side = { Buy: . } | { Sell: . };
 
-pub fn buy_side() -> Side { ({buy=}.>widen_sum)[Side] }
+pub fn buy_side() -> Side { (Buy.mk(()).>widen_sum)[Side] }
 
-pub fn sell_side() -> Side { ({sell=}.>widen_sum)[Side] }
+pub fn sell_side() -> Side { (Sell.mk(()).>widen_sum)[Side] }
 
 pub fn is_buy(side: Side) -> Bool {
   match(side) {
@@ -41,67 +42,88 @@ pub fn side_text(side: Side) -> String {
 /// order. It breaks ties inside a price level, so the earlier arrival
 /// keeps the front of the queue. A reduce-only amend leaves it alone --
 /// which is precisely why reducing an order keeps its queue position.
-pub labels Order = {
-, ord_id: I32
-, ord_side: Side
-, ord_price: I32
-, ord_qty: I32
-, ord_remaining: I32
-, ord_seq: I32
+pub type Order = {
+  Ord_id: I32;
+  Ord_side: Side;
+  Ord_price: I32;
+  Ord_qty: I32;
+  Ord_remaining: I32;
+  Ord_seq: I32
 };
 
 pub fn order(id: I32, side: Side, price: I32, qty: I32, remaining: I32, seq: I32) -> Order {
-  {
-  , ord_id = id
-  , ord_side = side
-  , ord_price = price
-  , ord_qty = qty
-  , ord_remaining = remaining
-  , ord_seq = seq
-  }
+  (
+  , Ord_id.mk(id)
+  , Ord_side.mk(side)
+  , Ord_price.mk(price)
+  , Ord_qty.mk(qty)
+  , Ord_remaining.mk(remaining)
+  , Ord_seq.mk(seq)
+  )
 }
 
-pub fn id_of(o: Order) -> I32 { o.?{ord_id} }
+pub fn id_of(o: Order) -> I32 {
+  o.>select { Ord_id.get }
+}
 
-pub fn side_of(o: Order) -> Side { o.?{ord_side} }
+pub fn side_of(o: Order) -> Side {
+  o.>select { Ord_side.get }
+}
 
-pub fn price_of(o: Order) -> I32 { o.?{ord_price} }
+pub fn price_of(o: Order) -> I32 {
+  o.>select { Ord_price.get }
+}
 
-pub fn qty_of(o: Order) -> I32 { o.?{ord_qty} }
+pub fn qty_of(o: Order) -> I32 {
+  o.>select { Ord_qty.get }
+}
 
-pub fn remaining_of(o: Order) -> I32 { o.?{ord_remaining} }
+pub fn remaining_of(o: Order) -> I32 {
+  o.>select { Ord_remaining.get }
+}
 
-pub fn seq_of(o: Order) -> I32 { o.?{ord_seq} }
+pub fn seq_of(o: Order) -> I32 {
+  o.>select { Ord_seq.get }
+}
 
-/// A row update prepends the field it replaced, so the declared return
-/// type is what puts the product back into the record's own order.
-pub fn with_remaining(o: Order, remaining: I32) -> Order { o.!{ord_remaining = remaining} }
+/// The declared return type keeps the updated product in its record order.
+pub fn with_remaining(o: Order, remaining: I32) -> Order {
+  o.>with { Ord_remaining.mk(remaining) }
+}
 
 /// A trade prints as taker against maker: the aggressive order that took
 /// the liquidity, the resting order that supplied it, and the price --
 /// which is the maker's, always. The resting order named the price when
 /// it joined the queue and the aggressor accepted it by crossing.
-pub labels Trade = { tr_taker: I32, tr_maker: I32, tr_price: I32, tr_qty: I32 };
+pub type Trade = { Tr_taker: I32; Tr_maker: I32; Tr_price: I32; Tr_qty: I32 };
 
 pub fn trade(taker: I32, maker: I32, price: I32, qty: I32) -> Trade {
-  {tr_taker = taker, tr_maker = maker, tr_price = price, tr_qty = qty}
+  (Tr_taker.mk(taker), Tr_maker.mk(maker), Tr_price.mk(price), Tr_qty.mk(qty))
 }
 
-pub fn trade_taker(t: Trade) -> I32 { t.?{tr_taker} }
+pub fn trade_taker(t: Trade) -> I32 {
+  t.>select { Tr_taker.get }
+}
 
-pub fn trade_maker(t: Trade) -> I32 { t.?{tr_maker} }
+pub fn trade_maker(t: Trade) -> I32 {
+  t.>select { Tr_maker.get }
+}
 
-pub fn trade_price(t: Trade) -> I32 { t.?{tr_price} }
+pub fn trade_price(t: Trade) -> I32 {
+  t.>select { Tr_price.get }
+}
 
-pub fn trade_qty(t: Trade) -> I32 { t.?{tr_qty} }
+pub fn trade_qty(t: Trade) -> I32 {
+  t.>select { Tr_qty.get }
+}
 
 /// What an aggressive order is willing to pay: a limit order caps it, a
 /// market order does not.
-pub labels Cap = { capped: I32 } | { uncapped: . };
+pub type Cap = { Capped: I32 } | { Uncapped: . };
 
-pub fn price_cap(limit: I32) -> Cap { ({capped = limit}.>widen_sum)[Cap] }
+pub fn price_cap(limit: I32) -> Cap { (Capped.mk(limit).>widen_sum)[Cap] }
 
-pub fn no_cap() -> Cap { ({uncapped=}.>widen_sum)[Cap] }
+pub fn no_cap() -> Cap { (Uncapped.mk(()).>widen_sum)[Cap] }
 
 /// A buying aggressor crosses a resting ask when it will pay at least
 /// the asking price; a selling aggressor crosses a resting bid when it
@@ -111,7 +133,7 @@ pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
   match(cap) {
     (
     , .(c: Capped) {
-        let limit = c.?{capped};
+        let limit = c.>select { Capped.get };
         if(is_buy(taker)) { leq_i32(maker_price, limit) } else { leq_i32(limit, maker_price) }
       }
     , .(_u: Uncapped) { .t }

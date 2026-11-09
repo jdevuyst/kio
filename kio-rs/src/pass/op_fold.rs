@@ -24,10 +24,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
 use crate::ast::{
-    CallArg, CallableSpec, ElaboratorCall, Equiv, Expr, FnDef, Import, ImportItem, ImportKind,
-    Item, LabelValueLabel, Labels, LexicalCallablePath, Meta, Module, ModulePath, Op, OpBody,
-    OpChainKind, OpPart, OperatorDispatchKey, PackageFile, PathSegment, Signature, SignatureParam,
-    Surface, Type, TypeAlias, VariadicOperator, VariadicSpec, Visibility,
+    CallArg, CallableSpec, Equiv, Expr, FnDef, Import, ImportItem, ImportKind, Item, Labels,
+    LexicalCallablePath, Meta, Module, ModulePath, Op, OpBody, OpChainKind, OpPart,
+    OperatorDispatchKey, PackageFile, PathSegment, Signature, SignatureParam, Surface, Type,
+    TypeAlias, VariadicOperator, VariadicSpec, Visibility,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -691,7 +691,7 @@ fn strip_import_op_patterns(imports: &mut Vec<Import>) {
         let ImportKind::Selective { items, .. } = &mut u.kind else {
             return true;
         };
-        items.retain(|item| matches!(item, ImportItem::Name { .. } | ImportItem::Label { .. }));
+        items.retain(|item| matches!(item, ImportItem::Name { .. }));
         !items.is_empty()
     });
 }
@@ -849,13 +849,13 @@ fn label_newtype_target(
     labels
         .entries
         .iter()
-        .filter(|entry| !entry.is_reuse_marker())
         .find(|entry| crate::ast::mint_label_newtype_name(&entry.name) == type_name)
-        .map(|_| label_newtype_shape(labels, owner, type_name))
+        .map(|entry| label_newtype_shape(labels, entry, owner, type_name))
 }
 
 fn label_newtype_shape(
     labels: &Labels<Surface>,
+    entry: &crate::ast::LabelEntry<Surface>,
     owner: &ModulePath,
     type_name: &str,
 ) -> NewtypeTarget {
@@ -870,9 +870,15 @@ fn label_newtype_shape(
         member_owner: owner.clone(),
         member_type_name: type_name.to_owned(),
         constructor_name: "mk".to_owned(),
-        constructor_vis: labels.vis.clone(),
+        constructor_vis: entry.members.as_ref().map_or_else(
+            || labels.vis.clone(),
+            |members| members.constructor.vis.clone(),
+        ),
         projector_name: "get".to_owned(),
-        projector_vis: labels.vis.clone(),
+        projector_vis: entry.members.as_ref().map_or_else(
+            || labels.vis.clone(),
+            |members| members.projector.vis.clone(),
+        ),
     }
 }
 
@@ -1000,15 +1006,11 @@ fn insert_label_newtype_targets(
     owner: &ModulePath,
     targets: &mut HashMap<String, NewtypeTarget>,
 ) {
-    for entry in labels
-        .entries
-        .iter()
-        .filter(|entry| !entry.is_reuse_marker())
-    {
+    for entry in labels.entries.iter() {
         let type_name = crate::ast::mint_label_newtype_name(&entry.name);
         targets.insert(
             type_name.clone(),
-            label_newtype_shape(labels, owner, &type_name),
+            label_newtype_shape(labels, entry, owner, &type_name),
         );
     }
 }
@@ -1838,7 +1840,7 @@ fn module_binding_names(module: &Module<Surface>) -> BTreeSet<String> {
             Item::HostFn(host) => {
                 names.insert(host.name.clone());
             }
-            Item::Op(_, _) | Item::VariadicOperator(_, _) | Item::LabelForward(_, _) => {}
+            Item::Op(_, _) | Item::VariadicOperator(_, _) => {}
         }
     }
     names
@@ -1904,7 +1906,6 @@ fn fold_item(item: &mut Item<Surface>, scope: &OpScope) -> Result<(), Error> {
         Item::LiteralAlias(_, _) => Ok(()),
         Item::Newtype(_) => Ok(()),
         Item::Labels(d, _) => fold_labels(d, scope),
-        Item::LabelForward(_, _) => Ok(()),
         Item::Equiv(e, _) => fold_equiv(e, scope),
         Item::Macro(s, _) => {
             fold_type(&mut s.call_ty, scope)?;
@@ -1954,6 +1955,20 @@ fn fold_type_alias(a: &mut TypeAlias<Surface>, scope: &OpScope) -> Result<(), Er
 fn fold_labels(d: &mut Labels<Surface>, scope: &OpScope) -> Result<(), Error> {
     for entry in d.entries.iter_mut() {
         fold_type(&mut entry.payload, scope)?;
+    }
+    if let Some(arms) = &mut d.type_alias_arms {
+        for entry in arms.iter_mut().flat_map(|arm| &mut arm.entries) {
+            fold_type(&mut entry.payload, scope)?;
+        }
+    }
+    if let Some(rhs) = &mut d.type_alias_rhs {
+        let mut result = Ok(());
+        rhs.visit_types_mut(&mut |ty| {
+            if result.is_ok() {
+                result = fold_type(ty, scope);
+            }
+        });
+        result?;
     }
     Ok(())
 }
@@ -2012,7 +2027,6 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
                     let value = match item {
                         crate::ast::NeutralItem::Expression { value, .. }
                         | crate::ast::NeutralItem::Binding { value, .. }
-                        | crate::ast::NeutralItem::RowBinding { value, .. }
                         | crate::ast::NeutralItem::ExistentialBinding { value, .. } => value,
                     };
                     fold_expr(value, scope)?;
@@ -2074,10 +2088,6 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
             fold_expr(value, scope)?;
             fold_expr(body, scope)?;
         }
-        Expr::RowLet { value, body, .. } => {
-            fold_expr(value, scope)?;
-            fold_expr(body, scope)?;
-        }
         Expr::Seq { value, body, .. } => {
             fold_expr(value, scope)?;
             fold_expr(body, scope)?;
@@ -2087,24 +2097,6 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
                 fold_expr(item, scope)?;
             }
         }
-        Expr::LabelValue { labels, .. } => {
-            for LabelValueLabel { value, .. } in labels.iter_mut() {
-                fold_expr(value, scope)?;
-            }
-        }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => {
-                fold_expr(receiver, scope)?;
-            }
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver_mut() {
-                    fold_expr(receiver, scope)?;
-                }
-                for update in updates.iter_mut() {
-                    fold_expr(&mut update.value, scope)?;
-                }
-            }
-        },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { stages, .. } => {
             for stage in stages {
@@ -2806,13 +2798,13 @@ mod tests {
     #[test]
     fn alias_member_callable_facts_keep_source_head_and_terminal_member_identities() {
         let origin = p("module origin; \
-             pub newtype Terminal : . { pub constructor make; pub projector open; };");
+             pub type { Terminal: . { pub mk; pub get; }; };");
         let relay = p("module relay; import origin as source; \
              pub type Alias = source.Terminal;");
         let consumer = p("module consumer; import relay as r; \
-             op + _ { impl r.Alias.make; }; \
-             varop [* *] { foldr r.Alias.open r.Alias.make; }; \
-             macro demo : . -> . { impl r.Alias.make; };");
+             op + _ { impl r.Alias.mk; }; \
+             varop [* *] { foldr r.Alias.get r.Alias.mk; }; \
+             macro demo : . -> . { impl r.Alias.mk; };");
         let scope = PackageOpScope::from_modules_named(
             &[
                 (PathBuf::from("origin.kio"), origin),
@@ -2947,7 +2939,7 @@ mod tests {
     fn public_operator_rejects_private_newtype_member_implementation() {
         let message = fold_error(
             "module x; \
-             pub newtype Box[A] : A { constructor mk; pub projector get; }; \
+             pub type { Box[A]: A { mk; pub get; }; }; \
              pub op + _ { impl Box.mk; };",
         );
         assert!(
@@ -2961,10 +2953,10 @@ mod tests {
     #[test]
     fn declaration_callable_visibility_names_alias_heads_separately_from_newtypes() {
         let provider = p("module origin; \
-             pub newtype Token : . { pub constructor make; pub projector open; };");
+             pub type { Token: . { pub mk; pub get; }; };");
         for declaration in [
-            "pub op + _ { impl Tag.make; };",
-            "pub varop [* *] { foldr Tag.open Tag.make; };",
+            "pub op + _ { impl Tag.mk; };",
+            "pub varop [* *] { foldr Tag.get Tag.mk; };",
         ] {
             let consumer = p(&format!(
                 "module consumer; import origin as imported; \
@@ -2982,8 +2974,8 @@ mod tests {
 
         let literal = fold_error(
             "module literal; \
-             newtype Token : . { pub constructor make; pub projector open; }; \
-             pub op + _ { impl Token.make; };",
+             type { Token: . { pub mk; pub get; }; }; \
+             pub op + _ { impl Token.mk; };",
         );
         assert!(
             literal.contains("newtype `Token` must be at least as visible"),
@@ -3087,14 +3079,14 @@ mod tests {
             (
                 "local newtype member",
                 None,
-                "newtype Box[A] : A { constructor mk; projector get; };",
+                "type { Box[A]: A { mk; get; }; };",
                 "Box.mk",
             ),
             (
                 "alias-qualified newtype member",
                 Some(
                     "module provider; \
-                     pub newtype Box[A] : A { pub constructor mk; pub projector get; };",
+                     pub type { Box[A]: A { pub mk; pub get; }; };",
                 ),
                 "import provider as helpers;",
                 "helpers.Box.mk",
@@ -3143,7 +3135,7 @@ mod tests {
     #[test]
     fn unknown_newtype_member_is_rejected() {
         let consumer = p("module x; \
-             newtype Box[A] : A { pub constructor mk; pub projector get; }; \
+             type { Box[A]: A { pub mk; pub get; }; }; \
              op + _ { impl Box.missing; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
@@ -3205,7 +3197,7 @@ mod tests {
     fn operator_rejects_later_newtype_member_implementation() {
         let consumer = p("module x; \
              op + _ { impl Box.mk; }; \
-             newtype Box[A] : A { constructor mk; projector get; };");
+             type { Box[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3217,7 +3209,7 @@ mod tests {
     fn fold_rejects_later_newtype_member_implementation() {
         let consumer = p("module x; \
              varop [* *] { foldr Box.get Box.mk; }; \
-             newtype Box[A] : A { constructor mk; projector get; };");
+             type { Box[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3229,7 +3221,7 @@ mod tests {
     fn macro_rejects_later_newtype_member_implementation() {
         let consumer = p("module x; \
              macro demo : . -> . { impl Later.mk; }; \
-             newtype Later : . { constructor mk; projector get; };");
+             type { Later: . { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Later.mk` does not resolve"),
@@ -3241,7 +3233,7 @@ mod tests {
     fn operator_accepts_earlier_self_alias_qualified_newtype_member() {
         let consumer = p("module x; \
              import x as self_module; \
-             newtype Box[A] : A { constructor mk; projector get; }; \
+             type { Box[A]: A { mk; get; }; }; \
              op + _ { impl self_module.Box.mk; };");
         validate_against_modules(&consumer, &[])
             .expect("self-alias qualification preserves an earlier local newtype member");
@@ -3252,7 +3244,7 @@ mod tests {
         let consumer = p("module x; \
              import x as self_module; \
              op + _ { impl self_module.Later.mk; }; \
-             newtype Later[A] : A { constructor mk; projector get; };");
+             type { Later[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`self_module.Later.mk` does not resolve"),
@@ -3265,7 +3257,7 @@ mod tests {
         let consumer = p("module x; \
              import x(Later); \
              op + _ { impl Later.mk; }; \
-             newtype Later[A] : A { constructor mk; projector get; };");
+             type { Later[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Later.mk` does not resolve"),
@@ -3274,25 +3266,25 @@ mod tests {
     }
 
     #[test]
-    fn fold_accepts_earlier_self_alias_qualified_label_member() {
+    fn fold_accepts_earlier_self_alias_qualified_compact_nominal_member() {
         let consumer = p("module x; \
              import x as self_module; \
-             labels { box: A }; \
+             type { Box: A; }; \
              varop [* *] { \
                foldr self_module.Box.mk self_module.Box.mk; \
              };");
         validate_against_modules(&consumer, &[])
-            .expect("self-alias qualification preserves an earlier labels-generated member");
+            .expect("self-alias qualification preserves an earlier compact nominal member");
     }
 
     #[test]
-    fn fold_rejects_later_self_alias_qualified_label_member() {
+    fn fold_rejects_later_self_alias_qualified_compact_nominal_member() {
         let consumer = p("module x; \
              import x as self_module; \
              varop [* *] { \
                foldr self_module.Box.mk self_module.Box.mk; \
              }; \
-             labels { box: A };");
+             type { Box: A; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`self_module.Box.mk` does not resolve"),
@@ -3423,21 +3415,21 @@ mod tests {
     }
 
     #[test]
-    fn operator_accepts_local_label_generated_member() {
+    fn operator_accepts_local_compact_nominal_member() {
         let mut consumer = p("module x; \
-             labels { box: A }; \
+             type { Box: A; }; \
              op + _ { impl Box.mk; };");
         let modules = [(PathBuf::from("x.kio"), consumer.clone())];
         let package = PackageOpScope::from_modules_named(&modules, None)
             .expect("operator declaration validates");
-        fold_module(&mut consumer, &package).expect("labels-generated local member");
+        fold_module(&mut consumer, &package).expect("compact nominal local member");
     }
 
     #[test]
-    fn operator_rejects_later_local_label_generated_member() {
+    fn operator_rejects_later_local_compact_nominal_member() {
         let consumer = p("module x; \
              op + _ { impl Box.mk; }; \
-             labels { box: A };");
+             type { Box: A; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3449,10 +3441,10 @@ mod tests {
     fn operator_accepts_local_recursive_group_newtype_member() {
         let consumer = p("module x; \
              rec { \
-               newtype A : (. | B) { constructor mk_a; projector un_a; }; \
-               newtype B : (. | A) { constructor mk_b; projector un_b; }; \
+               type { A: (. | B) { mk; get; }; }; \
+               type { B: (. | A) { mk; get; }; }; \
              } \
-             op + _ { impl A.mk_a; };");
+             op + _ { impl A.mk; };");
         validate_against_modules(&consumer, &[])
             .expect("an earlier recursive-group newtype member is a callable target");
     }
@@ -3461,64 +3453,64 @@ mod tests {
     fn operator_accepts_imported_recursive_group_newtype_member() {
         let provider = p("module types; \
              rec { \
-               pub newtype A : (. | B) { pub constructor mk_a; pub projector un_a; }; \
-               pub newtype B : (. | A) { pub constructor mk_b; pub projector un_b; }; \
+               pub type { A: (. | B) { pub mk; pub get; }; }; \
+               pub type { B: (. | A) { pub mk; pub get; }; }; \
              }");
         let consumer = p("module x; \
              import types(A); \
-             pub op + _ { impl A.mk_a; };");
+             pub op + _ { impl A.mk; };");
         validate_against_modules(&consumer, &[provider])
             .expect("an imported recursive-group newtype member is a callable target");
     }
 
     #[test]
-    fn operator_accepts_local_recursive_labels_generated_member() {
+    fn operator_accepts_local_recursive_compact_nominal_member() {
         let consumer = p("module x; \
              rec { \
-               labels A = { to_b: B }; \
-               newtype B : A { constructor mk_b; projector un_b; }; \
+               type A = { To_b: B; }; \
+               type { B: A { mk; get; }; }; \
              } \
              op + _ { impl To_b.mk; };");
         validate_against_modules(&consumer, &[])
-            .expect("a recursive labels entry's generated newtype member is a callable target");
+            .expect("a recursive compact entry's nominal member is a callable target");
     }
 
     #[test]
-    fn declaration_callables_accept_named_labels_identity_alias_members() {
+    fn declaration_callables_accept_named_compact_identity_alias_members() {
         let local = p("module local; \
              import local as self_module; \
-             labels Tree[A][B] = { branch[A][B]: A & B }; \
+             type Tree[A][B] = { Branch[A][B]: A & B; }; \
              op + _ { impl Tree.mk; }; \
              varop [* *] { foldr Tree.get self_module.Tree.mk; }; \
              macro demo : . -> . { impl self_module.Tree.mk; };");
         validate_against_modules(&local, &[])
-            .expect("a named one-arm labels alias exposes its generated nominal member");
+            .expect("a named one-entry compact alias exposes its nominal member");
 
         let recursive = p("module recursive; \
              rec { \
-               pub labels Tree = { branch: Bar }; \
-               pub newtype Bar : Tree { pub constructor mk_bar; pub projector get_bar; }; \
+               pub type Tree = { Branch: Bar; }; \
+               pub type { Bar: Tree { pub mk; pub get; }; }; \
              } \
              pub op + _ { impl Tree.mk; };");
         validate_against_modules(&recursive, &[])
-            .expect("a named labels alias inside a recursive type group exposes its member");
+            .expect("a named compact alias inside a recursive type group exposes its member");
 
-        let provider = p("module provider; pub labels Tree = { branch: . };");
+        let provider = p("module provider; pub type Tree = { Branch: .; };");
         let consumer = p("module consumer; \
              import provider(Tree); \
              import provider as p; \
              pub op + _ { impl Tree.mk; }; \
              pub varop [* *] { foldr Tree.get p.Tree.mk; };");
         validate_against_modules(&consumer, &[provider])
-            .expect("selective and qualified imports preserve the named labels alias member");
+            .expect("selective and qualified imports preserve the named compact alias member");
     }
 
     #[test]
-    fn declaration_callables_reject_nonidentity_named_labels_alias_members() {
+    fn declaration_callables_reject_nonidentity_named_compact_alias_members() {
         let standalone = p("module standalone; \
-             labels Reordered[A][B] = { swapped[B][A]: A & B }; \
-             labels Renamed[A] = { renamed_item[B]: B }; \
-             labels Partial[A] = { partial_item: . }; \
+             type Reordered[A][B] = { Swapped[B][A]: A & B; }; \
+             type Renamed[A] = { Renamed_item[B]: B; }; \
+             type Partial[A] = { Partial_item: .; }; \
              op + _ { impl Reordered.mk; };");
         let message = expect_name_error(validate_against_modules(&standalone, &[]));
         assert!(
@@ -3527,8 +3519,8 @@ mod tests {
         );
 
         for (alias, declaration) in [
-            ("Renamed", "labels Renamed[A] = { renamed_item[B]: B };"),
-            ("Partial", "labels Partial[A] = { partial_item: . };"),
+            ("Renamed", "type Renamed[A] = { Renamed_item[B]: B; };"),
+            ("Partial", "type Partial[A] = { Partial_item: .; };"),
         ] {
             let consumer = p(&format!(
                 "module negative; {declaration} op + _ {{ impl {alias}.mk; }};"
@@ -3542,8 +3534,8 @@ mod tests {
 
         let grouped = p("module grouped; \
              rec { \
-               labels Reordered[A][B] = { swapped[B][A]: Peer[B][ A] }; \
-               newtype Peer[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
+               type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; \
+               type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; \
              } \
              varop [* *] { foldr Reordered.get Reordered.mk; };");
         let message = expect_name_error(validate_against_modules(&grouped, &[]));
@@ -3554,11 +3546,11 @@ mod tests {
     }
 
     #[test]
-    fn declaration_callables_reject_later_named_labels_identity_alias_members() {
+    fn declaration_callables_reject_later_named_compact_identity_alias_members() {
         let local = p("module local; \
              import local as self_module; \
              op + _ { impl Tree.mk; }; \
-             labels Tree = { branch: . };");
+             type Tree = { Branch: .; };");
         let message = expect_name_error(validate_against_modules(&local, &[]));
         assert!(
             message.contains("`Tree.mk` does not resolve"),
@@ -3568,7 +3560,7 @@ mod tests {
         let qualified = p("module local; \
              import local as self_module; \
              op + _ { impl self_module.Tree.mk; }; \
-             labels Tree = { branch: . };");
+             type Tree = { Branch: .; };");
         let message = expect_name_error(validate_against_modules(&qualified, &[]));
         assert!(
             message.contains("`self_module.Tree.mk` does not resolve"),
@@ -3577,25 +3569,25 @@ mod tests {
     }
 
     #[test]
-    fn operator_accepts_imported_label_generated_member() {
-        let provider = p("module labels; pub labels { box: A };");
+    fn operator_accepts_imported_compact_nominal_member() {
+        let provider = p("module labels; pub type { Box: A; };");
         let consumer = p("module x; \
              import labels(Box); \
              op + _ { impl Box.mk; };");
-        validate_against_modules(&consumer, &[provider]).expect("labels-generated imported member");
+        validate_against_modules(&consumer, &[provider]).expect("compact nominal imported member");
     }
 
     #[test]
     fn operator_and_fold_accept_identity_alias_newtype_members() {
         let origin = p("module origin; \
-             pub newtype Box[A] : A { pub constructor make; pub projector open; };");
+             pub type { Box[A]: A { pub mk; pub get; }; };");
         let relay = p("module relay; \
              import origin as imported; \
              pub type Box[A] = imported.Box[A];");
         let consumer = p("module x; \
              import relay(Box); \
-             op + _ { impl Box.make; }; \
-             varop [* *] { foldr Box.open Box.make; };");
+             op + _ { impl Box.mk; }; \
+             varop [* *] { foldr Box.get Box.mk; };");
         validate_against_modules(&consumer, &[origin, relay])
             .expect("op and fold callables resolve through an imported identity alias");
 
@@ -3603,13 +3595,13 @@ mod tests {
              import origin as imported; \
              import local as self_module; \
              type Box[A] = imported.Box[A]; \
-             op + _ { impl Box.make; }; \
-             op - _ { impl self_module.Box.make; }; \
-             macro demo : . -> . { impl self_module.Box.make; };");
+             op + _ { impl Box.mk; }; \
+             op - _ { impl self_module.Box.mk; }; \
+             macro demo : . -> . { impl self_module.Box.mk; };");
         validate_against_modules(
             &local,
             &[p("module origin; \
-             pub newtype Box[A] : A { pub constructor make; pub projector open; };")],
+             pub type { Box[A]: A { pub mk; pub get; }; };")],
         )
         .expect("an earlier local identity alias exposes the terminal member");
     }
@@ -3617,13 +3609,13 @@ mod tests {
     #[test]
     fn declaration_callable_identity_alias_requires_a_written_import_edge() {
         let provider = p("module provider; \
-             pub newtype Tag : . { pub constructor make; pub projector open; };");
+             pub type { Tag: . { pub mk; pub get; }; };");
         let consumer = p("module consumer; \
              type Alias = provider.Tag; \
-             op + _ { impl Alias.make; };");
+             op + _ { impl Alias.mk; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[provider]));
         assert!(
-            message.contains("`Alias.make` does not resolve"),
+            message.contains("`Alias.mk` does not resolve"),
             "adding an unrelated same-spelling module must not create an import edge: {message}"
         );
     }
@@ -3631,60 +3623,60 @@ mod tests {
     #[test]
     fn operator_rejects_later_or_nonidentity_alias_member_heads() {
         let origin = p("module origin; \
-             pub newtype Pair[A][B] : A & B { pub constructor make; pub projector open; };");
+             pub type { Pair[A][B]: A & B { pub mk; pub get; }; };");
         let later = p("module x; \
              import origin as imported; \
-             op + _ { impl Later.make; }; \
+             op + _ { impl Later.mk; }; \
              type Later[A][B] = imported.Pair[A][ B];");
         let message = expect_name_error(validate_against_modules(
             &later,
             std::slice::from_ref(&origin),
         ));
         assert!(
-            message.contains("`Later.make` does not resolve"),
+            message.contains("`Later.mk` does not resolve"),
             "got: {message}"
         );
         let later_qualified = p("module x; \
              import origin as imported; \
              import x as self_module; \
-             op + _ { impl self_module.Later.make; }; \
+             op + _ { impl self_module.Later.mk; }; \
              type Later[A][B] = imported.Pair[A][ B];");
         let message = expect_name_error(validate_against_modules(
             &later_qualified,
             std::slice::from_ref(&origin),
         ));
         assert!(
-            message.contains("`self_module.Later.make` does not resolve"),
+            message.contains("`self_module.Later.mk` does not resolve"),
             "got: {message}"
         );
 
         let alias_body_qualified = p("module x; \
              import x as self_module; \
              type Alias = self_module.Later; \
-             op + _ { impl Alias.make; }; \
-             newtype Later : . { constructor make; projector open; };");
+             op + _ { impl Alias.mk; }; \
+             type { Later: . { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&alias_body_qualified, &[]));
         assert!(
-            message.contains("`Alias.make` does not resolve"),
+            message.contains("`Alias.mk` does not resolve"),
             "a self-qualified alias body cannot import its later local target: {message}"
         );
 
         let alias_body_selective = p("module x; \
              import x(Later); \
              type Alias = Later; \
-             op + _ { impl Alias.make; }; \
-             newtype Later : . { constructor make; projector open; };");
+             op + _ { impl Alias.mk; }; \
+             type { Later: . { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&alias_body_selective, &[]));
         assert!(
-            message.contains("`Alias.make` does not resolve"),
+            message.contains("`Alias.mk` does not resolve"),
             "a selectively self-imported alias body cannot import its later local target: {message}"
         );
 
         let alias_body_in_scope = p("module x; \
              import x as self_module; \
-             newtype Earlier : . { constructor make; projector open; }; \
+             type { Earlier: . { mk; get; }; }; \
              type Alias = self_module.Earlier; \
-             op + _ { impl Alias.make; };");
+             op + _ { impl Alias.mk; };");
         validate_against_modules(&alias_body_in_scope, &[])
             .expect("a self-qualified alias body retains an earlier local target");
 
@@ -3696,14 +3688,14 @@ mod tests {
             let consumer = p(&format!(
                 "module x; import origin as imported; \
                  type Alias[A][B] = {body}; \
-                 op + _ {{ impl Alias.make; }};"
+                 op + _ {{ impl Alias.mk; }};"
             ));
             let message = expect_name_error(validate_against_modules(
                 &consumer,
                 std::slice::from_ref(&origin),
             ));
             assert!(
-                message.contains("`Alias.make` does not resolve"),
+                message.contains("`Alias.mk` does not resolve"),
                 "{name}: {message}"
             );
         }

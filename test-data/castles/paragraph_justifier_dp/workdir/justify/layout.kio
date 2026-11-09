@@ -18,35 +18,46 @@ import justify/list(List);
 import justify/word(Words, span_used);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 
-pub labels Line = { start: I32, stop: I32, used: I32, slack: I32, badness: I32 };
+pub type Line = { Start: I32; Stop: I32; Used: I32; Slack: I32; Badness: I32 };
 
-pub fn line_start(l: Line) -> I32 { l.?{start} }
+pub fn line_start(l: Line) -> I32 {
+  l.>select { Start.get }
+}
 
-pub fn line_stop(l: Line) -> I32 { l.?{stop} }
+pub fn line_stop(l: Line) -> I32 {
+  l.>select { Stop.get }
+}
 
-pub fn line_used(l: Line) -> I32 { l.?{used} }
+pub fn line_used(l: Line) -> I32 {
+  l.>select { Used.get }
+}
 
-pub fn line_slack(l: Line) -> I32 { l.?{slack} }
+pub fn line_slack(l: Line) -> I32 {
+  l.>select { Slack.get }
+}
 
-pub fn line_badness(l: Line) -> I32 { l.?{badness} }
+pub fn line_badness(l: Line) -> I32 {
+  l.>select { Badness.get }
+}
 
 fn make_line(xs: Words, column: I32, from: I32, to: I32, n: I32) -> Line {
   let used = span_used(xs, from, to);
-  {
-  , start = from
-  , stop = to
-  , used
-  , slack = sub_i32(column, used)
-  , badness = cost.badness(used, column, eq_i32(to, n))
-  }
+  (
+  , Start.mk(from)
+  , Stop.mk(to)
+  , Used.mk(used)
+  , Slack.mk(sub_i32(column, used))
+  , Badness.mk(cost.badness(used, column, eq_i32(to, n)))
+  )
 }
 
 rec(loop) fn lines_onto(xs: Words, column: I32, n: I32, breaks: List[I32], acc: List[Line]) -> List[Line] {
-  match(breaks.>List.unpack) {
+  match(breaks.>List.get) {
     (
     , .(from: I32, rest: List[I32]) {
         if(list.is_empty(rest)) {
@@ -68,7 +79,7 @@ pub fn lines_of(xs: Words, column: I32, breaks: List[I32], n: I32) -> List[Line]
 }
 
 rec(loop) fn total_onto(ls: List[Line], acc: I32) -> I32 {
-  match(ls.>List.unpack) {
+  match(ls.>List.get) {
     (
     , .(l: Line, rest: List[Line]) { recur total_onto(rest, cost.sat_add(acc, line_badness(l))) }
     , .(_empty: .) { acc }

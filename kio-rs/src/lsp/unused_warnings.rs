@@ -143,7 +143,7 @@ pub(crate) fn source_warnings(
                                         .expect("named import has a local name")
                                         .1
                                 }
-                                ImportItem::Label { span, .. } => *span,
+
                                 ImportItem::OperatorPattern { span, alias, .. } => {
                                     alias.as_ref().map_or(*span, |alias| alias.span)
                                 }
@@ -248,7 +248,7 @@ pub(crate) fn doc_dependency_uncertainty(
             Item::Newtype(def) => attach(def.doc.as_ref()),
             Item::LiteralAlias(def, _) => attach(def.doc.as_ref()),
             Item::Labels(def, _) => attach(def.doc.as_ref()),
-            Item::LabelForward(def, _) => attach(def.doc.as_ref()),
+
             Item::Macro(def, _) => attach(def.doc.as_ref()),
             Item::Op(def, _) => attach(def.doc.as_ref()),
             Item::VariadicOperator(def, _) => attach(def.doc.as_ref()),
@@ -339,7 +339,7 @@ impl DeclarationGraph {
                     def.vis.is_pub() || def.constructor.vis.is_pub() || def.projector.vis.is_pub()
                 }
                 Item::Labels(def, _) => def.vis.is_pub(),
-                Item::LabelForward(def, _) => def.vis.is_pub(),
+
                 Item::Macro(def, _) => def.vis.is_pub(),
                 Item::Op(def, _) => def.vis.is_pub(),
                 Item::VariadicOperator(def, _) => def.vis.is_pub(),
@@ -547,15 +547,6 @@ fn import_item_syntax(tokens: &[Token], item: &ImportItem) -> Option<Span> {
             macro_span.map_or(span.start, |tag| tag.start),
             alias.as_ref().map_or(span.end, |alias| alias.span.end),
         )),
-        ImportItem::Label { span, .. } => {
-            let name = tokens.partition_point(|token| token.span.start < span.start);
-            let open = tokens.get(name.checked_sub(1)?)?;
-            let close = tokens.get(name + 1)?;
-            if open.kind != TokenKind::LBrace || close.kind != TokenKind::RBrace {
-                return None;
-            }
-            Some(Span::new(open.span.start, close.span.end))
-        }
         ImportItem::OperatorPattern { span, alias, .. } => {
             let end = alias.as_ref().map_or(span.end, |alias| alias.span.end);
             let after = tokens.partition_point(|token| token.span.start < end);
@@ -725,8 +716,8 @@ mod tests {
     }
 
     #[test]
-    fn label_removal_owns_both_braces_and_preserves_neighbour_comments() {
-        let source = "module main;\nimport lib(kept, // neighbour\n {dead}, // next\n other);\n";
+    fn nominal_import_removal_preserves_neighbour_comments() {
+        let source = "module main;\nimport lib(kept, // neighbour\n Dead, // next\n other);\n";
         let result = remove_import_item(source, 1);
         assert_eq!(
             result,
@@ -783,7 +774,7 @@ mod tests {
 
     #[test]
     fn only_selection_removes_the_statement_without_its_leading_comment() {
-        let source = "module main;\r\n// keep é\r\n\timport lib({dead});\r\nfn kept() { () }\r\n";
+        let source = "module main;\r\n// keep é\r\n\timport lib(Dead);\r\nfn kept() { () }\r\n";
         assert_eq!(
             remove_import_item(source, 0),
             "module main;\r\n// keep é\r\nfn kept() { () }\r\n"
@@ -967,19 +958,19 @@ mod tests {
     }
 
     #[test]
-    fn source_warning_graph_tracks_labels_forwarding_and_generated_members() {
+    fn source_warning_graph_tracks_nominal_aliases_and_generated_members() {
         let analysis = analyze_sources(&[
-            ("labels", "module labels; pub labels { tag: ., unused: . };"),
+            ("types", "module types; pub type { Tag: .; Unused: .; };"),
             (
                 "main",
-                "module main; import labels({tag}, {unused}); \
-                type Payload = .; labels { local: Payload }; type {forwarded} = {tag}; \
-                pub fn run() -> . { let _ = {forwarded = ()}; let _ = Local.mk(()); () }",
+                "module main; import types(Tag, Unused); \
+                type Payload = .; type { Local: Payload; }; type Forwarded = Tag; \
+                pub fn run() -> . { let _ = Forwarded.mk(()); let _ = Local.mk(()); () }",
             ),
         ]);
         let warnings = new_warnings(&analysis);
         assert_eq!(warnings.len(), 1, "{:?}", analysis.warnings);
-        assert_eq!(warnings[0].0, "{unused}");
+        assert_eq!(warnings[0].0, "Unused");
     }
 
     #[test]
@@ -990,8 +981,8 @@ mod tests {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             fn driver[S][R](step: S -> (S | R), state: S) -> R { loop(step, state) } \
             type Payload = .; \
-            rec { newtype A : Payload & B { constructor make_a; projector open_a; }; \
-                newtype B : A { constructor make_b; projector open_b; }; } \
+            rec { type { A: Payload & B { mk; get; }; }; \
+                type { B: A { mk; get; }; }; } \
             rec(driver) fn repeat(value: A) -> A { recur repeat(value) } \
             pub fn run() -> . { let _ = repeat; () }",
         )]);

@@ -23,19 +23,24 @@ import datalog/symbols(
 import datalog/symbols(p_depot, p_depotzone, p_evenhop, p_hub, p_hubserved);
 import datalog/symbols(p_link, p_oddhop, p_reach, p_samezone, p_station);
 import datalog/symbols(v_c, v_x, v_y, v_z);
+import macros/row_macros(macro select);
 import testapi(I32);
 
 /// A Horn clause. A clause with an empty body would be a fact, and facts
 /// live in the extensional database instead, so every rule has a body.
-pub labels Rule = { r_head: Atom, r_body: Atoms };
+pub type Rule = { R_head: Atom; R_body: Atoms };
 
 pub type Rules = list.List[Rule];
 
-fn rule(head: Atom, body: Atoms) -> Rule { {r_head = head, r_body = body} }
+fn rule(head: Atom, body: Atoms) -> Rule { (R_head.mk(head), R_body.mk(body)) }
 
-pub fn head_of(r: Rule) -> Atom { r.?{r_head} }
+pub fn head_of(r: Rule) -> Atom {
+  r.>select { R_head.get }
+}
 
-pub fn body_of(r: Rule) -> Atoms { r.?{r_body} }
+pub fn body_of(r: Rule) -> Atoms {
+  r.>select { R_body.get }
+}
 
 /// A six-station one-way transport network.
 ///

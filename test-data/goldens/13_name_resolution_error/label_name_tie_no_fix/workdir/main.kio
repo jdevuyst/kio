@@ -1,5 +1,7 @@
 module main;
 
-labels { helper: ., heaper: . };
+fn helper() { () }
 
-pub fn main() { let _ = {heper=}; () }
+fn heaper() { () }
+
+pub fn main() { let _ = heper(); () }

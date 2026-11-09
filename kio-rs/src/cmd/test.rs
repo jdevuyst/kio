@@ -46,8 +46,8 @@ use crate::cmd::check::{
 };
 use crate::exit_code::ExitCode;
 use crate::normalization::{
-    AuthenticatedEvalCtx, Env, EvalCtx, EvalMetrics, EvalMetricsSnapshot, Value,
-    eval_authenticated, nf_eq_checked, structural_recur_stuck_message, value_to_string,
+    AuthenticatedEvalCtx, Env, EvalCtx, EvalMetrics, EvalMetricsSnapshot, EvalTypeBinding, Value,
+    comptime_fault, eval_authenticated_in_type_scope, nf_eq_checked, value_to_string,
 };
 use crate::pass::full::FullPipeline;
 use crate::pass::resolve::Package;
@@ -109,9 +109,8 @@ enum EquivDischargeResult {
         output: String,
         metrics: EvalMetricsSnapshot,
     },
-    Totality {
-        span: crate::span::Span,
-        message: String,
+    EvaluationFault {
+        error: crate::error::Error,
         metrics: EvalMetricsSnapshot,
     },
 }
@@ -119,7 +118,7 @@ enum EquivDischargeResult {
 impl EquivDischargeResult {
     fn metrics(&self) -> &EvalMetricsSnapshot {
         match self {
-            Self::Completed { metrics, .. } | Self::Totality { metrics, .. } => metrics,
+            Self::Completed { metrics, .. } | Self::EvaluationFault { metrics, .. } => metrics,
         }
     }
 }
@@ -574,22 +573,22 @@ fn discharge_equivs(
         log_eval_timing_line(total, eval_metrics);
     }
 
-    if let Some((_, file_path, EquivDischargeResult::Totality { span, message, .. })) = results
+    if let Some((_, file_path, EquivDischargeResult::EvaluationFault { error, .. })) = results
         .iter()
-        .find(|(_, _, result)| matches!(result, EquivDischargeResult::Totality { .. }))
+        .find(|(_, _, result)| matches!(result, EquivDischargeResult::EvaluationFault { .. }))
     {
         return Err(report_located(
             sources,
             crate::pass::resolve::LocatedError {
                 file_path: file_path.clone(),
-                error: crate::error::Error::totality(*span, message.clone()),
+                error: error.clone(),
             },
         ));
     }
 
     for (_, _, result) in &results {
         let EquivDischargeResult::Completed { output, .. } = result else {
-            unreachable!("totality outcomes return before normal equiv reporting")
+            unreachable!("evaluation faults return before normal equiv reporting")
         };
         print!("{output}");
     }
@@ -630,8 +629,11 @@ fn discharge_one_equiv(
         ctx = ctx.with_metrics(metrics.clone());
     }
     let mut env = Env::new();
+    let mut type_bindings = Vec::new();
     for p in &job.sig.params {
-        if let crate::ast::SignatureParam::Value(vp) = p {
+        if let crate::ast::SignatureParam::Type(tp) = p {
+            type_bindings.push(EvalTypeBinding::neutral(tp));
+        } else if let crate::ast::SignatureParam::Value(vp) = p {
             env.insert(
                 vp.name.clone(),
                 Value::Atom(format!("__param_{}__", vp.name)),
@@ -646,11 +648,10 @@ fn discharge_one_equiv(
     };
     let mut nfs = Vec::with_capacity(job.terms.len());
     for (index, term) in job.terms.iter().enumerate() {
-        let nf = eval_authenticated(term, &env, &ctx);
-        if let Some(message) = structural_recur_stuck_message(&nf, &ctx) {
-            return EquivDischargeResult::Totality {
-                span: job.term_spans[index],
-                message,
+        let nf = eval_authenticated_in_type_scope(term, &env, &type_bindings, &ctx);
+        if let Some(fault) = comptime_fault(&nf, &ctx) {
+            return EquivDischargeResult::EvaluationFault {
+                error: fault.into_error(job.term_spans[index]),
                 metrics: metrics_snapshot(),
             };
         }
@@ -659,14 +660,13 @@ fn discharge_one_equiv(
     let groups = match group_by_nf_eq_checked(&nfs, &ctx) {
         Ok(groups) => groups,
         Err(fault) => {
-            let message = structural_recur_stuck_message(&fault, &ctx)
-                .expect("checked NF equality returns only structural-recursion faults");
-            return EquivDischargeResult::Totality {
+            let fault = comptime_fault(&fault, &ctx)
+                .expect("checked NF equality returns an evaluation fault");
+            return EquivDischargeResult::EvaluationFault {
                 // Alpha/eta comparison may execute either operand's
                 // closure. A fault has no source-arm provenance, so the
                 // enclosing claim is the narrowest truthful location.
-                span: job.equiv_span,
-                message,
+                error: fault.into_error(job.equiv_span),
                 metrics: metrics_snapshot(),
             };
         }

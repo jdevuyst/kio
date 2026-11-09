@@ -4,11 +4,9 @@
 //!
 //! 1. Resolve the URI to a canonical path and module path.
 //! 2. Convert the LSP position to a byte offset.
-//! 3. Resolve a surface label-reuse marker to its earlier explicit local
-//!    declaration, when applicable.
-//! 4. Otherwise find the binder recorded at that position in the
+//! 3. Find the binder recorded at that position in the
 //!    [`crate::pass::typecheck_full::PositionIndex`].
-//! 5. Resolve the binder to a declaration-site `(URI, range)` and
+//! 4. Resolve the binder to a declaration-site `(URI, range)` and
 //!    return a [`GotoDefinitionResponse`].
 //!
 //! The declaration site depends on the binder kind:
@@ -30,22 +28,20 @@ use lsp_types::{GotoDefinitionResponse, Location, Position, Range, Uri};
 
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::diagnostics::path_to_uri;
-use crate::lsp::label_reuse::{
-    LabelReuseSnapshot, snapshot_for, typed_label_positions_are_current,
-};
+use crate::lsp::live_syntax::{LiveSyntaxSnapshot, snapshot_for, typed_positions_are_current};
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::util::{smallest_containing_span, uri_to_canonical};
 
 /// Handle one `textDocument/definition` request.
 ///
 /// Returns `None` (→ JSON `null`) when the cursor isn't on a
-/// resolvable binder or label reuse (whitespace, intrinsics, unknown
+/// resolvable binder (whitespace, intrinsics, unknown
 /// positions).
 pub fn handle_definition(
     uri: &Uri,
     position: &Position,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     package_root: &std::path::Path,
 ) -> Option<GotoDefinitionResponse> {
     let canonical = uri_to_canonical(uri)?;
@@ -74,24 +70,7 @@ pub fn handle_definition(
         None
     };
 
-    if let Some(binding) = syntax.index.and_then(|index| index.binding_at(byte_offset)) {
-        let lsp_range = line_index.to_range(binding.declaration_span);
-        let location = Location::new(
-            uri.clone(),
-            Range {
-                start: Position {
-                    line: lsp_range.start.line,
-                    character: lsp_range.start.character,
-                },
-                end: Position {
-                    line: lsp_range.end.line,
-                    character: lsp_range.end.character,
-                },
-            },
-        );
-        return Some(GotoDefinitionResponse::Scalar(location));
-    }
-    if !typed_label_positions_are_current(canonical.as_path(), byte_offset, analysis, syntax) {
+    if !typed_positions_are_current(canonical.as_path(), analysis, syntax) {
         return None;
     }
 
@@ -171,10 +150,8 @@ mod tests {
         let analysis = LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             // The LSP doesn't read these — supply empty placeholders.
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
@@ -226,69 +203,6 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn definition_resolves_label_reuse_to_explicit_declaration() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let (analysis, _) = make_analysis_with_binder(
-            "pkg/main",
-            source,
-            Span::new(0, 1),
-            ResolvedBinder::Intrinsic {
-                name: "__absurd__".to_owned(),
-            },
-        );
-        let uri = test_file_uri("/tmp/testdef.kio");
-        let pos = Position {
-            line: 2,
-            character: 15,
-        };
-        let result = handle_definition(&uri, &pos, &analysis, None, &test_file_path("/tmp"))
-            .expect("reuse marker resolves");
-        let range = scalar_range(&result);
-        assert_eq!(range.start.line, 1);
-        assert_eq!(range.start.character, 9);
-    }
-
-    #[test]
-    fn definition_rejects_shifted_expression_label_typed_span() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { {field=()} }\n";
-        let live_source = "module pkg/main;\nfn f() -> . { { field=()} }\n";
-        let stale_start = analyzed_source.find("field").expect("stale label") as u32;
-        let (analysis, _) = make_analysis_with_binder(
-            "pkg/main",
-            analyzed_source,
-            Span::new(stale_start, stale_start + 5),
-            ResolvedBinder::Newtype {
-                module_path: "pkg/main".to_owned(),
-                name: crate::ast::mint_label_newtype_name("field"),
-            },
-        );
-        let parsed = crate::pass::parser::parse(live_source).expect("parse live overlay");
-        let overlay_index =
-            crate::lsp::label_reuse::LabelReuseIndex::from_module(&parsed, live_source);
-        let live_start = live_source.find("field").expect("live label") as u32;
-        let cursor = LineIndex::new(live_source).to_position(live_start);
-        let uri = test_file_uri("/tmp/testdef.kio");
-
-        assert!(
-            handle_definition(
-                &uri,
-                &Position {
-                    line: cursor.line,
-                    character: cursor.character,
-                },
-                &analysis,
-                Some(LabelReuseSnapshot {
-                    source: live_source,
-                    index: Some(&overlay_index),
-                }),
-                &test_file_path("/tmp"),
-            )
-            .is_none()
-        );
-    }
-
     /// Build an analysis with one file per module path, each carrying
     /// its own source, use-site binder entries, and local declaration
     /// spans. `binders` are `(module_path, use_span, binder)`;
@@ -315,10 +229,8 @@ mod tests {
         LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,

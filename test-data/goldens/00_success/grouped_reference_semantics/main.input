@@ -8,9 +8,9 @@ fn base() -> Bool { right }
 fn force_right(_value: Bool) -> Bool { right }
 op _ + _ { impl ((pick_left)) }
 varop [* *] { foldl ((pick_right)) ((base)); finalize ((())) }
-newtype Box: ((Bool)) { constructor make; projector get }
+type { Box: ((Bool)) { mk; get } }
 equiv group_op { left + right; left }
 equiv group_fold { [* right, left *]; left }
 equiv group_fold_empty { [* *]; right }
 equiv group_splice { left.>((force_right)); right }
-equiv newtype_type { Box.get(Box.make(left)); left }
+equiv newtype_type { Box.get(Box.mk(left)); left }

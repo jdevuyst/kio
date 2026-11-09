@@ -10,44 +10,67 @@ import diff3/list as list;
 import diff3/prim as prim;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro record, macro select);
 import testapi(Bool, I32, String);
 import testapi/io(read_ascii_line);
 import testapi/iter(loop);
 import testapi/text(string_eq);
 
-pub labels Doc = { base: list.List[String], ours: list.List[String], theirs: list.List[String] };
+pub type Doc = { Base: list.List[String]; Ours: list.List[String]; Theirs: list.List[String] };
 
 /// Sections are collected head-first and reversed once at the end, so a
 /// line costs one cons rather than a walk to the end of a growing list.
-labels Cursor = {
-, section: I32
-, base_rev: list.List[String]
-, ours_rev: list.List[String]
-, theirs_rev: list.List[String]
+type Cursor = {
+  Section: I32;
+  Base_rev: list.List[String];
+  Ours_rev: list.List[String];
+  Theirs_rev: list.List[String]
 };
 
 fn start() -> Cursor {
-  {
-  , section = 0
-  , base_rev = list.nil[String]
-  , ours_rev = list.nil[String]
-  , theirs_rev = list.nil[String]
+  record {
+    Section.mk(0);
+    Base_rev.mk(list.nil[String]);
+    Ours_rev.mk(list.nil[String]);
+    Theirs_rev.mk(list.nil[String])
   }
 }
 
 fn open_section(cursor: Cursor, next: I32) -> Cursor {
-  let .({base_rev, ours_rev, theirs_rev}) = cursor;
-  {section = next, base_rev, ours_rev, theirs_rev}
+  let .(base_rev, ours_rev, theirs_rev) =
+    cursor.>select { Base_rev.get; Ours_rev.get; Theirs_rev.get };
+  record {
+    Section.mk(next);
+    Base_rev.mk(base_rev);
+    Ours_rev.mk(ours_rev);
+    Theirs_rev.mk(theirs_rev)
+  }
 }
 
 fn keep(cursor: Cursor, line: String) -> Cursor {
-  let .({section, base_rev, ours_rev, theirs_rev}) = cursor;
+  let .(section, base_rev, ours_rev, theirs_rev) =
+    cursor.>select { Section.get; Base_rev.get; Ours_rev.get; Theirs_rev.get };
   if(prim.int_eq(section, 1)) {
-    {section, base_rev = list.cons(line, base_rev), ours_rev, theirs_rev}
+    record {
+      Section.mk(section);
+      Base_rev.mk(list.cons(line, base_rev));
+      Ours_rev.mk(ours_rev);
+      Theirs_rev.mk(theirs_rev)
+    }
   } else if(prim.int_eq(section, 2)) {
-    {section, base_rev, ours_rev = list.cons(line, ours_rev), theirs_rev}
+    record {
+      Section.mk(section);
+      Base_rev.mk(base_rev);
+      Ours_rev.mk(list.cons(line, ours_rev));
+      Theirs_rev.mk(theirs_rev)
+    }
   } else if(prim.int_eq(section, 3)) {
-    {section, base_rev, ours_rev, theirs_rev = list.cons(line, theirs_rev)}
+    record {
+      Section.mk(section);
+      Base_rev.mk(base_rev);
+      Ours_rev.mk(ours_rev);
+      Theirs_rev.mk(list.cons(line, theirs_rev))
+    }
   } else {
     cursor
   }
@@ -72,12 +95,23 @@ rec(loop) fn drain(cursor: Cursor) -> Cursor {
 }
 
 pub fn read_document() -> Doc {
-  let .({base_rev, ours_rev, theirs_rev}) = drain(start());
-  {base = list.reverse(base_rev), ours = list.reverse(ours_rev), theirs = list.reverse(theirs_rev)}
+  let .(base_rev, ours_rev, theirs_rev) =
+    drain(start()).>select { Base_rev.get; Ours_rev.get; Theirs_rev.get };
+  record {
+    Base.mk(list.reverse(base_rev));
+    Ours.mk(list.reverse(ours_rev));
+    Theirs.mk(list.reverse(theirs_rev))
+  }
 }
 
-pub fn base_lines(doc: Doc) -> list.List[String] { doc.?{base} }
+pub fn base_lines(doc: Doc) -> list.List[String] {
+  doc.>select { Base.get }
+}
 
-pub fn our_lines(doc: Doc) -> list.List[String] { doc.?{ours} }
+pub fn our_lines(doc: Doc) -> list.List[String] {
+  doc.>select { Ours.get }
+}
 
-pub fn their_lines(doc: Doc) -> list.List[String] { doc.?{theirs} }
+pub fn their_lines(doc: Doc) -> list.List[String] {
+  doc.>select { Theirs.get }
+}

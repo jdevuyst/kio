@@ -2,15 +2,17 @@ module catalog/fixtures;
 
 import catalog/domain as dom;
 import catalog/domain(Book, Book_index, Member, Member_index, Op, Op_list);
-import catalog/domain({copies_out}, {copies_total}, {fines}, {held}, {member_id}, {title});
+import catalog/domain(Copies_out, Copies_total, Fines, Held, Member_id, Title);
 import dict/dict(op _ => _, varop [% %]);
 import list/core as lcore;
 import list/list as list;
 import testapi(I32, String);
 
-fn book(name: String, copies: I32) -> Book { {title = name, copies_total = copies, copies_out = 0} }
+fn book(name: String, copies: I32) -> Book {
+  (Title.mk(name), Copies_total.mk(copies), Copies_out.mk(0))
+}
 
-fn member(id: I32) -> Member { {member_id = id, fines = 0, held = lcore.nil[I32]} }
+fn member(id: I32) -> Member { (Member_id.mk(id), Fines.mk(0), Held.mk(lcore.nil[I32])) }
 
 fn queued(pending: Op_list, next: Op) -> Op_list { lcore.cons(next, pending) }
 

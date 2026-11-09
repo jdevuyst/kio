@@ -14,6 +14,7 @@ import book/num(int_eq, not);
 import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, remaining_of, side_of);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
@@ -28,7 +29,7 @@ import testapi/array(
 );
 import testapi/iter(loop);
 
-pub labels Book = { bids: Array[Order], asks: Array[Order], tape: Array[Trade], ledger: Array[I32] };
+pub type Book = { Bids: Array[Order]; Asks: Array[Order]; Tape: Array[Trade]; Ledger: Array[I32] };
 
 /// Every quantity that enters or leaves the book lands in one of these
 /// cells. Nothing here is derived from the tape, which is what lets the
@@ -48,17 +49,21 @@ literal next_id_cell = 5;
 literal ledger_size = 6;
 
 pub fn new_book() -> Book {
-  {
-  , bids = array_make_empty[Order](())
-  , asks = array_make_empty[Order](())
-  , tape = array_make_empty[Trade](())
-  , ledger = array_make_filled(ledger_size, 0)
-  }
+  (
+  , Bids.mk(array_make_empty[Order](()))
+  , Asks.mk(array_make_empty[Order](()))
+  , Tape.mk(array_make_empty[Trade](()))
+  , Ledger.mk(array_make_filled(ledger_size, 0))
+  )
 }
 
-fn ledger_of(b: Book) -> Array[I32] { b.?{ledger} }
+fn ledger_of(b: Book) -> Array[I32] {
+  b.>select { Ledger.get }
+}
 
-fn tape_array(b: Book) -> Array[Trade] { b.?{tape} }
+fn tape_array(b: Book) -> Array[Trade] {
+  b.>select { Tape.get }
+}
 
 fn cell(b: Book, index: I32) -> I32 { array_get(ledger_of(b), index) }
 
@@ -66,9 +71,13 @@ fn bump(b: Book, index: I32, amount: I32) {
   array_set(ledger_of(b), index, add_i32(cell(b, index), amount))
 }
 
-pub fn bids_of(b: Book) -> Array[Order] { b.?{bids} }
+pub fn bids_of(b: Book) -> Array[Order] {
+  b.>select { Bids.get }
+}
 
-pub fn asks_of(b: Book) -> Array[Order] { b.?{asks} }
+pub fn asks_of(b: Book) -> Array[Order] {
+  b.>select { Asks.get }
+}
 
 /// The queue an order of this side rests on.
 pub fn own_queue(b: Book, side: Side) -> Array[Order] {

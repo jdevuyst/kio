@@ -1,4 +1,4 @@
-use crate::ast::{Equiv, ExpressionOccurrence, Never, Phase, UserMacroDef};
+use crate::ast::{Equiv, ExpressionOccurrence, Phase, UserMacroDef};
 use crate::error::Error;
 use crate::pass::resolve::ResolvePhase;
 use crate::span::Span;
@@ -94,7 +94,7 @@ pub trait AuxiliaryItemChecks<P: DeclarationPhase> {
         elaborations: &mut P::Elaborations,
     ) -> Result<(), Error>
     where
-        P: Phase<TypeLabelSugar = Never> + Clone;
+        P: Phase + Clone;
 
     fn check_macro<'m>(
         item: &'m UserMacroDef<P>,
@@ -118,7 +118,7 @@ impl<P: TyperPhase> AuxiliaryItemChecks<P> for BodyItemChecks {
         elaborations: &mut P::Elaborations,
     ) -> Result<(), Error>
     where
-        P: Phase<TypeLabelSugar = Never> + Clone,
+        P: Phase + Clone,
     {
         super::check_equiv(item, index, env, elaborations)
     }

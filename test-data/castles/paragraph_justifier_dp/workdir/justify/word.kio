@@ -10,24 +10,29 @@ module justify/word;
 import justify/list(List);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, lt_i32);
 import testapi/iter(loop);
 
-pub labels Word = { text: String, width: I32 };
+pub type Word = { Text: String; Width: I32 };
 
 pub type Words = List[Word];
 
-pub fn make_word(text: String, width: I32) -> Word { {text, width} }
+pub fn make_word(text: String, width: I32) -> Word { (Text.mk(text), Width.mk(width)) }
 
-pub fn word_text(w: Word) -> String { w.?{text} }
+pub fn word_text(w: Word) -> String {
+  w.>select { Text.get }
+}
 
-pub fn word_width(w: Word) -> I32 { w.?{width} }
+pub fn word_width(w: Word) -> I32 {
+  w.>select { Width.get }
+}
 
 rec(loop) fn span_onto(xs: Words, cursor: I32, from: I32, to: I32, used: I32) -> I32 {
   if(leq_i32(to, cursor)) {
     used
-  } else match(xs.>List.unpack) {
+  } else match(xs.>List.get) {
     (
     , .(w: Word, rest: Words) {
         if(lt_i32(cursor, from)) {
@@ -54,7 +59,7 @@ rec(loop) fn span_onto(xs: Words, cursor: I32, from: I32, to: I32, used: I32) ->
 pub fn span_used(xs: Words, from: I32, to: I32) -> I32 { span_onto(xs, 0, from, to, -1) }
 
 rec(loop) fn widest_onto(xs: Words, acc: I32) -> I32 {
-  match(xs.>List.unpack) {
+  match(xs.>List.get) {
     (
     , .(w: Word, rest: Words) {
         if(lt_i32(acc, word_width(w))) {

@@ -1,5 +1,6 @@
 module pid/controller;
 
+import macros/row_macros(macro select);
 import pid/calibration(apply);
 import pid/model(
 , Accumulated_error
@@ -20,20 +21,6 @@ import pid/model(
 , Previous_error
 , Proportional
 , Step
-, {accumulated_error}
-, {bias}
-, {command}
-, {derivative_term}
-, {derivative}
-, {error}
-, {integral_term}
-, {integral}
-, {kd}
-, {ki}
-, {kp}
-, {measured}
-, {previous_error}
-, {proportional}
 );
 import testapi(F64);
 import testapi/arith as arith;
@@ -46,23 +33,31 @@ fn control_output(bias: F64, proportional: F64, integral_term: F64, derivative_t
 pub fn update(target: F64, raw: F64, calibration: Calibration, gains: Gains, memory: Memory) -> Step {
   let measured = apply(raw, calibration);
   let error = arith.sub_f64(target, measured);
-  let integral = arith.add_f64(memory.?{accumulated_error}, error);
-  let derivative = arith.sub_f64(error, memory.?{previous_error});
-  let proportional = arith.mul_f64(gains.?{kp}, error);
-  let integral_term = arith.mul_f64(gains.?{ki}, integral);
-  let derivative_term = arith.mul_f64(gains.?{kd}, derivative);
-  {
-  , measured
-  , error
-  , integral
-  , derivative
-  , proportional
-  , integral_term
-  , derivative_term
-  , command = control_output(gains.?{bias}, proportional, integral_term, derivative_term)
-  }
+  let integral = arith.add_f64(memory.>select { Accumulated_error.get }, error);
+  let derivative = arith.sub_f64(error, memory.>select { Previous_error.get });
+  let proportional = arith.mul_f64(gains.>select { Kp.get }, error);
+  let integral_term = arith.mul_f64(gains.>select { Ki.get }, integral);
+  let derivative_term = arith.mul_f64(gains.>select { Kd.get }, derivative);
+  (
+  , Measured.mk(measured)
+  , Error.mk(error)
+  , Integral.mk(integral)
+  , Derivative.mk(derivative)
+  , Proportional.mk(proportional)
+  , Integral_term.mk(integral_term)
+  , Derivative_term.mk(derivative_term)
+  , Command.mk(control_output(
+    , gains.>select { Bias.get }
+    , proportional
+    , integral_term
+    , derivative_term
+    ))
+  )
 }
 
 pub fn memory_after(step: Step) -> Memory {
-  {previous_error = step.?{error}, accumulated_error = step.?{integral}}
+  (
+  , Previous_error.mk(step.>select { Error.get })
+  , Accumulated_error.mk(step.>select { Integral.get })
+  )
 }

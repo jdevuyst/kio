@@ -1,0 +1,83 @@
+module testapi/main;
+
+import macros/row_macros(macro record_ as assemble, macro select as query, macro with_ as update);
+import testapi(I32, String);
+import testapi/fields(create, selector);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+type { Field[A]: A { mk; get } }
+
+type { A: String { mk; get } }
+
+type { B: String { mk; get } }
+
+type { C: . { mk; get } }
+
+type { Empty: . { mk; get } }
+
+type { Callback: . -> String { mk; get } }
+
+type { Pack <U>: String & U { mk; get } }
+
+type Text_field = Field[String];
+
+fn compound(pair: A & B) -> String { let .(a, b) = pair; string_concat(A.get(a), B.get(b)) }
+
+fn unit_field(_value: .) -> String { "unit slot\n" }
+
+fn empty_field(_value: Empty) -> String { "nominal unit\n" }
+
+fn transform(value: A) -> String { string_concat("transformed ", A.get(value)) }
+
+pub fn main() {
+  let row = assemble { Field.mk[String]("text\n"); Field.mk[I32](7) };
+  let .(changed: Text_field & Field[I32]) = row.>update { Field.mk[String]("changed\n") };
+  let .(text, number) = changed.>query { Field.get[String]; Field.get[I32] };
+  print(text);
+  print(i32_to_string(number));
+  print("\n");
+  let inserted = Field.mk[I32](7).>update { Field.mk[String]("inserted\n") };
+  let .(inserted_text, old_number) = inserted.>query { Field.get[String]; Field.get[I32] };
+  print(inserted_text);
+  print(i32_to_string(old_number));
+  print("\n");
+  let repeated = assemble { Field.mk[I32](1); Field.mk[I32](2) };
+  let retained = repeated.>update { Field.mk[I32](9) };
+  let .(new_first, old_second) = retained;
+  print(i32_to_string(Field.get(new_first)));
+  print(i32_to_string(Field.get(old_second)));
+  print("\n");
+  let .(read_first, read_again) = retained.>query { Field.get[I32]; Field.get[I32] };
+  print(i32_to_string(read_first));
+  print(i32_to_string(read_again));
+  print("\n");
+  let compound_row = assemble { (A.mk("compound "), B.mk("slot\n")); C.mk(()) };
+  print(compound_row.>query { compound });
+  let trailing_product = assemble { C.mk(()); (A.mk("trailing "), B.mk("product\n")) };
+  let .(left, right) = trailing_product.>query { A.get; B.get };
+  print(left);
+  print(right);
+  let with_unit = assemble { A.mk("field\n"); (); Empty.mk(()) };
+  let .(ordinary_unit, nominal_unit, transformed) =
+    with_unit.>query { unit_field; empty_field; transform };
+  print(ordinary_unit);
+  print(nominal_unit);
+  print(transformed);
+  let callback =
+    assemble {
+      Callback.mk(.() -> String { "callback\n" })
+    };
+  let call = callback.>query { Callback.get };
+  print(call());
+  let private_field = assemble { create("private selector\n") };
+  print(private_field.>query { selector() });
+  let packed = assemble { Pack.mk(("existential\n"[String], ())) };
+  let unpack = packed.>query { Pack.get };
+  print(unpack(.[U](message: String, _hidden: U) { message }));
+  assemble {};
+  ().>update {};
+  ().>query {};
+  ()
+}

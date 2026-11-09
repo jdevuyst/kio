@@ -1,10 +1,10 @@
 module main;
 
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A { pub mk; pub get } }
 
 fn id[A](x: A) -> A { x }
 
-fn box_unbox[A](x: A) -> A { let b = x.>Box.mk_box; b.>Box.un_box }
+fn box_unbox[A](x: A) -> A { let b = x.>Box.mk; b.>Box.get }
 
 fn pair_first[A](x: A) -> A { let .(first: A, _second: A) = (x, x); first }
 

@@ -1,0 +1,3 @@
+recursive data declaration requires `rec`
+`Node` is declared here without recursive scope
+add `rec` before the declaration of `Node` to give the payload its own type head

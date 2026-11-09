@@ -4,7 +4,7 @@ import __intrinsics__;
 
 import macros/derive(macro derive);
 
-newtype Token : . { constructor make_token; projector read_token }
+type { Token: . { mk; get } }
 
 type Target = . | (Token & Token);
 

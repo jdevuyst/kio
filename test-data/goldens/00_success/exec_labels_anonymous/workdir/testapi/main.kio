@@ -3,11 +3,8 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-// End-to-end exercise of `labels`. The anonymous block declares a
-// single label `greeting` whose payload is `String`. The body builds
-// a value of `Greeting` via the `{greeting = "hello\n"}` sugar
-// and projects out the wrapped string via the generated newtype's
-// projector member `Greeting.get`.
-labels { greeting: String };
+// An anonymous nominal group declares `Greeting` with a `String` payload.
+// The body constructs a value and projects the wrapped string back out.
+type { Greeting: String }
 
-pub fn main() { let g = {greeting = "hello\n"}; print(Greeting.get(g)) }
+pub fn main() { let g = Greeting.mk("hello\n"); print(Greeting.get(g)) }

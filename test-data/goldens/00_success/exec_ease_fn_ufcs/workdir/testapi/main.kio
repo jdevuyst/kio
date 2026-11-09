@@ -5,24 +5,24 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 fn provider(x: A | B) {
   print(match(x) {
-    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+    (.(a: A) { A.get(a) }, .(b: B) { B.get(b) })
   })
 }
 
 // Surrounding type pins the target; `f.>ease` elides the target
 // slot just like other UFCS macro calls.
-fn use_narrow(f: A -> .) { f(A.mk_a("elided target ok\n")) }
+fn use_narrow(f: A -> .) { f(A.mk("elided target ok\n")) }
 
 pub fn main() {
   // Explicit-target UFCS: brackets carry the target type, parallel
   // to `(r.>into)[T]`.
-  (provider.>ease)[A -> .](A.mk_a("explicit target ok\n"));
+  (provider.>ease)[A -> .](A.mk("explicit target ok\n"));
   // Elided-target UFCS: omit the target stage when the surrounding
   // context pins the target.
   use_narrow(provider.>ease)

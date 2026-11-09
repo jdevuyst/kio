@@ -1,6 +1,6 @@
 # Builtin Modules
 
-Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by macro implementations. Ordinary source should start with surface forms — tuples, labels, `match`, and structural macros — and use `__intrinsics__` only when the core operation itself is the subject.
+Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by macro implementations. Ordinary source should start with surface forms — tuples, nominal types, `match`, and structural macros — and use `__intrinsics__` only when the core operation itself is the subject.
 
 If you are trying to construct or inspect sums and products in a normal
 program, use the structural guides instead of this reference. The
@@ -129,7 +129,7 @@ type __Type__
 
 Opaque reflected handle for a Kio type.
 
-A handle preserves the identity, binders, kind arity, and structural shape of the reflected type. It is inspected and rebuilt only through this module's helpers. It is not a runtime type value, and using it outside compile-time evaluation is invalid.
+A handle preserves the identity, binders, kind arity, and structural shape of the reflected type. It is inspected and rebuilt only through this module's helpers. A marked handle can carry unresolved inference information: transport and fills remain valid, but an evaluated observation requiring that information raises an uncatchable macro error (exit 15). Discarding the result cannot hide the error; an unevaluated branch does not raise it. Known rigid generic variables remain inspectable. It is not a runtime type value, and using it outside compile-time evaluation is invalid.
 
 #### `__Checked_term__`
 
@@ -149,7 +149,7 @@ type __Type_var__
 
 Opaque handle for a reflected type variable.
 
-A handle identifies one fresh reflected binder and records that binder's kind arity. Compare handles with `__type_var_equal__` and turn one into a type with `__type_var__`. It has no user-constructible or runtime representation.
+A handle identifies a reflected type variable and records its kind arity. Corresponding parameters opened from equivalent complete generic types compare equal even after independent reconstruction; exact free environments and binder positions matter. A comparison that needs missing type information fails. Compare handles with `__type_var_equal__` and turn one into a type with `__type_var__`. It has no user-constructible or runtime representation.
 
 #### `__Type_name__`
 
@@ -169,7 +169,7 @@ type __Type_arity__
 
 Opaque arity value used by reflected type variables, names, and binders.
 
-Arity is a compile-time natural number used for kinds and function parameter packets. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation.
+Arity is a compile-time natural number used for kinds. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation.
 
 #### `__Diagnostic_text__`
 
@@ -209,7 +209,7 @@ type __Fill_ctx__
 
 Opaque immutable transcript of explicit fill relations for one marked call.
 
-The compiler supplies one fresh context as the second argument of an `impl(fills)` implementation. `__fill__` returns a descendant context instead of mutating its input, so Kio code threads the returned value explicitly. A context cannot be constructed by source, converted to or from `__Comptime__`, inspected, or allowed to reach runtime.
+The compiler supplies one fresh context as the second argument of an `impl(fills)` implementation. Both `__fill__` and `__fill_result__` return a descendant context instead of mutating their input, so Kio code threads the returned value explicitly. A context cannot be constructed by source, converted to or from `__Comptime__`, inspected, or allowed to reach runtime.
 
 ### Type Inspection
 
@@ -231,7 +231,7 @@ __type_view__ : (__Comptime__ & __Type__) -> (
   | .
   | (__Type__ & __Type__)
   | (__Type__ & __Type__)
-  | (__Type__ & __Type_arity__ & __Type__)
+  | (__Type__ & __Type__)
   | (__Type_var__ & __Type_arity__ & __Type__)
   | __Type_var__
   | __Type_name__
@@ -240,7 +240,7 @@ __type_view__ : (__Comptime__ & __Type__) -> (
 
 Decomposes a reflected type into the compiler's structural type-view shape.
 
-After transparent-alias unfolding, returns an eight-arm structural view in this order: unit; bottom; product pair; sum pair; function `(parameters & arity & result)`; forall `(variable & arity & body)`; type variable; named head. Consumers must cover the complete sum. An unresolved type cannot be viewed and leaves elaboration stuck.
+After transparent-alias unfolding, returns an eight-arm structural view in this order: unit; bottom; product pair; sum pair; function `(domain & result)`; forall `(variable & arity & body)`; type variable; named head. Consumers must cover the complete sum. The outer structure must be known. Structural views may expose opaque children; a named-head view also needs the argument-root arities it reports. Observing missing information is an uncatchable macro error (exit 15), including when its result is discarded. Rigid generic variables are known information.
 
 #### `__type_is_host__`
 
@@ -250,7 +250,7 @@ __type_is_host__ : (__Comptime__ & __Type__) -> Comptime_bool
 
 Tests whether a reflected type is a host type — one declared with `host type`.
 
-Returns `.t` exactly when the reflected identity resolves to a package `host type`, following transparent aliases, and `.f` for structural or package-defined nominal types. The argument must be a resolved reflected type; the helper emits no diagnostic sentinel.
+Returns `.t` exactly when the reflected identity resolves to a package `host type`, following transparent aliases, and `.f` for structural or package-defined nominal types. The outer identity must be known; applied arguments may remain opaque. A rigid generic head is not a host declaration. An unresolved head raises an uncatchable macro error (exit 15).
 
 #### `__type_host_converters__`
 
@@ -260,7 +260,7 @@ __type_host_converters__ : (__Comptime__ & __Type__ & __Type__) -> __Type__
 
 Builds the converter product type needed to turn host leaves inside a source type into compile-time strings.
 
-Builds the right-associated product of converter function types needed for every host-type leaf reachable in `source_type`; each converter maps that host leaf (polymorphically when needed) to `string_type`. No host leaves produce unit. A converter value is checked separately by `__term_host_convert__`; mismatch there makes term construction fail.
+Builds the right-associated product of converter function types needed for every host-type leaf reachable in `source_type`; each converter maps that host leaf (polymorphically when needed) to `string_type`. No host leaves produce unit. Both type operands must be complete; missing inference information raises an uncatchable macro error (exit 15). A converter value is checked separately by `__term_host_convert__`; mismatch there makes term construction fail.
 
 #### `__type_equal__`
 
@@ -270,7 +270,7 @@ __type_equal__ : (__Comptime__ & __Type__ & __Type__) -> Comptime_bool
 
 Tests whether two reflected types are equivalent.
 
-Returns a compile-time boolean using Kio's definitional type equivalence, including transparent-alias unfolding and binder renaming while preserving nominal and host identities. It never coerces structural near-matches; unresolved handles cannot reach the helper.
+Returns a compile-time boolean using Kio's definitional type equivalence, including transparent-alias unfolding and binder renaming while preserving nominal and host identities. It never coerces structural near-matches. Both operands must be complete. A converted opened variable may require completeness of its containing generic type; observing missing information raises an uncatchable macro error (exit 15), not a false comparison.
 
 #### `__type_name_equal__`
 
@@ -290,7 +290,7 @@ __type_var_equal__ : (__Comptime__ & __Type_var__ & __Type_var__) -> Comptime_bo
 
 Tests whether two reflected type-variable handles name the same variable.
 
-Returns `.t` only when both handles identify the same reflected binder with the same arity. Equal display names from different binders do not suffice. Supplying ordinary type handles instead of variable handles is a type error.
+Returns `.t` for corresponding variables of equivalent complete generic types, or the same lexical variable, whether a genuine free caller variable or a live constructor variable, with the same kind arity. Equivalent independently reconstructed schemes expose corresponding equal variables; distinct positions, free environments, or live variables remain distinct. Equal display names do not suffice. If comparison needs missing type information, it raises an uncatchable macro error (exit 15). Supplying ordinary type handles instead of variable handles is a type error.
 
 #### `__type_is_product_root__`
 
@@ -300,7 +300,7 @@ __type_is_product_root__ : (__Comptime__ & __Type__) -> Comptime_bool
 
 Tests whether a reflected type's outer shape is a product spine.
 
-Unfolds transparent aliases and tests only the outer constructor. Nested products below another constructor do not count. The result is always a compile-time boolean for a resolved handle.
+Unfolds transparent aliases and tests only the outer constructor. Nested products below another constructor do not count. The outer constructor must be known, but children may remain opaque. An unresolved outer constructor raises an uncatchable macro error (exit 15).
 
 #### `__type_is_sum_root__`
 
@@ -310,7 +310,7 @@ __type_is_sum_root__ : (__Comptime__ & __Type__) -> Comptime_bool
 
 Tests whether a reflected type's outer shape is a sum spine.
 
-Unfolds transparent aliases and tests only the outer constructor. Nested sums below another constructor do not count. The result is always a compile-time boolean for a resolved handle.
+Unfolds transparent aliases and tests only the outer constructor. Nested sums below another constructor do not count. The outer constructor must be known, but children may remain opaque. An unresolved outer constructor raises an uncatchable macro error (exit 15).
 
 ### Type Construction
 
@@ -357,12 +357,12 @@ Constructs the ordered binary type `left | right`; it does not flatten either in
 #### `__type_arrow__`
 
 ```kio {ignore}
-__type_arrow__ : (__Comptime__ & __Type__ & __Type_arity__ & __Type__) -> __Type__
+__type_arrow__ : (__Comptime__ & __Type__ & __Type__) -> __Type__
 ```
 
-Constructs a reflected function type from a parameter packet, parameter arity, and result type.
+Constructs a reflected function type from its domain and result type.
 
-Constructs a function type from a parameter packet, the packet's ABI arity, and a result type. The arity must describe the parameter packet the generated call convention will use; inconsistent shapes are rejected when a checked function or call is constructed.
+Constructs the semantic function type `domain -> result`. The domain describes the complete argument packet; products remain one logical domain.
 
 #### `__type_forall__`
 
@@ -370,9 +370,9 @@ Constructs a function type from a parameter packet, the packet's ABI arity, and 
 __type_forall__ : (__Comptime__ & __Type_arity__ & (__Type_var__ -> __Type__)) -> __Type__
 ```
 
-Constructs a reflected polymorphic type by binding fresh type variables.
+Constructs a reflected polymorphic type by binding a hygienic type variable.
 
-Creates a fresh type variable of the requested kind arity, passes its handle to `body`, and binds the returned reflected type. The binder is hygienic. A body that does not return `__Type__` is rejected by the static scheme.
+Creates a hygienic type variable of the requested kind arity, passes its handle to `body`, and binds the returned reflected type. The result cannot contain a free variable opened from another generic type. Keep that type intact or instantiate it with the chosen new variable first. The new variable, live enclosing constructor variables, genuine free caller variables, and variables bound within intact nested schemes remain valid. An unknown region must be established safe or construction fails for missing information. A body that does not return `__Type__` is rejected by the static scheme.
 
 #### `__type_var__`
 
@@ -382,7 +382,7 @@ __type_var__ : (__Comptime__ & __Type_var__) -> __Type__
 
 Turns a reflected type-variable handle into a reflected type.
 
-Turns a reflected variable handle into the type that refers to that binder. The handle must come from reflection or a `__type_forall__` callback; arbitrary names cannot be forged.
+Turns a reflected variable handle into the type that refers to that variable, preserving its identity for comparison and substitution. The handle comes from reflection or a quantified-construction callback; arbitrary names cannot be forged.
 
 #### `__type_name_type__`
 
@@ -402,7 +402,7 @@ __type_apply__ : (__Comptime__ & __Type__ & __Type__) -> __Type__
 
 Applies a reflected type head to one reflected type argument.
 
-Appends one reflected argument to a named/path type head. Apply once per argument in source order and respect the head's declared kinds. Applying a non-head or over-applying produces an unusable type that later kind/type validation rejects; this helper has no diagnostic-result arm. During marked evaluation, if the outer head is still unresolved after alias unfolding, evaluation remains residual: the helper does not return the unchanged head or discard the argument.
+Appends one reflected argument to a named/path type head. Apply once per argument in source order and respect the head's declared kinds. Applying a non-head or over-applying produces an unusable type that later kind/type validation rejects; this helper has no diagnostic-result arm. During marked evaluation, an unresolved outer head after alias unfolding raises an uncatchable macro error (exit 15). The argument itself may remain opaque; the helper does not need to inspect it.
 
 #### `__type_instantiate__`
 
@@ -412,7 +412,7 @@ __type_instantiate__ : (__Comptime__ & __Type__ & __Type__) -> (__Type__ | __Dia
 
 Instantiates a reflected polymorphic type with one reflected type argument, returning a diagnostic on failure.
 
-Instantiates the outermost reflected `forall` binder with one argument. Success is the left `__Type__` arm; a non-forall input or a structural argument for a higher-kinded binder returns diagnostic text in the right arm. Call again for additional binders.
+Instantiates the outermost reflected `forall` binder with one argument. Success is the left `__Type__` arm; a non-forall input or a structural argument for a higher-kinded binder returns diagnostic text in the right arm. Call again for additional binders. The scheme and argument must both be complete; missing inference information raises an uncatchable macro error (exit 15), not the diagnostic arm.
 
 #### `__type_arity__`
 
@@ -422,7 +422,7 @@ __type_arity__ : (__Comptime__ & __Type__) -> __Type_arity__
 
 Reads the arity of a reflected type.
 
-Unfolds aliases and returns the kind arity of the outermost `forall` binder. Returns zero when there is no outer `forall` binder. This is not a general query for a type head's kind. The argument must already be resolved.
+Unfolds aliases and returns the kind arity of the outermost `forall` binder. Returns zero when there is no outer `forall` binder. This is not a general query for a type head's kind. The outer constructor must be known; its children may remain opaque. An unresolved root raises an uncatchable macro error (exit 15).
 
 #### `__type_var_arity__`
 
@@ -442,7 +442,7 @@ __type_arity_zero__ : __Comptime__ -> __Type_arity__
 
 Constructs the zero arity value.
 
-Constructs arity zero, representing kind `*` or an empty ABI parameter packet. It cannot fail in a compile-time context.
+Constructs arity zero, representing kind `*`. It cannot fail in a compile-time context.
 
 #### `__type_arity_succ__`
 
@@ -452,7 +452,7 @@ __type_arity_succ__ : (__Comptime__ & __Type_arity__) -> __Type_arity__
 
 Constructs the successor of an arity value.
 
-Constructs the successor of an existing arity. Repeated calls encode higher-kinded arrow counts or function ABI slots; ordinary numeric values are not accepted.
+Constructs the successor of an existing arity. Repeated calls encode higher-kinded arrow counts; ordinary numeric values are not accepted.
 
 #### `__type_arity_equal__`
 
@@ -474,7 +474,7 @@ __type_product_spine_fold__ : __Comptime__ -> [r] (__Type__ & r & ((r & __Type__
 
 Folds over the member types of a reflected product spine.
 
-Unfolds aliases, walks a right-associated product from left to right, and calls `step(acc, member)` for each member. A non-product is treated as a one-member spine. `R` fixes one accumulator/result type; a step with another shape is a type error.
+Unfolds aliases, walks a right-associated product from left to right, and calls `step(acc, member)` for each member. A known non-product is treated as a one-member spine. Each traversed right-spine head must be known; elements may remain opaque. An unresolved traversed head raises an uncatchable macro error (exit 15). `R` fixes one accumulator/result type; a step with another shape is a type error.
 
 ##### Checked example: `__type_product_spine_fold__`
 
@@ -500,7 +500,7 @@ __type_sum_spine_fold__ : __Comptime__ -> [r] (__Type__ & r & ((r & __Type__) ->
 
 Folds over the branch types of a reflected sum spine.
 
-Unfolds aliases, walks a right-associated sum from left to right, and calls `step(acc, branch)` for each branch. A non-sum is treated as a one-branch spine. `R` fixes one accumulator/result type; a step with another shape is a type error.
+Unfolds aliases, walks a right-associated sum from left to right, and calls `step(acc, branch)` for each branch. A known non-sum is treated as a one-branch spine. Each traversed right-spine head must be known; elements may remain opaque. An unresolved traversed head raises an uncatchable macro error (exit 15). `R` fixes one accumulator/result type; a step with another shape is a type error.
 
 #### `__type_args_fold__`
 
@@ -510,17 +510,17 @@ __type_args_fold__ : __Comptime__ -> [r] (__Type__ & r & ((r & __Type__) -> r)) 
 
 Folds over the type arguments applied to a reflected type head.
 
-Walks the applied arguments of a reflected named type from left to right and calls `step(acc, argument)` for each. A structural or unapplied type has no arguments and returns `init`. During marked evaluation, if the outer type is still unresolved after alias unfolding, evaluation remains residual: the helper does not treat it as a known zero-argument type or return `init`. The accumulator type `R` cannot change between steps.
+Walks the applied arguments of a reflected named type from left to right and calls `step(acc, argument)` for each. A structural or unapplied type has no arguments and returns `init`. During marked evaluation, the outer type must be known after alias unfolding, but the applied arguments may remain opaque. An unresolved outer type raises an uncatchable macro error (exit 15), rather than returning `init`. The accumulator type `R` cannot change between steps.
 
-#### `__type_function_params_fold__`
+#### `__type_forall_prefix_fold__`
 
 ```kio {ignore}
-__type_function_params_fold__ : __Comptime__ -> [r] (__Type__ & r & ((r & __Type__) -> r)) -> r
+__type_forall_prefix_fold__ : __Comptime__ -> [r] (__Type__ & r & ((r & __Type_var__) -> r)) -> (r & __Type__)
 ```
 
-Folds over the parameter packet of a reflected function type.
+Folds over leading universal binders and returns the remaining type.
 
-Unfolds aliases, splits the outer function's parameter packet according to its ABI arity, and folds parameters left to right. A non-function yields no parameters and therefore `init`; malformed arity metadata prevents checked-term construction later.
+Unfolds aliases and visits the immutable leading forall prefix, calling `step(acc, binder)` once per binder, outermost first. Returns the final accumulator paired with the remaining type; a known non-forall returns `(init, typ)` without calling `step`. Every traversed head, including the stopping head, must be known. A known function with an opaque result is a valid stopping head; an unknown next head raises an uncatchable macro error (exit 15). The complete finite prefix is established before callbacks run. Binder handles have the same identity and scope as repeated `__type_view__` observations; `__type_var_arity__` reads each binder's kind arity. A callback cannot extend the prefix, and an evaluated callback fault cannot be discarded.
 
 #### `__type_arity_fold__`
 
@@ -552,7 +552,7 @@ __type_display__ : (__Comptime__ & __Type__) -> __Diagnostic_text__
 
 Renders a reflected type as diagnostic text.
 
-Pretty-prints the complete reflected type for a call-site diagnostic, preserving structure and qualified identities where required. Canonical qualified identities separate module-path components with `/` and the final named head with `.`, as in `foo/bar.Item`. The text is diagnostic-only and must not be parsed back into a type.
+Requires a complete reflected type; missing inference information raises an uncatchable macro error (exit 15). Pretty-prints that type for a call-site diagnostic, preserving structure and qualified identities where required. Canonical qualified identities separate module-path components with `/` and the final named head with `.`, as in `foo/bar.Item`. The text is diagnostic-only and must not be parsed back into a type.
 
 #### `__type_short_name__`
 
@@ -562,7 +562,7 @@ __type_short_name__ : (__Comptime__ & __Type__) -> __Diagnostic_text__
 
 Renders a compact diagnostic name for a reflected type.
 
-Pretty-prints the complete reflected type using the evaluation module's lexical imports. An unshadowed type declared in that module or selectively imported there uses its bare name. Otherwise, the shortest unshadowed qualified import alias for the type's exact declaring module is used, with import order breaking equal-length ties; when no such spelling is available, the canonical path remains, with `/` between its module components. Type applications, functions, products, sums, forall binders, and alias heads stay intact. The text is diagnostic-only and must not be parsed or compared as a type identity; use `__type_equal__` for decisions.
+Requires a complete reflected type; missing inference information raises an uncatchable macro error (exit 15). Pretty-prints that type using the evaluation module's lexical imports. An unshadowed type declared in that module or selectively imported there uses its bare name. Otherwise, the shortest unshadowed qualified import alias for the type's exact declaring module is used, with import order breaking equal-length ties; when no such spelling is available, the canonical path remains, with `/` between its module components. Type applications, functions, products, sums, and forall binders stay intact. Transparent aliases may be expanded before reflection; nominal type names remain intact. The text is diagnostic-only and must not be parsed or compared as a type identity; use `__type_equal__` for decisions.
 
 #### `__type_name_display__`
 
@@ -638,7 +638,7 @@ __structural_recur__ : __Comptime__ -> [fuel][input][result] (& fuel
 
 Runs fuel-checked compile-time structural recursion through an ordinary helper call.
 
-Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, literals, structurally determined reflected values, arities, diagnostic text, checked terms, and finite constructor trees with measurable children are measurable; closures, opaque atoms, stuck terms, case splits, and recursive callbacks are not. An initial projected type uses its authenticated alias-unfolded structural carrier as a conservative lower bound; its exact scoped snapshot remains available for whole-handle reflection and fills. An unresolved outer carrier is unmeasurable, and a direct projected value used on a recursive edge must be complete. When an ordinary finite constructor carries a projected field, a known outer structure gives that field the same conservative size in initial and recursive measurements; an unresolved outer field makes the constructor unmeasurable. A structurally determined child can remain measurable even when its parent is open. `recur(next_fuel, next_input)` must give the callback a recursive fuel measure strictly below both the current measure and its stored root measure. Evaluator-created callbacks maintain `current ≤ root`; both bounds are checked independently for a callback constructed directly through the evaluator API. The helper's three operands and the callback's two operands may be written as flattened arguments or as one right-folded product packet. After all operands are evaluated, every fresh invocation uses the initial measure and starts an independent callback root, including nested calls through the same helper and higher-order use. Saved callbacks retain their immutable bounds after the creating invocation returns; sibling applications do not consume each other's bounds. On a callback edge, equal-measure fuel is rejected regardless of value identity, representation, or whether it contains a projected handle. The callback has type `(fuel & input) -> result`, and every path returns the one `result` type. Unmeasurable initial or recursive fuel, a callback that does not strictly descend from its current measure or stay below its stored root leaves the evaluator stuck and is reported as a totality error (exit 16) with root/current/next measures when available. If both callback bounds fail, the diagnostic reports the current edge; the root-specific diagnostic applies only when the current edge descends but the root bound fails. Once an evaluated edge fails, enclosing compile-time computation cannot discard it; that evaluation reports its first totality failure.
+Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, literals, structurally determined reflected values, arities, diagnostic text, checked terms, and finite constructor trees with measurable children are measurable; closures, opaque atoms, stuck terms, case splits, and recursive callbacks are not. An initial projected type uses its authenticated alias-unfolded structural carrier as a conservative lower bound; its exact scoped snapshot remains available for whole-handle reflection and fills. An unresolved outer carrier is unmeasurable, and a direct projected value used on a recursive edge must be complete. Every semantic reflected type nested inside ordinary data counts as one atom, whether closed, projected, or completely opaque. Its contents do not contribute to either initial or recursive data measurement. Removing data constructors can decrease fuel while a carried type grows; shrinking only a type inside a fixed-size tuple does not. Use the type directly as fuel for structural type descent. A structurally determined child can remain measurable even when its parent is open. `recur(next_fuel, next_input)` must give the callback a recursive fuel measure strictly below both the current measure and its stored root measure. Evaluator-created callbacks maintain `current ≤ root`; both bounds are checked independently for a callback constructed directly through the evaluator API. The helper's three operands and the callback's two operands may be written as flattened arguments or as one right-folded product packet. After all operands are evaluated, every fresh invocation uses the initial measure and starts an independent callback root, including nested calls through the same helper and higher-order use. Saved callbacks retain their immutable bounds after the creating invocation returns; sibling applications do not consume each other's bounds. On a callback edge, equal-measure fuel is rejected regardless of value identity, representation, or whether it contains a projected handle. The callback has type `(fuel & input) -> result`, and every path returns the one `result` type. Unmeasurable initial or recursive fuel, a callback that does not strictly descend from its current measure or stay below its stored root leaves the evaluator stuck and is reported as a totality error (exit 16) with root/current/next measures when available. If both callback bounds fail, the diagnostic reports the current edge; the root-specific diagnostic applies only when the current edge descends but the root bound fails. Once an evaluated edge fails, enclosing compile-time computation cannot discard it; that evaluation reports its first totality failure.
 
 ##### Checked example: `__structural_recur__`
 
@@ -649,11 +649,11 @@ import __intrinsics__;
 
 import __comptime__;
 
-rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
+rec type { Fuel: . | Fuel { pub mk; pub get } }
 
-fn stop() -> Fuel { Fuel.mk_fuel(__left__[.][Fuel](())) }
+fn stop() -> Fuel { Fuel.mk(__left__[.][Fuel](())) }
 
-fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__[.][Fuel](rest)) }
+fn tick(rest: Fuel) -> Fuel { Fuel.mk(__right__[.][Fuel](rest)) }
 
 fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
   __structural_recur__(ct)[Fuel][.][__Type_arity__](
@@ -661,7 +661,7 @@ fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
   , ()
   , .(recur: (Fuel & .) -> __Type_arity__, current: Fuel, _input: .) -> __Type_arity__ {
       __either__[.][Fuel][__Type_arity__](
-      , Fuel.un_fuel(current)
+      , Fuel.get(current)
       , .(_done: .) -> __Type_arity__ { __type_arity_zero__(ct) }
       , .(rest: Fuel) -> __Type_arity__ { __type_arity_succ__(ct, recur(rest, ())) }
       )
@@ -700,7 +700,7 @@ __term_fn__ : (__Comptime__ & __Type__ & (__Checked_term__ -> __Checked_term__))
 
 Constructs a checked function term.
 
-Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function with consistent ABI arity, otherwise construction stays stuck and the macro fails.
+Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function, and the callback's checked result must match its result type.
 
 ##### Checked example: `__term_fn__`
 
@@ -710,7 +710,7 @@ module builtin_checked_fn_example;
 import __comptime__;
 
 fn identity_term(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
-  let fn_type = __type_arrow__(ct, typ, __type_arity_succ__(ct, __type_arity_zero__(ct)), typ);
+  let fn_type = __type_arrow__(ct, typ, typ);
   __term_fn__(ct, fn_type, .(parameter: __Checked_term__) -> __Checked_term__ { parameter })
 }
 ```
@@ -733,7 +733,7 @@ __term_type_fn__ : (__Comptime__ & __Type_arity__ & (__Type_var__ -> __Checked_t
 
 Constructs a checked type-function term.
 
-Creates a hygienic type abstraction with a fresh binder of `var_arity`; the callback receives its variable handle and returns the checked body. The result is polymorphic checked Kio'. A non-term callback result cannot be constructed.
+Creates a hygienic type abstraction with a binder of `var_arity`; the callback receives its variable handle and returns the checked body. The result cannot contain a free variable opened from another generic type, including in types inside the checked term. Keep that type intact or instantiate it with the chosen new variable first. The new variable, live enclosing constructor variables, genuine free caller variables, and variables bound within intact nested schemes remain valid. An unknown region must be established safe or construction fails for missing information. A non-term callback result cannot be constructed.
 
 #### `__term_type_app__`
 
@@ -763,7 +763,7 @@ __term_host_convert__ : (__Comptime__ & __Type__ & __Type__ & __Checked_term__ &
 
 Constructs a checked host-conversion term using the converter product from `__type_host_converters__`.
 
-Selects the converter matching the host-typed leaf carried by `value` and constructs its checked call to `string_type`. `converters` must have exactly the product type returned by `__type_host_converters__`; an absent host match, wrong converter product, or wrong value type makes construction fail.
+Selects the converter matching the host-typed leaf carried by `value` and constructs its checked call to `string_type`. `converters` must have exactly the product type returned by `__type_host_converters__`; an absent host match, wrong converter product, or wrong value type makes construction fail. Both supplied types and both checked-term operand types must be complete; missing inference information raises an uncatchable macro error (exit 15).
 
 #### `__term_specialize__`
 
@@ -775,7 +775,7 @@ __term_specialize__ : (__Comptime__ & __Checked_term__ & __Type__ & __Type__) ->
 
 Specializes an explicitly polymorphic checked term against a reflected type relation.
 
-Uses only its explicit checked term, pattern type, and target type. Success returns the left checked-term arm, an ordinary route mismatch returns unit, and malformed or underdetermined operands return diagnostic text. It receives no fill context and cannot inspect the call's transcript or ambient inference state.
+Uses only its explicit checked term, pattern type, and target type. Success returns the left checked-term arm, an ordinary known route mismatch returns unit, and malformed or underdetermined specialization of complete inputs returns diagnostic text. The pattern and target must be complete; the term’s leading forall prefix and end head must be known, though a known function may have an opaque result child. Missing inference information raises an uncatchable macro error (exit 15), not a recoverable arm. It receives no fill context and cannot inspect the call's transcript or ambient inference state.
 
 ##### Checked example: `__term_specialize__`
 
@@ -897,5 +897,27 @@ import __comptime__;
 
 fn append_result(ct: __Comptime__, fills: __Fill_ctx__, destination: __Type__, candidate: __Type__) -> __Fill_ctx__ {
   __fill__(ct, fills, destination, candidate)
+}
+```
+
+#### `__fill_result__`
+
+```kio {ignore}
+__fill_result__ : (__Comptime__ & __Fill_ctx__ & __Type__) -> __Fill_ctx__
+```
+
+Relates a type candidate to the current marked call’s terminal result.
+
+Appends equality with the invocation’s terminal result without returning or observing its type. The matching proof and fill context authenticate the append; only the returned context retains it. The endpoint is the terminal body result in its exact residual generic scope, not an enclosing residual function. Candidate producer dependencies are retained. All returned old and whole-result relations are authenticated and adopted atomically after evaluation.
+
+##### Checked example: `__fill_result__`
+
+```kio {}
+module builtin_fill_result_example;
+
+import __comptime__;
+
+fn append_result(ct: __Comptime__, fills: __Fill_ctx__, candidate: __Type__) -> __Fill_ctx__ {
+  __fill_result__(ct, fills, candidate)
 }
 ```

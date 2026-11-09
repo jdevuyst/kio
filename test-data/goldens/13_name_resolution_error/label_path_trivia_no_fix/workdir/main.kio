@@ -1,6 +1,0 @@
-module main;
-
-import support as support;
-
-pub fn main() { let _ = {support. // retain this comment
-  hepler = ()}; () }

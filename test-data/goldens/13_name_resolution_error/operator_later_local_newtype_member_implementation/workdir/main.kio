@@ -2,4 +2,4 @@ module main;
 
 op + _ { impl Later.mk }
 
-newtype Later : . { constructor mk; projector get }
+type { Later: . { mk; get } }

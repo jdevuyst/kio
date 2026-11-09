@@ -6,7 +6,6 @@ import __intrinsics__;
 import __comptime__;
 import continuations/macros/macro_util(
 , Macro_result
-, Optional_type
 , Slot
 , Slot_list
 , Term_list
@@ -33,7 +32,7 @@ import continuations/macros/macro_util(
 , type_reverse
 );
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -54,8 +53,6 @@ type Type_view_tail1 = . | Type_view_tail2;
 type Maybe_type_pair = Type_pair | .;
 
 type Maybe_function_view = Function_view | .;
-
-type Type_term = __Type__ & __Checked_term__;
 
 pure fn some_type_pair(ct: __Comptime__, pair: Type_pair) -> Maybe_type_pair {
   __left__[Type_pair][.](pair)
@@ -124,11 +121,11 @@ pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
 }
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__[__Type__][__Type_arity__ & __Type__](view)
+  __fst__[__Type__][__Type__](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 pure fn flatten_product_type(ct: __Comptime__, typ: __Type__) -> Type_list {
@@ -183,7 +180,7 @@ pure fn slots_fold(ct: __Comptime__, slots: Slot_list) -> Slots_fold_state {
       let loop_step_fn =
         .(fuel: Slot_list, state: Slots_fold_state) -> Slots_fold_step {
           __either__[.][Slot & Slot_list][Slots_fold_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_done: .) -> Slots_fold_step { __left__[Slots_fold_state][Slots_fold_next](state) }
           , .(cell: Slot & Slot_list) -> Slots_fold_step {
               let current = __fst__[Slot][Slot_list](cell);
@@ -257,43 +254,15 @@ pure fn flatten_product_slots(ct: __Comptime__, source: __Type__, value: __Check
   )
 }
 
-pure fn type_term_type(ct: __Comptime__, value: Type_term) -> __Type__ {
-  __fst__[__Type__][__Checked_term__](value)
-}
-
-pure fn type_term_term(ct: __Comptime__, value: Type_term) -> __Checked_term__ {
-  __snd__[__Type__][__Checked_term__](value)
-}
-
-pure fn slots_product(ct: __Comptime__, slots: Slot_list) -> Type_term {
+pure fn finish_slots(ct: __Comptime__, slots: Slot_list) -> Macro_result {
   let folded = slots_fold(ct, slots);
-  let types = type_reverse(ct, slots_fold_types_rev(folded));
-  (
-  , right_fold_product(ct, types)
+  ok(
+  , ct
   , right_fold_term_product_from_reversed(
     , ct
     , slots_fold_types_rev(folded)
     , slots_fold_terms_rev(folded)
     )
-  )
-}
-
-pure fn finish_with_optional_target(
-, ct: __Comptime__
-, value: Type_term
-, target: Optional_type
-, mismatch_message: __Diagnostic_text__
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result {
-      __if_then_else__(
-      , __type_equal__(ct, type_term_type(ct, value), target_type)
-      , .() -> Macro_result { ok(ct, type_term_term(ct, value)) }
-      , .() -> Macro_result { err(ct, mismatch_message) }
-      )
-    }
-  , .() -> Macro_result { ok(ct, type_term_term(ct, value)) }
   )
 }
 
@@ -313,156 +282,73 @@ pure fn materialize_slots(ct: __Comptime__, target: __Type__, slots: Slot_list) 
   )
 }
 
-pure fn finish_slots_with_optional_target(
-, ct: __Comptime__
-, slots: Slot_list
-, target: Optional_type
-, mismatch_message: __Diagnostic_text__
-) -> Macro_result {
-  finish_with_optional_target(ct, slots_product(ct, slots), target, mismatch_message)
-}
-
-pure fn concat_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  finish_slots_with_optional_target(
-  , ct
-  , flatten_product_slots(ct, source, value)
-  , target
-  , "concat target does not match flattened product"[__Diagnostic_text__]
-  )
+pure fn concat_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
+  finish_slots(ct, flatten_product_slots(ct, source, value))
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn concat_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, concat_macro(ct, source, value, target)) }
+pure fn concat_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, concat_macro(ct, source, value))
+}
 
 /// Concatenates nested product slots into one flat product.
 pub macro concat : [Source] Source -> [Target] Target { impl concat_checked }
 
-pure fn flatten_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  finish_slots_with_optional_target(
-  , ct
-  , flatten_product_slots(ct, source, value)
-  , target
-  , "flatten target does not match flattened product"[__Diagnostic_text__]
-  )
+pure fn flatten_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
+  finish_slots(ct, flatten_product_slots(ct, source, value))
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn flatten_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, flatten_macro(ct, source, value, target)) }
+pure fn flatten_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, flatten_macro(ct, source, value))
+}
 
 /// Flattens nested product slots, preserving their left-to-right order.
 pub macro flatten : [Source] Source -> [Target] Target { impl flatten_checked }
 
-pure fn group_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result {
-      materialize_slots(ct, target_type, flatten_product_slots(ct, source, value))
-    }
-  , .() -> Macro_result {
-      err(ct, "group needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn group_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, group_macro(ct, source, value, target)) }
+pure fn group_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, materialize_slots(ct, target, flatten_product_slots(ct, source, value)))
+}
 
 /// Materializes a flat product into the requested grouped product target.
 pub macro group : [Source] Source -> [Target] Target { impl group_checked }
 
-pure fn head_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
+pure fn head_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[.][Slot & Slot_list][Macro_result](
-  , Slot_list.un_slot_list(flatten_product_slots(ct, source, value))
+  , Slot_list.get(flatten_product_slots(ct, source, value))
   , .(_empty: .) -> Macro_result {
       err(ct, "head source has no product slots"[__Diagnostic_text__])
     }
   , .(cell: Slot & Slot_list) -> Macro_result {
       let slot = __fst__[Slot][Slot_list](cell);
-      finish_with_optional_target(
-      , ct
-      , (slot_type(ct, slot), slot_term(ct, slot))
-      , target
-      , "head target does not match first product slot"[__Diagnostic_text__]
-      )
+      ok(ct, slot_term(ct, slot))
     }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn head_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, head_macro(ct, source, value, target)) }
+pure fn head_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, head_macro(ct, source, value))
+}
 
 /// Extracts the first product slot.
 pub macro head : [Source] Source -> [Target] Target { impl head_checked }
 
-pure fn tail_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
+pure fn tail_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[.][Slot & Slot_list][Macro_result](
-  , Slot_list.un_slot_list(flatten_product_slots(ct, source, value))
+  , Slot_list.get(flatten_product_slots(ct, source, value))
   , .(_empty: .) -> Macro_result {
       err(ct, "tail source has no product slots"[__Diagnostic_text__])
     }
-  , .(cell: Slot & Slot_list) -> Macro_result {
-      finish_slots_with_optional_target(
-      , ct
-      , __snd__[Slot][Slot_list](cell)
-      , target
-      , "tail target does not match product tail"[__Diagnostic_text__]
-      )
-    }
+  , .(cell: Slot & Slot_list) -> Macro_result { finish_slots(ct, __snd__[Slot][Slot_list](cell)) }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn tail_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, tail_macro(ct, source, value, target)) }
+pure fn tail_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, tail_macro(ct, source, value))
+}
 
 /// Drops the first product slot and returns the remaining product.
 pub macro tail : [Source] Source -> [Target] Target { impl tail_checked }
@@ -475,7 +361,7 @@ pure fn no_slot(ct: __Comptime__) -> Maybe_slot { __right__[Slot][.](()) }
 
 pure fn last_slot(ct: __Comptime__, slots: Slot_list) -> Maybe_slot {
   __either__[.][Slot & Slot_list][Maybe_slot](
-  , Slot_list.un_slot_list(slots)
+  , Slot_list.get(slots)
   , .(_empty: .) -> Maybe_slot { no_slot(ct) }
   , .(cell: Slot & Slot_list) -> Maybe_slot {
       __structural_recur__(ct)[Slot_list][Slot][Maybe_slot](
@@ -483,7 +369,7 @@ pure fn last_slot(ct: __Comptime__, slots: Slot_list) -> Maybe_slot {
       , __fst__[Slot][Slot_list](cell)
       , .(loop_recur: (Slot_list & Slot) -> Maybe_slot, loop_fuel: Slot_list, loop_state: Slot) -> Maybe_slot {
           __either__[.][Slot & Slot_list][Maybe_slot](
-          , Slot_list.un_slot_list(loop_fuel)
+          , Slot_list.get(loop_fuel)
           , .(_done: .) -> Maybe_slot { some_slot(ct, loop_state) }
           , .(next: Slot & Slot_list) -> Maybe_slot {
               loop_recur(__snd__[Slot][Slot_list](next), __fst__[Slot][Slot_list](next))
@@ -495,22 +381,10 @@ pure fn last_slot(ct: __Comptime__, slots: Slot_list) -> Maybe_slot {
   )
 }
 
-pure fn last_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
+pure fn last_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[Slot][.][Macro_result](
   , last_slot(ct, flatten_product_slots(ct, source, value))
-  , .(slot: Slot) -> Macro_result {
-      finish_with_optional_target(
-      , ct
-      , (slot_type(ct, slot), slot_term(ct, slot))
-      , target
-      , "last target does not match final product slot"[__Diagnostic_text__]
-      )
-    }
+  , .(slot: Slot) -> Macro_result { ok(ct, slot_term(ct, slot)) }
   , .(_empty: .) -> Macro_result {
       err(ct, "last source has no product slots"[__Diagnostic_text__])
     }
@@ -518,12 +392,9 @@ pure fn last_macro(
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn last_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, last_macro(ct, source, value, target)) }
+pure fn last_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, last_macro(ct, source, value))
+}
 
 /// Extracts the last product slot.
 pub macro last : [Source] Source -> [Target] Target { impl last_checked }
@@ -568,7 +439,7 @@ pure fn split_slots_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_list
       let loop_step_fn =
         .(fuel: Type_list, state: Split_prefix_state) -> Split_prefix_step {
           __either__[.][__Type__ & Type_list][Split_prefix_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Split_prefix_step {
               __left__[Maybe_tuple_slot_split][Split_prefix_next](tuple_slot_split_some(
               , slot_reverse_by_types(
@@ -581,7 +452,7 @@ pure fn split_slots_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_list
             }
           , .(prefix_cell: __Type__ & Type_list) -> Split_prefix_step {
               __either__[.][Slot & Slot_list][Split_prefix_step](
-              , Slot_list.un_slot_list(split_prefix_remaining(state))
+              , Slot_list.get(split_prefix_remaining(state))
               , .(_short: .) -> Split_prefix_step {
                   __left__[Maybe_tuple_slot_split][Split_prefix_next](tuple_slot_split_none())
                 }
@@ -670,28 +541,10 @@ pure fn split_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
   )
 }
 
-pure fn split_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { split_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "split needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn split_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, split_macro(ct, source, value, target)) }
+pure fn split_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, split_impl(ct, source, value, target))
+}
 
 /// Splits a product into requested prefix and suffix products.
 pub macro split : [Source] Source -> [Target] Target { impl split_checked }
@@ -736,7 +589,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
       let loop_step_fn =
         .(fuel: Slot_list, state: Zip_state) -> Zip_step {
           __either__[.][Slot & Slot_list][Zip_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_left_done: .) -> Zip_step {
               __if_then_else__(
               , slot_empty(ct, zip_rights(state))
@@ -756,7 +609,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
             }
           , .(left_cell: Slot & Slot_list) -> Zip_step {
               __either__[.][Slot & Slot_list][Zip_step](
-              , Slot_list.un_slot_list(zip_rights(state))
+              , Slot_list.get(zip_rights(state))
               , .(_right_done: .) -> Zip_step {
                   __left__[Slot_list_result][Zip_next](slot_list_err(
                   , ct
@@ -814,7 +667,6 @@ pure fn zip_macro(
 , lefts: __Checked_term__
 , right_source: __Type__
 , rights: __Checked_term__
-, target: Optional_type
 ) -> Macro_result {
   __either__[Slot_list][__Diagnostic_text__][Macro_result](
   , zip_slots(
@@ -822,28 +674,21 @@ pure fn zip_macro(
     , flatten_product_slots(ct, left_source, lefts)
     , flatten_product_slots(ct, right_source, rights)
     )
-  , .(slots: Slot_list) -> Macro_result {
-      finish_slots_with_optional_target(
-      , ct
-      , slots
-      , target
-      , "zip target does not match paired product"[__Diagnostic_text__]
-      )
-    }
+  , .(slots: Slot_list) -> Macro_result { finish_slots(ct, slots) }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn zip_checked(
+pure fn zip_checked(
 , ct: __Comptime__
 , left_source: __Type__
 , lefts: __Checked_term__
 , right_source: __Type__
 , rights: __Checked_term__
-, target: Optional_type
+, _target: .
 ) -> __Checked_term__ {
-  finish_macro_result(ct, zip_macro(ct, left_source, lefts, right_source, rights, target))
+  finish_macro_result(ct, zip_macro(ct, left_source, lefts, right_source, rights))
 }
 
 /// Zips two products slotwise into a product of pairs.
@@ -879,7 +724,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
       let loop_step_fn =
         .(fuel: Slot_list, state: Map_state) -> Map_step {
           __either__[.][Slot & Slot_list][Map_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_fn_done: .) -> Map_step {
               __if_then_else__(
               , slot_empty(ct, map_values(state))
@@ -899,7 +744,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
             }
           , .(fn_cell: Slot & Slot_list) -> Map_step {
               __either__[.][Slot & Slot_list][Map_step](
-              , Slot_list.un_slot_list(map_values(state))
+              , Slot_list.get(map_values(state))
               , .(_value_done: .) -> Map_step {
                   __left__[Slot_list_result][Map_next](slot_list_err(
                   , ct
@@ -979,7 +824,6 @@ pure fn map_macro(
 , fns: __Checked_term__
 , value_source: __Type__
 , values: __Checked_term__
-, target: Optional_type
 ) -> Macro_result {
   __either__[Slot_list][__Diagnostic_text__][Macro_result](
   , map_slots(
@@ -987,28 +831,21 @@ pure fn map_macro(
     , flatten_product_slots(ct, fn_source, fns)
     , flatten_product_slots(ct, value_source, values)
     )
-  , .(slots: Slot_list) -> Macro_result {
-      finish_slots_with_optional_target(
-      , ct
-      , slots
-      , target
-      , "map target does not match result product"[__Diagnostic_text__]
-      )
-    }
+  , .(slots: Slot_list) -> Macro_result { finish_slots(ct, slots) }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn map_checked(
+pure fn map_checked(
 , ct: __Comptime__
 , fn_source: __Type__
 , fns: __Checked_term__
 , value_source: __Type__
 , values: __Checked_term__
-, target: Optional_type
+, _target: .
 ) -> __Checked_term__ {
-  finish_macro_result(ct, map_macro(ct, fn_source, fns, value_source, values, target))
+  finish_macro_result(ct, map_macro(ct, fn_source, fns, value_source, values))
 }
 
 /// Applies a product of functions slotwise to a product of values.
@@ -1020,7 +857,7 @@ pure fn type_contains(ct: __Comptime__, target: __Type__, xs: Type_list) -> Comp
   , ()
   , .(loop_recur: (Type_list & .) -> Comptime_bool, loop_fuel: Type_list, _loop_state: .) -> Comptime_bool {
       __either__[.][__Type__ & Type_list][Comptime_bool](
-      , Type_list.un_type_list(loop_fuel)
+      , Type_list.get(loop_fuel)
       , .(_done: .) -> Comptime_bool { .f }
       , .(cell: __Type__ & Type_list) -> Comptime_bool {
           __if_then_else__(
@@ -1064,7 +901,7 @@ pure fn distinct_slots(ct: __Comptime__, slots: Slot_list) -> Slot_list {
       let loop_step_fn =
         .(fuel: Slot_list, state: Distinct_state) -> Distinct_step {
           __either__[.][Slot & Slot_list][Distinct_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_done: .) -> Distinct_step {
               __left__[Slot_list][Distinct_next](slot_reverse_by_types(
               , ct
@@ -1109,27 +946,14 @@ pure fn distinct_slots(ct: __Comptime__, slots: Slot_list) -> Slot_list {
   )
 }
 
-pure fn distinct_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  finish_slots_with_optional_target(
-  , ct
-  , distinct_slots(ct, flatten_product_slots(ct, source, value))
-  , target
-  , "distinct target does not match first-occurrence product"[__Diagnostic_text__]
-  )
+pure fn distinct_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
+  finish_slots(ct, distinct_slots(ct, flatten_product_slots(ct, source, value)))
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn distinct_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, distinct_macro(ct, source, value, target)) }
+pure fn distinct_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  finish_macro_result(ct, distinct_macro(ct, source, value))
+}
 
 /// Keeps the first slot of each distinct reflected type in a product.
 pub macro distinct : [Source] Source -> [Target] Target { impl distinct_checked }

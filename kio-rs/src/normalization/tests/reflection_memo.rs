@@ -132,11 +132,11 @@ fn assert_forall_view(view: &Value, expected: &str) {
     let Value::Data(pair) = payload else {
         panic!("forall packet: {payload:?}")
     };
-    let [Value::ReflTypeVar { name, arity }, rest] = pair.args() else {
+    let [Value::ReflTypeVar(variable), rest] = pair.args() else {
         panic!("forall binder: {pair:?}")
     };
-    assert_eq!(name, expected);
-    assert_eq!(*arity, 0);
+    assert_eq!(variable.name, expected);
+    assert_eq!(variable.arity, 0);
     let Value::Data(rest) = rest else {
         panic!("forall tail")
     };
@@ -218,7 +218,7 @@ fn exact_call_memo_keeps_reflected_input_identity_without_a_view_cache_hit() {
 }
 
 #[test]
-fn exact_call_memo_does_not_replay_fresh_binders_through_helpers_or_contexts() {
+fn exact_call_memo_reuses_semantic_closed_binders_through_helpers_or_contexts() {
     let factory = test_eval_function(
         &[],
         EvalExpr::CallPrimitive {
@@ -246,7 +246,7 @@ fn exact_call_memo_does_not_replay_fresh_binders_through_helpers_or_contexts() {
     let shared = EvalCtx::new()
         .with_metrics(metrics.clone())
         .with_exact_call_memo_cache(cache.clone());
-    let mut names = HashSet::new();
+    let mut first = None;
     for (function, context) in [
         (&factory, &ctx),
         (&factory, &ctx),
@@ -258,19 +258,19 @@ fn exact_call_memo_does_not_replay_fresh_binders_through_helpers_or_contexts() {
             panic!("fresh scheme: {value:?}")
         };
         assert_eq!(body.as_ref(), &type_path(&param.name));
-        assert!(
-            names.insert(param.name.clone()),
-            "fresh result was replayed"
-        );
+        if let Some(previous) = &first {
+            assert!(nf_eq(previous, &value, context));
+        } else {
+            first = Some(value);
+        }
     }
-    assert!(cache.inner.lock().unwrap().is_empty());
-    assert_eq!(metrics.snapshot().exact_call_memo_hits, 0);
-    assert_eq!(metrics.snapshot().exact_call_memo_stores, 0);
-    assert_eq!(metrics.snapshot().exact_call_memo_misses, 6);
+    assert!(!cache.inner.lock().unwrap().is_empty());
+    assert!(metrics.snapshot().exact_call_memo_hits >= 2);
+    assert!(metrics.snapshot().exact_call_memo_stores >= 2);
 }
 
 #[test]
-fn term_type_fn_mint_also_invalidates_enclosing_memo_ticket() {
+fn discarded_closed_term_type_fn_does_not_veto_semantic_memo_reuse() {
     let callback = Value::EvalClosure {
         function: test_eval_function(&["var"], EvalExpr::ReflTermUnit),
         captured: Vec::new().into(),
@@ -298,12 +298,7 @@ fn term_type_fn_mint_also_invalidates_enclosing_memo_ticket() {
             Value::Bool(true)
         ));
     }
-    assert_eq!(
-        ctx.reflected_binder_epoch
-            .load(std::sync::atomic::Ordering::Relaxed),
-        2
-    );
-    assert!(ctx.exact_call_memo.inner.lock().unwrap().is_empty());
+    assert!(!ctx.exact_call_memo.inner.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -392,4 +387,224 @@ fn reflection_key_flattens_deep_types_and_complete_kinds() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+#[test]
+fn function_view_observes_domain_and_result_across_callable_layouts() {
+    let ctx = EvalCtx::new();
+    let product = Type::Product {
+        left: Box::new(type_path("A")),
+        right: Box::new(Type::Product {
+            left: Box::new(type_path("B")),
+            right: Box::new(type_path("C")),
+            meta: zero_meta(),
+        }),
+        meta: zero_meta(),
+    };
+    for (domain, layouts) in [
+        (Type::Unit { meta: zero_meta() }, vec![0, 1]),
+        (product, vec![1, 2, 3]),
+    ] {
+        let result = type_path("Result");
+        let expected = value_sum_inject(
+            4,
+            8,
+            value_pair(
+                refl_type_value(domain.clone()),
+                refl_type_value(result.clone()),
+            ),
+        );
+        for abi_arity in layouts.into_iter().cycle().take(6) {
+            let ty = Type::Function {
+                param: Box::new(domain.clone()),
+                ret: Box::new(result.clone()),
+                abi_arity,
+                caps: (),
+                meta: zero_meta(),
+            };
+            let actual = type_view_value(&ty, &ctx).expect("function view");
+            assert!(nf_eq(&actual, &expected, &ctx), "{actual:?}");
+        }
+        let arrow = apply(
+            Value::Primitive(ComptimeBuiltin::TypeArrow),
+            vec![
+                refl_type_value(domain.clone()),
+                refl_type_value(result.clone()),
+            ],
+            &ctx,
+        );
+        let Some(Type::Function {
+            param,
+            ret,
+            abi_arity,
+            ..
+        }) = as_refl_type_ref(&arrow)
+        else {
+            panic!("constructed function: {arrow:?}")
+        };
+        assert_eq!(param.as_ref(), &domain);
+        assert_eq!(ret.as_ref(), &result);
+        assert_eq!(
+            *abi_arity,
+            usize::from(!matches!(domain, Type::Unit { .. }))
+        );
+        assert!(nf_eq(
+            &type_view_value(as_refl_type_ref(&arrow).unwrap(), &ctx).unwrap(),
+            &expected,
+            &ctx
+        ));
+    }
+    assert!(ComptimeBuiltin::from_public_name("__type_function_params_fold__").is_none());
+}
+
+#[test]
+fn projected_function_constructor_preserves_closed_and_open_semantic_domains() {
+    use crate::pass::typecheck_core::apply::fills::{
+        ProjectedTypeView, focused_type_for_test, open_function_reflection_for_test,
+        projected_type_view,
+    };
+    let ctx = EvalCtx::new();
+    let (proof_value, _fills) = fresh_fills_capability_values();
+    let proof = marked_comptime_proof_from_value(&proof_value).unwrap();
+    let unit = Type::Unit { meta: zero_meta() };
+    let product = Type::Product {
+        left: Box::new(unit.clone()),
+        right: Box::new(unit.clone()),
+        meta: zero_meta(),
+    };
+    for domain in [unit.clone(), product] {
+        let input = projected_value(focused_type_for_test(
+            proof,
+            ReflectedType::new_trusted(domain.clone()),
+        ));
+        let arrow = apply(
+            Value::Primitive(ComptimeBuiltin::TypeArrow),
+            vec![proof_value.clone(), input, refl_type_value(unit.clone())],
+            &ctx,
+        );
+        let expected = Type::Function {
+            param: Box::new(domain),
+            ret: Box::new(unit.clone()),
+            abi_arity: 1,
+            caps: (),
+            meta: zero_meta(),
+        };
+        let equal = apply(
+            Value::Primitive(ComptimeBuiltin::TypeEqual),
+            vec![proof_value.clone(), arrow, refl_type_value(expected)],
+            &ctx,
+        );
+        assert!(matches!(equal, Value::Bool(true)), "{equal:?}");
+    }
+
+    let (proof, _foreign, parent) =
+        open_function_reflection_for_test(ReflectedType::new_trusted(unit));
+    let ProjectedTypeView::Function {
+        param: closed,
+        ret: open,
+    } = projected_type_view(&proof, &parent).unwrap()
+    else {
+        panic!("open function shell")
+    };
+    let arrow = crate::pass::typecheck_core::apply::fills::projected_type_arrow(
+        &proof,
+        &projected_value(open),
+        &projected_value(closed),
+    )
+    .unwrap();
+    let ProjectedTypeView::Function { param, ret } = projected_type_view(&proof, &arrow).unwrap()
+    else {
+        panic!("constructed open function shell")
+    };
+    assert!(matches!(
+        projected_type_view(&proof, &ret).unwrap(),
+        ProjectedTypeView::Unit
+    ));
+    assert!(param.closed_reflected().is_none());
+    assert!(projected_type_view(&proof, &param).is_err());
+}
+
+#[test]
+fn type_var_views_keep_complete_owner_correspondence_and_distinct_live_bindings() {
+    let ctx = EvalCtx::new();
+    let a = ReflectedType::new_trusted(scheme("A"));
+    let b = ReflectedType::new_trusted(scheme("B"));
+    let (a_var, a_body) = a.open_forall().unwrap();
+    let (b_var, b_body) = b.open_forall().unwrap();
+    assert!(!a_var.same_reference(&b_var));
+    for args in [
+        vec![
+            Value::ReflTypeVar(a_var.clone()),
+            Value::ReflTypeVar(b_var.clone()),
+        ],
+        vec![Value::ReflTypeVar(b_var), Value::ReflTypeVar(a_var)],
+    ] {
+        assert!(matches!(
+            apply(
+                Value::Primitive(ComptimeBuiltin::TypeVarEqual),
+                args.clone(),
+                &ctx
+            ),
+            Value::Bool(true)
+        ));
+        let direct = test_eval_function(
+            &["a", "b"],
+            EvalExpr::ReflTypeVarEqual {
+                left: EvalRef::new(EvalExpr::Local(0)),
+                right: EvalRef::new(EvalExpr::Local(1)),
+            },
+        );
+        assert!(matches!(call(&direct, args, &ctx), Value::Bool(true)));
+    }
+    assert!(matches!(
+        apply(
+            Value::Primitive(ComptimeBuiltin::TypeEqual),
+            vec![Value::ReflType(a_body), Value::ReflType(b_body)],
+            &ctx
+        ),
+        Value::Bool(true)
+    ));
+    let x = Value::ReflTypeVar(ReflectedVariable::live("T".into(), 0));
+    let y = Value::ReflTypeVar(ReflectedVariable::live("T".into(), 0));
+    assert!(matches!(
+        apply(
+            Value::Primitive(ComptimeBuiltin::TypeVarEqual),
+            vec![x.clone(), x],
+            &ctx
+        ),
+        Value::Bool(true)
+    ));
+    let z = Value::ReflTypeVar(ReflectedVariable::live("T".into(), 0));
+    assert!(matches!(
+        apply(
+            Value::Primitive(ComptimeBuiltin::TypeVarEqual),
+            vec![y, z],
+            &ctx
+        ),
+        Value::Bool(false)
+    ));
+}
+
+#[test]
+fn incomplete_type_var_comparison_faults_even_on_the_same_handle() {
+    let variable = ReflectedVariable {
+        name: "A".into(),
+        arity: 0,
+        meaning: reflection_bindings::VariableMeaning::Opened(EvalRef::new(
+            reflection_bindings::OpenedScheme::Incomplete,
+        )),
+    };
+    let ctx = EvalCtx::new();
+    let result = apply(
+        Value::Primitive(ComptimeBuiltin::TypeVarEqual),
+        vec![
+            Value::ReflTypeVar(variable.clone()),
+            Value::ReflTypeVar(variable),
+        ],
+        &ctx,
+    );
+    assert!(
+        comptime_fault_message(&result, &ctx).is_some(),
+        "{result:?}"
+    );
 }

@@ -1,14 +1,13 @@
-# Aliases, newtypes, visibility, and purity
+# Aliases, nominal types, visibility, and purity
 
-Kio has two ways to name a type shape. A `type` declaration gives a structural
-type another spelling; a `newtype` declaration creates a distinct nominal
-boundary. Literal aliases name literal tokens rather than values. Visibility
+Kio has two ways to name a type shape. A `type` alias gives an existing type another spelling; a nominal
+entry in a `type` declaration creates a distinct boundary. Literal aliases name literal tokens rather than values. Visibility
 and ordinary-function purity are separate parts of a function's contract.
 
 The examples assume host-provided `Int` and `String` types, with the `i32`
 and `str` literal roles respectively. Recursive sum construction also uses
 the imported `widen_sum` macro; [Using libraries](using-libraries.md#the-macro-library)
-shows how to add its library and import `macros/spine_macros(widen_sum)`.
+shows how to add its library and import `macros/spine_macros(macro widen_sum)`.
 
 <!--kio {harness=declarations placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -17,7 +16,7 @@ bridge {
 
 module kiodoc;
 
-import spine_macros(macro widen_sum);
+import macros/spine_macros(macro widen_sum);
 
 host type Int role(i32);
 host type String role(str);
@@ -41,7 +40,7 @@ type Alias[A] = A;
 
 type _Unused_alias[_A] = _A;
 
-newtype _Box[_B] : _B { constructor mk_box; projector un_box }
+type { _Box[_B]: _B }
 ```
 
 `_Box` and `_A` are type names, while `_box` is a value name. `_1Box`,
@@ -74,23 +73,23 @@ constructor. For `type Either_pair[E][A] = E | A;`, both `Either_pair` and
 `Either_pair[String]` are likewise type errors because they omit parameters
 declared by the alias. Aliases unfold wherever the typer compares types, and an
 ordinary alias cannot refer to itself. An alias may participate in a mutual
-recursive group only when a sibling `newtype` provides the nominal knot; an
-alias-only cycle is rejected. Use a `newtype` when the name must carry identity
+recursive group only when a sibling nominal type provides the knot; an
+alias-only cycle is rejected. Use a nominal type when the name must carry identity
 or tie a recursive knot.
 
-An alias can also retain an existing newtype's constructor and projector
-namespace when it forwards every parameter to that newtype exactly once and in
+An alias can also retain an existing nominal type's constructor and projector
+namespace when it forwards every parameter to that nominal type exactly once and in
 order:
 
 ```kio {@declarations}
-newtype Box[A] : A { pub constructor make; pub projector open }
+type { Box[A]: A }
 
 type Wrapped[A] = Box[A];
 
-fn roundtrip[A](value: A) -> A { Wrapped.open[A](Wrapped.make[A](value)) }
+fn roundtrip[A](value: A) -> A { Wrapped.get[A](Wrapped.mk[A](value)) }
 ```
 
-`Wrapped.make` is the constructor declared by `Box`; it still produces the
+`Wrapped.mk` is the constructor declared by `Box`; it still produces the
 `Box[A]` nominal. A partial application, reordered parameter list, structural
 alias, cycle, or missing target has no member namespace. The alias must already
 be in scope, and both the alias and terminal member must be visible from the
@@ -98,7 +97,7 @@ use site.
 
 Transparent aliases retain their normalized host type's literal admission,
 including through fully applied alias bodies. This adds no nominal identity
-or role and does not select an unresolved literal. A newtype wrapper instead
+or role and does not select an unresolved literal. A nominal wrapper instead
 does not inherit its payload's literal capability. See
 [literal inference](typechecking.md#literal-types-and-local-inference).
 
@@ -135,51 +134,46 @@ Prefix a literal alias with `pub` to import it from another module with
 name-resolution error, as is selecting one visible name from distinct exported
 literals or from both an import and a local declaration.
 
-## Nominal newtypes
+## Nominal types
 
-A `newtype` creates a type distinct from its payload and from every other
-newtype. Its constructor and projector are explicitly named members:
-
-```kio {@declarations}
-pub newtype User_id : Int { pub constructor mk_user_id; pub projector to_int }
-
-fn roundtrip_id(value: Int) -> Int { User_id.to_int(User_id.mk_user_id(value)) }
-```
-
-Inside a braced declaration or section, semicolons separate peers: write one
-between a constructor and a projector, but not after the final member. The
-parser also accepts a semicolon at either edge and `kio fmt` removes it. The
-outer declaration itself ends at `}`; a redundant following semicolon is also
-accepted and removed. Nonbraced declarations, such as `type` and `labels`,
-keep their required terminating semicolon. Expression blocks keep their usual
-meaning: a semicolon between expressions sequences them, while an edge
-semicolon does not change the block value.
-
-There is no implicit coercion across this boundary. Callers write
-`User_id.mk_user_id` to enter it and `User_id.to_int` to leave it. The outer
-`pub` exports the nominal type; each member has its own visibility. For callers
-outside the declaring module, an exported constructor grants construction and
-an exported projector grants projection. Publishing the type alone grants
-neither operation.
-
-Parameterized newtype members accept explicit type arguments; ordinary inference can also supply them:
+A nominal entry creates a type distinct from its payload and from every other
+nominal type. Its members `mk` and `get` construct and project values:
 
 ```kio {@declarations}
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { User_id: Int }
 
-fn box_roundtrip[A](value: A) -> A { Box.un_box[A](Box.mk_box[A](value)) }
+fn roundtrip_id(value: Int) -> Int { User_id.get(User_id.mk(value)) }
 ```
 
-## Recursive newtypes
+There is no implicit coercion across this boundary. The entry inherits the
+visibility of its declaration. With no entry body, both members inherit that
+visibility. A written body specifies `mk` and `get` with independent visibility;
+see [Visibility](#visibility).
 
-An ordinary `newtype` is source ordered and cannot see its own head. Add `rec`
+Parameterized members accept explicit type arguments; ordinary inference can
+also supply them:
+
+```kio {@declarations}
+type { Box[A]: A }
+
+fn box_roundtrip[A](value: A) -> A { Box.get[A](Box.mk[A](value)) }
+```
+
+A named group such as `type Person = { Name: String; Age: Int; };` introduces
+`Name` and `Age` and aliases their product. It does not introduce a separate
+nominal `Person`. By contrast, `type { Person: Name & Age; }` introduces one
+nominal wrapper around that product.
+
+## Recursive nominal types
+
+An ordinary nominal declaration is source ordered and cannot see its own head. Add `rec`
 when its payload genuinely refers to that nominal name. The recursive
 occurrence must be strictly positive:
 
 ```kio {@declarations}
-rec newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) }
 
-fn empty[A] -> List[A] { List.mk_list[A](widen_sum(())[. | (A & List[A])]) }
+fn empty[A] -> List[A] { List.mk[A](widen_sum(())[. | (A & List[A])]) }
 
 fn empty_later[A]() -> List[A] { empty[A] }
 ```
@@ -194,7 +188,7 @@ anonymous form.
 The projector exposes one layer; it does not unfold the type implicitly. The
 marker supplies only `List`'s own head, not every later declaration in the
 module. Omitting a necessary marker reports the recursive reference and offers
-an add-`rec` fix. Writing it on an acyclic newtype reports that the marker is
+an add-`rec` fix. Writing it on an acyclic nominal type reports that the marker is
 unnecessary and offers to remove it.
 
 The list's recursive tail is stored as data, which satisfies the positivity
@@ -202,7 +196,7 @@ rule. By contrast, a payload that is a function accepting the recursive type
 puts that occurrence on the input side of an arrow and is rejected:
 
 ```kio {@declarations check_exit_code=16}
-rec newtype Bad : Bad -> . { constructor make; projector open }
+rec type { Bad: Bad -> . }
 ```
 
 For nested function types and parameterized wrappers, the rule follows the
@@ -217,88 +211,32 @@ member:
 ```kio {@declarations}
 rec {
   type Tree[A] = Branch[A];
-  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) { constructor mk_branch; projector un_branch }
+  type { Branch[A]: . | (A & Tree[A] & Tree[A]) }
 }
 ```
 
 The written group must be exactly one genuine mutual cycle. Move acyclic
 dependencies before their users; do not include helpers just to gain forward
 scope. Transparent aliases such as `Tree` are allowed only when every cycle
-crosses a nominal member such as `Branch`. A one-member recursive newtype uses
-`rec newtype`; a one-member recursive labels declaration uses `rec labels`;
-there is no `rec type` form. Term-level traversal remains explicit through a
-`rec(loop)` group; see [Recursion](recursion.md).
+crosses a nominal member such as `Branch`. A one-member recursive nominal uses `rec type { ... }`. Term-level traversal
+remains explicit through a `rec(loop)` group; see [Recursion](recursion.md).
 
-### Migrating implicit recursive declarations
+## Existential nominal types
 
-Code that relied on a declaration seeing its own head adds the singleton
-marker at the declaration-modifier position. Visibility stays before it:
-
-```diff
--pub newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
-+pub rec newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
-
--labels Tree = { leaf: Int } | { branch: Tree & Tree };
-+rec labels Tree = { leaf: Int } | { branch: Tree & Tree };
-```
-
-Code that relied on module-wide forward visibility instead encloses exactly
-the genuinely mutual component. The declarations remain the operation units;
-the group supplies only their shared scope:
-
-```diff
--type Tree[A] = Branch[A];
--newtype Branch[A] : . | (A & Tree[A] & Tree[A]) {
--  constructor mk_branch;
--  projector un_branch
--}
-+rec {
-+  type Tree[A] = Branch[A];
-+  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) {
-+    constructor mk_branch;
-+    projector un_branch
-+  }
-+}
-```
-
-The compiler and editor use these exact messages and action titles:
-
-| Situation | Diagnostic | Automatic action, when the complete edit is proven valid |
-| --- | --- | --- |
-| Valid recursive singleton lacks its marker | “recursive data declaration requires `rec`” | “Add `rec` to this recursive newtype” or “Add `rec` to this recursive labels declaration” |
-| Marked singleton is acyclic | “this `rec` marker is unnecessary” | “Remove unnecessary `rec`” |
-| Mutual component is not grouped | “mutually recursive data declarations require `rec { ... }`” | “Fix recursive type groups” |
-| Group is acyclic | “this `rec` group contains no recursive cycle” | “Fix recursive type groups” |
-| Group contains unrelated or independent components | “this `rec` group contains multiple independent components” | “Fix recursive type groups” |
-| Transparent aliases form an ungrounded cycle | “recursive type component has no `newtype` boundary” | no marker or grouping action |
-
-A negative, invariant, ill-kinded, or wrong-arity recursive occurrence reports
-that underlying type error and does not offer an add-marker action. This keeps
-the quick fix from turning one invalid declaration into a differently invalid
-one. If a file has independent recursive group and singleton mistakes, fix the
-currently reported one and let the editor reanalyse the result; the next
-repair then appears. Fix All combines only repairs already published for one
-analysis snapshot.
-
-## Existential newtypes
-
-Trailing angle-bracket binders hide payload types while keeping the newtype's
+Trailing angle-bracket binders hide payload types while keeping the nominal type's
 public arity at its square-bracket parameters:
 
 ```kio {@declarations}
-newtype Pack[A] <Hidden> : A & Hidden { pub constructor mk_pack; pub projector open_pack }
+type { Pack[A] <Hidden>: A & Hidden }
 
-fn pack_string(value: Int, hidden: String) -> Pack[Int] { Pack.mk_pack[Int]((value, hidden)) }
+fn pack_string(value: Int, hidden: String) -> Pack[Int] { Pack.mk[Int]((value, hidden)) }
 
 fn first[A](pack: Pack[A]) -> A {
-  Pack.open_pack[A](pack)[_](.[Hidden](payload) {
-    let .(value: A, _hidden: Hidden) = payload;
-    value
-  })
+  Pack.get[A](pack)[_](.[Hidden](payload) { let .(value: A, _hidden: Hidden) = payload; value })
 }
 
 fn first_pattern[A](pack: Pack[A]) -> A {
-  let .(<Hidden> (value: A, _hidden: Hidden)) = Pack.open_pack[A](pack);
+  let .(<Hidden> (value: A, _hidden: Hidden)) = Pack.get[A](pack);
   value
 }
 ```
@@ -321,15 +259,15 @@ but still cannot escape from the function. The pattern
 
 Declarations are private by default. `pub` makes a declaration importable by
 any module and eligible for the host-facing package surface when its module is
-bridged. Newtype members and members of a braced `rec(loop)` group make the
-choice independently:
+bridged. A written nominal member body and members of a braced `rec(loop)` group make
+the choice independently:
 
 ```kio {@declarations}
-pub newtype Token : Int { pub constructor mk_token; projector reveal }
+pub type { Token: Int { pub mk; get } }
 ```
 
 Other modules can construct `Token`, but only the declaring module can use
-`Token.reveal`.
+`Token.get`.
 
 A `rec(loop)` group's braces only group mutually recursive bodies. Every member
 becomes an ordinary module function with its own visibility, so an unmodified
@@ -353,25 +291,25 @@ A declaration's signature cannot expose a type that its callers cannot name.
 Every named type in a function, host-function, macro, or alias signature
 must therefore be at least as visible as that declaration. The check follows
 type arguments and transparent aliases, so an exported alias cannot disguise a
-private nominal type. Declarations generated by `labels` follow the same rule.
+private nominal type. Nominal entries follow the same rule.
 
-A newtype can still provide an opaque public boundary. Its payload is exposed
+A nominal type can still provide an opaque public boundary. Its payload is exposed
 only through its constructor and projector, so each member is checked at the
-intersection of the outer newtype's visibility and that member's visibility:
+intersection of the outer nominal type's visibility and that member's visibility:
 
 ```kio {@declarations}
-newtype Hidden : Int { constructor mk_hidden; projector un_hidden }
+type { Hidden: Int }
 
-pub newtype Opaque : Hidden { constructor mk_opaque; projector un_opaque }
+pub type { Opaque: Hidden { mk; get } }
 ```
 
 `Opaque` is public, but its members and `Hidden` remain private. Making either
 member public would expose `Hidden` through that member's signature and would
 therefore require `Hidden` to be public too. A `pub` member written on a private
-outer newtype remains effectively private; scoped combinations similarly use
+outer nominal type remains effectively private; scoped combinations similarly use
 the narrower subtree.
 
-For a plain-public outer newtype, the member markers give callers four useful
+For a plain-public outer nominal type, the member markers give callers four useful
 capability shapes:
 
 | Constructor | Projector | What outside callers can do directly |
@@ -402,7 +340,7 @@ pure fn keep_int(value: Int) -> Int { let .(kept: Int) = id(value); kept }
 pure fn apply[A][B](callback: A -> B, value: A) -> B { callback(value) }
 ```
 
-A pure body may use local parameters and bindings, core intrinsics and newtype
+A pure body may use local parameters and bindings, core intrinsics and nominal
 members, and ordinary functions explicitly declared `pure`. It cannot refer to
 a `host fn` or an unmarked ordinary function in executable code. Each referenced
 pure function is checked by the same rule, making the promise transitive without
@@ -415,11 +353,10 @@ effect-free when evaluating its arguments and invoking any callbacks they
 contain or capture are effect-free; function types carry no purity qualifier.
 
 Function signatures and type annotations are not executable references. They
-use the ordinary type rules and may mention `host type`s, aliases, newtypes, or
+use the ordinary type rules and may mention `host type`s, aliases, nominal types, or
 any other type in scope, as `keep_int` does above. Types do not themselves have
 a purity classification.
 
-`pure` applies only to an ordinary `fn`; it is rejected on `type`, `newtype`,
-`labels`, `macro`, `op`, `fold`, `literal`, `equiv`, host declarations, and
+`pure` applies only to an ordinary `fn`; it is rejected on `type`, `macro`, `op`, `fold`, `literal`, `equiv`, host declarations, and
 `rec(loop)` groups or members. Visibility is orthogonal: `pub pure fn` is both
 exported and pure, while a private `pure fn` remains module-local.

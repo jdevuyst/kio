@@ -9,12 +9,12 @@ import widget/self as source_self;
 
 pub fn main() {
   let chain =
-    {source_self.link = .(_next: source_self.Chain[String] -> String) { "self-recursive\n" }};
+    source_self.Link.mk(.(_next: source_self.Chain[String] -> String) { "self-recursive\n" });
   print(target_self.read_chain(chain, .(_node: target_self.Chain[String]) { "unused" }));
   let left =
-    {source_mutual.left = .(_next: source_mutual.Right[String] -> String) { "mutual-left\n" }};
+    source_mutual.Left.mk(.(_next: source_mutual.Right[String] -> String) { "mutual-left\n" });
   let right =
-    {source_mutual.right = .(_next: source_mutual.Left[String] -> String) { "mutual-right\n" }};
+    source_mutual.Right.mk(.(_next: source_mutual.Left[String] -> String) { "mutual-right\n" });
   print(target_mutual.read_left(left, .(_node: target_mutual.Right[String]) { "unused" }));
   print(target_mutual.read_right(right, .(_node: target_mutual.Left[String]) { "unused" }));
   let original =

@@ -6,7 +6,7 @@ import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/io(print);
 
-labels Diverror = { div_by_zero: . };
+type Diverror = { Div_by_zero: . };
 
 fn prefer_builder[A](preferred: A, _fallback: A) -> A { preferred }
 
@@ -14,7 +14,7 @@ fn late_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
   let build =
     prefer_builder(
     , .() {
-        if(is_error) { widen_sum({div_by_zero=}) } else { widen_sum(value) }
+        if(is_error) { widen_sum(Div_by_zero.mk(())) } else { widen_sum(value) }
       }
     , .() -> I32 | Div_by_zero { widen_sum(value) }
     );
@@ -25,7 +25,7 @@ fn late_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
   let build =
     prefer_builder(
     , .() {
-        if(has_value) { widen_sum(value) } else { widen_sum({div_by_zero=}) }
+        if(has_value) { widen_sum(value) } else { widen_sum(Div_by_zero.mk(())) }
       }
     , .() -> I32 | Div_by_zero { widen_sum(value) }
     );
@@ -33,11 +33,11 @@ fn late_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
 }
 
 fn explicit_error_first(is_error: Bool, value: I32) -> I32 | Div_by_zero {
-  if(is_error) { widen_sum({div_by_zero=}) } else { widen_sum(value) }
+  if(is_error) { widen_sum(Div_by_zero.mk(())) } else { widen_sum(value) }
 }
 
 fn explicit_value_first(has_value: Bool, value: I32) -> I32 | Div_by_zero {
-  if(has_value) { widen_sum(value) } else { widen_sum({div_by_zero=}) }
+  if(has_value) { widen_sum(value) } else { widen_sum(Div_by_zero.mk(())) }
 }
 
 fn render(result: I32 | Div_by_zero) -> String {

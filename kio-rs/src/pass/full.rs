@@ -236,8 +236,7 @@ impl Pipeline for FullPipeline {
     ///    Desugared → Lowered. Builds per-module label tables, then
     ///    walks each module rewriting `Item::Labels` to minted
     ///    `Item::Newtype` declarations (or one `Item::TypeRecGroup` for a
-    ///    recursive labels scope) and label sugar in types/expressions to the
-    ///    corresponding `F` references.
+    ///    recursive nominal scope) and preserving named aliases.
     ///
     /// Each desugar-pass error is wrapped as a `LocatedError`
     /// pointing at the offending file; label-elab already returns
@@ -643,16 +642,16 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_context_and_whole_package_lowering_emit_the_same_prime() {
+    fn nominal_alias_context_and_whole_package_lowering_emit_the_same_prime() {
         let modules = [
-            ("origin", "module origin; pub labels { foo: . };"),
+            ("origin", "module origin; pub type { Foo: . };"),
             (
                 "provider",
-                "module provider; import origin as o; pub type {bar} = {o.foo};",
+                "module provider; import origin as o; pub type Bar = o.Foo;",
             ),
             (
                 "consumer",
-                "module consumer; import provider as p; fn value() -> . { {p.bar = ()}.?{p.bar} }",
+                "module consumer; import provider as p; fn value() -> . { p.Bar.get(p.Bar.mk(())) }",
             ),
         ]
         .into_iter()
@@ -804,18 +803,45 @@ fn id[A](x: A) -> A { x }
 host type I32 role(i32);
 host fn effect(value: I32) -> I32;
 
-labels Pair_fields = { first: I32, second: I32 };
+type { First: I32; Second: I32; };
 type Pair = First & Second;
 
 fn build(x: I32) -> Pair {
-  let row = { first = effect(x), second = effect(x) };
+  let row = (First.mk(effect(x)), Second.mk(effect(x)));
   row
 }
 "#;
         let module = parse(source).expect("parse");
-        let (lowered_modules, _) =
+        let (mut lowered_modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower_package");
+        let build = lowered_modules[0]
+            .1
+            .items
+            .iter_mut()
+            .find_map(|item| match item {
+                Item::FnDef(def) if def.name == "build" => Some(def),
+                _ => None,
+            })
+            .expect("lowered build function");
+        // The cache boundary must hoist a valid expression-position chain.
+        let nested = build.body.clone();
+        let Expr::Let {
+            value,
+            body,
+            occurrence,
+            ..
+        } = &mut build.body
+        else {
+            panic!("the fixture retains its row binding")
+        };
+        *occurrence = Default::default();
+        let Expr::Path { occurrence, .. } = body.as_mut() else {
+            panic!("the fixture returns its row binding")
+        };
+        *occurrence = Default::default();
+        **value = nested;
+        assert!(matches!(value.as_ref(), Expr::Let { .. }));
         let package = Package::build(Path::new(""), lowered_modules, None).expect("Package::build");
         package.resolve_imports().expect("resolve_imports");
         package
@@ -894,7 +920,7 @@ pure fn identity_impl(
     _ct: __Comptime__,
     _source: __Type__,
     value: __Checked_term__,
-    _target: __Type__ | .,
+    _target: .,
 ) -> __Checked_term__ {
     keep(_ct, value)
 }

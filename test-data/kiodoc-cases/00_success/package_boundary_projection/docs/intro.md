@@ -1,8 +1,9 @@
 # Public package surface
 
 The selected owner is [`Box`], and its public function is [`make`].
-The public lowercase label [`foo`] and constructor role [`build_box`] are
-valid prose targets without independent declaration views.
+The public nominal [`Foo`] has its own declaration view. Its constructor
+[`Foo.mk`] and the public constructor [`Box.mk`] are valid prose targets
+without independent declaration views.
 
 Signature: [`@signature make`].
 

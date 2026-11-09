@@ -66,9 +66,10 @@ fn publication_work() -> PublicationWorkCounters {
     PUBLICATION_WORK.with(std::cell::Cell::get)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum PublicationRootKind {
     GoalFree,
+    TrailingProjection(Box<super::TrailingProjectionCheck>),
     FunctionScheme,
 }
 
@@ -101,6 +102,9 @@ impl<T> PublicationValue<T> {
 /// of the goal-free publication proofs.
 #[derive(Debug)]
 enum PublicationCommand<T> {
+    TrailingProjection {
+        resolved: T,
+    },
     RecQuoteSourceType {
         source: crate::ast::ExpressionOccurrenceId,
         resolved: T,
@@ -168,6 +172,10 @@ enum PublicationCommand<T> {
         value_param_index: usize,
         resolved: T,
     },
+    ProofFnBodyType {
+        fn_site: crate::ast::ExpressionSite,
+        resolved: T,
+    },
     InlayLetType {
         name_span: Span,
         resolved: T,
@@ -202,6 +210,9 @@ enum PublicationCommand<T> {
 impl<T> PublicationCommand<T> {
     fn map_type_slots<U>(self, map: &mut impl FnMut(T) -> U) -> PublicationCommand<U> {
         match self {
+            Self::TrailingProjection { resolved } => PublicationCommand::TrailingProjection {
+                resolved: map(resolved),
+            },
             Self::RecQuoteSourceType { source, resolved } => {
                 PublicationCommand::RecQuoteSourceType {
                     source,
@@ -315,6 +326,10 @@ impl<T> PublicationCommand<T> {
             } => PublicationCommand::FnParamType {
                 fn_site,
                 value_param_index,
+                resolved: map(resolved),
+            },
+            Self::ProofFnBodyType { fn_site, resolved } => PublicationCommand::ProofFnBodyType {
+                fn_site,
                 resolved: map(resolved),
             },
             Self::InlayLetType {
@@ -979,6 +994,19 @@ impl PublicationBuilder {
         });
     }
 
+    pub(crate) fn record_trailing_projection(
+        &mut self,
+        check: super::TrailingProjectionCheck,
+        expected: ScopedType,
+    ) {
+        self.push_command(PublicationCommand::TrailingProjection {
+            resolved: PublicationValue {
+                value: PublicationGoalInput::pending(expected),
+                root_kind: PublicationRootKind::TrailingProjection(Box::new(check)),
+            },
+        });
+    }
+
     pub(crate) fn record_fn_param_type(
         &mut self,
         fn_site: crate::ast::ExpressionSite,
@@ -988,6 +1016,17 @@ impl PublicationBuilder {
         self.push_command(PublicationCommand::FnParamType {
             fn_site,
             value_param_index,
+            resolved: PublicationValue::goal_free(PublicationGoalInput::pending(resolved)),
+        });
+    }
+
+    pub(crate) fn record_proof_fn_body_type(
+        &mut self,
+        fn_site: crate::ast::ExpressionSite,
+        resolved: ScopedType,
+    ) {
+        self.push_command(PublicationCommand::ProofFnBodyType {
+            fn_site,
             resolved: PublicationValue::goal_free(PublicationGoalInput::pending(resolved)),
         });
     }
@@ -1182,7 +1221,7 @@ pub(crate) struct PublicationDelta {
 impl PublicationPlan<PublicationValue<PublicationGoalInput>> {
     fn into_close_inputs(
         self,
-        escape: impl Fn(PublicationRootKind) -> PublicationGoalEscape,
+        escape: impl Fn(&PublicationRootKind) -> PublicationGoalEscape,
     ) -> (
         PublicationShape,
         Vec<PublicationRootKind>,
@@ -1194,8 +1233,8 @@ impl PublicationPlan<PublicationValue<PublicationGoalInput>> {
         let mut root_kinds = Vec::with_capacity(payloads.len());
         let mut outputs = Vec::with_capacity(payloads.len());
         for publication in payloads {
+            outputs.push((publication.value, escape(&publication.root_kind)));
             root_kinds.push(publication.root_kind);
-            outputs.push((publication.value, escape(publication.root_kind)));
         }
         (self.shape, root_kinds, outputs)
     }
@@ -1211,6 +1250,7 @@ pub(crate) struct RetainedPublicationDelta {
 
 #[derive(Debug)]
 enum ClosedPublicationValue {
+    ConsumedProjectionType,
     GoalFree(GoalFreePublicationOutput),
     FunctionScheme(GoalFreePublicationOutput),
 }
@@ -1219,6 +1259,9 @@ impl ClosedPublicationValue {
     fn into_interned_type(self) -> InternedType {
         match self {
             Self::GoalFree(output) | Self::FunctionScheme(output) => output.into_interned_type(),
+            Self::ConsumedProjectionType => {
+                unreachable!("a projection check has no published type")
+            }
         }
     }
 }
@@ -1258,13 +1301,14 @@ impl PublicationSemanticOutputs {
     }
 }
 
-/// Fully validated root publication whose store, elaboration, and local-state
-/// mutations have not yet become visible.
+/// Root-closed publication awaiting source checks and an atomic commit of its
+/// store, elaboration, and local-state changes.
 #[derive(Debug)]
 pub(crate) struct PreparedRootPublicationClose {
     goal_commit: PreparedGoalCommit,
     publication: ClosedPublicationDelta,
     semantic_outputs: Vec<ClosedGoalOutput>,
+    trailing_projections: Vec<(super::TrailingProjectionCheck, InternedType)>,
 }
 
 impl PreparedRootPublicationClose {
@@ -1278,8 +1322,14 @@ impl PreparedRootPublicationClose {
         PreparedGoalCommit,
         ClosedPublicationDelta,
         Vec<ClosedGoalOutput>,
+        Vec<(super::TrailingProjectionCheck, InternedType)>,
     ) {
-        (self.goal_commit, self.publication, self.semantic_outputs)
+        (
+            self.goal_commit,
+            self.publication,
+            self.semantic_outputs,
+            self.trailing_projections,
+        )
     }
 
     #[cfg(test)]
@@ -1288,7 +1338,11 @@ impl PreparedRootPublicationClose {
         store: &mut GoalStore,
         elaborations: &mut Elaborations,
     ) -> Vec<ClosedGoalOutput> {
-        let (goal_commit, publication, outputs) = self.into_parts();
+        let (goal_commit, publication, outputs, checks) = self.into_parts();
+        assert!(
+            checks.is_empty(),
+            "projection validation requires the source type context"
+        );
         store.commit_prepared_owner(goal_commit);
         publication.commit(elaborations);
         outputs
@@ -1300,12 +1354,15 @@ impl PreparedRootPublicationClose {
         tcx: &mut TypeCtx<'m, '_, Lowered>,
         rec_order: PreparedRecOrderCommit<'m, Lowered>,
     ) -> Result<Vec<ClosedGoalOutput>, Error> {
-        let (goal_commit, publication, outputs) = self.into_parts();
+        let (goal_commit, publication, outputs, checks) = self.into_parts();
         // Cross-component validation must precede the first visible write:
         // neither an exact goal-store snapshot nor an exact local-stack
         // snapshot may be discovered stale after the other has committed.
         store.validate_prepared_owner(&goal_commit);
         tcx.validate_prepared_rec_order(&rec_order);
+        for (check, expected) in checks {
+            check.validate(expected, tcx)?;
+        }
         store.commit_prepared_owner(goal_commit);
         tcx.commit_prepared_rec_order(rec_order);
         publication.commit(tcx.elaborations);
@@ -1387,7 +1444,9 @@ impl PublicationDelta {
         );
         let (shape, root_kinds, publication_outputs) =
             self.plan.into_close_inputs(|kind| match kind {
-                PublicationRootKind::GoalFree => PublicationGoalEscape::ToOwner(destination),
+                PublicationRootKind::GoalFree | PublicationRootKind::TrailingProjection(_) => {
+                    PublicationGoalEscape::ToOwner(destination)
+                }
                 PublicationRootKind::FunctionScheme => {
                     PublicationGoalEscape::ToOwnerFunctionScheme(destination)
                 }
@@ -1489,7 +1548,9 @@ impl PublicationDelta {
         );
         let (shape, root_kinds, publication_outputs) =
             self.plan.into_close_inputs(|root_kind| match root_kind {
-                PublicationRootKind::GoalFree => PublicationGoalEscape::ClosedAt(owner),
+                PublicationRootKind::GoalFree | PublicationRootKind::TrailingProjection(_) => {
+                    PublicationGoalEscape::ClosedAt(owner)
+                }
                 PublicationRootKind::FunctionScheme => {
                     PublicationGoalEscape::ClosedFunctionSchemeAt(owner)
                 }
@@ -1515,10 +1576,23 @@ impl PublicationDelta {
         );
         #[cfg(test)]
         record_publication_work(|work| work.payload_close_outputs += publication_outputs.len());
+        let mut trailing_projections = Vec::new();
         let payloads = root_kinds
             .into_iter()
             .zip(publication_outputs)
             .map(|(root_kind, output)| match (root_kind, output) {
+                (
+                    PublicationRootKind::TrailingProjection(check),
+                    ClosedPublicationOutput::GoalFree(output),
+                ) => {
+                    assert_eq!(
+                        output.destination(),
+                        owner,
+                        "projection type targeted a different root owner"
+                    );
+                    trailing_projections.push((*check, output.into_interned_type()));
+                    ClosedPublicationValue::ConsumedProjectionType
+                }
                 (PublicationRootKind::GoalFree, ClosedPublicationOutput::GoalFree(output)) => {
                     assert_eq!(
                         output.destination(),
@@ -1539,6 +1613,10 @@ impl PublicationDelta {
                     ClosedPublicationValue::FunctionScheme(output)
                 }
                 (PublicationRootKind::GoalFree, ClosedPublicationOutput::Retained(_))
+                | (
+                    PublicationRootKind::TrailingProjection(_),
+                    ClosedPublicationOutput::Retained(_),
+                )
                 | (PublicationRootKind::FunctionScheme, ClosedPublicationOutput::Retained(_)) => {
                     unreachable!("publication root output did not match its requested close mode")
                 }
@@ -1554,6 +1632,7 @@ impl PublicationDelta {
                 },
             },
             semantic_outputs: outputs,
+            trailing_projections,
         })
     }
 }
@@ -1595,6 +1674,12 @@ impl ClosedPublicationDelta {
                 }
             };
             match command {
+                PublicationCommand::TrailingProjection { resolved } => {
+                    assert!(matches!(
+                        resolved,
+                        ClosedPublicationValue::ConsumedProjectionType
+                    ));
+                }
                 PublicationCommand::RecQuoteSourceType { source, resolved } => {
                     elaborations.record_rec_quote_source_type(source, resolved.into_interned_type())
                 }
@@ -1738,6 +1823,12 @@ impl ClosedPublicationDelta {
                     value_param_index,
                     resolved.into_interned_type(),
                 ),
+                PublicationCommand::ProofFnBodyType { fn_site, resolved } => elaborations
+                    .record_proof_fn_body_type(
+                        module_path,
+                        fn_site.id,
+                        resolved.into_interned_type(),
+                    ),
                 PublicationCommand::InlayLetType {
                     name_span,
                     resolved,

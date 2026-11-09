@@ -620,36 +620,36 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
   print(types.readA(types.makeA(11)));
   print(types.readB(types.makeB(22)));
   print(types.readConstructorOnlyValue(
-    types[{constructor_only}].makeConstructorOnly(33)));
-  print(types[{projector_only}].readProjectorOnly(
+    types[{constructor_only}].mk(33)));
+  print(types[{projector_only}].get(
     types.makeProjectorOnlyValue(44)));
-  print(types[{both_public}].readBothPublic(
-    types[{both_public}].makeBothPublic(55)));
-  print(left[{shared}].readShared(left[{shared}].makeShared(left.read(left.make(66)))));
-  print(right[{shared}].readShared(right[{shared}].makeShared(right.read(right.make(77)))));
+  print(types[{both_public}].get(
+    types[{both_public}].mk(55)));
+  print(left[{shared}].get(left[{shared}].mk(left.read(left.make(66)))));
+  print(right[{shared}].get(right[{shared}].mk(right.read(right.make(77)))));
 
-  const constructorPair = types[{constructor_pair}].makeConstructorPair(
+  const constructorPair = types[{constructor_pair}].mk(
     {{ _0: 81, _1: 82 }});
   const constructorPairOut = types.readConstructorPairValue(constructorPair);
   printPair(constructorPairOut);
-  printPair(types[{projector_pair}].readProjectorPair(
+  printPair(types[{projector_pair}].get(
     types.makeProjectorPairValue(constructorPairOut)));
 
   print(types.readConstructorGenericValue(
-    types[{constructor_generic}].makeConstructorGeneric(85)));
-  print(types[{projector_generic}].readProjectorGeneric(
+    types[{constructor_generic}].mk(85)));
+  print(types[{projector_generic}].get(
     types.makeProjectorGenericValue(86)));
 
-  const packed = types[{packed_function}].makePackedFunction(
+  const packed = types[{packed_function}].mk(
     (value => value._0 + value._1));
-  const unpacked = types[{packed_function}].readPackedFunction(packed);
+  const unpacked = types[{packed_function}].get(packed);
   print(unpacked(constructorPairOut));
 
-  print(types[{existential_unit}].readExistentialUnit(
+  print(types[{existential_unit}].get(
     types.makeExistentialUnitValue()).advance()(
       ({{ advance: () => (_value => 89) }})));
 
-  print(types[{existential_empty}].readExistentialEmpty(
+  print(types[{existential_empty}].get(
     types.makeExistentialEmptyValue()).advance()(({{
     advance: () => ((...args) => {{
       if (args.length !== 1 || args[0] !== null) {{
@@ -658,29 +658,29 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
       return 90;
     }}) }})));
 
-  const recursiveBoth = types[{recursive_both}].makeRecursiveBoth(
+  const recursiveBoth = types[{recursive_both}].mk(
     types.recursiveBothBasePayload());
   print(types.recursiveBothPayloadIsBase(
-    types[{recursive_both}].readRecursiveBoth(recursiveBoth)));
+    types[{recursive_both}].get(recursiveBoth)));
 
-  const recursiveConstructor = types[{recursive_constructor}].makeRecursiveConstructor(
+  const recursiveConstructor = types[{recursive_constructor}].mk(
     types.recursiveConstructorBasePayload());
   print(types.recursiveConstructorPayloadIsBase(
     types.readRecursiveConstructorValue(recursiveConstructor)));
 
   print(types.recursiveProjectorPayloadIsBase(
-    types[{recursive_projector}].readRecursiveProjector(
+    types[{recursive_projector}].get(
       types.makeRecursiveProjectorBase())));
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("visibility callable changed"); }};
   const constructorInputs = [];
-  const constructed = types[{constructor_spread}].makeConstructorSpread(({{
+  const constructed = types[{constructor_spread}].mk(({{
     advance: () => (value => {{
     constructorInputs.push(value._0); return value._0 + 3;
   }}) }}));
   check(types.invokeConstructorSpreadI32(constructed, 101), 104);
   check(types.invokeConstructorSpreadUnit(constructed, 102), 105);
   check(JSON.stringify(constructorInputs), "[101,102]");
-  const projected = types[{projector_spread}].readProjectorSpread(types.makeProjectorSpreadValue());
+  const projected = types[{projector_spread}].get(types.makeProjectorSpreadValue());
   check(projected.advance()({{_0: 111, _1: 1}}), 111);
   check(projected.advance()({{_0: 112, _1: null}}), 112);
   let spreadOpens = 0, recursiveOpens = 0;
@@ -690,8 +690,8 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
   const openRecursive = ({{ advance: () => (value => {{
     check(typeof value, "function"); recursiveOpens++; return 92;
   }}) }});
-  check(types[{existential_spread}].readExistentialSpread(types.makeExistentialSpreadValue()).advance()(openSpread), 91);
-  check(types[{recursive_existential_function}].readRecursiveExistentialFunction(types.makeRecursiveExistentialFunctionValue()).advance()(openRecursive), 92);
+  check(types[{existential_spread}].get(types.makeExistentialSpreadValue()).advance()(openSpread), 91);
+  check(types[{recursive_existential_function}].get(types.makeRecursiveExistentialFunctionValue()).advance()(openRecursive), 92);
   check(spreadOpens, 1);
   check(recursiveOpens, 1);
 }})
@@ -889,9 +889,9 @@ fn run_recursive_newtype_boundary_js<'js>(
   const main = {main};
   const rootType = main[{root_type}];
   const payload = main.basePayload();
-  const root = rootType.makeRoot(payload);
+  const root = rootType.mk(payload);
   const kept = main.keep(root);
-  const projected = rootType.readRoot(kept);
+  const projected = rootType.get(kept);
   __kio_host_print__(String(main.acceptPayload(projected)) + "\n");
 }})()
 "#
@@ -936,8 +936,8 @@ fn run_facade_selector_collisions_js<'js>(
   __kio_host_print__("api.child function\n");
   api[{child_module}].value();
   __kio_host_print__("api/child module\n");
-  const child = api[{child_type}].makeChild(30);
-  api[{child_type}].readChild(child);
+  const child = api[{child_type}].mk(30);
+  api[{child_type}].get(child);
   __kio_host_print__("api.Child type\n");
 }})()
 "#
@@ -956,7 +956,7 @@ fn run_public_word_names_js<'js>(ctx: &Ctx<'js>, pkg_obj: &Object<'js>) -> Resul
   const api = globalThis.__kio_protocol_pkg__.wordApi;
   const nodes = api.KioModule_wordNodes;
   const box = nodes.KioType__uWordBox_u_u;
-  const boxed = box.wrapWord(55);
+  const boxed = box.mk(55);
   if (boxed._WordBox__ !== 55 || Object.keys(boxed).join() !== "_WordBox__")
     throw new Error("incorrect public transparent wrapper key");
   const pair = api.keepPair({
@@ -964,7 +964,7 @@ fn run_public_word_names_js<'js>(ctx: &Ctx<'js>, pkg_obj: &Object<'js>) -> Resul
     _1: { _WordBox__: 88 }
   });
   const values = [api.readWord(), api._readWord(), api.readWord_(),
-    api._readWord_(), api.readWord__(), box.unwrapWord({_WordBox__: 55}),
+    api._readWord_(), api.readWord__(), box.get({_WordBox__: 55}),
     nodes.keepWord(66), pair._0._WordBox__, pair._1._WordBox__];
   for (const value of values) __kio_host_print__(String(value) + "\n");
 })()
@@ -1051,7 +1051,7 @@ fn run_export_multilabel_roundtrip_js<'js>(
         .set("__kio_protocol_pkg__", pkg_obj.clone())
         .map_err(|e| format!("installing protocol package binding: {e}"))?;
     // The exported `say` fn is in `testapi/main`. Its multi-label product param keys the
-    // label-newtypes `A` / `B` (the surface `pub labels { a, b }` mint
+    // nominal types `A` / `B` (the surface `pub type { A: .; B: . }` mint
     // names) per `specs/backends/js.md` § Structural and nominal types.
     let base = export_base_js_expr(protocol, "main");
     let script = render_export_multilabel_roundtrip_js(&base);
@@ -1134,7 +1134,7 @@ fn run_host_existential_roundtrip_js<'js>(
   let observations = 0, openings = 0;
   globalThis.__kio_existential_observe__ = value => {{
     observations++;
-    return {types}[{packed}].readPacked(value).advance()(({{
+    return {types}[{packed}].get(value).advance()(({{
       advance: () => (payload => {{
       openings++;
       return payload._1(payload._0);
@@ -1172,12 +1172,12 @@ fn run_export_functor_dict_roundtrip_js<'js>(
   const toText = (value => {{ integers.push(value); return "v:" + value; }});
   const toInteger = (value => {{ texts.push(value); return value.length; }});
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("functor payload changed"); }};
-  const wrap = value => box.mkBox({{_0: value, _1: null}});
-  const unwrap = value => {{ const row = box.unBox(value); check(row._1, null); return row._0; }};
+  const wrap = value => box.mk({{_0: value, _1: null}});
+  const unwrap = value => {{ const row = box.get(value); check(row._1, null); return row._0; }};
   const dict = main.echoFunctor(main.boxFunctor());
   check(unwrap(main.applyFunctor(dict, toText, wrap(42))), "v:42");
   check(unwrap(main.applyFunctor(dict, toInteger, wrap("apple"))), 5);
-  const map = functor.fmap(dict);
+  const map = functor.get(dict);
   check(unwrap(map.advance().advance()({{_0: toText, _1: wrap(7)}})), "v:7");
   check(unwrap(map.advance().advance()({{_0: toInteger, _1: wrap("pear")}})), 4);
   check(JSON.stringify(integers), "[42,7]");
@@ -1489,7 +1489,7 @@ fn run_export_native_payload_roundtrip_js<'js>(
         ProtocolExecution::Invoke(ExportDriver::GenericNominalOpaqueRoundtrip) => {
             r#"
   const printNumber = value => __kio_host_print__(String(value) + "\n");
-  const nominal = main.KioType_Wrapped.mkWrapped(37);
+  const nominal = main.KioType_Wrapped.mk(37);
   printNumber(main.read({value: nominal}));
   const kio = main.make(61);
   printNumber(main.read(kio));
@@ -1510,7 +1510,7 @@ fn run_export_native_payload_roundtrip_js<'js>(
   printNumber(main.call(host, 43));
   if (calls !== 2) throw new Error('opaque callback count changed');
   printNumber(main.call(main.makeCallable(), 47));
-  const nominal = main.KioType_Wrapped.mkWrapped({_0: 41, _1: 43});
+  const nominal = main.KioType_Wrapped.mk({_0: 41, _1: 43});
   const printPair = value => __kio_host_print__(value._0 + " " + value._1 + "\n");
   printPair(main.readNominal({value: nominal}));
   printPair(main.readNominal(main.makeNominal()));
@@ -1669,15 +1669,15 @@ fn run_export_type_roundtrip_js<'js>(
     throw new Error("export-type-roundtrip: missing exported type Pair");
   }}
   const Pair = types[{pair}];
-  if (typeof Pair.mkPair !== "function") {{
-    throw new Error("export-type-roundtrip: missing Pair.mkPair");
+  if (typeof Pair.mk !== "function") {{
+    throw new Error("export-type-roundtrip: missing Pair.mk");
   }}
-  if (typeof Pair.unPair !== "function") {{
-    throw new Error("export-type-roundtrip: missing Pair.unPair");
+  if (typeof Pair.get !== "function") {{
+    throw new Error("export-type-roundtrip: missing Pair.get");
   }}
 
-  const boxed = Pair.mkPair({{ _0: "export-type-left", _1: "export-type-right" }});
-  const payload = Pair.unPair(boxed);
+  const boxed = Pair.mk({{ _0: "export-type-left", _1: "export-type-right" }});
+  const payload = Pair.get(boxed);
   __kio_host_print__(String(payload._0) + "\n");
   __kio_host_print__(String(payload._1) + "\n");
 }})()
@@ -1998,7 +1998,7 @@ fn run_export_newtype_scalar_roundtrip_js<'js>(
         .set("__kio_protocol_pkg__", pkg_obj.clone())
         .map_err(|e| format!("installing protocol package binding: {e}"))?;
     // `bump(Wrap) -> Wrap` is in `testapi/main`, where `Wrap` is a bare scalar-payload
-    // newtype (`newtype Wrap : I32`). A newtype crosses the JS FFI as the
+    // newtype (`type { Wrap: I32 }`). A newtype crosses the JS FFI as the
     // boundary record `{ Wrap: <payload> }` (the named-newtype envelope
     // the export wrapper packs / unpacks), so pass `{ Wrap: 7 }` and read
     // `.Wrap` off the returned record; the payload round-trips to `7`.

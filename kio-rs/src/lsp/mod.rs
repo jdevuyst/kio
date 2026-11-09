@@ -62,7 +62,7 @@ pub mod highlight;
 pub mod hover;
 pub(crate) mod import_aliases;
 pub mod inlay_hints;
-pub(crate) mod label_reuse;
+pub(crate) mod live_syntax;
 pub mod positions;
 pub mod references;
 pub mod rename;
@@ -123,7 +123,7 @@ use crate::lsp::formatting::{handle_formatting_with_file_context, try_handle_for
 use crate::lsp::highlight::handle_document_highlight;
 use crate::lsp::hover::handle_hover;
 use crate::lsp::inlay_hints::handle_inlay_hints;
-use crate::lsp::label_reuse::LabelReuseSnapshot;
+use crate::lsp::live_syntax::LiveSyntaxSnapshot;
 use crate::lsp::positions::LineIndex;
 use crate::lsp::references::handle_references;
 use crate::lsp::rename::{
@@ -490,11 +490,11 @@ fn dispatch_request_inner(
             let position = &params.text_document_position_params.position;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, true);
             let declaration_hover = doc_hover_with_syntax_context(uri, position, state);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text());
-            let overlay = overlay_text.map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let result = declaration_hover.or_else(|| {
                 uri_to_canonical(uri)
@@ -525,11 +525,11 @@ fn dispatch_request_inner(
             let uri = &params.text_document_position_params.text_document.uri;
             let position = &params.text_document_position_params.position;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, true);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text());
-            let overlay = overlay_text.map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let pkg_root = workspace_root.map(Path::to_path_buf).unwrap_or_else(|| {
                 uri_to_canonical(uri)
@@ -565,11 +565,11 @@ fn dispatch_request_inner(
             let uri = &params.text_document_position.text_document.uri;
             let position = &params.text_document_position.position;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, false);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text());
-            let overlay = overlay_text.map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let include_decl = params.context.include_declaration;
             let pkg_root = workspace_root.map(Path::to_path_buf).unwrap_or_else(|| {
@@ -606,11 +606,11 @@ fn dispatch_request_inner(
             let uri = &params.text_document_position_params.text_document.uri;
             let position = &params.text_document_position_params.position;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, false);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text());
-            let overlay = overlay_text.map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let result = uri_to_canonical(uri)
                 .and_then(|canonical| state.current_full_analysis_entry_for_file(&canonical, uri))
@@ -845,11 +845,11 @@ fn dispatch_request_inner(
             let position = &params.position;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, false);
             let current_module = parsed_module_with_syntax_context(state, uri);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text().to_owned());
-            let overlay = overlay_text.as_deref().map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.as_deref().map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let result = uri_to_canonical(uri)
                 .and_then(|canonical| state.current_full_analysis_entry_for_file(&canonical, uri))
@@ -887,11 +887,11 @@ fn dispatch_request_inner(
             let new_name = &params.new_name;
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, false);
             let current_module = parsed_module_with_syntax_context(state, uri);
-            let overlay_label_reuse_index = overlay_label_reuse_index(state, uri);
+            let overlay_parsed = with_overlay_parsed_module(state, uri, |_, _| ()).is_some();
             let overlay_text = state.document(uri).map(|d| d.text().to_owned());
-            let overlay = overlay_text.as_deref().map(|source| LabelReuseSnapshot {
+            let overlay = overlay_text.as_deref().map(|source| LiveSyntaxSnapshot {
                 source,
-                index: overlay_label_reuse_index.as_deref(),
+                parsed: overlay_parsed,
             });
             let pkg_root =
                 rename_package_root(uri, workspace_root).unwrap_or_else(|| PathBuf::from("."));
@@ -1260,18 +1260,6 @@ fn doc_hover_with_syntax_context(
         | RequestSyntaxModule::ContextInvalid
         | RequestSyntaxModule::Unavailable => SyntaxContextResult::Unavailable,
     }
-}
-
-fn overlay_label_reuse_index(
-    state: &mut ServerState,
-    uri: &Uri,
-) -> Option<std::sync::Arc<crate::lsp::label_reuse::LabelReuseIndex>> {
-    let source_path = match file_uri_path(uri) {
-        FileUriPath::Path(path) => path,
-        FileUriPath::NonFile => return state.overlay_label_reuse_index(uri),
-        FileUriPath::InvalidFile => return None,
-    };
-    state.overlay_label_reuse_index_for_file(uri, &source_path)
 }
 
 /// Handle one `textDocument/documentSymbol` request.
@@ -1904,10 +1892,8 @@ mod tests {
         LspAnalysis {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module: BTreeMap::from([(file_path.to_path_buf(), module_path.to_owned())]),
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
             warnings: Vec::new(),
         }
@@ -2300,7 +2286,7 @@ mod tests {
                 pub fn pair(a: ., b: .) -> . {{ a }}
                 pub fn zero() -> . {{ () }}
                 pub type Unit = .;
-                pub labels {{ field: . }};
+                pub type {{ Field: .; }};
                 pure fn expand_body(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}
                 pub macro expand : . -> . {{ impl expand_body; }};
                 pub op _ {operator} _ {{ impl pair; }};
@@ -2365,8 +2351,8 @@ mod tests {
 
             let current = request(&mut state, &consumer_uri).expect("valid consumer context");
             assert!(!current.is_incomplete);
-            assert_eq!(current.items.len(), 8);
-            for name in ["pair", "zero", "Unit", "Field", "{field}", "macro expand"] {
+            assert_eq!(current.items.len(), 7);
+            for name in ["pair", "zero", "Unit", "Field", "macro expand"] {
                 assert!(
                     current.items.iter().any(|item| item.label == name),
                     "{name}"
@@ -2441,7 +2427,7 @@ mod tests {
                 .expect("untitled header context")
                 .items
                 .len(),
-            8
+            7
         );
         state.open(consumer_uri.clone(), consumer.to_owned(), 5);
         state.open(provider_uri, "module syntax; broken {".to_owned(), 3);

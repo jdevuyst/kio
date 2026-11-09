@@ -156,7 +156,7 @@ pub enum ContractKind {
         /// The canonical normalized expansion (the alias body).
         expansion: String,
     },
-    /// `newtype Name = …;` — nominal. Identity is the kind/arity plus
+    /// `type { Name: … }` — nominal. Identity is the kind/arity plus
     /// the `pub` member surface; the payload matters only through a
     /// `pub` member.
     Newtype {
@@ -337,7 +337,7 @@ pub(crate) fn canonical_declaration_type<P: Phase>(
 /// Canonical ordinary-Kio declaration used when a public newtype crosses the
 /// signature boundary. The grammar always requires both members and a
 /// payload, so facts absent from the public surface are represented by
-/// deterministic private member names and, for a fully opaque newtype, unit.
+/// fixed private members and, for a fully opaque newtype, unit.
 pub(crate) fn project_newtype_declaration(mut newtype: Newtype<Surface>) -> Newtype<Surface> {
     // The caller has already selected this newtype as a contract entry.
     // Signature sections do not require the redundant outer `pub` spelling,
@@ -352,27 +352,16 @@ pub(crate) fn project_newtype_declaration(mut newtype: Newtype<Surface>) -> Newt
     };
     newtype.doc = None;
 
-    let mut retained = std::collections::BTreeSet::new();
-    if constructor_public {
-        retained.insert(newtype.constructor.name.clone());
-    }
-    if projector_public {
-        retained.insert(newtype.projector.name.clone());
-    }
-
     if constructor_public {
         newtype.constructor.vis = Visibility::Public;
     } else {
         newtype.constructor.vis = Visibility::Private;
-        newtype.constructor.name = inert_member_name("constructor", &retained);
         newtype.constructor.leading_trivia.clear();
-        retained.insert(newtype.constructor.name.clone());
     }
     if projector_public {
         newtype.projector.vis = Visibility::Public;
     } else {
         newtype.projector.vis = Visibility::Private;
-        newtype.projector.name = inert_member_name("projector", &retained);
         newtype.projector.leading_trivia.clear();
     }
 
@@ -540,22 +529,8 @@ fn collect_projected_type_rec_edges<'a>(
                 collect_projected_type_rec_edges(argument, names, bound, out);
             }
         }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } | Type::LabelSugar { .. } => {}
+        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
     }
-}
-
-fn inert_member_name(role: &str, retained: &std::collections::BTreeSet<String>) -> String {
-    let stem = format!("sig_private_{role}");
-    if !retained.contains(&stem) {
-        return stem;
-    }
-    for suffix in 1_u64.. {
-        let candidate = format!("{stem}_n{suffix}");
-        if !retained.contains(&candidate) {
-            return candidate;
-        }
-    }
-    unreachable!("an unbounded deterministic member-name sequence cannot be exhausted")
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -720,7 +695,7 @@ v(1) {
 
 rec {
   pub type A = B;
-  pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+  pub type { B : A { pub mk; pub get; }; };
 }
 "#,
             "package app;\n\nbridge {\n  api;\n}\n",
@@ -752,10 +727,10 @@ rec {
             "api",
             r#"module api;
 
-pub rec newtype List[A] : . | (A & List[A]) {
-  pub constructor mk_list;
-  pub projector un_list;
-};
+pub rec type { List[A] : . | (A & List[A]) {
+  pub mk;
+  pub get;
+}; };
 "#,
             "package app;\n\nbridge {\n  api;\n}\n",
         );
@@ -763,9 +738,9 @@ pub rec newtype List[A] : . | (A & List[A]) {
         let recorded = record::RecordedSurface::from_package(&package);
         let plan = draft::compute_draft("app", None, &recorded, &live).expect("draft");
         let text = emit_signature_file(&plan.recomputed);
-        assert_eq!(text.matches("rec newtype List").count(), 1, "{text}");
+        assert_eq!(text.matches("rec type").count(), 1, "{text}");
         assert!(
-            text.contains("with {\n    module api {\n      pub rec newtype List"),
+            text.contains("with {\n    module api {\n      pub rec type { List"),
             "{text}"
         );
         assert!(text.contains("add {\n      api.List\n    }"), "{text}");
@@ -782,10 +757,10 @@ pub rec newtype List[A] : . | (A & List[A]) {
             "api",
             r#"module api;
 
-pub rec newtype Bad : . | Bad {
-  pub constructor mk;
-  pub projector un;
-};
+pub rec type { Bad : . | Bad {
+  pub mk;
+  pub get;
+}; };
 "#,
             "package app; bridge { api; }",
         );
@@ -793,10 +768,10 @@ pub rec newtype Bad : . | Bad {
         let mut recorded = record::RecordedSurface::from_package(&package);
         let malformed: crate::ast::Module<Surface> = crate::pass::parser::parse(
             r#"module api;
-pub rec newtype Bad : (Bad -> .) {
-  pub constructor mk;
-  pub projector un;
-};
+pub rec type { Bad : (Bad -> .) {
+  pub mk;
+  pub get;
+}; };
 "#,
         )
         .expect("parse malformed recorded declaration");
@@ -831,10 +806,10 @@ pub rec newtype Bad : (Bad -> .) {
             "api",
             r#"module api;
 
-pub rec newtype Secret : Secret {
-  constructor mk_secret;
-  projector un_secret;
-};
+pub rec type { Secret : Secret {
+  mk;
+  get;
+}; };
 "#,
             "package app;\n\nbridge {\n  api;\n}\n",
         );
@@ -843,8 +818,8 @@ pub rec newtype Secret : Secret {
         let plan = draft::compute_draft("app", None, &recorded, &live).expect("draft");
         let text = emit_signature_file(&plan.recomputed);
         assert!(!text.contains("with {"), "{text}");
-        assert!(!text.contains("rec newtype"), "{text}");
-        assert!(text.contains("pub newtype Secret : ."), "{text}");
+        assert!(!text.contains("rec type"), "{text}");
+        assert!(text.contains("pub type { Secret: ."), "{text}");
 
         let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
             .expect("projected recursive singleton sig parses");
@@ -859,8 +834,8 @@ pub rec newtype Secret : Secret {
             r#"module api;
 
 rec {
-  pub newtype A : B { constructor mk_a; projector un_a; };
-  pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+  pub type { A : B { mk; get; }; };
+  pub type { B : A { pub mk; pub get; }; };
 }
 "#,
             "package app;\n\nbridge {\n  api;\n}\n",
@@ -877,8 +852,8 @@ rec {
             !text.contains("rec {"),
             "opaque projection broke the SCC: {text}"
         );
-        assert!(text.contains("pub newtype A : ."), "{text}");
-        assert!(text.contains("pub newtype B : A"), "{text}");
+        assert!(text.contains("pub type { A: ."), "{text}");
+        assert!(text.contains("pub type { B: A"), "{text}");
 
         let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
             .expect("projected sig parses");
@@ -893,14 +868,14 @@ rec {
             r#"module api;
 
 rec {
-  pub newtype A : A | B {
-    pub constructor make_a;
-    projector un_a;
-  };
-  pub newtype B : A {
-    constructor make_b;
-    projector un_b;
-  };
+  pub type { A : A | B {
+    pub mk;
+    get;
+  }; };
+  pub type { B : A {
+    mk;
+    get;
+  }; };
 }
 "#,
             "package app; bridge { api; }",
@@ -910,9 +885,9 @@ rec {
         let plan = draft::compute_draft("app", None, &recorded, &live)
             .expect("a projected self component has a standalone recursive context");
         let text = emit_signature_file(&plan.recomputed);
-        assert!(text.contains("pub rec newtype A : A | B"), "{text}");
+        assert!(text.contains("pub rec type { A: A | B"), "{text}");
         assert!(!text.contains("rec {"), "{text}");
-        assert!(text.contains("pub newtype B : ."), "{text}");
+        assert!(text.contains("pub type { B: ."), "{text}");
         assert!(text.contains("add {\n      api.A;"), "{text}");
 
         let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
@@ -929,9 +904,9 @@ rec {
 
 rec {
   pub type A = B;
-  pub newtype B : A | C { pub constructor mk_b; pub projector un_b; };
+  pub type { B : A | C { pub mk; pub get; }; };
   pub type C = D;
-  pub newtype D : C | A { pub constructor mk_d; pub projector un_d; };
+  pub type { D : C | A { pub mk; pub get; }; };
 }
 "#,
             "package app; bridge { api; }",
@@ -949,12 +924,12 @@ rec {
 
 rec {
   pub type A = B;
-  pub newtype B : A | C { pub constructor mk_b; pub projector un_b; };
+  pub type { B : A | C { pub mk; pub get; }; };
 }
 
 rec {
   pub type C = D;
-  pub newtype D : C { pub constructor mk_d; pub projector un_d; };
+  pub type { D : C { pub mk; pub get; }; };
 }
 "#,
             "package app; bridge { api; }",
@@ -1005,7 +980,7 @@ rec {
 
 rec {
   pub type A = B;
-  pub newtype B : C { pub constructor mk_b; pub projector un_b; };
+  pub type { B : C { pub mk; pub get; }; };
   pub type C = A;
 }
 "#,
@@ -1023,7 +998,7 @@ rec {
             r#"module api;
 
 pub type C = .;
-pub newtype B : C { pub constructor mk_b; pub projector un_b; };
+pub type { B : C { pub mk; pub get; }; };
 pub type A = B;
 "#,
             "package app; bridge { api; }",
@@ -1040,7 +1015,7 @@ pub type A = B;
         assert!(!v2.contains("rec {"), "{text}");
         assert!(v2.contains("with {\n    module api {"), "{text}");
         assert!(v2.contains("pub type A = B;"), "{text}");
-        assert!(v2.contains("pub newtype B : C"), "{text}");
+        assert!(v2.contains("pub type { B: C"), "{text}");
         assert!(
             v2.contains("modify {\n      module api {\n        pub type C = .\n      }"),
             "{text}"
@@ -1062,12 +1037,12 @@ pub type A = B;
     }
 
     #[test]
-    fn label_reuse_adds_only_the_existing_contract_kinds() {
+    fn ordinary_nominal_reference_adds_only_the_declared_contract_kinds() {
         let module_src = "\
 module api;
 
-pub labels { field: . };
-pub labels Row = { field: _, other: . };
+pub type { Field: .; };
+pub type Row = Field & { Other: .; };
 ";
         let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
@@ -1100,8 +1075,8 @@ module api;
 type Hidden = .;
 pub type Visible = .;
 
-pub newtype Opaque : Hidden { constructor mk_opaque; projector un_opaque; };
-pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed; };
+pub type { Opaque : Hidden { mk; get; }; };
+pub type { Exposed : Visible { pub mk; get; }; };
 ",
             "package app; bridge { api; }",
         );
@@ -1122,7 +1097,7 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
         assert_eq!(
             surface,
             &PublicNewtypeSurface::Constructor {
-                name: "mk_exposed".to_owned(),
+                name: "mk".to_owned(),
                 payload: "@api/Visible".to_owned(),
             }
         );
@@ -1130,14 +1105,14 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
 
     #[test]
     fn hidden_newtype_details_do_not_change_the_public_contract() {
-        let snapshot = |hidden: &str, constructor: &str, projector: &str| {
+        let snapshot = |hidden: &str| {
             let source = format!(
                 "module api; \
                  type {hidden} = .; \
-                 pub newtype Opaque : {hidden} {{ \
-                   constructor {constructor}; \
-                   projector {projector}; \
-                 }};"
+                 pub type {{ Opaque : {hidden} {{ \
+                   mk; \
+                   get; \
+                 }}; }};"
             );
             ContractSnapshot::from_package(&typed_package(
                 "api",
@@ -1146,8 +1121,8 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
             ))
         };
 
-        let left = snapshot("Hidden_left", "make_left", "take_left");
-        let right = snapshot("Hidden_right", "make_right", "take_right");
+        let left = snapshot("Hidden_left");
+        let right = snapshot("Hidden_right");
         assert_eq!(left, right);
         assert_eq!(contract_digest(&left), contract_digest(&right));
         assert!(compare(&left, &right).is_empty());
@@ -1155,53 +1130,36 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
 
     #[test]
     fn recorded_opaque_newtype_omits_hidden_source_details() {
-        let emitted =
-            |hidden: &str, existential: &str, constructor: &str, projector: &str, scoped: bool| {
-                let member_visibility = if scoped { "pub(api) " } else { "" };
-                let source = format!(
-                    "module api; \
+        let emitted = |hidden: &str, existential: &str, scoped: bool| {
+            let member_visibility = if scoped { "pub(api) " } else { "" };
+            let source = format!(
+                "module api; \
                  type {hidden} = .; \
-                 pub newtype Opaque <{existential}> : ({hidden} & {existential}) {{ \
-                   {member_visibility}constructor {constructor}; \
-                   {member_visibility}projector {projector}; \
-                 }};"
-                );
-                let package = typed_package("api", &source, "package app; bridge { api; }");
-                let live = ContractSnapshot::from_package(&package);
-                let recorded = RecordedSurface::from_package(&package);
-                let plan = compute_draft("app", None, &recorded, &live).expect("compute draft");
-                let text = emit_signature_file(&plan.recomputed);
-                let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
-                    .expect("emitted sig must parse");
-                let replayed = replay(&parsed).expect("emitted sig must replay");
-                assert!(compare(&replayed.current, &live).is_empty(), "{text}");
-                text
-            };
+                 pub type {{ Opaque <{existential}> : ({hidden} & {existential}) {{ \
+                   {member_visibility}mk; \
+                   {member_visibility}get; \
+                 }}; }};"
+            );
+            let package = typed_package("api", &source, "package app; bridge { api; }");
+            let live = ContractSnapshot::from_package(&package);
+            let recorded = RecordedSurface::from_package(&package);
+            let plan = compute_draft("app", None, &recorded, &live).expect("compute draft");
+            let text = emit_signature_file(&plan.recomputed);
+            let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
+                .expect("emitted sig must parse");
+            let replayed = replay(&parsed).expect("emitted sig must replay");
+            assert!(compare(&replayed.current, &live).is_empty(), "{text}");
+            text
+        };
 
-        let left = emitted(
-            "Hidden_left",
-            "Existential_left",
-            "make_left",
-            "take_left",
-            false,
-        );
-        let right = emitted(
-            "Hidden_right",
-            "Existential_right",
-            "make_right",
-            "take_right",
-            true,
-        );
+        let left = emitted("Hidden_left", "Existential_left", false);
+        let right = emitted("Hidden_right", "Existential_right", true);
         assert_eq!(left, right);
         for hidden in [
             "Hidden_left",
             "Existential_left",
-            "make_left",
-            "take_left",
             "Hidden_right",
             "Existential_right",
-            "make_right",
-            "take_right",
         ] {
             assert!(
                 !left.contains(hidden),
@@ -1220,14 +1178,14 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
             "api",
             "module api; \
              pub type Visible = .; \
-             pub newtype Ctor_only : Visible { \
-               pub constructor sig_private_projector; \
-               projector hidden_projector; \
-             }; \
-             pub newtype Proj_only : Visible { \
-               constructor hidden_constructor; \
-               pub projector take_visible; \
-             };",
+             pub type { Ctor_only : Visible { \
+               pub mk; \
+               get; \
+             }; }; \
+             pub type { Proj_only : Visible { \
+               mk; \
+               pub get; \
+             }; };",
             "package app; bridge { api; }",
         );
         let live = ContractSnapshot::from_package(&package);
@@ -1236,7 +1194,7 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
             ContractKind::Newtype {
                 param_kinds: vec![],
                 surface: PublicNewtypeSurface::Constructor {
-                    name: "sig_private_projector".to_owned(),
+                    name: "mk".to_owned(),
                     payload: "@api/Visible".to_owned(),
                 },
             }
@@ -1246,7 +1204,7 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
             ContractKind::Newtype {
                 param_kinds: vec![],
                 surface: PublicNewtypeSurface::Projector {
-                    name: "take_visible".to_owned(),
+                    name: "get".to_owned(),
                     payload: "@api/Visible".to_owned(),
                 },
             }
@@ -1255,13 +1213,8 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
         let recorded = RecordedSurface::from_package(&package);
         let plan = compute_draft("app", None, &recorded, &live).expect("compute draft");
         let text = emit_signature_file(&plan.recomputed);
-        assert!(
-            text.contains("pub constructor sig_private_projector;"),
-            "{text}"
-        );
-        assert!(text.contains("pub projector take_visible };"), "{text}");
-        assert!(!text.contains("hidden_projector"), "{text}");
-        assert!(!text.contains("hidden_constructor"), "{text}");
+        assert!(text.contains("pub mk;"), "{text}");
+        assert!(text.contains("pub get"), "{text}");
 
         let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
             .expect("emitted sig must parse");
@@ -1271,25 +1224,25 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
 
     #[test]
     fn parsed_signature_emission_canonicalizes_hidden_newtype_details() {
-        let signature = |provider: &str, hidden: &str, constructor: &str, projector: &str| {
+        let signature = |provider: &str, hidden: &str| {
             format!(
                 "signature app v(1); \
                  v(1) {{ nonbreaking {{ add {{ module api {{ \
                    import {provider}({hidden}); \
-                   pub newtype Opaque : {hidden} {{ \
-                     constructor {constructor}; \
-                     projector {projector}; \
-                   }}; \
+                   pub type {{ Opaque : {hidden} {{ \
+                     mk; \
+                     get; \
+                   }}; }}; \
                  }} }} }} }}"
             )
         };
         let left = crate::pass::parser::parse_signature_file(
-            &signature("secret_left", "Hidden_left", "make_left", "take_left"),
+            &signature("secret_left", "Hidden_left"),
             Some("app"),
         )
         .expect("left signature parses");
         let right = crate::pass::parser::parse_signature_file(
-            &signature("secret_right", "Hidden_right", "make_right", "take_right"),
+            &signature("secret_right", "Hidden_right"),
             Some("app"),
         )
         .expect("right signature parses");
@@ -1297,16 +1250,7 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
         let left_text = emit_signature_file(&left);
         let right_text = emit_signature_file(&right);
         assert_eq!(left_text, right_text);
-        for hidden in [
-            "Hidden_left",
-            "secret_left",
-            "make_left",
-            "take_left",
-            "Hidden_right",
-            "secret_right",
-            "make_right",
-            "take_right",
-        ] {
+        for hidden in ["Hidden_left", "secret_left", "Hidden_right", "secret_right"] {
             assert!(!left_text.contains(hidden), "{hidden} leaked:\n{left_text}");
             assert!(
                 !right_text.contains(hidden),
@@ -1334,27 +1278,27 @@ pub newtype Exposed : Visible { pub constructor mk_exposed; projector un_exposed
                    nonbreaking {{\n\
                      add {{\n\
                        module api {{\n\
-                         pub newtype Opaque : . {{\n\
+                         pub type {{ Opaque : . {{\n\
                            // {side} opaque constructor\n\
-                           constructor make_opaque;\n\
+                           mk;\n\
                            // {side} opaque projector\n\
-                           projector take_opaque;\n\
+                           get;\n\
                            // {side} opaque dangling\n\
-                         }};\n\
-                         pub newtype Constructor_visible : . {{\n\
+                         }}; }};\n\
+                         pub type {{ Constructor_visible : . {{\n\
                            // fixed visible constructor\n\
-                           pub constructor make_visible;\n\
+                           pub mk;\n\
                            // {side} hidden projector\n\
-                           projector take_hidden;\n\
+                           get;\n\
                            // fixed constructor-visible dangling\n\
-                         }};\n\
-                         pub newtype Projector_visible : . {{\n\
+                         }}; }};\n\
+                         pub type {{ Projector_visible : . {{\n\
                            // {side} hidden constructor\n\
-                           constructor make_hidden;\n\
+                           mk;\n\
                            // fixed visible projector\n\
-                           pub projector take_visible;\n\
+                           pub get;\n\
                            // fixed projector-visible dangling\n\
-                         }};\n\
+                         }}; }};\n\
                        }}\n\
                      }}\n\
                    }}\n\
@@ -1449,10 +1393,10 @@ module api;
 
 pub type Identity[A] = A;
 
-pub newtype Pack[A] <Hidden> : (A & Hidden) {
-  pub constructor pack;
-  pub projector unpack;
-};
+pub type { Pack[A] <Hidden> : (A & Hidden) {
+  pub mk;
+  pub get;
+}; };
 ";
         let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
@@ -1466,10 +1410,10 @@ v(1) {
     add {
       module api {
         pub type Identity[Value] = Value;
-        pub newtype Pack[Visible] <Sealed> : (Visible & Sealed) {
-          pub constructor pack;
-          pub projector unpack;
-        };
+        pub type { Pack[Visible] <Sealed> : (Visible & Sealed) {
+          pub mk;
+          pub get;
+        }; };
       }
     }
 
@@ -1496,10 +1440,10 @@ v(1) {
   nonbreaking {
     add {
       module left {
-        pub newtype Same[A] : A { constructor make; projector take; };
+        pub type { Same[A] : A { mk; get; }; };
       };
       module right {
-        pub newtype Same[A] : A { constructor make; projector take; };
+        pub type { Same[A] : A { mk; get; }; };
       };
       module api {
         import left(Same);
@@ -1653,7 +1597,7 @@ host type Handle role(i32);
 
 host fn open() -> Handle;
 
-newtype Box : Handle { pub constructor mk_box; pub projector un_box; };
+type { Box : Handle { pub mk; pub get; }; };
 
 type Alias = Handle;
 
@@ -1674,7 +1618,7 @@ host type _String role(str);
 
 pub type _Alias[_A] = _A;
 
-pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box; };
+pub type { _Box[_A] : _A { pub mk; pub get; }; };
 ",
             "package app;\n\nbridge {\n  api;\n}\n",
         );
@@ -1720,6 +1664,48 @@ pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box; };
     }
 
     #[test]
+    fn fixed_nominal_signature_projection_replays_private_roles() {
+        for members in [
+            "mk; get",
+            "pub mk; get",
+            "mk; pub get",
+            "pub mk; pub get",
+            "pub(api) mk; pub(api) get",
+        ] {
+            let source =
+                format!("module api; pub type {{ Wrap[A]<Hidden>: A & Hidden {{ {members} }}; }}");
+            let package = typed_package("api", &source, "package app; bridge { api; }");
+            let live = ContractSnapshot::from_package(&package);
+            let recorded = RecordedSurface::from_package(&package);
+            let plan = compute_draft("app", None, &recorded, &live).expect("fixed-role draft");
+            let text = emit_signature_file(&plan.recomputed);
+            assert!(!text.contains("sig_private_"), "{text}");
+            let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
+                .expect("projected private members use ordinary nominal syntax");
+            let replayed = replay(&parsed).expect("projected nominal validates");
+            assert_eq!(replayed.current, live, "{members}: {text}");
+            assert_eq!(contract_digest(&replayed.current), contract_digest(&live));
+        }
+    }
+
+    #[test]
+    fn signature_nominals_require_explicit_singletons_and_fixed_roles() {
+        for declaration in [
+            "pub type { Wrapped: . { pack; get; }; }",
+            "pub type { Wrapped: . { mk; unpack; }; }",
+            "pub type { Wrapped: . { constructor pack; projector unpack; }; }",
+            "pub type { Wrapped: .; }",
+            "pub type { First: . { mk; get; }; Second: . { mk; get; }; }",
+            "pub type Choice = { First: . { mk; get; }; } | .",
+        ] {
+            let source = format!(
+                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+            );
+            crate::pass::parser::parse_signature_file(&source, Some("app")).unwrap_err();
+        }
+    }
+
+    #[test]
     fn public_projection_full_prime_record_replay_agree_on_all_newtype_surfaces() {
         fn observe<P>(package: &Package<P>) -> (ContractSnapshot, String, String)
         where
@@ -1746,18 +1732,18 @@ pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box; };
             pub type Alias[A] = A;
             type Hidden = .;
             pub(api) type Scoped = .;
-            pub newtype Opaque[A] <Secret> : A & Secret {
-                constructor hidden_make; pub(api) projector hidden_take;
-            };
-            pub newtype Ctor[A] : A {
-                pub constructor make_ctor; projector hidden_ctor_take;
-            };
-            pub newtype Proj[A] : A {
-                constructor hidden_proj_make; pub projector take_proj;
-            };
-            pub newtype Both[A] : A {
-                pub constructor make_both; pub projector take_both;
-            };";
+            pub type { Opaque[A] <Secret> : A & Secret {
+                mk; pub(api) get;
+            }; };
+            pub type { Ctor[A] : A {
+                pub mk; get;
+            }; };
+            pub type { Proj[A] : A {
+                mk; pub get;
+            }; };
+            pub type { Both[A] : A {
+                pub mk; pub get;
+            }; };";
         let package_source = "package app; bridge { api; }";
         let full = observe(&lowered_package("api", source, package_source));
         let prime = observe(&typed_package("api", source, package_source));
@@ -1769,22 +1755,22 @@ pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box; };
             (
                 "Ctor",
                 PublicNewtypeSurface::Constructor {
-                    name: "make_ctor".to_owned(),
+                    name: "mk".to_owned(),
                     payload: "#tv0".to_owned(),
                 },
             ),
             (
                 "Proj",
                 PublicNewtypeSurface::Projector {
-                    name: "take_proj".to_owned(),
+                    name: "get".to_owned(),
                     payload: "#tv0".to_owned(),
                 },
             ),
             (
                 "Both",
                 PublicNewtypeSurface::ConstructorAndProjector {
-                    constructor: "make_both".to_owned(),
-                    projector: "take_both".to_owned(),
+                    constructor: "mk".to_owned(),
+                    projector: "get".to_owned(),
                     payload: "#tv0".to_owned(),
                 },
             ),
@@ -1823,7 +1809,7 @@ module core;
 
 host type Raw role(i32);
 
-pub newtype Id : Raw { pub constructor mk_id; pub projector un_id; };
+pub type { Id : Raw { pub mk; pub get; }; };
 ";
         // Single-module helper only lowers one module, so build the
         // two-module package directly here.

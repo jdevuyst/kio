@@ -21,7 +21,7 @@ import testapi/io(print);
 // branch's concrete type as the explicit type-argument, so the
 // body type-checks against the polymorphic signature and survives
 // Kio' emission without losing the elided type-arg.
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+type { Box[A]: A { pub mk; pub get } }
 
 fn label[A](b: Box[A]) -> String { "matched\n" }
 
@@ -31,4 +31,4 @@ fn handle(p: Box[I32] | Box[String]) -> String {
   }
 }
 
-pub fn main() { print(handle(widen_sum(Box.mk_box("hi"[String])))) }
+pub fn main() { print(handle(widen_sum(Box.mk("hi"[String])))) }

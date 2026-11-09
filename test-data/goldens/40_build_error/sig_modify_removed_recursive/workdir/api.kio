@@ -2,5 +2,5 @@ module api;
 
 rec {
   pub type A = B;
-  pub newtype B : . | A { pub constructor mk; pub projector get }
+  pub type { B: . | A { pub mk; pub get } }
 }

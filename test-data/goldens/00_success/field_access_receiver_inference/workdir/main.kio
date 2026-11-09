@@ -4,11 +4,11 @@ host type String role(str);
 
 host fn make[A]() -> A;
 
-labels { item[A]: A };
+type { Item[A]: A { mk; get } }
 
-fn annotated_literal() -> String { Item.mk("text"[String]).?{item} }
+fn annotated_literal() -> String { Item.get(Item.mk("text"[String])) }
 
-fn annotated_factory() -> String { Item.mk(make[String]()).?{item} }
+fn annotated_factory() -> String { Item.get(Item.mk(make[String]())) }
 
 fn getter_literal() -> String { Item.get(Item.mk("text")) }
 

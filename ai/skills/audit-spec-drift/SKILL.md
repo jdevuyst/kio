@@ -169,14 +169,68 @@ host's responsibility for its custom carriers and supplied values.
 - Each typing rule named in the spec.
 - The bidirectional discipline pinned by `specs/formal/elaboration.md`: source-bounded exact type-argument inference, shallow skolemization, positional type-args, no implicit generalization, no backward type flow from later uses. An inferred whole type-argument goal may copy one complete polytype already exposed by finite connected application evidence, but the typer must never invent or generalize a `forall`, guess binder placement, leave inference goals beneath a `forall`, search ambient declarations, backtrack, or admit a polymorphic value into a proper subterm of a declared monomorphic slot. Verify that this is the ordinary call rule rather than tuple / `__pair__` / named-producer special authority, and that lowering materializes the inferred type argument because Kio' still requires it explicitly.
 - **Local binding modes** (`specs/formal/elaboration.md` § 6): an untyped `let` synthesizes its RHS and preserves that type without narrowing, widening, generalization or defaulting. A fully concrete binding pattern instead supplies the expected RHS type through E-LetCheck / E-LetPatternCheck. Admitted partial patterns synthesize the RHS first, then compare concrete leaves and fill elided leaves; they never push a partial expected product into the RHS. The local binder determines the mode before the body is examined; later uses cannot infer the RHS.
-- **The one-shot local discipline** (the **One-shot local discipline** contract bullet and § 10's **Finite owner-scoped application domains** in `specs/formal/elaboration.md`): the elaborator remains syntax-directed, but one finite inference domain may connect application layers and unfinished nested applications from the same written call tree. Every equality goal is source-bounded and owner-scoped; independently completed nested calls contribute only closed results, and no goal escapes its lexical owner. Each source premise is entered once and each retained source action is consumed at most once. Each application owner carries at most one pending expected-result equation; a connected tree may contain finitely many, one per owner. An initial blocked attempt records both zonked equation sides. Each retry requires a distinct retained-child closure or a structural change to either side since the preceding attempt; another deferral replaces the snapshot. Merely entering another schedule mode never justifies a retry. Flag derivation replay, backtracking, fixed-point iteration, worklists, global constraint stores, owner escape, or backward inference from later clauses into an expression-block prefix or a sequence source's payload. Ordinary bind carrier/result constraints and product-block result cooperation remain valid; a trailing separator creates no inference barrier. Do not flag a finite connected domain merely because it crosses an application-node boundary, and do not infer an asymptotic bound: substitution and rank-N comparison can be super-linear. Watch changes to the application lifecycle in `typecheck_core/apply.rs`, `apply/frontier.rs`, and `goals.rs` for both illicit global solving and accidental re-execution.
-- **Written application authority.** Check one value group per Function layer, product equivalence `f(a,b) = f((a,b))`, separate explicit type suffixes `f[A]`, and unchanged omission against ordinary, intrinsic, host, UFCS and macro calls. Type and binder brackets each contain exactly one entry; reject comma lists and empty brackets; one value list never crosses a curry layer. Compare postfix type suffixes with expression-start varops without whitespace/import-driven fallback. Type-only `nil[A]` remains residual; `nil[A]()` and `().>nil[A]` apply Unit. Selected empty UFCS lists reject, while receiver-only forms omit the list. Verify forward insertion into the following group, reverse into the preceding outermost value call, transparent whole grouping, and a final type suffix as a no-backward-search boundary. Block splices select first/last prefix groups, never projected blocks; each block applies its own Function layer. Flag declaration grouping, ABI fields, identity or private macro ABI deciding stage selection. Prime must carry the applications in written semantic order without producer-history reconstruction.
+- **The one-shot local discipline** (the **One-shot local discipline** contract bullet and § 10's **Finite owner-scoped application domains** in `specs/formal/elaboration.md`): the elaborator remains syntax-directed, but one finite inference domain may connect application layers and unfinished nested applications from the same written call tree. Every equality goal is source-bounded and owner-scoped; independently completed nested calls contribute only closed results, and no goal escapes its lexical owner. Each source premise is entered once and each retained source action is consumed at most once. Each application owner carries at most one pending expected-result equation; a connected tree may contain finitely many, one per owner. An initial blocked attempt records both zonked equation sides. Each retry requires a distinct retained-child closure or a structural change to either side since the preceding attempt; another deferral replaces the snapshot. Merely entering another schedule mode never justifies a retry. Check that a completed macro with a required input blocked solely on an existing strict-ancestor goal waits with its actual owner delta, while an independently unsolved local input still fails. A sibling may close that ancestor within the same connected call; a `let`, sequence prefix, or root boundary does not let later uses resolve it. Require both sibling orders and nested ownership controls, and verify source bodies and macro actions run at most once across wakeup. A wait is not a retry of a failed expansion. Flag derivation replay, backtracking, fixed-point iteration, worklists, global constraint stores, owner escape, or backward inference from later clauses into an expression-block prefix or a sequence source's payload. Ordinary bind carrier/result constraints and product-block result cooperation remain valid; a trailing separator creates no inference barrier. Do not flag a finite connected domain merely because it crosses an application-node boundary, and do not infer an asymptotic bound: substitution and rank-N comparison can be super-linear. Watch changes to the application lifecycle in `typecheck_core/apply.rs`, `apply/frontier.rs`, and `goals.rs` for both illicit global solving and accidental re-execution.
+- **Written application authority.** Check one value group per Function layer, product equivalence `f(a,b) = f((a,b))`, separate explicit type suffixes `f[A]`, and unchanged omission against ordinary, intrinsic, host, UFCS and macro calls. Type and binder brackets each contain exactly one entry; reject comma lists and empty brackets; one value list never crosses a curry layer. Compare postfix type suffixes with expression-start varops without whitespace/import-driven fallback. Type-only `nil[A]` remains residual; `nil[A]()` and `().>nil[A]` apply Unit. Selected empty UFCS lists reject, while receiver-only forms omit the list. Verify forward insertion into the following group, reverse into the preceding outermost value call, transparent whole grouping, and a final type suffix as a no-backward-search boundary. Block splices select first/last prefix groups, never projected blocks; the whole final prefix value and projected block values form one right-associated product for one Function layer, with earlier stages preserved. Check direct calls and residualization after all syntactic blocks, including Unit and nested products. Flag declaration grouping, ABI fields, identity or private macro ABI deciding stage selection. Prime must carry the applications in written semantic order without producer-history reconstruction.
 
 - The macro call mechanism (`specs/language.md` § Macros are imported, not ambient): a direct local call head resolving through ordinary lexical ownership to an earlier same-module `macro` or an explicit tagged `macro name` import, checked against its call type, recorded in the `Elaborations` side channel, and substituted at the Lowered → Prime boundary. Every nonempty written block prefix requires argument-list parentheses, including names, signed literals and Boolean literals; zero-prefix, direct Unit and spliced Unit distinctions follow the ordinary call rules. The reference coercion palettes (algebraic `iso`/`into`/`onto`/`align`/`ease`/`atom`, spine `fit`/`reorder_*`/`narrow_*`/`widen_*`/`flatten_*`/`one_*`) plus `match`/`derive` are user-defined libraries in `test-data/poc/macros/`; their per-form rules are documented as case studies in `docs/poc/macros.md` and `docs/poc/optics.md`, not in `specs/`. Drift to check there is between those POC `.kio` sources, the macro implementations the compiler ships, and the case-study prose.
 - **No user-declaration privilege by spelling or distinguished library identity** (AGENTS.md § Universal rules — User declarations never become compiler primitives by name). Sweep semantic branches in parsing, desugaring, recursive lowering, structural recovery (including `route`), capability annotation, typing, substitution, evaluation, optimization, and every backend for hard-coded user-spellable names, constants that expand to shipped library names, or comparisons against compiler-hard-coded or otherwise distinguished ordinary-library identities. A branch that changes typing, tail-position status, argument interpretation, lowering, visibility, capabilities, or evaluation is a finding; changing the key from `"match"` to a hard-coded fully qualified `match` declaration does not cure it. Generic use of the identity selected by the resolved program is legitimate for exact capture/visibility-edge validation, nominal equality, ordinary dispatch, host linking/backend naming, diagnostics, and caching. Raw argument indices are admissible for a grammar-defined form, but not as a remembered user-library ABI in place of resolved semantic slots. Reserved intrinsics are exempt only when their compiler semantics are explicit in the specification. Also flag spec prose that grants compiler-only behavior to one Kio-authored library declaration without defining an explicit general language construct or capability. Require a same-spelling unrelated declaration as a negative control, a differently named or rehomed structurally equivalent declaration as a positive control for general behavior (or a renamed declaration carrying the authorized explicit capability), and every applicable qualified/selective and prefix/UFCS route.
 - The Kio'-subset rules in `prime.md`: explicit quantifiers and ordinary universal call arguments coexist with bounded local lambda checking and existential-witness recovery. Compare those rules and their artifact materialization using [`audit-prime-grammar`'s completion inventory](../audit-prime-grammar/SKILL.md#explicit-core-completion-boundary); the independent grammar verifier remains syntax-only.
 
 This is broad — focus on recent typer changes (`git log --since="3 months ago" -- kio-rs/src/pass/typecheck_core/ kio-rs/src/pass/typecheck_full.rs`) and check whether each commit has a corresponding spec update.
+
+### Semantic function reflection
+
+Check [the reflection boundary](../../topics/macros.md#semantic-function-reflection)
+through public builtin schemes, closed and projected observers, constructors,
+checked-term reconstruction and caches. Compare separately declared value
+parameters with one product parameter of the same logical domain, including a
+product-valued final parameter and nullary versus Unit-valued parameters.
+Require identical reflected domain/result information for those equivalent
+function types, with inferred and faithfully annotated inputs. A renamed helper
+or indirect layout-dependent rejection is still an observable distinction.
+
+Verify quoted/rebuilt applications evaluate an effectful argument packet once
+and preserve host-facing call adaptation. Internal parameter metadata may serve
+those consumers; it must not become a semantic reflection input. Keep kind arity
+separate. Trace the actual assertions and their counterexamples; accepted source
+or matching printed types alone cannot establish this boundary. These checks
+address parameter layout, not a proof of every annotation-stability property.
+
+Check [the observation boundary](../../topics/macros.md#observation-and-scheduling-boundary)
+for reflected generic parameters as well. Compare repeated views and independently
+reconstructed equivalent complete schemes, including direct variable equality
+and variable-to-Type equality; distinguish binder positions, kinds, and genuine
+free environments. A comparison requiring unavailable information must fail,
+while inspection and storage that do not require it remain valid. Exercise both
+quantified Type and checked-term constructors: reject a free variable opened from
+another scheme, and retain intact nested schemes, live enclosing parameters and
+genuine caller variables. Check actual free occurrences inside checked terms,
+not remembered but unused context.
+
+Trace actual generic type arguments through ordinary helpers and closures into
+reflection, using differing concrete instantiations and shared/reconstructed
+controls. Assess generic function comparison against its formal contract;
+concrete instantiation checks alone do not establish that result. Printed names,
+allocation/cache history and producer provenance must not replace semantic type
+and lexical identity.
+
+### Incomplete type observations
+
+Check [the observation boundary](../../topics/macros.md#observation-and-scheduling-boundary)
+against each public observer's specified information requirements. Trace both
+ordinary reflected and projected values through views, equality, specialization,
+instantiation, named metadata, displays and folds. Check unknown inference goals
+separately from rigid generic variables and known constructors with opaque
+children. Rejecting every incomplete type is not equivalent to rejecting only
+an observation that needs its missing information.
+
+Require counterexamples where an unknown used to select a recoverable error or
+mismatch branch, paired with known-match and known-mismatch controls. Check
+discarded evaluated results, unevaluated branches and cache reuse: an evaluated
+missing-information failure must survive to the macro boundary, while mere
+transport remains valid. Inspect recursion measures and binder identities as
+separate possible observations under their own contracts; these observer checks
+alone do not prove general annotation stability or inline/let equivalence.
 
 ## 7. Per-backend specs
 
@@ -223,7 +277,7 @@ typed bindings, but do not require different Kio `host type` declarations to
 select different concrete host types or type constructors. Flag an emitter or
 backend spec that invents wrappers, brands, tags, defined types, `NewType`s,
 or markers solely to preserve the declarations' distinct Kio identities in
-the host representation. Explicit Kio `newtype` representation and
+the host representation. Explicit Kio nominal type representation and
 independently justified target representations are separate from this check.
 Do not apply the wrapper ban to an independently authorized,
 declaration-scoped adapter for a relationship the host cannot state; audit

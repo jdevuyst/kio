@@ -3,8 +3,8 @@ signature app v(2);
 v(1) {
   with {
     module api {
-      pub rec newtype A : A | B { pub constructor mk_a; pub projector un_a };
-      pub rec newtype B : B | A { pub constructor mk_b; pub projector un_b }
+      pub rec type { A: A | B { pub mk; pub get } };
+      pub rec type { B: B | A { pub mk; pub get } }
     }
   };
   nonbreaking {

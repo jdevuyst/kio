@@ -1,6 +1,7 @@
 module form/report;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import option/core(Option, none, option, some);
 import result/result(Result, err, fold, ok);
 import testapi(Bool, I32, String);
@@ -8,21 +9,21 @@ import testapi/arith(add_i32, eq_i32, lt_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/text(string_concat);
 
-labels Form = {
-, email: Option[String]
-, age: Option[I32]
-, country: Option[String]
-, terms: Option[Bool]
-, nickname: Option[String]
+type Form = {
+  Email: Option[String];
+  Age: Option[I32];
+  Country: Option[String];
+  Terms: Option[Bool];
+  Nickname: Option[String]
 };
 
-labels Field_report = { field: String, message: String };
+type Field_report = { Field: String; Message: String };
 
-labels Validation = { ok_report: Field_report } | { err_report: Field_report };
+type Validation = { Ok_report: Field_report } | { Err_report: Field_report };
 
 type Validation_result = Result[Ok_report][Err_report];
 
-labels Validation_total = { passed: I32, failed: I32, details: String };
+type Validation_total = { Passed: I32; Failed: I32; Details: String };
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
@@ -31,45 +32,55 @@ fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
 fn cat4(a: String, b: String, c: String, d: String) -> String { cat(cat3(a, b, c), d) }
 
 fn invite102() -> Form {
-  {
-  , email = some("ada@kio.dev")
-  , age = some(29)
-  , country = some("NL")
-  , terms = some(.t)
-  , nickname = none[String]
-  }
+  (
+  , Email.mk(some("ada@kio.dev"))
+  , Age.mk(some(29))
+  , Country.mk(some("NL"))
+  , Terms.mk(some(.t))
+  , Nickname.mk(none[String])
+  )
 }
 
 fn invite204() -> Form {
-  {
-  , email = none[String]
-  , age = some(15)
-  , country = none[String]
-  , terms = some(.f)
-  , nickname = some("q")
-  }
+  (
+  , Email.mk(none[String])
+  , Age.mk(some(15))
+  , Country.mk(none[String])
+  , Terms.mk(some(.f))
+  , Nickname.mk(some("q"))
+  )
 }
 
-fn email_value(form: Form) -> Option[String] { form.?{email} }
+fn email_value(form: Form) -> Option[String] {
+  form.>select { Email.get }
+}
 
-fn age_value(form: Form) -> Option[I32] { form.?{age} }
+fn age_value(form: Form) -> Option[I32] {
+  form.>select { Age.get }
+}
 
-fn country_value(form: Form) -> Option[String] { form.?{country} }
+fn country_value(form: Form) -> Option[String] {
+  form.>select { Country.get }
+}
 
-fn terms_value(form: Form) -> Option[Bool] { form.?{terms} }
+fn terms_value(form: Form) -> Option[Bool] {
+  form.>select { Terms.get }
+}
 
-fn nickname_value(form: Form) -> Option[String] { form.?{nickname} }
+fn nickname_value(form: Form) -> Option[String] {
+  form.>select { Nickname.get }
+}
 
 fn field_report(field_name: String, text: String) -> Field_report {
-  {field = field_name, message = text}
+  (Field.mk(field_name), Message.mk(text))
 }
 
 fn pass(field_name: String, text: String) -> Validation_result {
-  ok({ok_report = field_report(field_name, text)})
+  ok(Ok_report.mk(field_report(field_name, text)))
 }
 
 fn fail(field_name: String, text: String) -> Validation_result {
-  err({err_report = field_report(field_name, text)})
+  err(Err_report.mk(field_report(field_name, text)))
 }
 
 fn missing(field_name: String, text: String) -> Validation_result { fail(field_name, text) }
@@ -125,32 +136,32 @@ fn validate_nickname(value: Option[String]) -> Validation_result {
   option(pass("nickname", "omitted"), .(s: String) { pass("nickname", cat("present: ", s)) }, value)
 }
 
-fn empty_total() -> Validation_total { {passed = 0, failed = 0, details = ""} }
+fn empty_total() -> Validation_total { (Passed.mk(0), Failed.mk(0), Details.mk("")) }
 
 fn ok_line(result: Ok_report) -> String {
-  let item = result.?{ok_report};
-  cat3("  OK ", item.?{field}, cat3(" - ", item.?{message}, "\n"))
+  let item = result.>select { Ok_report.get };
+  cat3("  OK ", item.>select { Field.get }, cat3(" - ", item.>select { Message.get }, "\n"))
 }
 
 fn err_line(result: Err_report) -> String {
-  let item = result.?{err_report};
-  cat3("  ERR ", item.?{field}, cat3(" - ", item.?{message}, "\n"))
+  let item = result.>select { Err_report.get };
+  cat3("  ERR ", item.>select { Field.get }, cat3(" - ", item.>select { Message.get }, "\n"))
 }
 
 fn add_ok(total: Validation_total, result: Ok_report) -> Validation_total {
-  {
-  , passed = add_i32(total.?{passed}, 1)
-  , failed = total.?{failed}
-  , details = cat(total.?{details}, ok_line(result))
-  }
+  (
+  , Passed.mk(add_i32(total.>select { Passed.get }, 1))
+  , Failed.mk(total.>select { Failed.get })
+  , Details.mk(cat(total.>select { Details.get }, ok_line(result)))
+  )
 }
 
 fn add_err(total: Validation_total, result: Err_report) -> Validation_total {
-  {
-  , passed = total.?{passed}
-  , failed = add_i32(total.?{failed}, 1)
-  , details = cat(total.?{details}, err_line(result))
-  }
+  (
+  , Passed.mk(total.>select { Passed.get })
+  , Failed.mk(add_i32(total.>select { Failed.get }, 1))
+  , Details.mk(cat(total.>select { Details.get }, err_line(result)))
+  )
 }
 
 fn add_result(total: Validation_total, result: Validation_result) -> Validation_total {
@@ -170,14 +181,16 @@ fn validate_form(form: Form) -> Validation_total {
   add_result(total4, validate_nickname(nickname_value(form)))
 }
 
-fn accepted(total: Validation_total) -> Bool { eq_i32(total.?{failed}, 0) }
+fn accepted(total: Validation_total) -> Bool {
+  eq_i32(total.>select { Failed.get }, 0)
+}
 
 fn header(name: String, total: Validation_total) -> String {
   cat4(
   , "Submission "
   , name
   , "\naccepted: "
-  , cat3(bool_to_string(accepted(total)), "\npassed: ", int_to_string(total.?{passed}))
+  , cat3(bool_to_string(accepted(total)), "\npassed: ", int_to_string(total.>select { Passed.get }))
   )
 }
 
@@ -185,8 +198,8 @@ fn render_submission(name: String, total: Validation_total) -> String {
   cat4(
   , header(name, total)
   , "\nfailed: "
-  , int_to_string(total.?{failed})
-  , cat3("\ndetails:\n", total.?{details}, "\n")
+  , int_to_string(total.>select { Failed.get })
+  , cat3("\ndetails:\n", total.>select { Details.get }, "\n")
   )
 }
 

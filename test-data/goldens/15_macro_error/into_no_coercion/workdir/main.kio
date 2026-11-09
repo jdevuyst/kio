@@ -7,12 +7,12 @@ import macros/algebraic_macros(macro into);
 // where types force a unique rearrangement, sum widening,
 // duplication, identity absorption — see specs/language.md §
 // iso / into / onto mechanics for the full table). Mapping
-// `B` to `C` when they are different newtypes isn't one of those
+// `B` to `C` when they are different nominal types isn't one of those
 // rules, so the `into` macro fails — exit code 15 (macro error).
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
-newtype C : . { pub constructor mk_c; pub projector un_c }
+type { C: . { pub mk; pub get } }
 
 fn coerce(x: A & B) -> A & C { into(x) }

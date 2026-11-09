@@ -96,7 +96,7 @@ where
     ///
     /// Keyed by `(defining-module-path, bare-name)` so a nominal type's
     /// identity is `(module, name)`-exact: two distinct dependencies that
-    /// each re-root a `pub newtype String` resolve to *distinct* table
+    /// each re-root a `pub type { String: … }` resolve to *distinct* table
     /// entries instead of colliding on the bare name. The defining-module
     /// path is the slash-joined module path the newtype is declared in.
     /// Same-module `newtypes` stays bare-keyed (the module is implicit —
@@ -106,7 +106,7 @@ where
     /// is *declared* in. The typer qualifies an imported newtype's
     /// constructor/projector payload (and the member scheme's nominal) in
     /// its declaring module, not the caller's — a bare `String`
-    /// in a dependency's `pub newtype Token : String` payload must resolve
+    /// in a dependency's `pub type { Token: String }` payload must resolve
     /// to that dependency's `(module, String)`, never the consumer's
     /// same-named type. Mirrors [`Self::cross_module_fn_def_modules`];
     /// same key as [`Self::cross_module_newtypes`].
@@ -366,7 +366,7 @@ where
                 // `ItemLabels = Never` bound on `P`.
                 crate::ast::Item::LiteralAlias(_, ext) => match *ext {},
                 crate::ast::Item::Labels(_, ext) => match *ext {},
-                crate::ast::Item::LabelForward(_, ext) => match *ext {},
+
                 // `equiv` decls don't introduce names into the module
                 // namespace. The typer validates their bodies in a
                 // separate pass; the runner picks them up directly
@@ -1706,7 +1706,7 @@ where
     /// binders (`binders`) so head canonicalization leaves a bare binder
     /// bare. Use this — not the bare `env.alias_ctx()` — at every typer
     /// comparison site that may see a generic `[A]` shadowing a
-    /// same-named module type (a label-generated `A`, a `newtype A`, a
+    /// same-named module type (a nominal `A`, an alias `A`, a
     /// `type A`); otherwise the binder is mis-qualified to that concrete
     /// type and the unification / equivalence arm that should treat it as
     /// a variable never fires. Compute `binders` once with
@@ -2241,8 +2241,8 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; rec { \
-                 pub newtype A : B { pub constructor mk_a; pub projector un_a; }; \
-                 pub newtype B : A { pub constructor mk_b; pub projector un_b; }; \
+                 pub type { A: B { pub mk; pub get; }; }; \
+                 pub type { B: A { pub mk; pub get; }; }; \
                  }",
             ),
             (
@@ -2259,7 +2259,7 @@ mod tests {
                 crate::span::Span::new(0, 0),
             )])
             .expect("selective import must project the exact group member");
-        assert_eq!(imported.constructor.name, "mk_b");
+        assert_eq!(imported.name, "B");
     }
 
     #[test]
@@ -2268,8 +2268,8 @@ mod tests {
             (
                 "provider.kio",
                 "module provider; rec { \
-                 pub newtype A : B { pub constructor mk_a; pub projector un_a; }; \
-                 pub newtype B : A { pub constructor mk_b; pub projector un_b; }; \
+                 pub type { A: B { pub mk; pub get; }; }; \
+                 pub type { B: A { pub mk; pub get; }; }; \
                  }",
             ),
             (
@@ -2290,16 +2290,14 @@ mod tests {
         assert_eq!(
             env.cross_module_newtype(&path("A"))
                 .expect("p.A group member")
-                .constructor
                 .name,
-            "mk_a"
+            "A"
         );
         assert_eq!(
             env.cross_module_newtype(&path("B"))
                 .expect("p.B group member")
-                .constructor
                 .name,
-            "mk_b"
+            "B"
         );
     }
 
@@ -2565,11 +2563,11 @@ mod tests {
         let package = package(&[
             (
                 "pkg/first.kio",
-                "module pkg/first; pub newtype Tag : . { pub constructor first; pub projector un_first; };",
+                "module pkg/first; pub type { Tag: . { pub mk; pub get; }; };",
             ),
             (
                 "pkg/second.kio",
-                "module pkg/second; pub newtype Tag : . { pub constructor second; pub projector un_second; };",
+                "module pkg/second; pub type { Tag: . { pub mk; pub get; }; };",
             ),
             (
                 "pkg/consumer.kio",
@@ -2593,30 +2591,45 @@ mod tests {
         let second = env
             .cross_module_newtype(&path("second"))
             .expect("second.Tag");
-        assert_eq!(first.constructor.name, "first");
-        assert_eq!(second.constructor.name, "second");
-        assert_eq!(
-            crate::pass::typecheck_core::types::lookup_newtype_by_name(&env, &path("first"))
-                .expect("lookup first.Tag")
-                .constructor
-                .name,
-            "first"
-        );
-        assert_eq!(
-            crate::pass::typecheck_core::types::lookup_newtype_by_name(&env, &path("second"))
-                .expect("lookup second.Tag")
-                .constructor
-                .name,
-            "second"
+        for (alias, nominal, owner) in [
+            ("first", first, "pkg/first"),
+            ("second", second, "pkg/second"),
+        ] {
+            assert_eq!(nominal.name, "Tag");
+            let resolved_owner = env
+                .cross_module_newtype_module(&path(alias))
+                .expect("owner");
+            let expected_owner = &package.module(owner).expect("provider").module;
+            assert!(
+                std::ptr::eq(resolved_owner, expected_owner),
+                "{alias} owner"
+            );
+            let expected_nominal = expected_owner
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    crate::ast::Item::Newtype(decl) if decl.name == "Tag" => Some(decl),
+                    _ => None,
+                })
+                .expect("provider Tag declaration");
+            assert!(
+                std::ptr::eq(nominal, expected_nominal),
+                "{alias} declaration"
+            );
+            let looked_up =
+                crate::pass::typecheck_core::types::lookup_newtype_by_name(&env, &path(alias))
+                    .expect("qualified nominal lookup");
+            assert!(std::ptr::eq(looked_up, nominal), "{alias} exact nominal");
+        }
+        assert!(
+            !std::ptr::eq(first, second),
+            "different owners remain distinct"
         );
     }
 
     #[test]
     fn repeated_direct_member_heads_keep_the_indexed_newtype_fast_path() {
-        let package = package(&[(
-            "main.kio",
-            "module main; newtype Tag : . { constructor make; projector open; };",
-        )]);
+        let package = package(&[("main.kio", "module main; type { Tag: . { mk; get; }; };")]);
         let module = &package.module("main").expect("main module").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let head = [crate::ast::PathSegment::new(
@@ -2644,9 +2657,7 @@ mod tests {
     #[test]
     fn repeated_identity_alias_member_heads_reuse_the_package_terminal_index() {
         const ALIASES: usize = 128;
-        let mut source = String::from(
-            "module main; newtype Terminal : . { constructor make; projector open; };",
-        );
+        let mut source = String::from("module main; type { Terminal: . { mk; get; }; };");
         for index in 0..ALIASES {
             let target = if index == 0 {
                 "Terminal".to_owned()

@@ -391,51 +391,12 @@ fn subject() { <|value|>.>outer { body } }
       (bracket_rbrace))))
 
 ================================================================================
-field suffix consumes the completed reverse block splice
-================================================================================
-fn subject() { outer { body }.<receiver.?{field} }
---------------------------------------------------------------------------------
-
-(source_file
-  (function_definition
-    (fn_decl_head
-      (keyword_fn)
-      (entity_name_function)
-      (fn_signature
-        (value_param_group
-          (bracket_lparen)
-          (bracket_rparen))))
-    (expression_block
-      (bracket_lbrace)
-      (field_expression
-        (block_ufcs_expr
-          (block_call
-            (call_callee
-              (entity_name_function))
-            (neutral_block
-              (bracket_lbrace)
-              (expression_path
-                (identifier))
-              (bracket_rbrace)))
-          (operator_arrow_ufcs)
-          (expression_path
-            (identifier)))
-        (operator_row_suffix)
-        (label_value_expr
-          (bracket_lbrace)
-          (label_value_label
-            (label_path
-              (entity_name_label)))
-          (bracket_rbrace)))
-      (bracket_rbrace))))
-
-================================================================================
-tight reverse receivers include native label values and closed operators
+tight reverse receivers include Unit and closed operators
 ================================================================================
 import ops(op <| _ |>);
 fn subject() {
-  outer { body }.<{field = value};
-  outer { body }.<< <|value|>.?{field}
+  outer { body }.<{};
+  outer { body }.<< <|value|>
 }
 --------------------------------------------------------------------------------
 
@@ -472,40 +433,26 @@ fn subject() {
               (identifier))
             (bracket_rbrace)))
         (operator_arrow_ufcs)
-        (label_value_expr
+        (unit_expression
           (bracket_lbrace)
-          (label_value_label
-            (label_path
-              (entity_name_label))
-            (operator_builtin)
-            (expression_path
-              (identifier)))
           (bracket_rbrace)))
       (separator_semicolon)
-      (field_expression
-        (block_ufcs_expr
-          (block_call
-            (call_callee
-              (entity_name_function))
-            (neutral_block
-              (bracket_lbrace)
-              (expression_path
-                (identifier))
-              (bracket_rbrace)))
-          (operator_arrow_ufcs)
+      (block_ufcs_expr
+        (block_call
+          (call_callee
+            (entity_name_function))
+          (neutral_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace)))
+        (operator_arrow_ufcs)
+        (operator_expression
           (operator_expression
-            (operator_expression
-              (operator_run)
-              (expression_path
-                (identifier)))
-            (operator_run)))
-        (operator_row_suffix)
-        (label_value_expr
-          (bracket_lbrace)
-          (label_value_label
-            (label_path
-              (entity_name_label)))
-          (bracket_rbrace)))
+            (operator_run)
+            (expression_path
+              (identifier)))
+          (operator_run)))
       (bracket_rbrace))))
 
 ================================================================================

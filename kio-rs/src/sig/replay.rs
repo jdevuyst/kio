@@ -1344,10 +1344,7 @@ impl TypeClosureCollector<'_> {
                 body_bound.insert(param.name.clone());
                 self.visit_type(body, module_path, imports, &body_bound, alias_path)
             }
-            Type::Unit { .. }
-            | Type::Bottom { .. }
-            | Type::Infer { .. }
-            | Type::LabelSugar { .. } => Ok(()),
+            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => Ok(()),
             Type::Goal { ext, .. } => match *ext {},
         }
     }
@@ -1636,7 +1633,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -1668,20 +1665,20 @@ v(1) {
 v(1) {
   with {
     module api {
-      pub rec newtype A : A | B {
-        pub constructor make_a;
-        projector sig_private_projector;
-      };
+      pub rec type { A : A | B {
+        pub mk;
+        get;
+      }; };
     }
   };
   nonbreaking {
     add {
       api.A;
       module api {
-        pub newtype B : . {
-          constructor sig_private_constructor;
-          projector sig_private_projector;
-        };
+        pub type { B : . {
+          mk;
+          get;
+        }; };
       }
     }
   }
@@ -1708,8 +1705,8 @@ v(1) {
   with {
     module api {
       rec {
-        pub newtype A : . | A { pub constructor make_a; pub projector un_a; };
-        pub newtype B : . | B { pub constructor make_b; pub projector un_b; };
+        pub type { A : . | A { pub mk; pub get; }; };
+        pub type { B : . | B { pub mk; pub get; }; };
       }
     }
   };
@@ -1731,8 +1728,8 @@ v(1) {
   with {
     module api {
       rec {
-        pub newtype A : A | B { pub constructor make_a; pub projector un_a; };
-        pub newtype B : . { pub constructor make_b; pub projector un_b; };
+        pub type { A : A | B { pub mk; pub get; }; };
+        pub type { B : . { pub mk; pub get; }; };
       }
     }
   };
@@ -1764,10 +1761,10 @@ v(1) {
       import dep as d;
       rec {
         pub type Peer = Wrapped | d.External;
-        pub newtype Wrapped : Peer {
-          pub constructor make_wrapped;
-          pub projector un_wrapped;
-        };
+        pub type { Wrapped : Peer {
+          pub mk;
+          pub get;
+        }; };
       }
     }
   };
@@ -1818,8 +1815,8 @@ v(1) {
 v(1) {
   with {
     module api {
-      pub rec newtype A : A | B { pub constructor mk_a; pub projector un_a; };
-      pub rec newtype B : B | A { pub constructor mk_b; pub projector un_b; };
+      pub rec type { A : A | B { pub mk; pub get; }; };
+      pub rec type { B : B | A { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.A; api.B; } }
@@ -1848,8 +1845,8 @@ v(1) {
 v(1) {
   with {
     module api {
-      pub rec newtype A : . | A { pub constructor mk_a; pub projector un_a; };
-      pub rec newtype B : . | B { pub constructor mk_b; pub projector un_b; };
+      pub rec type { A : . | A { pub mk; pub get; }; };
+      pub rec type { B : . | B { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.A; api.B; } }
@@ -1871,8 +1868,8 @@ v(1) {
 v(1) {
   with {
     module api {
-      pub rec newtype A : . | A { pub constructor mk_a; pub projector un_a; };
-      pub rec newtype B : . | B { pub constructor mk_b; pub projector un_b; };
+      pub rec type { A : . | A { pub mk; pub get; }; };
+      pub rec type { B : . | B { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.A; api.B; } }
@@ -1881,8 +1878,8 @@ v(2) {
   with {
     module api {
       rec {
-        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a; };
-        pub newtype B : (B | A) | . { pub constructor mk_b; pub projector un_b; };
+        pub type { A : (A | B) | . { pub mk; pub get; }; };
+        pub type { B : (B | A) | . { pub mk; pub get; }; };
       }
     }
   };
@@ -1968,7 +1965,7 @@ v(2) {
 v(1) {
   with {
     module api {
-      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.Loop; } }
@@ -1976,7 +1973,7 @@ v(1) {
 v(2) {
   with {
     module api {
-      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   nonbreaking { add {
@@ -2003,7 +2000,7 @@ v(1) {
   nonbreaking { add {
     module api {
       pub type A = B;
-      pub newtype B : . { pub constructor mk_b; pub projector un_b; };
+      pub type { B : . { pub mk; pub get; }; };
     }
   } }
 }
@@ -2012,7 +2009,7 @@ v(2) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : . | A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : . | A { pub mk; pub get; }; };
       }
     }
   };
@@ -2034,7 +2031,7 @@ v(2) {
 v(1) {
   with {
     module api {
-      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.Loop; } }
@@ -2042,7 +2039,7 @@ v(1) {
 v(2) {
   with {
     module api {
-      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   breaking { remove { api.Loop; } }
@@ -2066,7 +2063,7 @@ v(2) {
 v(1) {
   with {
     module api {
-      pub rec newtype Loop : . | Loop { pub constructor mk; pub projector un; };
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.Loop; } }
@@ -2074,12 +2071,12 @@ v(1) {
 v(2) {
   with {
     module api {
-      pub rec newtype Loop : (. | Loop) | . { pub constructor mk; pub projector un; };
+      pub rec type { Loop : (. | Loop) | . { pub mk; pub get; }; };
     }
   };
   breaking { modify {
     module api {
-      pub newtype Loop : (. | Loop) | . { pub constructor mk; pub projector un; };
+      pub type { Loop : (. | Loop) | . { pub mk; pub get; }; };
     }
   } }
 }
@@ -2134,7 +2131,7 @@ v(1) {
     module api {
       rec {
         pub type A = _ | B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2173,7 +2170,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) {
   with { module api {
-    pub rec newtype Bad : (Bad -> .) { pub constructor mk; pub projector un; };
+    pub rec type { Bad : (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
 }
@@ -2187,7 +2184,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) {
   with { module api {
-    pub rec newtype Bad : Negate[Bad] { pub constructor mk; pub projector un; };
+    pub rec type { Bad : Negate[Bad] { pub mk; pub get; }; };
   } };
   nonbreaking { add {
     module api { pub type Negate[A] = A -> .; };
@@ -2204,7 +2201,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) {
   with { module api {
-    pub rec newtype Bad : Stream[Bad] { pub constructor mk; pub projector un; };
+    pub rec type { Bad : Stream[Bad] { pub mk; pub get; }; };
   } };
   nonbreaking { add {
     module api { host type Stream[A]; };
@@ -2221,7 +2218,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) { nonbreaking { add { module api {
   host type Box[A];
-  newtype Bad : Box { pub constructor mk; pub projector un; };
+  type { Bad : Box { pub mk; pub get; }; };
 } } } }
 "#;
         let error = replay_error_at(src, "Box {");
@@ -2233,7 +2230,7 @@ v(1) { nonbreaking { add { module api {
         let src = r#"signature app v(1);
 v(1) { nonbreaking { add { module api {
   host type Atom;
-  newtype Bad : Atom[.] { pub constructor mk; pub projector un; };
+  type { Bad : Atom[.] { pub mk; pub get; }; };
 } } } }
 "#;
         let error = replay_error_at(src, "Atom[.]");
@@ -2297,15 +2294,15 @@ v(1) {
   with {
     module api {
       import shapes(Box, Phantom);
-      pub rec newtype Covariant : Box[Covariant] { pub constructor mk_c; pub projector un_c; };
-      pub rec newtype Ignored : Phantom[Ignored] { pub constructor mk_i; pub projector un_i; };
-      pub rec newtype Shadow[A] : . | (A & Shadow[A]) { pub constructor mk_s; pub projector un_s; };
+      pub rec type { Covariant : Box[Covariant] { pub mk; pub get; }; };
+      pub rec type { Ignored : Phantom[Ignored] { pub mk; pub get; }; };
+      pub rec type { Shadow[A] : . | (A & Shadow[A]) { pub mk; pub get; }; };
     }
   };
   nonbreaking { add {
     module shapes {
-      pub newtype Box[A] : A { pub constructor box; pub projector unbox; };
-      pub newtype Phantom[A] : . { pub constructor phantom; pub projector unphantom; };
+      pub type { Box[A] : A { pub mk; pub get; }; };
+      pub type { Phantom[A] : . { pub mk; pub get; }; };
     };
     module api { host type A; };
     api.Covariant; api.Ignored; api.Shadow;
@@ -2495,7 +2492,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2506,7 +2503,7 @@ v(2) {
     module api {
       rec {
         pub type A = . | B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2537,7 +2534,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2548,7 +2545,7 @@ v(2) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : . | A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : . | A { pub mk; pub get; }; };
       }
     }
   };
@@ -2575,8 +2572,8 @@ v(1) {
   with {
     module api {
       rec {
-        pub newtype A : A | B { pub constructor mk_a; pub projector un_a; };
-        pub newtype B : B | A { pub constructor mk_b; pub projector un_b; };
+        pub type { A : A | B { pub mk; pub get; }; };
+        pub type { B : B | A { pub mk; pub get; }; };
       }
     }
   };
@@ -2586,14 +2583,14 @@ v(2) {
   with {
     module api {
       rec {
-        pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a; };
-        pub newtype B : B | A { pub constructor mk_b; pub projector un_b; };
+        pub type { A : (A | B) | . { pub mk; pub get; }; };
+        pub type { B : B | A { pub mk; pub get; }; };
       }
     }
   };
   breaking { modify {
     module api {
-      pub newtype A : (A | B) | . { pub constructor mk_a; pub projector un_a; };
+      pub type { A : (A | B) | . { pub mk; pub get; }; };
     };
     api.A;
   } }
@@ -2618,7 +2615,7 @@ v(2) {
 v(1) {
   nonbreaking { add {
     module api {
-      pub newtype Token : . { pub constructor mk; pub projector un; };
+      pub type { Token : . { pub mk; pub get; }; };
     }
   } }
 }
@@ -2631,7 +2628,7 @@ v(1) {
         let source = r#"signature app v(2);
 v(1) {
   nonbreaking { add {
-    module api { pub newtype Token : . { pub constructor mk; pub projector un; }; }
+    module api { pub type { Token : . { pub mk; pub get; }; }; }
   } }
 }
 v(2) {
@@ -2657,13 +2654,13 @@ v(2) {
             r#"signature app v(2);
 v(1) {
   nonbreaking { add {
-    module api { pub newtype Token : . { pub constructor mk; pub projector un; }; }
+    module api { pub type { Token : . { pub mk; pub get; }; }; }
   } }
 }
 v(2) {
   breaking { remove { api.Token; } };
   nonbreaking { add {
-    module api { pub newtype Token : . | . { pub constructor mk; pub projector un; }; }
+    module api { pub type { Token : . | . { pub mk; pub get; }; }; }
   } }
 }
 "#,
@@ -2683,7 +2680,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2694,7 +2691,7 @@ v(2) {
     module api {
       rec {
         pub type A = . | B;
-        pub newtype B : . | A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : . | A { pub mk; pub get; }; };
       }
     }
   };
@@ -2728,7 +2725,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2742,7 +2739,7 @@ v(3) {
     module api {
       rec {
         pub type A = . | B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : A { pub mk; pub get; }; };
       }
     }
   };
@@ -2766,7 +2763,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : . | A { pub constructor mk_b; pub projector un_b; };
+        pub type { B : . | A { pub mk; pub get; }; };
       }
     }
   };
@@ -2775,7 +2772,7 @@ v(1) {
 v(2) {
   breaking { remove { api.B; } };
   nonbreaking { add { module api {
-    pub newtype B : . { pub constructor mk_b; pub projector un_b; };
+    pub type { B : . { pub mk; pub get; }; };
   } } }
 }
 "#,
@@ -2859,7 +2856,7 @@ v(2) {
         let replayed = replay_src(
             "signature app v(1);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             newtype Id : . { constructor make_id; projector read_id; };\n      }\n    }\n  }\n}\n",
+             type { Id : . { mk; get; }; };\n      }\n    }\n  }\n}\n",
         );
         let ContractKind::Newtype { surface, .. } =
             &replayed.current.items[&name("api", "Id")].kind
@@ -2874,10 +2871,10 @@ v(2) {
         let replayed = replay_src(
             "signature app v(1);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             newtype Opaque : . { constructor make_opaque; projector read_opaque; };\n        \
-             newtype Make : . { pub constructor make; projector read_make; };\n        \
-             newtype Read : . { constructor make_read; pub projector read; };\n        \
-             newtype Both : . { pub constructor make_both; pub projector read_both; };\n      \
+             type { Opaque : . { mk; get; }; };\n        \
+             type { Make : . { pub mk; get; }; };\n        \
+             type { Read : . { mk; pub get; }; };\n        \
+             type { Both : . { pub mk; pub get; }; };\n      \
              }\n    }\n  }\n}\n",
         );
         let surface = |name: &str| {
@@ -2892,11 +2889,11 @@ v(2) {
         assert_eq!(surface("Opaque"), &PublicNewtypeSurface::Opaque);
         assert!(matches!(
             surface("Make"),
-            PublicNewtypeSurface::Constructor { name, .. } if name == "make"
+            PublicNewtypeSurface::Constructor { name, .. } if name == "mk"
         ));
         assert!(matches!(
             surface("Read"),
-            PublicNewtypeSurface::Projector { name, .. } if name == "read"
+            PublicNewtypeSurface::Projector { name, .. } if name == "get"
         ));
         assert!(matches!(
             surface("Both"),
@@ -2904,7 +2901,7 @@ v(2) {
                 constructor,
                 projector,
                 ..
-            } if constructor == "make_both" && projector == "read_both"
+            } if constructor == "mk" && projector == "get"
         ));
     }
 
@@ -3458,7 +3455,7 @@ v(5) { breaking { remove { api.serve; } } }
              host type Raw;\n        type Wrapped = Raw;\n        \
              host fn consume(x: Wrapped) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             newtype Wrapped : Raw { pub constructor wrap; pub projector unwrap; };\n      }\n    };\n    \
+             type { Wrapped : Raw { pub mk; pub get; }; };\n      }\n    };\n    \
              remove {\n      module api {\n        consume;\n      }\n    }\n  }\n}\n",
         );
 
@@ -3524,7 +3521,7 @@ v(5) { breaking { remove { api.serve; } } }
             "signature app v(1);\n\
              v(1) {\n  with {\n    module api {\n      rec {\n        \
              pub type A = N;\n        \
-             pub newtype N : (A & Payload) { pub constructor make_n; pub projector read_n; };\n      }\n    }\n  };\n  \
+             pub type { N : (A & Payload) { pub mk; pub get; }; };\n      }\n    }\n  };\n  \
              nonbreaking {\n    add {\n      module api {\n        \
              host type Payload;\n        \
              host fn f(x: A) -> .;\n      };\n      api.A;\n      api.N;\n    }\n  }\n}\n",

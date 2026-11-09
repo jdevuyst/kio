@@ -3,9 +3,9 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-newtype Token : . { pub constructor mk_token; pub projector un_token }
+type { Token: . { pub mk; pub get } }
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
 fn id[A](x: A) -> A { x }
 
@@ -42,12 +42,12 @@ fn via_inferred_hkt_zero_value_layer(x: Box[Token]) -> Box[Token] {
 }
 
 pub fn main() {
-  let token = Token.mk_token(());
+  let token = Token.mk(());
   let _same = via_partial_type_arg(token);
   let _placeholder = via_placeholder_type_arg(token);
   let _zero = via_zero_value_layer(token);
   let _zero_elided = via_elided_zero_value_layer(token);
-  let boxed = Box.mk_box(token);
+  let boxed = Box.mk(token);
   let _hkt = via_hkt_type_args(boxed);
   let _hkt_inferred = via_inferred_hkt_type_args(boxed);
   let _hkt_mixed = via_mixed_hkt_type_args(boxed);

@@ -48,9 +48,10 @@ count_occurrences() {
 # alias is output-proportional.
 index_builds=$(count_occurrences 'exact_type_index_for_modules(ms)' "$loader_source") || exit
 resolver_region=$(awk '
-  /^fn resolve_provider_type_head\(/ { inside = 1 }
-  /^labels \{ punct_run_done:/ { inside = 0 }
+  /^fn resolve_provider_type_head\(/ { starts++; inside = 1 }
+  /^fn skip_punct_run\(/ { if (inside) { ends++; inside = 0 } }
   inside { print }
+  END { if (starts != 1 || ends != 1) { exit 1 } }
 ' "$loader_source") || exit
 helper_region=$(awk '
   /^fn type_context_find_module\(/ { inside = 1 }
@@ -348,7 +349,7 @@ esac
 # range must rebuild it. The worked image below supplies the semantic fallback
 # witness; this private wiring guard keeps the measured reuse arm live.
 for required in \
-  'labels{fn_scope_cache:String&I32&Scope}' \
+  'type{Fn_scope_cache:String&I32&Scope}' \
   'if(local_hostfn_between(modules,owner,saved_cutoff,cutoff)){rebuild_fn_scope(processed_rev,g,hostfns,modules)}else{saved_scope}' \
   'letscope=scope_for_gdecl(processed_rev,cache,g,hostfns,ms);' \
   'advance_scope(g,scope)' \

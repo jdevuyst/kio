@@ -24,24 +24,14 @@ import macros/spine_macros(macro widen_sum);
 import prime(Nat, Term, Terms);
 import prime(absurd, app, either, fst);
 import prime(ite, lam, left, let_, lit, ns, nz, pair);
-import prime(right, snd, tcons, tnil, un_terms, unit, var, {terms});
+import prime(right, snd, tcons, tnil, un_terms, unit, var);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
 import testapi/text(string_code_at, string_concat, string_eq);
-import token(
-, tk_punct
-, toks_cons
-, toks_nil
-, un_token
-, un_toks
-, {tk_num}
-, {tk_punct}
-, {tk_str}
-, {tk_word}
-);
 import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
+import token(tk_punct, toks_cons, toks_nil, un_token, un_toks);
 
 // `parse.kio` — read the Kio' term grammar (as the existing Prime emit
 // writes it) into the erased de Bruijn `Term` that `prime_eval` consumes.
@@ -110,19 +100,19 @@ import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
 // declaration order; a binder-scope frame uses it as the set of reference
 // spellings that resolve to that frame (see § Scope below).
 /// A cons-list of names.
-pub labels { pnl: List[String] };
+pub type { Pnl: List[String] }
 
 /// The empty name list.
-pub fn pnl_nil() -> Pnl { {pnl = nil[String]} }
+pub fn pnl_nil() -> Pnl { Pnl.mk(nil[String]) }
 
 /// Prepends one name.
-pub fn pnl_cons(name: String, rest: Pnl) -> Pnl { {pnl = cons(name, Pnl.get(rest))} }
+pub fn pnl_cons(name: String, rest: Pnl) -> Pnl { Pnl.mk(cons(name, Pnl.get(rest))) }
 
 /// One-step destructor on a name list.
 pub fn un_pnl(p: Pnl) -> . | (String & Pnl) {
   match(uncons(Pnl.get(p))) {
     (
-    , .(h: String, t: List[String]) { widen_sum((h, {pnl = t}))[. | (String & Pnl)] }
+    , .(h: String, t: List[String]) { widen_sum((h, Pnl.mk(t)))[. | (String & Pnl)] }
     , .(_e: .) { widen_sum(())[. | (String & Pnl)] }
     )
   }
@@ -158,21 +148,21 @@ fn pnl_has(p: Pnl, name: String) -> Bool {
 pub type Type_scope = List[Toks];
 
 /// Value frames and the lexical type binders used for exact carrier resolution.
-pub rec labels { scope: Type_scope & (. | (Pnl & Scope)) };
+pub rec type { Scope: Type_scope & (. | (Pnl & Scope)) }
 
 /// The empty scope.
-pub fn scope_nil() -> Scope { {scope = (nil[Toks], widen_sum(())[. | (Pnl & Scope)])} }
+pub fn scope_nil() -> Scope { Scope.mk((nil[Toks], widen_sum(())[. | (Pnl & Scope)])) }
 
 fn scope_type_groups(s: Scope) -> Type_scope { let .(groups, _frames) = Scope.get(s); groups }
 
 fn scope_with_type_groups(groups: Type_scope, s: Scope) -> Scope {
   let .(_previous, frames) = Scope.get(s);
-  {scope = (groups, frames)}
+  Scope.mk((groups, frames))
 }
 
 /// Extends the scope with one frame carrying explicit spellings at index 0.
 pub fn scope_push_names(spellings: Pnl, s: Scope) -> Scope {
-  {scope = (scope_type_groups(s), widen_sum((spellings, s))[. | (Pnl & Scope)])}
+  Scope.mk((scope_type_groups(s), widen_sum((spellings, s))[. | (Pnl & Scope)]))
 }
 
 /// Extends the scope with one binder name at index 0.
@@ -214,17 +204,17 @@ pub fn scope_index(name: String, s: Scope) -> . | Nat {
 // Ntab — the resolving module's visible declaration table
 // =====================================================================
 //
-// A loaded package declares `newtype`s — the surface's `labels` sums and
-// products lower to ordinary `newtype`s, so every sum / product crosses a
-// nominal boundary with a user-named constructor / projector reached by
-// dotted path (`Box.mk(...)`, `Color.get(...)`; `specs/prime.md` § The
-// `newtype` primitive). Under the erased runtime a non-existential
-// wrap / unwrap is the **identity** on the payload value. The parser recognizes
-// `X.member`, checks the selected member's visibility, and constructs the
-// corresponding erased member value with its declared universal and
-// existential type-function stages intact. Ordinary structural postfix parsing
-// then applies whatever type and value arguments are written at the use site;
-// `Ntab` describes the member value, not call-site argument selection.
+// A loaded package declares nominal boundaries with explicit singleton
+// `type { Box: Payload { mk; get; }; }` declarations. The fixed members
+// are reached by dotted path (`Box.mk(...)`, `Box.get(...)`;
+// `specs/prime.md` § The newtype primitive). Under the erased runtime a
+// non-existential wrap / unwrap is the **identity** on the payload value.
+// The parser recognizes `X.member`, checks the selected member's visibility,
+// and constructs the corresponding erased member value with its declared
+// universal and existential type-function stages intact. Ordinary structural
+// postfix parsing then applies whatever type and value arguments are written
+// at the use site; `Ntab` describes the member value, not call-site argument
+// selection.
 //
 // `Ntab` maps the visible spelling of each newtype to its erasure facts plus
 // independent constructor and projector visibility gates. The table is
@@ -241,17 +231,16 @@ pub fn scope_index(name: String, s: Scope) -> . | Nat {
 // Each entry records what the erasure needs: the universal type-arity,
 // how many existential binders the projector exposes (an existential projector erases to the
 // CPS wrap, not the identity — `specs/prime.md` § Existential
-// introduction and elimination), and the declared constructor / projector
-// member names (the emitted call is `X.<member>(…)` with the names the
-// declaration chose; `specs/grammar.md` § Productions (Kio'),
+// introduction and elimination), and the fixed constructor / projector
+// member names `mk` / `get` (`specs/grammar.md` § Productions (Kio'),
 // `NewtypeMember`).
 /// Defines one newtype's erasure-relevant facts: universal and existential
 /// type arities, constructor name, projector name.
-pub labels { nt_info: I32 & I32 & String & String };
+pub type { Nt_info: I32 & I32 & String & String }
 
 /// Builds a newtype-table entry payload.
 pub fn mk_nt_info(arity: I32, existential_arity: I32, ctor: String, proj: String) -> Nt_info {
-  {nt_info = (arity, (existential_arity, (ctor, proj)))}
+  Nt_info.mk((arity, (existential_arity, (ctor, proj))))
 }
 
 /// The entry's universal type-arity.
@@ -309,11 +298,11 @@ pub fn nt_proj(i: Nt_info) -> String {
 
 /// One parser-visible newtype entry: erasure facts plus independently
 /// authorized constructor and projector capabilities.
-pub labels { nt_entry: Nt_info & Bool & Bool };
+pub type { Nt_entry: Nt_info & Bool & Bool }
 
 /// Builds one parser-visible newtype entry.
 pub fn mk_nt_entry(info: Nt_info, ctor_allowed: Bool, proj_allowed: Bool) -> Nt_entry {
-  {nt_entry = (info, ctor_allowed, proj_allowed)}
+  Nt_entry.mk((info, ctor_allowed, proj_allowed))
 }
 
 /// The entry's erasure facts.
@@ -339,14 +328,14 @@ pub fn nt_entry_proj_allowed(entry: Nt_entry) -> Bool {
 
 /// A visibility table: a cons-list of `(spelling, entry)` over the newtypes a
 /// module can name.
-pub rec labels { ntab: . | (String & Nt_entry & Ntab) };
+pub rec type { Ntab: . | (String & Nt_entry & Ntab) }
 
 /// The empty table.
-pub fn ntab_nil() -> Ntab { {ntab = widen_sum(())[. | (String & Nt_entry & Ntab)]} }
+pub fn ntab_nil() -> Ntab { Ntab.mk(widen_sum(())[. | (String & Nt_entry & Ntab)]) }
 
 /// Records one entry under a spelling.
 pub fn ntab_cons_entry(name: String, e: Nt_entry, t: Ntab) -> Ntab {
-  {ntab = widen_sum((name, (e, t)))[. | (String & Nt_entry & Ntab)]}
+  Ntab.mk(widen_sum((name, (e, t)))[. | (String & Nt_entry & Ntab)])
 }
 
 /// Records one newtype's name and erasure facts.
@@ -435,7 +424,7 @@ pub fn ntab_lookup_newtype(name: String, t: Ntab) -> . | Nt_entry { ntab_lookup(
 fn pnl_len(p: Pnl) -> I32 { length(Pnl.get(p)) }
 
 // Reverse a most-recent-first name list into declaration order.
-fn pnl_reverse(p: Pnl) -> Pnl { {pnl = reverse(Pnl.get(p))} }
+fn pnl_reverse(p: Pnl) -> Pnl { Pnl.mk(reverse(Pnl.get(p))) }
 
 // Push the params onto `base` in declaration order, so the last param ends
 // nearest (de Bruijn 0 of the body).
@@ -479,22 +468,22 @@ fn lambda_group_scope(params: Pnl, base: Scope) -> Scope {
 // (`FnSignature ::= FnSignatureGroup+`), each binding one domain value in
 // a curried closure chain: `.(x: A)(y: B) { body }` is `λx. λy. body`.
 /// A cons-list of dot-lambda parameter groups.
-pub labels { pnlg: List[Pnl] };
+pub type { Pnlg: List[Pnl] }
 
-fn pnlg_nil() -> Pnlg { {pnlg = nil[Pnl]} }
+fn pnlg_nil() -> Pnlg { Pnlg.mk(nil[Pnl]) }
 
-fn pnlg_cons(g: Pnl, rest: Pnlg) -> Pnlg { {pnlg = cons(g, Pnlg.get(rest))} }
+fn pnlg_cons(g: Pnl, rest: Pnlg) -> Pnlg { Pnlg.mk(cons(g, Pnlg.get(rest))) }
 
 fn un_pnlg(gs: Pnlg) -> . | (Pnl & Pnlg) {
   match(uncons(Pnlg.get(gs))) {
     (
-    , .(h: Pnl, t: List[Pnl]) { widen_sum((h, {pnlg = t}))[. | (Pnl & Pnlg)] }
+    , .(h: Pnl, t: List[Pnl]) { widen_sum((h, Pnlg.mk(t)))[. | (Pnl & Pnlg)] }
     , .(_e: .) { widen_sum(())[. | (Pnl & Pnlg)] }
     )
   }
 }
 
-fn pnlg_reverse(gs: Pnlg) -> Pnlg { {pnlg = reverse(Pnlg.get(gs))} }
+fn pnlg_reverse(gs: Pnlg) -> Pnlg { Pnlg.mk(reverse(Pnlg.get(gs))) }
 
 // The body scope for a dot-lambda with parameter groups `groups` over
 // `base`: each group's frames stack over the previous group's, first group
@@ -811,42 +800,36 @@ fn word_starts_type_name(w: String) -> Bool {
 // dedicated host-call target. The eight intrinsic tags build the matching
 // `Term` node from the collected args.
 /// Defines the apply-to-value target (the callee already in hand).
-pub labels { tg_app: Term };
+pub type { Tg_app: Term }
 
 /// Defines the pair-construction target.
-pub labels { tg_pair: . };
+pub type { Tg_pair: . }
 
 /// Defines the first-projection target.
-pub labels { tg_fst: . };
+pub type { Tg_fst: . }
 
 /// Defines the second-projection target.
-pub labels { tg_snd: . };
+pub type { Tg_snd: . }
 
 /// Defines the left-injection target.
-pub labels { tg_left: . };
+pub type { Tg_left: . }
 
 /// Defines the right-injection target.
-pub labels { tg_right: . };
+pub type { Tg_right: . }
 
 /// Defines the sum-elimination target.
-pub labels { tg_either: . };
+pub type { Tg_either: . }
 
 /// Defines the branching target.
-pub labels { tg_ite: Host_type };
+pub type { Tg_ite: Host_type }
 
 /// Defines the bottom-elimination target.
-pub labels { tg_absurd: . };
+pub type { Tg_absurd: . }
 
 /// What a finished argument-list builds.
-pub labels { tg: | Tg_app
-| Tg_pair
-| Tg_fst
-| Tg_snd
-| Tg_left
-| Tg_right
-| Tg_either
-| Tg_ite
-| Tg_absurd };
+pub type {
+  Tg: Tg_app | Tg_pair | Tg_fst | Tg_snd | Tg_left | Tg_right | Tg_either | Tg_ite | Tg_absurd
+}
 
 /// The bare target sum inside a `Tg` — the widen target for target constructors.
 pub type Tg_shape =
@@ -856,23 +839,23 @@ pub type Tg_shape =
 /// One-step destructor on a `Tg`.
 pub fn un_tg(t: Tg) -> Tg_shape { Tg.get(t) }
 
-fn tg_app(callee: Term) -> Tg { {tg = widen_sum({tg_app = callee})[Tg_shape]} }
+fn tg_app(callee: Term) -> Tg { Tg.mk(widen_sum(Tg_app.mk(callee))[Tg_shape]) }
 
-fn tg_pair() -> Tg { {tg = widen_sum({tg_pair=})[Tg_shape]} }
+fn tg_pair() -> Tg { Tg.mk(widen_sum(Tg_pair.mk(()))[Tg_shape]) }
 
-fn tg_fst() -> Tg { {tg = widen_sum({tg_fst=})[Tg_shape]} }
+fn tg_fst() -> Tg { Tg.mk(widen_sum(Tg_fst.mk(()))[Tg_shape]) }
 
-fn tg_snd() -> Tg { {tg = widen_sum({tg_snd=})[Tg_shape]} }
+fn tg_snd() -> Tg { Tg.mk(widen_sum(Tg_snd.mk(()))[Tg_shape]) }
 
-fn tg_left() -> Tg { {tg = widen_sum({tg_left=})[Tg_shape]} }
+fn tg_left() -> Tg { Tg.mk(widen_sum(Tg_left.mk(()))[Tg_shape]) }
 
-fn tg_right() -> Tg { {tg = widen_sum({tg_right=})[Tg_shape]} }
+fn tg_right() -> Tg { Tg.mk(widen_sum(Tg_right.mk(()))[Tg_shape]) }
 
-fn tg_either() -> Tg { {tg = widen_sum({tg_either=})[Tg_shape]} }
+fn tg_either() -> Tg { Tg.mk(widen_sum(Tg_either.mk(()))[Tg_shape]) }
 
-fn tg_ite(ty: Host_type) -> Tg { {tg = widen_sum({tg_ite = ty})[Tg_shape]} }
+fn tg_ite(ty: Host_type) -> Tg { Tg.mk(widen_sum(Tg_ite.mk(ty))[Tg_shape]) }
 
-fn tg_absurd() -> Tg { {tg = widen_sum({tg_absurd=})[Tg_shape]} }
+fn tg_absurd() -> Tg { Tg.mk(widen_sum(Tg_absurd.mk(()))[Tg_shape]) }
 
 // Apply a value to `count` erased type-stage Unit arguments.
 fn apply_unit_stages(value: Term, count: I32) -> Term {
@@ -936,20 +919,20 @@ fn identity_wrapper() -> Term { lam(var(nz())) }
 // an intrinsic nor in scope is unbound (a malformed image), surfaced as a
 // parse error by the variable resolution, not classified as a host call.
 /// Defines the call-head classification: an intrinsic call with its target.
-pub labels { hc_call: Tg };
+pub type { Hc_call: Tg }
 
 /// Defines the variable classification (the head is an ordinary variable reference).
-pub labels { hc_var: . };
+pub type { Hc_var: . }
 
 /// A conditional head whose first type argument identifies its Boolean carrier.
-pub labels { hc_ite: . };
+pub type { Hc_ite: . }
 
 /// A call head is a node-building call or an ordinary variable.
 pub type Headclass = Hc_call | Hc_var | Hc_ite;
 
-fn hc_call(t: Tg) -> Headclass { widen_sum({hc_call = t})[Hc_call | Hc_var | Hc_ite] }
+fn hc_call(t: Tg) -> Headclass { widen_sum(Hc_call.mk(t))[Hc_call | Hc_var | Hc_ite] }
 
-fn hc_var() -> Headclass { widen_sum({hc_var=})[Hc_call | Hc_var | Hc_ite] }
+fn hc_var() -> Headclass { widen_sum(Hc_var.mk(()))[Hc_call | Hc_var | Hc_ite] }
 
 fn classify_intrinsic2(w: String) -> . | Headclass {
   if(string_eq(w, "__right__"[String])) {
@@ -957,7 +940,7 @@ fn classify_intrinsic2(w: String) -> . | Headclass {
   } else if(string_eq(w, "__either__"[String])) {
     widen_sum(hc_call(tg_either()))[. | Headclass]
   } else if(string_eq(w, "__if_then_else__"[String])) {
-    widen_sum(widen_sum({hc_ite=})[Headclass])[. | Headclass]
+    widen_sum(widen_sum(Hc_ite.mk(()))[Headclass])[. | Headclass]
   } else if(string_eq(w, "__absurd__"[String])) {
     widen_sum(hc_call(tg_absurd()))[. | Headclass]
   } else {
@@ -999,7 +982,7 @@ fn classify_head(w: String, sc: Scope) -> Headclass {
 //
 // Value arguments are collected most-recent-first, then reversed into the
 // single product-domain packet consumed by this value application.
-fn terms_reverse(ts: Terms) -> Terms { {terms = reverse(Terms.get(ts))} }
+fn terms_reverse(ts: Terms) -> Terms { Terms.mk(reverse(Terms.get(ts))) }
 
 // Fold the in-order value-args of one call bracket into the single domain
 // value the callee is applied to. Kio''s functions are unary over one
@@ -1124,25 +1107,25 @@ fn build_node(tg: Tg, reversed: Terms) -> Term {
 // the evaluator pushes the discarded `()` result), while `Pc_expr` parses
 // exactly one expression and a following `;` is not its concern.
 /// Defines the parse-block control state (a `(stmt ;)* finalexpr` body).
-pub labels { pc_block: Toks & Scope };
+pub type { Pc_block: Toks & Scope }
 
 /// Defines the parse-expression control state (one expression, no statements).
-pub labels { pc_expr: Toks & Scope };
+pub type { Pc_expr: Toks & Scope }
 
 /// Defines the yield-term control state (a built term and the tokens after it).
-pub labels { pc_yield: Term & Toks };
+pub type { Pc_yield: Term & Toks }
 
 /// The machine's current activity.
-pub labels { pctl: Pc_block | Pc_expr | Pc_yield };
+pub type { Pctl: Pc_block | Pc_expr | Pc_yield }
 
 /// The bare control sum inside a `Pctl`.
 pub type Pctl_shape = Pc_block | Pc_expr | Pc_yield;
 
-fn c_pblock(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_block = (ts, sc)})[Pctl_shape]} }
+fn c_pblock(ts: Toks, sc: Scope) -> Pctl { Pctl.mk(widen_sum(Pc_block.mk((ts, sc)))[Pctl_shape]) }
 
-fn c_pexpr(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_expr = (ts, sc)})[Pctl_shape]} }
+fn c_pexpr(ts: Toks, sc: Scope) -> Pctl { Pctl.mk(widen_sum(Pc_expr.mk((ts, sc)))[Pctl_shape]) }
 
-fn c_pyield(t: Term, ts: Toks) -> Pctl { {pctl = widen_sum({pc_yield = (t, ts)})[Pctl_shape]} }
+fn c_pyield(t: Term, ts: Toks) -> Pctl { Pctl.mk(widen_sum(Pc_yield.mk((t, ts)))[Pctl_shape]) }
 
 fn un_pctl(c: Pctl) -> Pctl_shape { Pctl.get(c) }
 
@@ -1159,48 +1142,48 @@ fn un_pctl(c: Pctl) -> Pctl_shape { Pctl.get(c) }
 //   Pf_letbody Term                          let body done; build `let_(rhs, body)`
 //   Pf_lam    ()                            lambda body done; wrap in `lam`
 /// Defines the postfix-application frame.
-pub labels { pf_post: Scope };
+pub type { Pf_post: Scope }
 
 /// Defines the argument-collection frame.
-pub labels { pf_coll: Tg & Terms & Scope };
+pub type { Pf_coll: Tg & Terms & Scope }
 
 /// Defines the let-right-hand-side frame.
-pub labels { pf_letrhs: String & Scope };
+pub type { Pf_letrhs: String & Scope }
 
 /// Defines the let-body frame.
-pub labels { pf_letbody: Term };
+pub type { Pf_letbody: Term }
 
 /// Defines the lambda-body frame (carrying the dot-lambda's parameter
 /// groups, to wrap the body in its curried product-projecting closure).
-pub labels { pf_lam: Pnlg };
+pub type { Pf_lam: Pnlg }
 
 /// Defines the block-statement frame (decides expression-statement vs. final block expr).
-pub labels { pf_stmt: Scope };
+pub type { Pf_stmt: Scope }
 
 /// Defines the parenthesized-grouping frame (expects the closing `)`).
-pub labels { pf_group: Scope };
+pub type { Pf_group: Scope }
 
 /// One pending parser continuation frame.
-pub labels { pf: Pf_post | Pf_coll | Pf_letrhs | Pf_letbody | Pf_lam | Pf_stmt | Pf_group };
+pub type { Pf: Pf_post | Pf_coll | Pf_letrhs | Pf_letbody | Pf_lam | Pf_stmt | Pf_group }
 
 /// The bare frame sum inside a `Pf`.
 pub type Pf_shape = Pf_post | Pf_coll | Pf_letrhs | Pf_letbody | Pf_lam | Pf_stmt | Pf_group;
 
-fn mk_post(sc: Scope) -> Pf { {pf = widen_sum({pf_post = sc})[Pf_shape]} }
+fn mk_post(sc: Scope) -> Pf { Pf.mk(widen_sum(Pf_post.mk(sc))[Pf_shape]) }
 
 fn mk_coll(tg: Tg, rev: Terms, sc: Scope) -> Pf {
-  {pf = widen_sum({pf_coll = (tg, (rev, sc))})[Pf_shape]}
+  Pf.mk(widen_sum(Pf_coll.mk((tg, (rev, sc))))[Pf_shape])
 }
 
-fn mk_letrhs(name: String, sc: Scope) -> Pf { {pf = widen_sum({pf_letrhs = (name, sc)})[Pf_shape]} }
+fn mk_letrhs(name: String, sc: Scope) -> Pf { Pf.mk(widen_sum(Pf_letrhs.mk((name, sc)))[Pf_shape]) }
 
-fn mk_letbody(rhs: Term) -> Pf { {pf = widen_sum({pf_letbody = rhs})[Pf_shape]} }
+fn mk_letbody(rhs: Term) -> Pf { Pf.mk(widen_sum(Pf_letbody.mk(rhs))[Pf_shape]) }
 
-fn mk_lam(groups: Pnlg) -> Pf { {pf = widen_sum({pf_lam = groups})[Pf_shape]} }
+fn mk_lam(groups: Pnlg) -> Pf { Pf.mk(widen_sum(Pf_lam.mk(groups))[Pf_shape]) }
 
-fn mk_stmt(sc: Scope) -> Pf { {pf = widen_sum({pf_stmt = sc})[Pf_shape]} }
+fn mk_stmt(sc: Scope) -> Pf { Pf.mk(widen_sum(Pf_stmt.mk(sc))[Pf_shape]) }
 
-fn mk_group(sc: Scope) -> Pf { {pf = widen_sum({pf_group = sc})[Pf_shape]} }
+fn mk_group(sc: Scope) -> Pf { Pf.mk(widen_sum(Pf_group.mk(sc))[Pf_shape]) }
 
 fn un_pf(f: Pf) -> Pf_shape { Pf.get(f) }
 
@@ -1208,11 +1191,11 @@ fn un_pf(f: Pf) -> Pf_shape { Pf.get(f) }
 // Pk — the continuation, a stack of frames
 // =====================================================================
 /// The parser continuation stack, innermost frame first.
-pub rec labels { pk: . | (Pf & Pk) };
+pub rec type { Pk: . | (Pf & Pk) }
 
-fn pk_nil() -> Pk { {pk = widen_sum(())[. | (Pf & Pk)]} }
+fn pk_nil() -> Pk { Pk.mk(widen_sum(())[. | (Pf & Pk)]) }
 
-fn pk_push(f: Pf, k: Pk) -> Pk { {pk = widen_sum((f, k))[. | (Pf & Pk)]} }
+fn pk_push(f: Pf, k: Pk) -> Pk { Pk.mk(widen_sum((f, k))[. | (Pf & Pk)]) }
 
 fn un_pk(k: Pk) -> . | (Pf & Pk) { Pk.get(k) }
 
@@ -1220,18 +1203,18 @@ fn un_pk(k: Pk) -> . | (Pf & Pk) { Pk.get(k) }
 // Pstate / Pres — the running configuration and the run outcome
 // =====================================================================
 /// Defines the running parser configuration: control, continuation, remaining step budget, and the resolving module's declaration table.
-pub labels { pstate: Pctl & Pk & I32 & Ntab };
+pub type { Pstate: Pctl & Pk & I32 & Ntab }
 
-fn mk_pstate(c: Pctl, k: Pk, fuel: I32, nt: Ntab) -> Pstate { {pstate = (c, (k, (fuel, nt)))} }
+fn mk_pstate(c: Pctl, k: Pk, fuel: I32, nt: Ntab) -> Pstate { Pstate.mk((c, (k, (fuel, nt)))) }
 
 fn un_pstate(s: Pstate) -> Pctl & Pk & I32 & Ntab { Pstate.get(s) }
 
 /// Defines a parse error's payload: a message, and the source byte offset
 /// it points at (`()` when the error is at end-of-input).
-pub labels { perr: String & (. | I32) };
+pub type { Perr: String & (. | I32) }
 
 /// Builds a parse-error payload.
-pub fn mk_perr(message: String, pos: . | I32) -> Perr { {perr = (message, pos)} }
+pub fn mk_perr(message: String, pos: . | I32) -> Perr { Perr.mk((message, pos)) }
 
 /// Builds a parse-error payload pointing at the head of `ts` (or
 /// end-of-input when `ts` is empty).
@@ -1252,20 +1235,20 @@ pub fn perr_pos(e: Perr) -> . | I32 {
 }
 
 /// Defines the successful parse-result arm.
-pub labels { p_ok: Term };
+pub type { P_ok: Term }
 
 /// Defines the failed parse-result arm (malformed image or budget exhausted),
 /// carrying the error's message and position.
-pub labels { p_err: Perr };
+pub type { P_err: Perr }
 
 /// The outcome of a parse run: a term, or a parse error.
 pub type Pres = P_ok | P_err;
 
 /// Builds the successful parse result.
-pub fn p_ok(t: Term) -> Pres { widen_sum({p_ok = t})[P_ok | P_err] }
+pub fn p_ok(t: Term) -> Pres { widen_sum(P_ok.mk(t))[P_ok | P_err] }
 
 /// Builds the parse-error result.
-pub fn p_err(e: Perr) -> Pres { widen_sum({p_err = e})[P_ok | P_err] }
+pub fn p_err(e: Perr) -> Pres { widen_sum(P_err.mk(e))[P_ok | P_err] }
 
 fn pgo(s: Pstate) -> Pstate | Pres { widen_sum(s)[Pstate | Pres] }
 
@@ -1278,7 +1261,7 @@ fn perr_halt(message: String, ts: Toks) -> Pstate | Pres { phalt(p_err(mk_perr_a
 // (`specs/grammar.md` § Productions (Kio'), `BlockBody ::= ';'* (Stmt
 // ';'*)* Expr ';'*`).
 /// Wraps the semicolon-skip loop's exit (the tokens after the run).
-labels { after_semis: Toks };
+type { After_semis: Toks }
 
 fn skip_semis(ts: Toks) -> Toks {
   After_semis.get(loop(
@@ -1286,7 +1269,7 @@ fn skip_semis(ts: Toks) -> Toks {
       if(head_is_punct(cur, c_semi())) {
         widen_sum(rest(cur))[Toks | After_semis]
       } else {
-        widen_sum({after_semis = cur})[Toks | After_semis]
+        widen_sum(After_semis.mk(cur))[Toks | After_semis]
       }
     }
   , ts
@@ -1294,7 +1277,7 @@ fn skip_semis(ts: Toks) -> Toks {
 }
 
 /// A retained type argument and the tokens after it.
-labels { type_arg: Toks & Toks };
+type { Type_arg: Toks & Toks }
 
 fn reverse_toks(ts: Toks) -> Toks {
   loop(
@@ -1329,7 +1312,7 @@ fn read_type_arg(ts: Toks, closing: I32) -> Type_arg {
                 .f[Bool]
               };
             if(finished) {
-              widen_sum({type_arg = (reverse_toks(reversed), remaining)})[| (Toks & I32 & Toks)
+              widen_sum(Type_arg.mk((reverse_toks(reversed), remaining)))[| (Toks & I32 & Toks)
               | Type_arg]
             } else {
               widen_sum((tail, bracket_delta(token, depth), toks_cons(token, pos, reversed)))[| (& Toks
@@ -1339,7 +1322,7 @@ fn read_type_arg(ts: Toks, closing: I32) -> Type_arg {
             }
           }
         , .(_end: .) {
-            widen_sum({type_arg = (reverse_toks(reversed), remaining)})[| (Toks & I32 & Toks)
+            widen_sum(Type_arg.mk((reverse_toks(reversed), remaining)))[| (Toks & I32 & Toks)
             | Type_arg]
           }
         )
@@ -1350,7 +1333,7 @@ fn read_type_arg(ts: Toks, closing: I32) -> Type_arg {
 }
 
 /// One bracketed type argument and the tokens after its close.
-labels { type_group: Toks & Toks };
+type { Type_group: Toks & Toks }
 
 // The caller consumes `[`. Retain one complete type for exact carrier
 // resolution; ordinary erased application needs only its single Unit stage.
@@ -1360,7 +1343,7 @@ fn read_type_group(ts: Toks) -> Type_group | Perr {
     (
     , .(_first: Token, _pos: I32, _tail: Toks) {
         if(head_is_punct(after, c_rbrack())) {
-          widen_sum({type_group = (argument, rest(after))})[Type_group | Perr]
+          widen_sum(Type_group.mk((argument, rest(after))))[Type_group | Perr]
         } else {
           widen_sum(mk_perr_at("expected `]` after one type argument"[String], after))[| Type_group
           | Perr]
@@ -1374,13 +1357,13 @@ fn read_type_group(ts: Toks) -> Type_group | Perr {
 }
 
 /// A literal annotation's type tokens and the tokens after its closing bracket.
-labels { lit_annot: Toks & Toks };
+type { Lit_annot: Toks & Toks }
 
 fn read_lit_annot(ts: Toks) -> Lit_annot | Perr {
   if(head_is_punct(ts, c_lbrack())) {
     match(read_type_group(rest(ts))) {
       (
-      , .(group: Type_group) { widen_sum({lit_annot = Type_group.get(group)})[Lit_annot | Perr] }
+      , .(group: Type_group) { widen_sum(Lit_annot.mk(Type_group.get(group)))[Lit_annot | Perr] }
       , .(error: Perr) { widen_sum(error)[Lit_annot | Perr] }
       )
     }
@@ -1621,7 +1604,7 @@ fn parse_bool_lit(
 }
 
 /// One lambda binder group's arity, original tokens, and remaining input.
-labels { lambda_binder_scan: I32 & Toks & Toks };
+type { Lambda_binder_scan: I32 & Toks & Toks }
 
 // Retain the binder tokens for the existing type normalizer while preserving
 // each binder's erased Unit stage.
@@ -1640,7 +1623,7 @@ fn scan_lambda_binder_group(ts: Toks) -> Lambda_binder_scan | Perr {
             let collected = toks_cons(token, position, reversed);
             if(is_punct(token, c_rbrack())) {
               if(eq_i32(n, 1[I32])) {
-                widen_sum({lambda_binder_scan = (n, reverse_toks(collected), after)})[| (& Toks
+                widen_sum(Lambda_binder_scan.mk((n, reverse_toks(collected), after)))[| (& Toks
                 & I32
                 & Toks)
                 | Lambda_binder_scan
@@ -1697,7 +1680,7 @@ fn scan_lambda_binder_group(ts: Toks) -> Lambda_binder_scan | Perr {
 // skipped; `,` separates; `)` ends. A zero-param list returns the empty
 // names. (The result names are most-recent-first; the caller reverses.)
 /// Wraps a lambda-param scan's `(rev-names, remaining-tokens)`.
-labels { lparams: Pnl & Toks };
+type { Lparams: Pnl & Toks }
 
 fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
   Lparams.get(loop(
@@ -1708,7 +1691,7 @@ fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
           // leading-comma style), so a comma may precede any param.
           let cur = drop_comma(cur0);
           if(head_is_punct(cur, c_rparen())) {
-            widen_sum({lparams = (acc, rest(cur))})[(Toks & Pnl) | Lparams]
+            widen_sum(Lparams.mk((acc, rest(cur))))[(Toks & Pnl) | Lparams]
           } else match(peek(cur)) {
             (
             , .(t: Token) {
@@ -1729,13 +1712,13 @@ fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
                       widen_sum((after_comma, pnl_cons(Tk_word.get(nm), acc)))[| (Toks & Pnl)
                       | Lparams]
                     }
-                  , .(_i: Tk_num) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
-                  , .(_s: Tk_str) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
-                  , .(_p: Tk_punct) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
+                  , .(_i: Tk_num) { widen_sum(Lparams.mk((acc, cur)))[(Toks & Pnl) | Lparams] }
+                  , .(_s: Tk_str) { widen_sum(Lparams.mk((acc, cur)))[(Toks & Pnl) | Lparams] }
+                  , .(_p: Tk_punct) { widen_sum(Lparams.mk((acc, cur)))[(Toks & Pnl) | Lparams] }
                   )
                 }
               }
-            , .(_e: .) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
+            , .(_e: .) { widen_sum(Lparams.mk((acc, cur)))[(Toks & Pnl) | Lparams] }
             )
           }
         }
@@ -1749,7 +1732,7 @@ fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
 // depth-0 `{` (a Kio' type contains no braces, so the body's `{` is the
 // first one at depth 0).
 /// Wraps the return-type skip's exit (the tokens at the body's `{`).
-labels { ret_done: Toks };
+type { Ret_done: Toks }
 
 fn skip_to_lbrace(ts: Toks) -> Toks {
   Ret_done.get(loop(
@@ -1761,7 +1744,7 @@ fn skip_to_lbrace(ts: Toks) -> Toks {
             , .(t: Token) {
                 if(eq_i32(depth, 0[I32])) {
                   if(is_punct(t, c_lbrace())) {
-                    widen_sum({ret_done = cur})[(Toks & I32) | Ret_done]
+                    widen_sum(Ret_done.mk(cur))[(Toks & I32) | Ret_done]
                   } else {
                     widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Ret_done]
                   }
@@ -1769,7 +1752,7 @@ fn skip_to_lbrace(ts: Toks) -> Toks {
                   widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Ret_done]
                 }
               }
-            , .(_e: .) { widen_sum({ret_done = cur})[(Toks & I32) | Ret_done] }
+            , .(_e: .) { widen_sum(Ret_done.mk(cur))[(Toks & I32) | Ret_done] }
             )
           }
         }
@@ -1792,7 +1775,7 @@ fn skip_ret_annot(ts: Toks) -> Toks {
 
 /// Wraps the lambda-signature collection's
 /// `(groups, remaining-tokens, saw-group)`.
-labels { lgroups: Pnlg & Toks & Bool & Type_scope };
+type { Lgroups: Pnlg & Toks & Bool & Type_scope }
 
 fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
   loop(
@@ -1852,7 +1835,7 @@ fn collect_lambda_groups(ts0: Toks, initial_types: Type_scope) -> Lgroups | Perr
                 }
               }
             } else {
-              widen_sum({lgroups = (pnlg_reverse(acc), cur, saw_group, types)})[| (& Toks
+              widen_sum(Lgroups.mk((pnlg_reverse(acc), cur, saw_group, types)))[| (& Toks
               & Pnlg
               & Bool
               & Type_scope)
@@ -2439,7 +2422,7 @@ fn do_ppunct(
 // (`specs/grammar.md` § Lexical structure: adjacent `STR_LIT` tokens fold
 // into a single literal).
 /// Wraps the string-run fold's `(folded-content, remaining-tokens)`.
-labels { strfold: String & Toks };
+type { Strfold: String & Toks }
 
 fn fold_str_run(first: String, ts: Toks) -> String & Toks {
   Strfold.get(loop(
@@ -2451,17 +2434,17 @@ fn fold_str_run(first: String, ts: Toks) -> String & Toks {
             , .(t: Token) {
                 match(un_token(t)) {
                   (
-                  , .(_w: Tk_word) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
-                  , .(_i: Tk_num) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
+                  , .(_w: Tk_word) { widen_sum(Strfold.mk((acc, cur)))[(String & Toks) | Strfold] }
+                  , .(_i: Tk_num) { widen_sum(Strfold.mk((acc, cur)))[(String & Toks) | Strfold] }
                   , .(s: Tk_str) {
                       widen_sum((string_concat(acc, Tk_str.get(s)), rest(cur)))[| (String & Toks)
                       | Strfold]
                     }
-                  , .(_p: Tk_punct) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
+                  , .(_p: Tk_punct) { widen_sum(Strfold.mk((acc, cur)))[(String & Toks) | Strfold] }
                   )
                 }
               }
-            , .(_e: .) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
+            , .(_e: .) { widen_sum(Strfold.mk((acc, cur)))[(String & Toks) | Strfold] }
             )
           }
         }
@@ -2773,28 +2756,28 @@ equiv un_ntab_nil() {
 // pins the constructor / projector pairing.
 equiv un_tg_app(t: Term) {
   un_tg(tg_app(t));
-  widen_sum({tg_app = t})[Tg_shape]
+  widen_sum(Tg_app.mk(t))[Tg_shape]
 }
 
 equiv un_tg_pair() {
   un_tg(tg_pair());
-  widen_sum({tg_pair=})[Tg_shape]
+  widen_sum(Tg_pair.mk(()))[Tg_shape]
 }
 
 equiv un_tg_ite(ty: Host_type) {
   un_tg(tg_ite(ty));
-  widen_sum({tg_ite = ty})[Tg_shape]
+  widen_sum(Tg_ite.mk(ty))[Tg_shape]
 }
 
 // --- Pres (the parse outcome) and Perr (the error payload) ---
 equiv un_p_ok(t: Term) {
   p_ok(t);
-  widen_sum({p_ok = t})[P_ok | P_err]
+  widen_sum(P_ok.mk(t))[P_ok | P_err]
 }
 
 equiv un_p_err(e: Perr) {
   p_err(e);
-  widen_sum({p_err = e})[P_ok | P_err]
+  widen_sum(P_err.mk(e))[P_ok | P_err]
 }
 
 // One law per position arm — an opaque `. | I32` parameter would need a

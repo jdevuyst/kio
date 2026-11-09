@@ -9,6 +9,7 @@ module skyline/events;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import skyline/city as city;
 import skyline/list as lst;
@@ -18,11 +19,11 @@ import testapi/arith(leq_i32);
 import testapi/iter(loop);
 
 /// Which edge of a building an event stands on.
-pub labels Kind = { enter: . } | { leave: . };
+pub type Kind = { Enter: . } | { Leave: . };
 
-pub fn enter_kind() -> Kind { ({enter=}.>widen_sum)[Kind] }
+pub fn enter_kind() -> Kind { (Enter.mk(()).>widen_sum)[Kind] }
 
-pub fn leave_kind() -> Kind { ({leave=}.>widen_sum)[Kind] }
+pub fn leave_kind() -> Kind { (Leave.mk(()).>widen_sum)[Kind] }
 
 pub fn is_enter(k: Kind) -> Bool {
   match(k) {
@@ -38,17 +39,27 @@ pub fn kind_name(k: Kind) -> String {
 
 /// One edge of one building: the position it stands at, which edge it is, how
 /// tall its building is, and which building it belongs to.
-pub labels Event = { at: I32, edge: Kind, level: I32, owner: String };
+pub type Event = { At: I32; Edge: Kind; Level: I32; Owner: String };
 
-pub fn event(at: I32, edge: Kind, level: I32, owner: String) -> Event { {at, edge, level, owner} }
+pub fn event(at: I32, edge: Kind, level: I32, owner: String) -> Event {
+  (At.mk(at), Edge.mk(edge), Level.mk(level), Owner.mk(owner))
+}
 
-pub fn at_of(e: Event) -> I32 { e.?{at} }
+pub fn at_of(e: Event) -> I32 {
+  e.>select { At.get }
+}
 
-pub fn edge_of(e: Event) -> Kind { e.?{edge} }
+pub fn edge_of(e: Event) -> Kind {
+  e.>select { Edge.get }
+}
 
-pub fn level_of(e: Event) -> I32 { e.?{level} }
+pub fn level_of(e: Event) -> I32 {
+  e.>select { Level.get }
+}
 
-pub fn owner_of(e: Event) -> String { e.?{owner} }
+pub fn owner_of(e: Event) -> String {
+  e.>select { Owner.get }
+}
 
 /// The edge's name, for the trace.
 pub fn tag_of(e: Event) -> String { kind_name(edge_of(e)) }
@@ -91,7 +102,7 @@ pub fn event_leq(a: Event, b: Event) -> Bool {
 
 /// Ordered insert: `e` lands in front of the first event it precedes.
 pub rec(loop) fn insert(e: Event, es: lst.List[Event]) -> lst.List[Event] {
-  match(es.>lst.List.un_list) {
+  match(es.>lst.List.get) {
     (
     , .(head: Event, rest: lst.List[Event]) {
         if(event_leq(e, head)) {
@@ -111,7 +122,7 @@ rec(loop) {
     recur collect(bs, lst.nil[Event])
   };
   fn collect(bs: lst.List[city.Building], acc: lst.List[Event]) -> lst.List[Event] {
-    match(bs.>lst.List.un_list) {
+    match(bs.>lst.List.get) {
       (
       , .(b: city.Building, rest: lst.List[city.Building]) {
           let opened = insert(left_edge(b), acc);

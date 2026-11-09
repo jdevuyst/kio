@@ -82,7 +82,7 @@ Call the selected local name directly:
 <!--kio {harness=inject placeholder="__INSERT_CODE_HERE__"}
 module kiodoc;
 
-import spine_macros(macro widen_sum);
+import macros/spine_macros(macro widen_sum);
 
 __INSERT_CODE_HERE__
 -->
@@ -282,7 +282,9 @@ a consumer can import a narrow vocabulary:
 
 - `spine_macros` supplies the everyday `fit`, `reorder_*`, `narrow_*`,
   `widen_*`, `flatten_*`, and `one_*` product/sum adapters.
-- `row_macros` constructs, updates, and projects label-product rows.
+- `row_macros` supplies `record` / `record_`, `with` / `with_`, and `select`
+  for ordinary product slots. The [row-typed record guide](products.md) combines
+  these operations with nominal fields and open product tails.
 - `tuple_macros` supplies tuple operations such as `head`, `tail`,
   `concat`, `flatten`, `group`, `zip`, and `map`.
 - `match` supplies exhaustive, first-match structural dispatch through
@@ -292,8 +294,7 @@ a consumer can import a narrow vocabulary:
   sequence actions through an explicitly supplied bind function.
 - `lookup` supplies the advanced conditional cross-sum helpers `lookup` and
   `contains`. They inspect whether an active sum branch contains a requested
-  label; they are not aliases for `.?{field}`, which projects a statically
-  known product field.
+  type; they operate on sum branches rather than product slots.
 - `derive` composes an explicit set of candidate rules to build one target
   value through `derive`.
 - `type_of` reflects a requested type into the library's user-level type
@@ -312,6 +313,7 @@ import macros/control(Bool, macro if, macro scope);
 import macros/sequence(Bind, Sequence, macro do);
 import macros/lookup(macro contains, macro lookup);
 import macros/spine_macros(macro fit, macro widen_sum);
+import macros/row_macros(macro record, macro record_, macro select, macro with, macro with_);
 ```
 
 `control` declares the concrete `Bool` host type used by `if`. Use that same

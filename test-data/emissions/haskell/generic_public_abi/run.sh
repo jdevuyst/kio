@@ -34,7 +34,7 @@ expect_public_rejection() {
 
 for host in Wrong PrivatePack PrivateTree PackConstructor TreeConstructor; do
   case "$host" in
-    Wrong) identity=__api__Pair__mkPair ;;
+    Wrong) identity=__api__Pair__mk ;;
     PrivatePack) identity=KioExists_privatePack__Pack ;;
     PrivateTree) identity=KioType_privateTree__Tree ;;
     PackConstructor) identity=KioExists_api__Pack ;;

@@ -6,23 +6,23 @@ host type Str role(str);
 
 host type Scalar;
 
-pub newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap }
+pub type { Wrap: I32 { pub mk; pub get } }
 
-pub newtype Boxed : Scalar { pub constructor box_it; pub projector unbox }
+pub type { Boxed: Scalar { pub mk; pub get } }
 
-pub newtype Pair : Boxed & Boxed { pub constructor pair; pub projector unpair }
+pub type { Pair: Boxed & Boxed { pub mk; pub get } }
 
-pub labels { name: Str, value: I32 };
+pub type { Name: Str; Value: I32 }
 
-pub fn wrap(value: I32) -> Wrap { Wrap.mk_wrap(value) }
+pub fn wrap(value: I32) -> Wrap { Wrap.mk(value) }
 
-pub fn unwrap(value: Wrap) -> I32 { Wrap.un_wrap(value) }
+pub fn unwrap(value: Wrap) -> I32 { Wrap.get(value) }
 
-pub fn box_scalar(value: Scalar) -> Boxed { Boxed.box_it(value) }
+pub fn box_scalar(value: Scalar) -> Boxed { Boxed.mk(value) }
 
-pub fn unbox_scalar(value: Boxed) -> Scalar { Boxed.unbox(value) }
+pub fn unbox_scalar(value: Boxed) -> Scalar { Boxed.get(value) }
 
-pub fn pair_boxed(left: Boxed, right: Boxed) -> Pair { Pair.pair((left, right)) }
+pub fn pair_boxed(left: Boxed, right: Boxed) -> Pair { Pair.mk((left, right)) }
 
 pub fn make_name(value: Str) -> Name { Name.mk(value) }
 

@@ -3,12 +3,12 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-labels { f: String, item[A]: A };
+type { F: String { mk; get }; Item[A]: A { mk; get } }
 
-labels Reused = { f: _ };
+type Reused = F;
 
-labels Choice = { branch_value: String, left: . } | { branch_value: _, right: . };
+type Choice = { Branch_value: String; Left: . } | (Branch_value & { Right: . });
 
-labels Generic[A] = { item[A]: _ };
+type Generic[A] = Item[A];
 
-pub fn main() { let a = {f = "agree\n"}; print(F.get(a)) }
+pub fn main() { let a = F.mk("agree\n"); print(F.get(a)) }

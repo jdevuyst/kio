@@ -27,20 +27,20 @@ import macros/spine_macros(macro widen_sum);
 // and branch arms stay distinct singletons — an unwrapped `A | .` would
 // flatten its arms into the trie sum and lose the leaf / branch boundary.
 /// Defines the labeled leaf payload for vector tree leaves.
-pub labels { leafopt[A]: A | . };
+pub type { Leafopt[A]: A | . }
 
 /// Defines the recursive vector tree payload as a leaf or branch pair.
-pub rec labels { tree[A]: Leafopt[A] | (Tree[A] & Tree[A]) };
+pub rec type { Tree[A]: Leafopt[A] | (Tree[A] & Tree[A]) }
 
 /// `leaf(m)` builds a leaf carrying the result `m`; `branch(l, r)` pairs
 /// two subtrees. Both are O(1) and pure.
 pub fn leaf[A](m: A | .) -> Tree[A] {
-  {tree = widen_sum({leafopt = m})[Leafopt[A] | (Tree[A] & Tree[A])]}
+  Tree.mk(widen_sum(Leafopt.mk(m))[Leafopt[A] | (Tree[A] & Tree[A])])
 }
 
 /// Builds an internal vector tree branch from two subtrees.
 pub fn branch[A](l: Tree[A], r: Tree[A]) -> Tree[A] {
-  {tree = widen_sum((l, r))[Leafopt[A] | (Tree[A] & Tree[A])]}
+  Tree.mk(widen_sum((l, r))[Leafopt[A] | (Tree[A] & Tree[A])])
 }
 
 /// `untree(t)` is the pure one-step destructor: the labeled leaf, or the
@@ -68,10 +68,10 @@ pub fn leaf_value[A](t: Tree[A]) -> A | . {
 /// `match` cannot tell them apart; labeling makes the direction
 /// discriminable. The driver in `vec.kio` computes the bit with host
 /// arithmetic and builds the matching `Dir` via `go_left` / `go_right`.
-pub labels { goleft: . };
+pub type { Goleft: . }
 
 /// Defines the right descent direction label.
-pub labels { goright: . };
+pub type { Goright: . }
 
 /// Path direction for descending left or right through a vector tree.
 pub type Dir = Goleft | Goright;
@@ -83,10 +83,10 @@ pub type Dir = Goleft | Goright;
 /// `Bool` to structural bridge lives in `vec.kio` (it owns the host
 /// comparison); this file owns the labels the bridge targets and the
 /// `match` consumes.
-pub labels { in_bnd: . };
+pub type { In_bnd: . }
 
 /// Defines the out-of-bounds marker label.
-pub labels { out_bnd: . };
+pub type { Out_bnd: . }
 
 /// Bounds-check result used by index traversal.
 pub type Bounds = In_bnd | Out_bnd;
@@ -94,18 +94,18 @@ pub type Bounds = In_bnd | Out_bnd;
 /// `yes_bnd` / `no_bnd` mint the two verdict labels. (The `labels`
 /// declarations also mint `In_bnd.mk` / `Out_bnd.mk`; these named wrappers
 /// read better at the `if`/`else` bridge in `vec.kio`.)
-pub fn yes_bnd() -> In_bnd { {in_bnd=} }
+pub fn yes_bnd() -> In_bnd { In_bnd.mk(()) }
 
 /// Builds the out-of-bounds marker.
-pub fn no_bnd() -> Out_bnd { {out_bnd=} }
+pub fn no_bnd() -> Out_bnd { Out_bnd.mk(()) }
 
 /// `bnd_in` / `bnd_out` are the `Bounds`-typed verdicts (the unit labels
 /// widened) - for callers holding a `Bounds`-typed slot rather than the
 /// `if`/`else` bridge's distinct-typed arms.
-pub fn bnd_in() -> Bounds { widen_sum({in_bnd=})[In_bnd | Out_bnd] }
+pub fn bnd_in() -> Bounds { widen_sum(In_bnd.mk(()))[In_bnd | Out_bnd] }
 
 /// Injects the out-of-bounds marker into the `Bounds` sum.
-pub fn bnd_out() -> Bounds { widen_sum({out_bnd=})[In_bnd | Out_bnd] }
+pub fn bnd_out() -> Bounds { widen_sum(Out_bnd.mk(()))[In_bnd | Out_bnd] }
 
 /// `select(b, in_val, out_val)` is the `Bounds` eliminator: `in_val` when
 /// the verdict is in-range, `out_val` otherwise. Both arguments are
@@ -126,19 +126,19 @@ pub fn select[R](b: Bounds, in_val: R, out_val: R) -> R {
 /// `Goleft | Goright` (which *is* `Dir`) with no sum-collapse: the two
 /// branches have different types, so the conditional's sum is already the
 /// two-arm `Dir`, never a `Dir | Dir` that needs narrowing.
-pub fn go_left() -> Goleft { {goleft=} }
+pub fn go_left() -> Goleft { Goleft.mk(()) }
 
 /// Builds the raw right-direction label value.
-pub fn go_right() -> Goright { {goright=} }
+pub fn go_right() -> Goright { Goright.mk(()) }
 
 /// `dir_left` / `dir_right` are the `Dir`-typed directions - `go_left` /
 /// `go_right` widened into the full two-arm `Dir`. The singleton forms are
 /// for the `if`/`else` bridge (where two distinct-typed arms *form* the
 /// `Dir`); these are for callers that already hold a `Dir`-typed slot.
-pub fn dir_left() -> Dir { widen_sum({goleft=})[Goleft | Goright] }
+pub fn dir_left() -> Dir { widen_sum(Goleft.mk(()))[Goleft | Goright] }
 
 /// Injects the right direction into the `Dir` sum.
-pub fn dir_right() -> Dir { widen_sum({goright=})[Goleft | Goright] }
+pub fn dir_right() -> Dir { widen_sum(Goright.mk(()))[Goleft | Goright] }
 
 /// `flip_dir(dir)` is the opposite direction - the path's sibling side.
 pub fn flip_dir(dir: Dir) -> Dir {
@@ -187,10 +187,10 @@ pub fn split_branch[A](dir: Dir, t: Tree[A]) -> Tree[A] & Tree[A] {
 /// A frame records the off-path sibling and the `Dir` the path took at
 /// this level. The sibling is the child the path did *not* descend into,
 /// preserved untouched so the rebuild can share it.
-pub labels { frame[A]: Dir & Tree[A] };
+pub type { Frame[A]: Dir & Tree[A] }
 
 /// Builds a zipper frame from a direction and sibling subtree.
-pub fn build_frame[A](dir: Dir, sibling: Tree[A]) -> Frame[A] { {frame = (dir, sibling)} }
+pub fn build_frame[A](dir: Dir, sibling: Tree[A]) -> Frame[A] { Frame.mk((dir, sibling)) }
 
 /// `rebuild_step(built, fr)` reattaches one level: the `built` subtree (the
 /// already-rebuilt lower portion of the path) becomes the path-side child,
@@ -209,14 +209,14 @@ pub fn rebuild_step[A](built: Tree[A], fr: Frame[A]) -> Tree[A] {
 /// A cons-list of frames is the descent stack: pushing a frame as the
 /// driver descends, the head is the *deepest* frame, so a head-first fold
 /// rebuilds bottom-up - exactly the order `rebuild_step` wants.
-pub rec labels { frames[A]: . | (Frame[A] & Frames[A]) };
+pub rec type { Frames[A]: . | (Frame[A] & Frames[A]) }
 
 /// Builds the empty frame stack.
-pub fn frames_nil[A] -> Frames[A] { {frames = widen_sum(())[. | (Frame[A] & Frames[A])]} }
+pub fn frames_nil[A] -> Frames[A] { Frames.mk(widen_sum(())[. | (Frame[A] & Frames[A])]) }
 
 /// Pushes one zipper frame onto a frame stack.
 pub fn frames_push[A](fr: Frame[A], rest: Frames[A]) -> Frames[A] {
-  {frames = widen_sum((fr, rest))[. | (Frame[A] & Frames[A])]}
+  Frames.mk(widen_sum((fr, rest))[. | (Frame[A] & Frames[A])])
 }
 
 /// Projects one frame-stack step as empty or head-tail.

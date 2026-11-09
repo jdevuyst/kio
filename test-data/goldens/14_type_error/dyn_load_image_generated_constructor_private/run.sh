@@ -1,7 +1,7 @@
 #!/bin/sh
 # A loaded Image is authority produced by validation, so the public loader API
-# exposes neither a generated constructor nor its explicitly named raw members.
-# Each spelling is checked separately so one diagnostic cannot mask another.
+# keeps both its constructor and projector private.
+# Each member is checked separately so one diagnostic cannot mask another.
 # The case checks the live POC source rather than a copied loader fixture.
 set -eu
 
@@ -45,7 +45,6 @@ run_probe() {
 }
 
 run_probe mk
-run_probe seal_image_state
-run_probe open_image_state
+run_probe get
 
 exit 14

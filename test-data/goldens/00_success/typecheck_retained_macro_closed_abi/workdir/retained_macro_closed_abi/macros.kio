@@ -2,13 +2,8 @@ module retained_macro_closed_abi/macros;
 
 import __comptime__;
 
-type Optional_type = __Type__ | .;
-
-pure fn infer_impl(
-, _ct: __Comptime__
-, _source: __Type__
-, value: __Checked_term__
-, _target: Optional_type
-) -> __Checked_term__ { value }
+pure fn infer_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  value
+}
 
 pub macro infer : [Source] Source -> [Target] Target { impl infer_impl }

@@ -12,11 +12,11 @@ import testapi/text(string_concat);
 
 // Cons-list of `A`. Same shape as `exec_host_loop_fold` and
 // friends — `()` is empty, `(A & List(A))` is a cons cell.
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // `Run` and `Runs` newtype aliases. `Run` is a single sorted run
 // of `I32`s; `Runs` is a list of runs. The shorter nominals keep
@@ -25,17 +25,17 @@ fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A &
 // multiple lines with a leading `|`, which the regular Kio parser
 // then rejects when round-tripping the kio-prime output back to
 // JS.
-rec newtype Run : . | (I32 & Run) { pub constructor cons; pub projector un }
+rec type { Run: . | (I32 & Run) { pub mk; pub get } }
 
-fn run_nil() -> Run { Run.cons(widen_sum(())) }
+fn run_nil() -> Run { Run.mk(widen_sum(())) }
 
-fn run_push(x: I32, xs: Run) -> Run { Run.cons(widen_sum((x, xs))) }
+fn run_push(x: I32, xs: Run) -> Run { Run.mk(widen_sum((x, xs))) }
 
-rec newtype Runs : . | (Run & Runs) { pub constructor cons; pub projector un }
+rec type { Runs: . | (Run & Runs) { pub mk; pub get } }
 
-fn runs_nil() -> Runs { Runs.cons(widen_sum(())) }
+fn runs_nil() -> Runs { Runs.mk(widen_sum(())) }
 
-fn runs_push(x: Run, xs: Runs) -> Runs { Runs.cons(widen_sum((x, xs))) }
+fn runs_push(x: Run, xs: Runs) -> Runs { Runs.mk(widen_sum((x, xs))) }
 
 // Build the nine-element input `[5, 2, 8, 1, 9, 3, 7, 4, 6]` via
 // repeated `run_push`. Chosen so neither sort algorithm hits a
@@ -59,7 +59,7 @@ fn make_input() -> Run {
 // cons-prepending needs to be flattened onto a remaining run — a
 // reverse + concat in one pass.
 fn run_reverse_append_step(reversed: Run, tail: Run) -> (Run & Run) | Run {
-  match(reversed.>Run.un) {
+  match(reversed.>Run.get) {
     (
     , .(x: I32, rest: Run) { widen_sum((rest, run_push(x, tail)))[(Run & Run) | Run] }
     , .(_empty: .) { widen_sum(tail)[(Run & Run) | Run] }
@@ -81,7 +81,7 @@ fn run_reverse_append(reversed: Run, tail: Run) -> Run {
 // `Runs`-flavored reverse-append. Same shape as `run_reverse_append`
 // but specialized to a list of runs.
 fn runs_reverse_append_step(reversed: Runs, tail: Runs) -> (Runs & Runs) | Runs {
-  match(reversed.>Runs.un) {
+  match(reversed.>Runs.get) {
     (
     , .(x: Run, rest: Runs) { widen_sum((rest, runs_push(x, tail)))[(Runs & Runs) | Runs] }
     , .(_empty: .) { widen_sum(tail)[(Runs & Runs) | Runs] }
@@ -106,7 +106,7 @@ fn runs_reverse_append(reversed: Runs, tail: Runs) -> Runs {
 // the runs come out in source order. State is `(remaining,
 // processed_reversed)`.
 fn singletons_step(remaining: Run, processed_reversed: Runs) -> (Run & Runs) | Runs {
-  match(remaining.>Run.un) {
+  match(remaining.>Run.get) {
     (
     , .(x: I32, rest: Run) {
         widen_sum((rest, runs_push(run_push(x, run_nil()), processed_reversed)))[(Run & Runs) | Runs]
@@ -130,13 +130,13 @@ fn singletons(xs: Run) -> Runs {
 }
 
 // Step the merge loop when `left` is non-empty. Factored out so
-// the inner `right.>Run.un` match doesn't nest under `merge_step`'s
+// the inner `right.>Run.get` match doesn't nest under `merge_step`'s
 // outer match — keeps the kio-prime backend's intermediate sum
 // types narrow.
 fn merge_step_cons(left: Run, lx: I32, lrest: Run, right: Run, output_reversed: Run) ->
   (Run & Run & Run) | Run
    {
-  match(right.>Run.un) {
+  match(right.>Run.get) {
     (
     , .(rx: I32, rrest: Run) {
         if(leq_i32(lx, rx)) {
@@ -156,7 +156,7 @@ fn merge_step_cons(left: Run, lx: I32, lrest: Run, right: Run, output_reversed: 
 // accumulator. When either side runs out, reverse-appends the
 // remaining other side to flatten.
 fn merge_step(left: Run, right: Run, output_reversed: Run) -> (Run & Run & Run) | Run {
-  match(left.>Run.un) {
+  match(left.>Run.get) {
     (
     , .(lx: I32, lrest: Run) { merge_step_cons(left, lx, lrest, right, output_reversed) }
     , .(_empty: .) {
@@ -178,10 +178,10 @@ fn merge(left: Run, right: Run) -> Run {
 }
 
 // Step the pair-merge loop when `remaining` has at least one run
-// to pop. Factored out so the inner `tail1.>Runs.un` match
+// to pop. Factored out so the inner `tail1.>Runs.get` match
 // doesn't nest under `pair_merge_step`'s outer match.
 fn pair_merge_step_cons(first: Run, tail1: Runs, merged_reversed: Runs) -> (Runs & Runs) | Runs {
-  widen_sum(match(tail1.>Runs.un) {
+  widen_sum(match(tail1.>Runs.get) {
     (
     , .(second: Run, tail2: Runs) { (tail2, runs_push(merge(first, second), merged_reversed)) }
     , .(_empty: .) { (runs_nil(), runs_push(first, merged_reversed)) }
@@ -195,7 +195,7 @@ fn pair_merge_step_cons(first: Run, tail1: Runs, merged_reversed: Runs) -> (Runs
 // `(remaining, merged_reversed)`; exit returns the reversed
 // accumulator (caller flattens).
 fn pair_merge_step(remaining: Runs, merged_reversed: Runs) -> (Runs & Runs) | Runs {
-  match(remaining.>Runs.un) {
+  match(remaining.>Runs.get) {
     (
     , .(first: Run, tail1: Runs) { pair_merge_step_cons(first, tail1, merged_reversed) }
     , .(_empty: .) { widen_sum(merged_reversed)[(Runs & Runs) | Runs] }
@@ -217,10 +217,10 @@ fn pair_merge_round(runs: Runs) -> Runs {
 }
 
 // Step the outer round loop when `runs` has at least one run.
-// Factored out so the inner `rest.>Runs.un` match doesn't nest
+// Factored out so the inner `rest.>Runs.get` match doesn't nest
 // under `round_step`'s outer match.
 fn round_step_cons(runs: Runs, first: Run, rest: Runs) -> Runs | Run {
-  match(rest.>Runs.un) {
+  match(rest.>Runs.get) {
     (
     , .(_second: Run, _tail: Runs) { widen_sum(pair_merge_round(runs))[Runs | Run] }
     , .(_empty: .) { widen_sum(first)[Runs | Run] }
@@ -234,7 +234,7 @@ fn round_step_cons(runs: Runs, first: Run, rest: Runs) -> Runs | Run {
 // head exists and its tail is empty, we're done; otherwise run
 // one more round.
 fn round_step(runs: Runs) -> Runs | Run {
-  match(runs.>Runs.un) {
+  match(runs.>Runs.get) {
     (
     , .(first: Run, rest: Runs) { round_step_cons(runs, first, rest) }
     , .(_empty: .) { widen_sum(run_nil())[Runs | Run] }
@@ -262,7 +262,7 @@ fn join_step_cons(x: I32, rest: Run, acc: String, is_first: I32) -> (Run & Strin
 // `exec_host_loop_map`'s `join_csv`: walks the list, prepends ","
 // to each rendered cell except the first.
 fn join_step(remaining: Run, acc: String, is_first: I32) -> (Run & String & I32) | String {
-  match(remaining.>Run.un) {
+  match(remaining.>Run.get) {
     (
     , .(x: I32, rest: Run) { join_step_cons(x, rest, acc, is_first) }
     , .(_empty: .) { widen_sum(acc)[(Run & String & I32) | String] }

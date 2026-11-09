@@ -1,13 +1,14 @@
 module pipeline/report;
 
+import macros/row_macros(macro select);
 import pipeline/domain(
+, Approvals
+, First_sample
 , Pipeline_summary
-, {approvals}
-, {first_sample}
-, {report_name}
-, {score_total}
-, {second_sample}
-, {third_sample}
+, Report_name
+, Score_total
+, Second_sample
+, Third_sample
 );
 import testapi(String);
 import testapi/fmt(int_to_string);
@@ -19,21 +20,21 @@ fn append3(a: String, b: String, c: String) -> String { append(a, append(b, c)) 
 
 pub fn render_summary(summary: Pipeline_summary) -> String {
   append3(
-  , summary.?{report_name}
+  , summary.>select { Report_name.get }
   , ": "
   , append3(
-    , summary.?{first_sample}
+    , summary.>select { First_sample.get }
     , " | "
     , append3(
-      , summary.?{second_sample}
+      , summary.>select { Second_sample.get }
       , " | "
       , append3(
-        , summary.?{third_sample}
+        , summary.>select { Third_sample.get }
         , " | total="
         , append3(
-          , int_to_string(summary.?{score_total})
+          , int_to_string(summary.>select { Score_total.get })
           , " | approvals="
-          , int_to_string(summary.?{approvals})
+          , int_to_string(summary.>select { Approvals.get })
           )
         )
       )

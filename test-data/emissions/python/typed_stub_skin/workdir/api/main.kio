@@ -4,11 +4,11 @@ import api(I32);
 import api(String);
 import api(print);
 import api/labels(Choice);
+import api/labels(Count);
+import api/labels(Name);
 import api/labels(Pair);
-import api/labels({count});
-import api/labels({name});
 
-pub fn make(n: String, c: I32) -> Pair { {name = n, count = c} }
+pub fn make(n: String, c: I32) -> Pair { (Name.mk(n), Count.mk(c)) }
 
 pub fn echo_pair(p: Pair) -> Pair { p }
 

@@ -3,5 +3,5 @@ package main
 import p "driver/out/go"
 
 func privateConstructor(pkg *p.Package[int, int, string]) {
-	_ = p.CallExp_Api__Hidden_make(pkg.Api.KioType_Hidden, p.PrepareHost_api_Number(pkg, 11))
+	_ = p.CallExp_Api__Hidden_mk(pkg.Api.KioType_Hidden, p.PrepareHost_api_Number(pkg, 11))
 }

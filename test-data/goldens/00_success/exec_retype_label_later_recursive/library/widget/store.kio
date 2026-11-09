@@ -1,22 +1,44 @@
 module store;
 
-pub labels { seed[A]: A };
+import macros/row_macros(macro select);
 
-pub rec labels Later[A] = { seed[A]: _, branch[A]: (Later[A] -> A) -> A };
+pub type { Seed[A]: A { pub mk; pub get } }
 
 rec {
-  pub labels First[A] = { seed[A]: _, left[A]: (Second[A] -> A) -> A };
-  pub labels Second[A] = { seed[A]: _, right[A]: (First[A] -> A) -> A }
+  pub type { Branch[A]: (Later[A] -> A) -> A { pub mk; pub get } };
+  pub type Later[A] = Seed[A] & Branch[A]
 }
 
-pub fn later_seed[A](row: Later[A]) -> A { row.?{seed} }
+rec {
+  pub type { Left[A]: (Second[A] -> A) -> A { pub mk; pub get } };
+  pub type { Right[A]: (First[A] -> A) -> A { pub mk; pub get } };
+  pub type First[A] = Seed[A] & Left[A];
+  pub type Second[A] = Seed[A] & Right[A]
+}
 
-pub fn later_branch[A](row: Later[A], next: Later[A] -> A) -> A { row.?{branch}(next) }
+pub fn later_seed[A](row: Later[A]) -> A {
+  row.>select { Seed.get[A] }
+}
 
-pub fn first_seed[A](row: First[A]) -> A { row.?{seed} }
+pub fn later_branch[A](row: Later[A], next: Later[A] -> A) -> A {
+  let function = row.>select { Branch.get[A] };
+  function(next)
+}
 
-pub fn first_left[A](row: First[A], next: Second[A] -> A) -> A { row.?{left}(next) }
+pub fn first_seed[A](row: First[A]) -> A {
+  row.>select { Seed.get[A] }
+}
 
-pub fn second_seed[A](row: Second[A]) -> A { row.?{seed} }
+pub fn first_left[A](row: First[A], next: Second[A] -> A) -> A {
+  let function = row.>select { Left.get[A] };
+  function(next)
+}
 
-pub fn second_right[A](row: Second[A], next: First[A] -> A) -> A { row.?{right}(next) }
+pub fn second_seed[A](row: Second[A]) -> A {
+  row.>select { Seed.get[A] }
+}
+
+pub fn second_right[A](row: Second[A], next: First[A] -> A) -> A {
+  let function = row.>select { Right.get[A] };
+  function(next)
+}

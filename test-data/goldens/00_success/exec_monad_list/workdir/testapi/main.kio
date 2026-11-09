@@ -12,19 +12,19 @@ import testapi/text(string_concat);
 // does not equal the bare type-parameter, so the brand-crossing is
 // not a runtime identity. `List` is a kind-`*→*` brand, so a
 // `Monad[*F]` instance can be instantiated for it; the instance
-// below mediates every brand crossing through `List`'s own `cons` /
-// `un_list` members, with `loop` walking the recursive payload.
-pub rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+// below mediates every brand crossing through `List`'s own `mk` /
+// `get` members, with `loop` walking the recursive payload.
+pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
 // Convenience constructors over the underlying sum.
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 fn reverse_step[A](state: List[A] & List[A]) -> (List[A] & List[A]) | List[A] {
   match(state) {
     .(remaining: List[A], output: List[A]) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(x: A, rest: List[A]) {
             widen_sum((rest, push(x, output)))[(List[A] & List[A]) | List[A]]
@@ -42,12 +42,12 @@ fn reverse[A](xs: List[A]) -> List[A] {
 
 // Walk `src` left-to-right, pushing each element onto `dst`.
 // Result is `dst` with `src`'s elements prepended in reverse
-// (because `push` is cons-at-head). Used by `bind` to accumulate
+// (because `push` is cons-at-head). Used by the bind operation to accumulate
 // the continuation's per-element output into a reversed buffer.
 fn prepend_reversed_step[A](state: List[A] & List[A]) -> (List[A] & List[A]) | List[A] {
   match(state) {
     .(remaining: List[A], acc: List[A]) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(y: A, rest: List[A]) { widen_sum((rest, push(y, acc)))[(List[A] & List[A]) | List[A]] }
         , .(_empty: .) { widen_sum(acc)[(List[A] & List[A]) | List[A]] }
@@ -63,27 +63,24 @@ fn prepend_reversed[A](src: List[A], dst: List[A]) -> List[A] {
 
 // A `Monad[*F]` instance with a polymorphic-function payload —
 // shared shape across the corpus. Each concrete brand provides
-// its own `bind` body at the instance site.
-pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
-  pub constructor mk_monad;
-  pub projector bind
-  }
+// its own bind operation body at the instance site.
+pub type { Monad[*F]: [A][B] (F[A] & (A -> F[B])) -> F[B] { pub mk; pub get } }
 
-// `List`'s monad instance — `bind` is concatMap. Walk `m` with
+// `List`'s monad instance — the bind operation is concatMap. Walk `m` with
 // `loop`; for each element call the continuation `k`, prepend
 // the resulting `List(B)` onto a reversed accumulator. After
 // the outer walk completes, reverse the accumulator to restore
 // input-order. The brand crossings (`m` arriving as `F(A) =
 // List(A)`, the result leaving as `F(B) = List(B)`) go through
-// `List.cons` / `List.un_list`.
+// `List.mk` / `List.get`.
 fn list_monad() -> Monad[List] {
-  Monad.mk_monad[List](.[A][B](m, k) {
+  Monad.mk[List](.[A][B](m, k) {
     let reversed =
       loop(
       , .(state: List[A] & List[B]) {
           match(state) {
             .(remaining: List[A], output_reversed: List[B]) {
-              match(remaining.>List.un_list) {
+              match(remaining.>List.get) {
                 (
                 , .(x: A, rest: List[A]) {
                     widen_sum((rest, prepend_reversed(k(x), output_reversed)))[| (List[A] & List[B])
@@ -107,11 +104,11 @@ fn list_monad() -> Monad[List] {
 fn join_step(state: List[String] & String) -> (List[String] & String) | String {
   match(state) {
     .(remaining: List[String], acc: String) {
-      match(remaining.>List.un_list) {
+      match(remaining.>List.get) {
         (
         , .(x: String, rest: List[String]) {
             let sep =
-              match(rest.>List.un_list) {
+              match(rest.>List.get) {
                 (.(_hd: String, _tl: List[String]) { ","[String] }, .(_empty: .) { "\n" })
               };
             widen_sum((rest, string_concat(acc, string_concat(x, sep))))[| (List[String] & String)
@@ -130,14 +127,14 @@ fn join_list(xs: List[String]) -> String {
 
 // Cartesian-style nested bind over two lists: for each `s` in
 // `["a", "b"]` and each `n` in `["1", "2"]`, produce the
-// singleton list `["s-n"]`. `bind` concatenates the resulting
+// singleton list `["s-n"]`. The bind operation concatenates the resulting
 // four-element list.
 fn use_instance() -> String {
   let monad = list_monad();
   let xs = push("a", push("b", nil[String](())));
   let ns = push("1", push("2", nil[String](())));
   let result =
-    do(Monad.bind(monad)) {
+    do(Monad.get(monad)) {
       let s <- xs;
       let n <- ns;
       push(string_concat(s, string_concat("-", n)), nil[String](()))

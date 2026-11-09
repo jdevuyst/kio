@@ -12,19 +12,19 @@ host fn add(p0: I32, p1: I32) -> I32;
 host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 
 /// Defines the ordering labels used to distinguish less-than, equal, and greater-than comparison outcomes.
-pub labels { ord_lt: ., ord_eq: ., ord_gt: . };
+pub type { Ord_lt: .; Ord_eq: .; Ord_gt: . }
 
 /// Orders dictionary keys as less-than, equal, or greater-than for search and insert steps.
 pub type Ordering = Ord_lt | Ord_eq | Ord_gt;
 
 /// Builds the less-than ordering case for a key comparison result.
-pub fn lt() -> Ordering { widen_sum({ord_lt=})[Ord_lt | Ord_eq | Ord_gt] }
+pub fn lt() -> Ordering { widen_sum(Ord_lt.mk(()))[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Builds the equal ordering case for a key comparison result.
-pub fn eq() -> Ordering { widen_sum({ord_eq=})[Ord_lt | Ord_eq | Ord_gt] }
+pub fn eq() -> Ordering { widen_sum(Ord_eq.mk(()))[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Builds the greater-than ordering case for a key comparison result.
-pub fn gt() -> Ordering { widen_sum({ord_gt=})[Ord_lt | Ord_eq | Ord_gt] }
+pub fn gt() -> Ordering { widen_sum(Ord_gt.mk(()))[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Selects a caller-chosen result for each comparison outcome.
 pub fn ord_select[A](on_lt: A, on_eq: A, on_gt: A, o: Ordering) -> A {
@@ -34,16 +34,16 @@ pub fn ord_select[A](on_lt: A, on_eq: A, on_gt: A, o: Ordering) -> A {
 }
 
 /// Defines the two labels that make the module-local boolean shape matchable.
-pub labels { btrue: ., bfalse: . };
+pub type { Btrue: .; Bfalse: . }
 
 /// Boolean-like result type used by pure predicates in the dictionary.
 pub type Flag = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Flag { widen_sum({btrue=})[Btrue | Bfalse] }
+pub fn yes() -> Flag { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Flag { widen_sum({bfalse=})[Btrue | Bfalse] }
+pub fn no() -> Flag { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
 
 /// Eliminates a dictionary `Flag` without exposing the label internals to callers.
 pub fn bool_select[A](on_true: A, on_false: A, b: Flag) -> A {
@@ -60,16 +60,16 @@ pub fn collapse_bool(doubled: Flag | Flag) -> Flag {
 // Red-black trees colour each node red or black to bound the longest
 // root-to-leaf path at twice the shortest — O(log n) operations.
 /// Defines the red and black labels used by dictionary node colors.
-labels { red: ., black: . };
+type { Red: .; Black: . }
 
 /// Red-black tree color used to maintain balance invariants.
 type Colour = Red | Black;
 
 /// Builds the red tree-color case.
-fn c_red() -> Colour { widen_sum({red=})[Red | Black] }
+fn c_red() -> Colour { widen_sum(Red.mk(()))[Red | Black] }
 
 /// Builds the black tree-color case.
-fn c_black() -> Colour { widen_sum({black=})[Red | Black] }
+fn c_black() -> Colour { widen_sum(Black.mk(()))[Red | Black] }
 
 /// Reports whether a tree node color is red.
 fn is_red(c: Colour) -> Flag {
@@ -80,19 +80,16 @@ fn is_red(c: Colour) -> Flag {
 
 /// Ordered dictionary with private node construction and projection.
 /// Use the same lawful, consistent key ordering for every update and lookup.
-pub rec newtype Dict[K][V] : . | (Colour & K & V & Dict[K][V] & Dict[K][V]) {
-  constructor pack;
-  projector unpack
-  }
+pub rec type { Dict[K][V]: . | (Colour & K & V & Dict[K][V] & Dict[K][V]) { mk; get } }
 
 /// Builds an empty dictionary.
 pub fn empty[K][V] -> Dict[K][V] {
-  Dict.pack(widen_sum(())[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
+  Dict.mk(widen_sum(())[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
 }
 
 // Rebuild a raw node only within the balancing and traversal implementation.
 fn node[K][V](c: Colour, key: K, val: V, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
-  Dict.pack(widen_sum((c, key, val, l, r))[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
+  Dict.mk(widen_sum((c, key, val, l, r))[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
 }
 
 /// `singleton(k, v)` is the one-entry map — a single black node.
@@ -102,7 +99,7 @@ pub fn singleton[K][V](key: K, val: V) -> Dict[K][V] {
 
 /// One-step destructor: `()` for the empty tree, or the node 5-tuple.
 /// Every walk projects through this.
-fn un_node[K][V](d: Dict[K][V]) -> . | (Colour & K & V & Dict[K][V] & Dict[K][V]) { d.>Dict.unpack }
+fn un_node[K][V](d: Dict[K][V]) -> . | (Colour & K & V & Dict[K][V] & Dict[K][V]) { d.>Dict.get }
 
 /// `is_empty(d)` is the pure emptiness predicate.
 pub fn is_empty[K][V](d: Dict[K][V]) -> Flag {
@@ -290,22 +287,19 @@ fn lookup_step[K][V][R](
 /// (colour, key, value, *right* sibling) so the rebuild can re-attach the
 /// rebalanced left subtree; `step_right` is the mirror. A self-contained
 /// product per arm; the descent threads the private `Crumbs` zipper.
-labels {
-, step_left[K][V]: Colour & K & V & Dict[K][V]
-, step_right[K][V]: Colour & K & V & Dict[K][V]
-};
+type { Step_left[K][V]: Colour & K & V & Dict[K][V]; Step_right[K][V]: Colour & K & V & Dict[K][V] }
 
 /// One zipper frame recording the sibling subtree and side taken during insertion.
 type Crumb[K][V] = Step_left[K][V] | Step_right[K][V];
 
 /// Records that insertion descended into the left subtree of a dictionary node.
 fn crumb_left[K][V](c: Colour, key: K, val: V, sibling: Dict[K][V]) -> Crumb[K][V] {
-  widen_sum({step_left = (c, key, val, sibling)})[Step_left[K][V] | Step_right[K][V]]
+  widen_sum(Step_left.mk((c, key, val, sibling)))[Step_left[K][V] | Step_right[K][V]]
 }
 
 /// Records that insertion descended into the right subtree of a dictionary node.
 fn crumb_right[K][V](c: Colour, key: K, val: V, sibling: Dict[K][V]) -> Crumb[K][V] {
-  widen_sum({step_right = (c, key, val, sibling)})[Step_left[K][V] | Step_right[K][V]]
+  widen_sum(Step_right.mk((c, key, val, sibling)))[Step_left[K][V] | Step_right[K][V]]
 }
 
 /// `rebuild_step(crumb, child)` re-attaches `child` as the subtree we
@@ -386,25 +380,25 @@ pub fn get_or[K][V](cmp: Compare[K], d: Dict[K][V], target: K, default: V) -> V 
 
 // Insertion records only the ancestors and sibling subtrees needed to
 // rebuild one search path, then restores the black root invariant.
-rec newtype Crumbs[K][V] : . | (Crumb[K][V] & Crumbs[K][V]) { constructor pack; projector unpack }
+rec type { Crumbs[K][V]: . | (Crumb[K][V] & Crumbs[K][V]) { mk; get } }
 
-fn no_crumbs[K][V] -> Crumbs[K][V] { Crumbs.pack(widen_sum(())[. | (Crumb[K][V] & Crumbs[K][V])]) }
+fn no_crumbs[K][V] -> Crumbs[K][V] { Crumbs.mk(widen_sum(())[. | (Crumb[K][V] & Crumbs[K][V])]) }
 
 fn push_crumb[K][V](head: Crumb[K][V], tail: Crumbs[K][V]) -> Crumbs[K][V] {
-  Crumbs.pack(widen_sum((head, tail))[. | (Crumb[K][V] & Crumbs[K][V])])
+  Crumbs.mk(widen_sum((head, tail))[. | (Crumb[K][V] & Crumbs[K][V])])
 }
 
 type Zip[K][V] = Dict[K][V] & Crumbs[K][V];
 
 // The two insertion passes have the same state and result shape. The
 // private done label distinguishes a stopped zipper from a continuing one.
-labels { done[K][V]: Zip[K][V] };
+type { Done[K][V]: Zip[K][V] }
 
 type Step[K][V] = Zip[K][V] | Done[K][V];
 
 fn step_go[K][V](z: Zip[K][V]) -> Step[K][V] { widen_sum(z)[Zip[K][V] | Done[K][V]] }
 
-fn step_done[K][V](z: Zip[K][V]) -> Step[K][V] { widen_sum({done = z})[Zip[K][V] | Done[K][V]] }
+fn step_done[K][V](z: Zip[K][V]) -> Step[K][V] { widen_sum(Done.mk(z))[Zip[K][V] | Done[K][V]] }
 
 fn insert_descend[K][V](cmp: Compare[K], d: Dict[K][V], key: K, val: V) -> Zip[K][V] {
   let stopped =
@@ -443,7 +437,7 @@ fn insert_rebuild[K][V](built: Dict[K][V], crumbs: Crumbs[K][V]) -> Dict[K][V] {
     , .(state: Zip[K][V]) -> Zip[K][V] | Done[K][V] {
         match(state) {
           .(child: Dict[K][V], rest: Crumbs[K][V]) {
-            match(rest.>Crumbs.unpack) {
+            match(rest.>Crumbs.get) {
               (
               , .(pair: Crumb[K][V] & Crumbs[K][V]) {
                   match(pair) {
@@ -476,15 +470,12 @@ pub fn insert[K][V](cmp: Compare[K], d: Dict[K][V], key: K, val: V) -> Dict[K][V
 // Each frame holds the next binding, its right subtree, and the remaining
 // ancestors. Descending left and then popping a frame visits each binding
 // once in ascending order without materializing a collection of entries.
-rec newtype Work[K][V] : . | (K & V & Dict[K][V] & Work[K][V]) {
-  constructor pack;
-  projector unpack
-  }
+rec type { Work[K][V]: . | (K & V & Dict[K][V] & Work[K][V]) { mk; get } }
 
-fn no_work[K][V] -> Work[K][V] { Work.pack(widen_sum(())[. | (K & V & Dict[K][V] & Work[K][V])]) }
+fn no_work[K][V] -> Work[K][V] { Work.mk(widen_sum(())[. | (K & V & Dict[K][V] & Work[K][V])]) }
 
 fn push_work[K][V](key: K, val: V, right: Dict[K][V], rest: Work[K][V]) -> Work[K][V] {
-  Work.pack(widen_sum((key, val, right, rest))[. | (K & V & Dict[K][V] & Work[K][V])])
+  Work.mk(widen_sum((key, val, right, rest))[. | (K & V & Dict[K][V] & Work[K][V])])
 }
 
 type Traversal[K][V][Acc] = Dict[K][V] & Work[K][V] & Acc;
@@ -508,7 +499,7 @@ pub fn fold_asc[K][V][Acc](d: Dict[K][V], initial: Acc, step: (Acc & K & V) -> A
                 }
               }
             , .(_empty: .) {
-                match(work.>Work.unpack) {
+                match(work.>Work.get) {
                   (
                   , .(frame: K & V & Dict[K][V] & Work[K][V]) {
                       match(frame) {

@@ -14,12 +14,22 @@ pure fn do_checked(
 , fills: __Fill_ctx__
 , _receiver_type: __Type__
 , result_type: __Type__
-, receiver: __Checked_term__
-, body: __Checked_term__
+, inputs: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
-  let result = __term_call__(ct, __term_type__(ct, body), body, receiver);
+  let inputs_type = __term_type__(ct, inputs);
+  let result =
+    __term_let__(
+    , ct
+    , inputs_type
+    , inputs
+    , .(bound: __Checked_term__) -> __Checked_term__ {
+        let receiver = __intrinsic_fst__(ct, inputs_type, bound);
+        let body = __intrinsic_snd__(ct, inputs_type, bound);
+        __term_call__(ct, __term_type__(ct, body), body, receiver)
+      }
+    );
   (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
 }
 
 /// Evaluates the receiver expression exactly once, then runs its sequence.
-pub macro do : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { trailing sequence; impl(fills) do_checked }
+pub macro do : [Receiver][Result] (Receiver & (Receiver -> Result)) -> Result { trailing sequence; impl(fills) do_checked }

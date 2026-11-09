@@ -2,47 +2,47 @@ module testapi/main;
 
 import testapi as t;
 
-pub newtype Seal : t.I32 { constructor make; projector read }
+pub type { Seal: t.I32 { mk; get } }
 
-pub newtype Other : t.I32 { constructor make; projector read }
+pub type { Other: t.I32 { mk; get } }
 
-pub fn make_seal(value: t.I32) -> Seal { Seal.make(value) }
+pub fn make_seal(value: t.I32) -> Seal { Seal.mk(value) }
 
-pub fn read_seal(value: Seal) -> t.I32 { value.>Seal.read }
+pub fn read_seal(value: Seal) -> t.I32 { value.>Seal.get }
 
-pub fn make_other(value: t.I32) -> Other { Other.make(value) }
+pub fn make_other(value: t.I32) -> Other { Other.mk(value) }
 
-pub newtype Vault[A] : A { constructor store; projector open }
+pub type { Vault[A]: A { mk; get } }
 
-pub fn stash[A](value: A) -> Vault[A] { Vault.store(value) }
+pub fn stash[A](value: A) -> Vault[A] { Vault.mk(value) }
 
-pub fn release[A](value: Vault[A]) -> A { value.>Vault.open }
+pub fn release[A](value: Vault[A]) -> A { value.>Vault.get }
 
-newtype Pack <U> : U { constructor pack; projector unpack }
+type { Pack <U>: U { mk; get } }
 
-fn make_pack() -> Pack { Pack.pack(()) }
+fn make_pack() -> Pack { Pack.mk(()) }
 
 pub fn type_only_result(vault: Vault[[A] Seal], consume: . -> .) {
-  let stage = vault.>Vault.open;
+  let stage = vault.>Vault.get;
   let _ = stage[.];
   consume()
 }
 
 pub fn cps_result(vault: Vault[[U] U -> Seal], consume: . -> .) {
-  let continuation = vault.>Vault.open;
-  let _ = Pack.unpack(make_pack())[Seal](continuation);
+  let continuation = vault.>Vault.get;
+  let _ = Pack.get(make_pack())[Seal](continuation);
   consume()
 }
 
 pub fn local_stage(value: Seal) -> Vault[[A] Seal] {
-  Vault.store(.[A] { value })
+  Vault.mk(.[A] { value })
 }
 
 pub fn local_continuation(value: Seal) -> Vault[[A] A -> Seal] {
-  Vault.store(.[A](_argument: A) { value })
+  Vault.mk(.[A](_argument: A) { value })
 }
 
 pub fn specialized_observer(consume: . -> .) -> Vault[Seal -> .] {
   let generic = .[A](_value: A) { consume() };
-  Vault.store(generic[Seal])
+  Vault.mk(generic[Seal])
 }

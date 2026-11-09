@@ -3,8 +3,8 @@ module testapi/consumer;
 import testapi/types as t;
 
 // An unrelated same-leaf declaration must not redirect qualified t.Box.
-newtype Box : . { constructor mk_local_box; projector un_local_box }
+type { Box: . { mk; get } }
 
 fn consume(projector: t.Box -> [R] ([A] A -> R) -> R) { () }
 
-pub fn main() { consume(t.Box.un_box) }
+pub fn main() { consume(t.Box.get) }

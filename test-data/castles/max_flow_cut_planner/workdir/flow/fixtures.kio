@@ -3,7 +3,7 @@ module flow/fixtures;
 import flow/network as net;
 import testapi(I32, String);
 
-pub labels Fixture = { title: String, network: net.Network, source: I32, sink: I32, expected: I32 };
+pub type Fixture = { Title: String; Network: net.Network; Source: I32; Sink: I32; Expected: I32 };
 
 pub fn cancellation() -> Fixture {
   let network = net.empty(4);
@@ -12,7 +12,13 @@ pub fn cancellation() -> Fixture {
   net.connect(network, 2, 3, 1);
   net.connect(network, 0, 2, 1);
   net.connect(network, 1, 3, 1);
-  {title = "reverse-edge rerouting", network, source = 0, sink = 3, expected = 2}
+  (
+  , Title.mk("reverse-edge rerouting")
+  , Network.mk(network)
+  , Source.mk(0)
+  , Sink.mk(3)
+  , Expected.mk(2)
+  )
 }
 
 pub fn parallel() -> Fixture {
@@ -22,7 +28,13 @@ pub fn parallel() -> Fixture {
   net.connect(network, 1, 2, 4);
   net.connect(network, 1, 0, 1);
   net.connect(network, 0, 2, 1);
-  {title = "parallel links and shared bottleneck", network, source = 0, sink = 2, expected = 5}
+  (
+  , Title.mk("parallel links and shared bottleneck")
+  , Network.mk(network)
+  , Source.mk(0)
+  , Sink.mk(2)
+  , Expected.mk(5)
+  )
 }
 
 pub fn disconnected() -> Fixture {
@@ -32,5 +44,11 @@ pub fn disconnected() -> Fixture {
   net.connect(network, 2, 1, 1);
   net.connect(network, 3, 4, 5);
   net.connect(network, 0, 3, 0);
-  {title = "unreachable sink and zero-capacity bridge", network, source = 0, sink = 4, expected = 0}
+  (
+  , Title.mk("unreachable sink and zero-capacity bridge")
+  , Network.mk(network)
+  , Source.mk(0)
+  , Sink.mk(4)
+  , Expected.mk(0)
+  )
 }

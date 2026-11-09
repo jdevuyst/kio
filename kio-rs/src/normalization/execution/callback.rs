@@ -125,31 +125,34 @@ impl<'code> Source<'code> {
         }
         match self.builtin {
             ComptimeBuiltin::TermLet => {
-                let value_type = canonical_refl_type(&args[0], ctx)?;
+                let value_type = reflected_type_carrier(&args[0])?.clone();
                 let value = as_checked_term(&args[1])?;
-                if !checked_type_equiv(&value, &value_type, ctx) {
+                if !checked_reflected_type_equiv(&value, &value_type, self.builtin, ctx) {
                     return None;
                 }
                 let name = fresh_checked_term_value_name("let");
-                let local = checked_term_local_value(name.clone(), value_type);
+                let local = reflected_local_value(name.clone(), value_type);
                 Some((Finish::Let { name, value }, EvalArgs::One([local])))
             }
             ComptimeBuiltin::TermFn => {
-                let function_type = canonical_refl_type(&args[0], ctx)?;
-                let (types, result_type) = split_canonical_function_params(&function_type, ctx)?;
-                let mut params = Vec::with_capacity(types.len());
-                for (index, typ) in types.into_iter().enumerate() {
-                    let name = fresh_checked_term_value_name(&format!("arg{index}"));
-                    params.push(EvalRef::new(CheckedTerm::from_node(
-                        CheckedTermNode::Local { name },
-                        typ,
-                    )));
-                }
+                let function_type = reflected_type_carrier(&args[0])?.clone();
+                let (domains, result_type) = reflected_function_layout(&function_type, ctx)?;
+                let params: Vec<_> = domains
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, ty)| {
+                        let name = fresh_checked_term_value_name(&format!("arg{index}"));
+                        EvalRef::new(CheckedTerm::from_reflected_node(
+                            CheckedTermNode::Local { name },
+                            ty,
+                        ))
+                    })
+                    .collect();
                 let packet = Value::CheckedTerm(checked_product_packet(&params));
                 Some((
                     Finish::Function {
-                        function_type: EvalRef::new(function_type),
-                        result_type: EvalRef::new(result_type),
+                        function_type,
+                        result_type,
                         params,
                     },
                     EvalArgs::One([packet]),
@@ -157,19 +160,9 @@ impl<'code> Source<'code> {
             }
             ComptimeBuiltin::TermTypeFn | ComptimeBuiltin::TypeForall => {
                 let arity = as_refl_type_arity(&args[0])?;
-                ctx.reflected_binder_epoch
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let name =
-                    fresh_checked_term_name(if self.builtin == ComptimeBuiltin::TypeForall {
-                        "forall"
-                    } else {
-                        "type"
-                    });
-                let var = Value::ReflTypeVar {
-                    name: name.clone(),
-                    arity,
-                };
-                Some((Finish::TypeBinder { name, arity }, EvalArgs::One([var])))
+                let variable = ReflectedVariable::live("T".into(), arity);
+                let var = Value::ReflTypeVar(variable.clone());
+                Some((Finish::TypeBinder { variable }, EvalArgs::One([var])))
             }
             _ => unreachable!("binder callback operation"),
         }
@@ -187,13 +180,12 @@ pub(super) enum Finish {
         value: EvalRef<CheckedTerm>,
     },
     Function {
-        function_type: EvalRef<EvalAstType>,
-        result_type: EvalRef<EvalAstType>,
+        function_type: ReflectedType,
+        result_type: ReflectedType,
         params: Vec<EvalRef<CheckedTerm>>,
     },
     TypeBinder {
-        name: String,
-        arity: usize,
+        variable: ReflectedVariable,
     },
     #[cfg(feature = "surface")]
     ProjectedLet {
@@ -246,11 +238,8 @@ impl Finish {
                     return Some(projected_value(term));
                 }
                 let body = as_checked_term(&body)?;
-                let ty = body.clone_type();
-                Some(checked_term_node_value(
-                    CheckedTermNode::TermLet { name, value, body },
-                    ty,
-                ))
+                let ty = body.ty.clone();
+                reflected_checked_value(ProjectedTermConstruction::Let { name, value, body }, ty)
             }
             Finish::Function {
                 function_type,
@@ -278,74 +267,58 @@ impl Finish {
                     return Some(projected_value(term));
                 }
                 let body = as_checked_term(&body)?;
-                if !checked_type_equiv(&body, &result_type, ctx) {
+                if !checked_reflected_type_equiv(&body, &result_type, source.builtin, ctx) {
                     return None;
                 }
-                let count = params.len();
                 let params = params
                     .into_iter()
                     .map(|param| {
                         let CheckedTermNode::Local { name } = param.node.as_ref() else {
                             unreachable!("prepared local")
                         };
-                        SignatureParam::Value(Param {
-                            name: name.clone(),
-                            ty: Some(param.clone_type()),
-                            pattern: Default::default(),
-                            meta: zero_meta(),
-                        })
+                        (name.clone(), param.ty.clone())
                     })
                     .collect();
-                Some(checked_term_node_value(
-                    CheckedTermNode::TermFn {
-                        sig: Signature::from_parts(
-                            params,
-                            vec![crate::ast::SignatureGroupKind::Value { len: count }],
-                        ),
+                reflected_checked_value(
+                    ProjectedTermConstruction::Fn {
+                        params,
+                        span: zero_span(),
                         body,
                     },
-                    function_type.unwrap_or_clone(),
-                ))
+                    function_type,
+                )
             }
-            Finish::TypeBinder { name, arity } => {
+            Finish::TypeBinder { variable } => {
                 #[cfg(feature = "surface")]
                 if matches!(body, Value::Projected(_)) {
                     let term = if source.builtin == ComptimeBuiltin::TypeForall {
                         crate::pass::typecheck_core::apply::fills::projected_type_forall_finish(
                             source.proof()?,
-                            name,
-                            arity,
+                            variable,
                             &body,
                         )
                     } else {
                         crate::pass::typecheck_core::apply::fills::projected_term_type_fn_finish(
                             source.proof()?,
-                            name,
-                            arity,
+                            variable,
                             &body,
                         )
                     }
                     .ok()?;
                     return Some(projected_value(term));
                 }
-                let param = TypeParam {
-                    presentation: Default::default(),
-                    name,
-                    span: zero_span(),
-                    kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
-                };
                 if source.builtin == ComptimeBuiltin::TypeForall {
-                    let body = canonical_refl_type(&body, ctx)?;
-                    Some(refl_type_value(Type::Forall {
-                        param,
-                        body: Box::new(body),
-                        meta: zero_meta(),
-                    }))
+                    let body = reflected_type_carrier(&body)?;
+                    Some(match body.close_forall(&variable) {
+                        Ok(ty) => Value::ReflType(ty),
+                        Err(_) => reflection_constructor_fault(ctx),
+                    })
                 } else {
-                    Some(Value::CheckedTerm(EvalRef::new(checked_term_type_fn(
-                        param,
-                        as_checked_term(&body)?,
-                    ))))
+                    let body = as_checked_term(&body)?;
+                    Some(match checked_bindings::close_forall(&body, &variable) {
+                        Ok(term) => Value::CheckedTerm(EvalRef::new(term)),
+                        Err(_) => reflection_constructor_fault(ctx),
+                    })
                 }
             }
         }

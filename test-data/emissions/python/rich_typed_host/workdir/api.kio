@@ -44,18 +44,15 @@ pub fn concrete_sum_crate(value: Crate[String | String | String]) -> Crate[Strin
   sum_crate[String][String | String](value)
 }
 
-pub newtype Box[A] : A { pub constructor make_box; pub projector read_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-pub newtype Functor[*F] : F[String] { pub constructor make_functor; pub projector read_functor }
+pub type { Functor[*F]: F[String] { pub mk; pub get } }
 
-pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector read_shadow }
+pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get } }
 
-pub newtype Pack <T> : T { pub constructor make_pack; pub projector open_pack }
+pub type { Pack <T>: T { pub mk; pub get } }
 
-pub rec newtype Recursive : . | Recursive {
-  pub constructor make_recursive;
-  pub projector read_recursive
-  }
+pub rec type { Recursive: . | Recursive { pub mk; pub get } }
 
 host fn apply_poly(f: [T] T -> T) -> String;
 
@@ -73,8 +70,8 @@ pub fn shadow(value: Shadow[Box[String]]) -> Shadow[Box[String]] { round_shadow(
 
 pub fn hkt(value: Box[String]) -> Box[String] { round_hkt[Box](value) }
 
-pub fn box_functor(value: Box[String]) -> Functor[Box] { Functor.make_functor[Box](value) }
+pub fn box_functor(value: Box[String]) -> Functor[Box] { Functor.mk[Box](value) }
 
 pub fn functor(value: Functor[Box]) -> Functor[Box] { round_functor(value) }
 
-pub fn pack[T](value: T) -> Pack { Pack.make_pack[T](value) }
+pub fn pack[T](value: T) -> Pack { Pack.mk[T](value) }

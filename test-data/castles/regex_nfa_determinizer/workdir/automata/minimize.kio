@@ -85,7 +85,7 @@ rec(loop) fn refine(d: dfa.Dfa, bs: Blocks, before: I32) -> Blocks & I32 {
 }
 
 rec(loop) fn first_in(bs: Blocks, block: I32, at: I32) -> I32 {
-  match(bs.>List.unpack) {
+  match(bs.>List.get) {
     (
     , .(x: I32, rest: Ints) {
         if(eq_i32(x, block)) { at } else { recur first_in(rest, block, add_i32(at, 1)) }

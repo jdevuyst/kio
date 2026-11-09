@@ -371,8 +371,7 @@ structural payload object would expose the missing operation implicitly: a
 host could construct the nominal by passing the object in, or project it by
 reading the object on the way out. Such a newtype therefore uses an opaque
 nominal handle instead. These rules use the lowered declaration and its exact
-payload dependencies; `labels` sugar and an equivalent explicit `newtype` are not
-distinguished.
+payload dependencies, independent of the source declaration grouping.
 
 The shape is compositional over the resolved type. Each binary constructor
 retains the complete representations of its children, including an abstract
@@ -388,10 +387,8 @@ child that later becomes a product, sum, nominal, or callable:
 - A nonexistential `newtype` with payload `X`, both members public, and no
   uncut payload-visible cycle — a JS object
   `{ [k]: shape(X) }` where `[k]` is the newtype's FFI key (its type name)
-  per § FFI keys for newtype slots below. A newtype minted by
-  `labels { f : X };` and an explicit
-  `newtype F : X { pub constructor mk_f; pub projector f; };` therefore
-  have the same shape.
+  per § FFI keys for newtype slots below. A nominal `F` introduced by
+  `type { F: X; }` uses this shape.
 - A public `newtype` with fewer than two public members, an existential, or an
   uncut payload-visible cycle — a frozen,
   null-prototype nominal handle with no payload property. The loaded artifact
@@ -437,19 +434,19 @@ A visible newtype wrapper uses its word-cased type component
 it never replaces its enclosing product or sum's `_0`/`_1` selector. Display
 keys do not grant access to a hidden payload or replace nominal identity.
 
-Worked examples (assume `labels { t1 : I32, t2 : Str, t3 : I32 };`
-declares generated types `T1`, `T2`, `T3`;
+Worked examples (assume `type { T1: I32; T2: Str; T3: I32; }`
+declares nominal types `T1`, `T2`, `T3`;
 `I32`, `Str` are role-typed host types):
 
 | Kio type                                   | FFI shape                          |
 | ------------------------------------------ | ---------------------------------- |
 | `T1`                                       | `{T1: <i32>}`                      |
 | `T1 & T2`                                  | `{_0: {T1: <i32>}, _1: {T2: <str>}}` |
-| `(I32 & Str)` (no labels)                  | `{_0: <i32>, _1: <str>}`           |
+| `(I32 & Str)` (no nominal fields)                  | `{_0: <i32>, _1: <str>}`           |
 | `(T1 & Str)`                               | `{_0: {T1: <i32>}, _1: <str>}`      |
 | `(T1 \| T2)`                               | `{_0: {T1: <i32>}}` or `{_1: {T2: <str>}}` |
 | `(I32 \| Str)`                             | `{_0: <i32>}` or `{_1: <str>}`     |
-| `F[I32] & F[Str]` (parametric same label)  | `{_0: {F: <i32>}, _1: {F: <str>}}` |
+| `F[I32] & F[Str]` (same parametric nominal)  | `{_0: {F: <i32>}, _1: {F: <str>}}` |
 
 The host dispatches a sum value by checking which key is present:
 `if ('_0' in v) … else if ('_1' in v) …`.
@@ -555,27 +552,25 @@ namespace object `pkg.m.KioType_<exact-component>` whose properties are the
 newtype's pub members (constructor and projector), under the declaring
 module's namespace. Word casing is applied before remaining underscores in
 the type name are encoded as `_u` (`Native_token` → `KioType_NativeToken`).
-This includes the ordinary newtypes produced by `labels`;
-the boundary rule depends on the lowered newtype declaration, not on which
-surface spelling produced it. The FFI surfaces the declaration's member names.
+The boundary rule depends on the nominal declaration and its member visibility.
 
 ```kio
 // module m
-pub newtype Counter : I32 { pub constructor fresh; pub projector current; };
+pub type { Counter: I32; }
 ```
 
 ```js
-const c = pkg.m.KioType_Counter.fresh(0);     // constructor: I32 → Counter
-const n = pkg.m.KioType_Counter.current(c);   // projector:   Counter → I32
+const c = pkg.m.KioType_Counter.mk(0);     // constructor: I32 → Counter
+const n = pkg.m.KioType_Counter.get(c);   // projector:   Counter → I32
 ```
 
 Public newtype members use the same boundary representation as `pub fn`
-parameters and returns. `fresh` accepts `shape(I32)` and returns
-`shape(Counter)` (`{Counter: <i32>}`); `current` accepts that same
+parameters and returns. `mk` accepts `shape(I32)` and returns
+`shape(Counter)` (`{Counter: <i32>}`); `get` accepts that same
 `shape(Counter)` and returns `shape(I32)`. A value built with
-`pkg.m.KioType_Counter.fresh` can therefore be passed directly to any
+`pkg.m.KioType_Counter.mk` can therefore be passed directly to any
 `Counter`-typed public function, and a `Counter` returned by such a function
-can be passed directly to `pkg.m.KioType_Counter.current`. Payload products, sums,
+can be passed directly to `pkg.m.KioType_Counter.get`. Payload products, sums,
 functions, polymorphic binders, and existential projector continuations use
 the same recursive conversion rules as every other public signature.
 
@@ -603,7 +598,7 @@ the per-backend realization is:
   newtypes retain their declared wrapper or nominal handle; their constructors
   and projectors preserve that representation and operation visibility.
 
-**Polymorphic newtype payloads.** The dictionary pattern (`pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]`) stores the same first-class staged value used elsewhere. Each binder is one explicit `advance()`; computation at that stage runs before the next stage is returned. With both members public it uses the ordinary visible wrapper; hiding either member selects the nominal handle rule. Construction, storage, and projection do not enter or compact its payload's stages. See the shared [polymorphic payload contract](README.md#polymorphic-newtype-payloads).
+**Polymorphic newtype payloads.** The dictionary pattern (`pub type { Monad[*F]: [A][B](F[A] & (A -> F[B])) -> F[B]; }`) stores the same first-class staged value used elsewhere. Each binder is one explicit `advance()`; computation at that stage runs before the next stage is returned. With both members public it uses the ordinary visible wrapper; hiding either member selects the nominal handle rule. Construction, storage, and projection do not enter or compact its payload's stages. See the shared [polymorphic payload contract](README.md#polymorphic-newtype-payloads).
 
 ## Item naming
 
@@ -718,17 +713,17 @@ both sides of the boundary. Keep the pair fields unchanged while either side
 can still use them; construct a new pair for a changed value. Conversion does
 not promise independent snapshots.
 
-A package with named labels surfaces them in the FFI shape too. Given the
+A package with nominal fields surfaces them in the FFI shape too. Given the
 following in a bridged module `hello/main`:
 
 ```kio
-pub labels { greeting : String };
+pub type { Greeting: String; }
 
-pub fn say_hello(g: Greeting) { print(g.?{greeting}) }
+pub fn say_hello(g: Greeting) { print(Greeting.get(g)) }
 ```
 
 ```js
-pkg.hello.KioModule_main.sayHello({ Greeting: "hello\n" }); // label-generated singleton
+pkg.hello.KioModule_main.sayHello({ Greeting: "hello\n" }); // nominal singleton
 ```
 
 ### Browser

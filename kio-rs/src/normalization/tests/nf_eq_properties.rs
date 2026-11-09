@@ -26,6 +26,7 @@ fn value_shape(value: &Value) -> (usize, usize) {
             ..
         } => combine([scrutinee.as_ref(), left.as_ref(), right.as_ref()].into_iter()),
         Value::Seq { value, body } => combine([value.as_ref(), body.as_ref()].into_iter()),
+        Value::StuckType(callee, _) => combine(std::iter::once(callee.as_ref())),
         Value::Stuck(callee, args) => combine(std::iter::once(callee.as_ref()).chain(args.iter())),
         _ => (1, 1),
     }

@@ -1,6 +1,6 @@
 module main;
 
-newtype Hidden : . { constructor mk; projector un }
+type { Hidden: . { mk; get } }
 
 type Hidden_alias = Hidden;
 

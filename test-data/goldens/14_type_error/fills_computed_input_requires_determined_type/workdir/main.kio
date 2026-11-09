@@ -2,9 +2,9 @@ module main;
 
 import __comptime__;
 
-newtype Box[A] : . { constructor box; projector unbox }
+type { Box[A]: . { mk; get } }
 
-pure fn boxed[A]() -> Box[A] { Box.box[A](()) }
+pure fn boxed[A]() -> Box[A] { Box.mk[A](()) }
 
 pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, target: __Type__, _value: __Checked_term__) ->
   __Checked_term__ & __Fill_ctx__

@@ -40,7 +40,6 @@ pub(crate) fn project_module(
             | Item::LiteralAlias(_, _)
             | Item::Newtype(_)
             | Item::Labels(_, _)
-            | Item::LabelForward(_, _)
             | Item::Macro(_, _)
             | Item::TypeRecGroup(_)
             | Item::HostType(_)
@@ -267,6 +266,21 @@ impl Projection<'_> {
                 return Err(error);
             }
             let mut stages = prefix;
+            let has_final_prefix = stages
+                .last()
+                .is_some_and(|stage| !matches!(stage.args.first(), Some(CallArg::Type(_))));
+            let mut combined = if has_final_prefix {
+                let mut stage = stages.pop().unwrap();
+                Self::pack_value_stage(&mut stage);
+                stage
+            } else {
+                CallStage {
+                    occurrence: Default::default(),
+                    args: Vec::new(),
+                    source_trivia: None,
+                    meta: Meta::new(span),
+                }
+            };
             for (index, (block, descriptor)) in
                 blocks.into_iter().zip(&declaration.blocks).enumerate()
             {
@@ -292,19 +306,15 @@ impl Projection<'_> {
                     return Err(error);
                 }
                 let value = project_block(block, descriptor.exposure, declaration, id, index)?;
-                let meta = Meta::new(value.span());
-                stages.push(CallStage {
-                    occurrence: Default::default(),
-                    args: vec![CallArg::Value(value)],
-                    source_trivia: None,
-                    meta,
-                });
+                combined.args.push(CallArg::Value(value));
             }
+            combined.meta.span = span;
+            stages.push(combined);
             *expr = Expr::UserMacro {
                 occurrence: Default::default(),
                 name: head.name,
                 stages,
-                form: UserMacroCallForm::TrailingBlocks,
+                form: UserMacroCallForm::TrailingBlocks { has_final_prefix },
                 meta,
                 ext: id,
             };
@@ -334,9 +344,7 @@ impl Projection<'_> {
             }
             Expr::Ufcs { .. } => unreachable!("UFCS is normalized before projection"),
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => self.expr(body)?,
-            Expr::Let { value, body, .. }
-            | Expr::RowLet { value, body, .. }
-            | Expr::Seq { value, body, .. } => {
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
                 self.expr(value)?;
                 self.expr(body)?;
             }
@@ -345,22 +353,6 @@ impl Projection<'_> {
                     self.expr(item)?;
                 }
             }
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    self.expr(&mut label.value)?;
-                }
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => self.expr(receiver)?,
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    if let Some(receiver) = base.receiver_mut() {
-                        self.expr(receiver)?;
-                    }
-                    for update in updates {
-                        self.expr(&mut update.value)?;
-                    }
-                }
-            },
             Expr::OpChain { .. } => unreachable!("operator folding precedes block projection"),
             Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
@@ -470,7 +462,6 @@ fn project_block(
             .map(|item| match item {
                 NeutralItem::Expression { value, .. } => Ok(value),
                 NeutralItem::Binding { meta, .. }
-                | NeutralItem::RowBinding { meta, .. }
                 | NeutralItem::ExistentialBinding { meta, .. } => Err(block_error(
                     declaration,
                     meta.span,
@@ -606,19 +597,6 @@ fn project_block(
                     }
                 }
             }
-            NeutralItem::RowBinding {
-                entries,
-                value,
-                meta,
-            } => Expr::RowLet {
-                occurrence: Default::default(),
-                entries,
-                value: Box::new(value),
-                body: Box::new(body),
-                temp_name: format!("__block_row_n{}_n{index}_n{position}__", id.0),
-                meta,
-                ext: (),
-            },
             NeutralItem::ExistentialBinding {
                 type_params,
                 name,

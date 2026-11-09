@@ -1,0 +1,51 @@
+module testapi/main;
+
+import macros/row_macros(macro record, macro select, macro with, macro with_);
+import testapi(String);
+import testapi/io(print);
+
+type { A: String { mk; get } }
+
+type { B: String { mk; get } }
+
+fn make_a(message: String) -> A { print(message); A.mk("A\n") }
+
+fn make_b(message: String) -> B { print(message); B.mk("B\n") }
+
+fn receiver() -> A & B { print("receiver\n"); (A.mk("old A\n"), B.mk("old B\n")) }
+
+fn unit_packet(message: String) { print(message) }
+
+fn factory_a() -> A -> String {
+  print("factory A\n");
+  .(value: A) -> String { print("call A\n"); A.get(value) }
+}
+
+fn factory_b() -> B -> String {
+  print("factory B\n");
+  .(value: B) -> String { print("call B\n"); B.get(value) }
+}
+
+pub fn main() {
+  let .(built: B & A) = record { make_a("record A\n"); make_b("record B\n") };
+  let .(b, a) = built;
+  print(B.get(b));
+  print(A.get(a));
+  let .(replaced: B & A) = receiver().>with { make_a("patch A\n"); make_b("patch B\n") };
+  let .(new_b, new_a) = replaced;
+  print(B.get(new_b));
+  print(A.get(new_a));
+  let .(selected_b, selected_a) = receiver().>select { factory_b(); factory_a() };
+  print(selected_b);
+  print(selected_a);
+  let .(first, second) = receiver().>select { factory_a(); factory_a() };
+  print(first);
+  print(second);
+  receiver().>select {};
+  receiver().>select { unit_packet("empty selectors\n") };
+  let unchanged = receiver().>with_ { unit_packet("empty updates\n") };
+  let .(old_a, old_b) = unchanged;
+  print(A.get(old_a));
+  print(B.get(old_b));
+  record { unit_packet("empty record\n") }
+}

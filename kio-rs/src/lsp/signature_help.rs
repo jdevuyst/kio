@@ -11,8 +11,8 @@ use lsp_types::{
 };
 
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, HostFnParam, Item, Module, OpChainKind, SignatureGroupRef,
-    SignatureParam, Surface, TypeParam,
+    CallArg, Expr, HostFnParam, Item, Module, OpChainKind, SignatureGroupRef, SignatureParam,
+    Surface, TypeParam,
 };
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::positions::{LineIndex, LspPosition};
@@ -449,7 +449,6 @@ fn visit_item<'a>(
         | Item::LiteralAlias(_, _)
         | Item::Newtype(_)
         | Item::Labels(_, _)
-        | Item::LabelForward(_, _)
         | Item::Op(_, _)
         | Item::HostType(_)
         | Item::HostFn(_) => {}
@@ -510,10 +509,6 @@ fn visit_expr<'a>(
             visit_expr(value, offset, visitor);
             visit_expr(body, offset, visitor);
         }
-        Expr::RowLet { value, body, .. } => {
-            visit_expr(value, offset, visitor);
-            visit_expr(body, offset, visitor);
-        }
         Expr::Tuple { items, .. } => {
             for item in items {
                 visit_expr(item, offset, visitor);
@@ -522,12 +517,6 @@ fn visit_expr<'a>(
         Expr::FnPlaceholder { body, .. } => {
             visit_expr(body, offset, visitor);
         }
-        Expr::LabelValue { labels, .. } => {
-            for label in labels {
-                visit_expr(&label.value, offset, visitor);
-            }
-        }
-        Expr::Elaborator { call, .. } => visit_elaborator_call(call, offset, visitor),
         Expr::UserMacro { stages, .. } => {
             for stage in stages {
                 visit_call_args(&stage.args, offset, visitor);
@@ -582,24 +571,6 @@ fn visit_call_args<'a>(
     for arg in args {
         if let CallArg::Value(value) = arg {
             visit_expr(value, offset, visitor);
-        }
-    }
-}
-
-fn visit_elaborator_call<'a>(
-    call: &'a ElaboratorCall<Surface>,
-    offset: Option<u32>,
-    visitor: &mut impl FnMut(CallSite<'a>),
-) {
-    match call {
-        ElaboratorCall::FieldAccess { receiver, .. } => visit_expr(receiver, offset, visitor),
-        ElaboratorCall::FieldUpdate { base, updates, .. } => {
-            if let Some(receiver) = base.receiver() {
-                visit_expr(receiver, offset, visitor);
-            }
-            for update in updates {
-                visit_expr(&update.value, offset, visitor);
-            }
         }
     }
 }

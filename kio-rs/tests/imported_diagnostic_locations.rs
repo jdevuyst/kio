@@ -19,7 +19,7 @@ fn check_control(binary: &Path, source: &str) -> String {
         fixture.path().join("provider.kio"),
         concat!(
             "module provider;\n",
-            "pub newtype W : . { pub constructor mk; pub projector get; };\n",
+            "pub type { W: . { pub mk; pub get; }; };\n",
             "pub fn take(value: W) -> . { () }\n",
             "pub fn poly[A](value: W) -> . { () }\n",
             "pub fn pass[A](value: A) -> A { value }\n",
@@ -54,7 +54,7 @@ fn imported_parameter_mismatch_names_the_signature_file_not_the_type_definition(
             .unwrap();
             fs::write(
                 fixture.path().join("origin.kio"),
-                "module origin;\npub newtype W : . { pub constructor mk; pub projector get; };\n",
+                "module origin;\npub type { W: . { pub mk; pub get; }; };\n",
             )
             .unwrap();
             let provider = "module provider;\nimport origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";

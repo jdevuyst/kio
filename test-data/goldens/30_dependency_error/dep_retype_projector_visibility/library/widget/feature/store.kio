@@ -1,3 +1,3 @@
 module feature/store;
 
-pub(feature) newtype Token : . { constructor make; pub projector get }
+pub(feature) type { Token: . { mk; pub get; }; };

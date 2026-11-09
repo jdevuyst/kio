@@ -9,6 +9,7 @@ module turtle/echo;
 import list/core as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, mul_i32);
 import testapi/io(print);
@@ -45,21 +46,31 @@ rec(loop) {
     let indent = text.spaces(mul_i32(depth, 2));
     match(cmd.un_command(c)) {
       (
-      , .(p: cmd.Pen_cmd) { line(indent, pen_text(p.?{cmd.pen_cmd})) }
-      , .(m: cmd.Move_cmd) { line(indent, text.cat2("move ", text.num(m.?{cmd.move_cmd}))) }
-      , .(t: cmd.Turn_cmd) { line(indent, turn_text(t.?{cmd.turn_cmd})) }
+      , .(p: cmd.Pen_cmd) {
+          line(indent, pen_text(p.>select { cmd.Pen_cmd.get }))
+        }
+      , .(m: cmd.Move_cmd) {
+          line(indent, text.cat2("move ", text.num(m.>select { cmd.Move_cmd.get })))
+        }
+      , .(t: cmd.Turn_cmd) {
+          line(indent, turn_text(t.>select { cmd.Turn_cmd.get }))
+        }
       , .(g: cmd.Goto_cmd) {
-          let .(x: I32, y: I32) = g.?{cmd.goto_cmd};
+          let .(x: I32, y: I32) = g.>select { cmd.Goto_cmd.get };
           line(indent, text.cat4("goto ", text.num(x), " ", text.num(y)))
         }
-      , .(k: cmd.Mark_cmd) { line(indent, text.cat2("mark ", text.num(k.?{cmd.mark_cmd}))) }
+      , .(k: cmd.Mark_cmd) {
+          line(indent, text.cat2("mark ", text.num(k.>select { cmd.Mark_cmd.get })))
+        }
       , .(r: cmd.Repeat_cmd) {
-          let .(n: I32, body: list.List[cmd.Command]) = r.?{cmd.repeat_cmd};
+          let .(n: I32, body: list.List[cmd.Command]) = r.>select { cmd.Repeat_cmd.get };
           line(indent, text.cat2("repeat ", text.num(n)));
           recur(cont) walk(body, add_i32(depth, 1));
           line(indent, "end")
         }
-      , .(u: cmd.Unknown_cmd) { line(indent, text.cat2("unknown ", u.?{cmd.unknown_cmd})) }
+      , .(u: cmd.Unknown_cmd) {
+          line(indent, text.cat2("unknown ", u.>select { cmd.Unknown_cmd.get }))
+        }
       )
     }
   }

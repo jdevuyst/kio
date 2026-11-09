@@ -10,9 +10,9 @@ import testapi/text(string_concat);
 fn image() -> String {
   "module guest;\n\nimport provider as source;\n\ntype Mid[A][B] = "
   "source.Box[A][B];\ntype Alias[A][B] = Mid[A][B];\n\npub fn run() -> . & . { "
-  "Alias.open[.][.](Alias.make[.][.]((), ())) }\n\npackage alias_image;\n\n"
-  "bridge { guest; provider; }\n\nmodule provider;\n\npub newtype Box[A][B] : A "
-  "& B { pub constructor make; pub projector open; };\n"[String]
+  "Alias.get[.][.](Alias.mk[.][.]((), ())) }\n\npackage alias_image;\n\nbridge "
+  "{ guest; provider; }\n\nmodule provider;\n\npub type { Box[A][B]: A & B { "
+  "pub mk; pub get; }; };\n"[String]
 }
 
 fn outcome(loaded: Load_outcome) -> String {

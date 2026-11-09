@@ -4,6 +4,7 @@ import list/core as cells;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import report/events as events;
 import report/model as model;
 import testapi(Bool, I32, String);
@@ -14,16 +15,24 @@ import testapi/text as text;
 fn append_closed(state: model.State, closed: model.Suite, rest: cells.List[model.Suite]) -> model.State {
   match(cells.uncons(rest)) {
     .(parent: model.Suite, ancestors: cells.List[model.Suite]) {
-      state.!{model.stack = cells.cons(model.attach(parent, closed), ancestors)}
+      (
+      , model.Stack.mk(cells.cons(model.attach(parent, closed), ancestors))
+      , model.Roots.mk(state.>select { model.Roots.get })
+      , model.Errors.mk(state.>select { model.Errors.get })
+      )
     };
     .(_empty: .) {
-      state.!{model.stack = rest, model.roots = cells.cons(closed, state.?{model.roots})}
+      (
+      , model.Stack.mk(rest)
+      , model.Roots.mk(cells.cons(closed, state.>select { model.Roots.get }))
+      , model.Errors.mk(state.>select { model.Errors.get })
+      )
     }
   }
 }
 
 fn close(state: model.State, name: String, declared: I32) -> model.State {
-  match(cells.uncons(state.?{model.stack})) {
+  match(cells.uncons(state.>select { model.Stack.get })) {
     .(suite: model.Suite, rest: cells.List[model.Suite]) {
       if(text.string_eq(name, model.suite_name(suite))) {
         let actual = model.total(model.suite_counts(suite));
@@ -52,16 +61,23 @@ fn close(state: model.State, name: String, declared: I32) -> model.State {
 }
 
 fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bool) -> model.State {
-  if(arith.leq_i32(test.?{model.count}, 0)) {
+  if(arith.leq_i32(test.>select { model.Count.get }, 0)) {
     model.error(state, "test count must be positive")
-  } else match(cells.uncons(state.?{model.stack})) {
+  } else match(cells.uncons(state.>select { model.Stack.get })) {
     .(suite: model.Suite, rest: cells.List[model.Suite]) {
       let failures =
         if(failed) { cells.cons(test, model.failures(suite)) } else { model.failures(suite) };
-      state.!{model.stack = cells.cons(model.add_case(suite, counts, failures), rest)}
+      (
+      , model.Stack.mk(cells.cons(model.add_case(suite, counts, failures), rest))
+      , model.Roots.mk(state.>select { model.Roots.get })
+      , model.Errors.mk(state.>select { model.Errors.get })
+      )
     };
     .(_empty: .) {
-      model.error(state, text.string_concat("test outside suite: ", test.?{model.name}))
+      model.error(
+      , state
+      , text.string_concat("test outside suite: ", test.>select { model.Name.get })
+      )
     }
   }
 }
@@ -69,43 +85,49 @@ fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bo
 pub fn accept(state: model.State, event: events.Event) -> model.State {
   match(event) {
     .(e: events.Open_suite) {
-      state.!{model.stack = cells.cons(
-      , model.empty_suite(e.?{events.open_suite})
-      , state.?{model.stack}
-      )}
+      (
+      , model.Stack.mk(cells.cons(
+        , model.empty_suite(e.>select { events.Open_suite.get })
+        , state.>select { model.Stack.get }
+        ))
+      , model.Roots.mk(state.>select { model.Roots.get })
+      , model.Errors.mk(state.>select { model.Errors.get })
+      )
     };
     .(e: events.Close_suite) {
-      let .(name, count) = e.?{events.close_suite};
+      let .(name, count) = e.>select { events.Close_suite.get };
       close(state, name, count)
     };
     .(e: events.Passed_case) {
-      let test = e.?{events.passed_case};
+      let test = e.>select { events.Passed_case.get };
       record(
       , state
       , test
-      , {model.passed = test.?{model.count}, model.failed = 0, model.skipped = 0}
+      , (model.Passed.mk(test.>select { model.Count.get }), model.Failed.mk(0), model.Skipped.mk(0))
       , .f
       )
     };
     .(e: events.Failed_case) {
-      let test = e.?{events.failed_case};
+      let test = e.>select { events.Failed_case.get };
       record(
       , state
       , test
-      , {model.passed = 0, model.failed = test.?{model.count}, model.skipped = 0}
+      , (model.Passed.mk(0), model.Failed.mk(test.>select { model.Count.get }), model.Skipped.mk(0))
       , .t
       )
     };
     .(e: events.Skipped_case) {
-      let test = e.?{events.skipped_case};
+      let test = e.>select { events.Skipped_case.get };
       record(
       , state
       , test
-      , {model.passed = 0, model.failed = 0, model.skipped = test.?{model.count}}
+      , (model.Passed.mk(0), model.Failed.mk(0), model.Skipped.mk(test.>select { model.Count.get }))
       , .f
       )
     };
-    .(e: events.Invalid) { model.error(state, e.?{events.invalid}) }
+    .(e: events.Invalid) {
+      model.error(state, e.>select { events.Invalid.get })
+    }
   }
 }
 
@@ -115,6 +137,6 @@ pub fn finish(state: model.State) -> model.State {
       model.error(acc, text.string_concat("unclosed suite: ", model.suite_name(suite)))
     }
   , state
-  , state.?{model.stack}
+  , state.>select { model.Stack.get }
   )
 }

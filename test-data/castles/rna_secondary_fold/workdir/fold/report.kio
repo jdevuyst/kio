@@ -5,7 +5,8 @@ import fold/numbers as numbers;
 import fold/reconstruct as reconstruct;
 import fold/solver as solver;
 import fold/validate as validate;
-import fold/validate({brackets}, {legal}, {noncrossing}, {score_matches}, {symmetric});
+import fold/validate(Brackets, Legal, Noncrossing, Score_matches, Symmetric);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/array as array;
 import testapi/fmt as fmt;
@@ -13,15 +14,15 @@ import testapi/io as io;
 
 fn report_audit(audit: validate.Audit) {
   io.print(" legal=");
-  io.print(fmt.bool_to_string(audit.?{legal}));
+  io.print(fmt.bool_to_string(audit.>select { Legal.get }));
   io.print(" symmetric=");
-  io.print(fmt.bool_to_string(audit.?{symmetric}));
+  io.print(fmt.bool_to_string(audit.>select { Symmetric.get }));
   io.print(" noncrossing=");
-  io.print(fmt.bool_to_string(audit.?{noncrossing}));
+  io.print(fmt.bool_to_string(audit.>select { Noncrossing.get }));
   io.print(" brackets=");
-  io.print(fmt.bool_to_string(audit.?{brackets}));
+  io.print(fmt.bool_to_string(audit.>select { Brackets.get }));
   io.print(" score=");
-  io.print(fmt.bool_to_string(audit.?{score_matches}));
+  io.print(fmt.bool_to_string(audit.>select { Score_matches.get }));
   io.print("\n")
 }
 

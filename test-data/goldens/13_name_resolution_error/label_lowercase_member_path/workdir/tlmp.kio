@@ -1,3 +1,0 @@
-module tlmp;
-
-host type String role(str);

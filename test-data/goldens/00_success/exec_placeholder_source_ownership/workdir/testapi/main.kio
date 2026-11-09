@@ -5,7 +5,7 @@ import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
-labels { slot: String };
+type { Slot: String { mk; get } }
 
 fn x2(left: String, right: String) -> String { text.string_concat(left, right) }
 
@@ -36,7 +36,7 @@ pub fn main() {
     text.string_concat(x1, apply1(.x. { x1 }))
   }));
   io.print("\n");
-  io.print(apply1(.x. { let .({slot as x2}) = {slot = x1}; x2 }));
+  io.print(apply1(.x. { let x2 = Slot.get(Slot.mk(x1)); x2 }));
   io.print("\n");
   io.print(apply1(.x. { x1 + "!" }));
   io.print("\n");

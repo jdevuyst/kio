@@ -581,9 +581,8 @@ fn scope_kind_from_walk(kind: crate::scope_walk::CandidateKind) -> ScopeKind {
 fn scope_kind_of_item(kind: ItemKind) -> Option<ScopeKind> {
     match kind {
         ItemKind::Fn | ItemKind::Op | ItemKind::Equiv => Some(ScopeKind::Function),
-        ItemKind::Newtype | ItemKind::TypeAlias | ItemKind::Labels => Some(ScopeKind::Type),
+        ItemKind::Newtype | ItemKind::TypeAlias => Some(ScopeKind::Type),
         ItemKind::Literal => Some(ScopeKind::Constant),
-        ItemKind::LabelForward => None,
     }
 }
 
@@ -597,8 +596,6 @@ pub enum ItemKind {
     Newtype,
     TypeAlias,
     Literal,
-    Labels,
-    LabelForward,
     Op,
     Equiv,
 }
@@ -611,17 +608,10 @@ impl ItemKind {
             ItemKind::Newtype => "newtype",
             ItemKind::TypeAlias => "type",
             ItemKind::Literal => "literal",
-            ItemKind::Labels => "labels",
-            ItemKind::LabelForward => "label",
             ItemKind::Op => "op",
             ItemKind::Equiv => "equiv",
         }
     }
-}
-
-pub(crate) fn item_allowed_for_command(kind: ItemKind, command: &str) -> bool {
-    kind != ItemKind::LabelForward
-        || command_mode(canonical_name(command)) == Some(CommandMode::Fqn)
 }
 
 /// The description-column label for an item of `kind` declared with the
@@ -636,11 +626,9 @@ fn kind_label(kind: ItemKind, vis_pub: bool) -> &'static str {
     match kind {
         ItemKind::Fn if vis_pub => "pub fn",
         ItemKind::Fn => "fn",
-        ItemKind::Newtype => "newtype",
+        ItemKind::Newtype => "nominal type",
         ItemKind::TypeAlias => "type",
         ItemKind::Literal => "literal",
-        ItemKind::Labels => "labels",
-        ItemKind::LabelForward => "label",
         ItemKind::Op => "op",
         ItemKind::Equiv => "equiv",
     }
@@ -908,11 +896,6 @@ impl NameSet {
                     selector_scope.insert((op.source_module.clone(), op.grammar.clone()));
                 }
             }
-            for item in &items {
-                if item.source_module == current.path {
-                    selector_scope.insert((item.source_module.clone(), item.short_name.clone()));
-                }
-            }
             for import in &current.module.imports {
                 match &import.kind {
                     crate::ast::ImportKind::Qualified { path, alias, .. } => {
@@ -920,10 +903,12 @@ impl NameSet {
                     }
                     crate::ast::ImportKind::Selective { from, items } => {
                         for item in items {
-                            selector_scope.insert((
-                                from.segments.join("/"),
-                                super::commands::selector_name(item),
-                            ));
+                            if matches!(item, crate::ast::ImportItem::OperatorPattern { .. }) {
+                                selector_scope.insert((
+                                    from.segments.join("/"),
+                                    super::commands::selector_name(item),
+                                ));
+                            }
                         }
                     }
                     _ => {}
@@ -981,24 +966,18 @@ impl NameSet {
     /// first — the `:t` / `:pure` pool. Operators are **not**
     /// included.
     fn name_candidates(&self, query: &str) -> Vec<Candidate> {
-        rank(self.name_scored(query, false))
+        rank(self.name_scored(query))
     }
 
     /// The scored (unsorted) name / FQN candidates — shared with the
     /// operator- and builtin-aware pools, which append their extra
     /// candidates before the single final sort so the kinds interleave
     /// by score rather than trailing as separate blocks.
-    fn name_scored(&self, query: &str, global: bool) -> Vec<ScoredCandidate> {
+    fn name_scored(&self, query: &str) -> Vec<ScoredCandidate> {
         let mut scored: Vec<ScoredCandidate> = Vec::new();
         for it in &self.items {
             let desc = format!("{} — {}", kind_label(it.kind, it.vis_pub), it.source_module);
-            if (!it.short_name.starts_with('{')
-                || global
-                || self.selector_scope.as_ref().is_none_or(|scope| {
-                    scope.contains(&(it.source_module.clone(), it.short_name.clone()))
-                }))
-                && let Some(fm) = fuzzy_match(query, &it.short_name)
-            {
+            if let Some(fm) = fuzzy_match(query, &it.short_name) {
                 scored.push(ScoredCandidate {
                     score: fm.score,
                     candidate: Candidate {
@@ -1034,14 +1013,14 @@ impl NameSet {
     /// Name / FQN / operator candidates for `:signature` / `:source`,
     /// sorted best match first.
     fn name_fqn_op_candidates(&self, query: &str) -> Vec<Candidate> {
-        let mut scored = self.name_scored(query, false);
+        let mut scored = self.name_scored(query);
         scored.extend(self.operator_scored(query, false));
         rank(scored)
     }
 
     /// Name / FQN / operator / builtin candidates for `:doc`.
     fn name_fqn_op_builtin_candidates(&self, query: &str, global: bool) -> Vec<Candidate> {
-        let mut scored = self.name_scored(query, global);
+        let mut scored = self.name_scored(query);
         scored.extend(self.operator_scored(query, global));
         scored.extend(self.builtin_scored(query));
         rank(scored)
@@ -1167,11 +1146,11 @@ fn collect_item(
                         newtype.vis.is_pub(),
                     ),
                     crate::ast::TypeRecMember::Labels(labels, _) => {
-                        collect_label_selectors(module_path, labels, items);
+                        collect_nominal_entries(module_path, labels, items);
                         let Some(name) = labels.type_alias_name.as_deref() else {
                             continue;
                         };
-                        (name, ItemKind::Labels, labels.vis.is_pub())
+                        (name, ItemKind::TypeAlias, labels.vis.is_pub())
                     }
                 };
                 items.push(ItemEntry {
@@ -1192,22 +1171,11 @@ fn collect_item(
         Item::HostType(h) => (h.name.as_str(), ItemKind::Newtype, true),
         Item::HostFn(h) => (h.name.as_str(), ItemKind::Fn, true),
         Item::Labels(t, _) => {
-            collect_label_selectors(module_path, t, items);
+            collect_nominal_entries(module_path, t, items);
             match &t.type_alias_name {
-                Some(n) => (n.as_str(), ItemKind::Labels, t.vis.is_pub()),
+                Some(n) => (n.as_str(), ItemKind::TypeAlias, t.vis.is_pub()),
                 None => return,
             }
-        }
-        Item::LabelForward(forward, _) => {
-            let name = format!("{{{}}}", forward.name);
-            items.push(ItemEntry {
-                fqn: format!("{module_path}.{name}"),
-                short_name: name,
-                kind: ItemKind::LabelForward,
-                source_module: module_path.to_owned(),
-                vis_pub: forward.vis.is_pub(),
-            });
-            return;
         }
         Item::Op(_, _) => return,
         Item::VariadicOperator(_, _) => return,
@@ -1221,17 +1189,13 @@ fn collect_item(
     });
 }
 
-fn collect_label_selectors(module: &str, labels: &crate::ast::Labels, items: &mut Vec<ItemEntry>) {
-    for entry in labels
-        .entries
-        .iter()
-        .filter(|entry| !entry.is_reuse_marker())
-    {
-        let name = format!("{{{}}}", entry.name);
+fn collect_nominal_entries(module: &str, labels: &crate::ast::Labels, items: &mut Vec<ItemEntry>) {
+    for entry in labels.entries.iter() {
+        let name = entry.name.clone();
         items.push(ItemEntry {
             fqn: format!("{module}.{name}"),
             short_name: name,
-            kind: ItemKind::LabelForward,
+            kind: ItemKind::Newtype,
             source_module: module.to_owned(),
             vis_pub: labels.vis.is_pub(),
         });
@@ -1509,7 +1473,7 @@ pub fn complete(names: &NameSet, scope: &dyn ScopeProvider, line: &str, pos: usi
         };
     }
 
-    let mut candidates = match shape {
+    let candidates = match shape {
         // `:normalize <expr>` completes its argument to in-scope
         // identifiers, exactly as a bare expression line does.
         CompletionShape::Expression => return identifier_completion(scope, line, pos),
@@ -1521,10 +1485,6 @@ pub fn complete(names: &NameSet, scope: &dyn ScopeProvider, line: &str, pos: usi
             names.name_fqn_op_builtin_candidates(word, canonical_name(first_token(line)) == "which")
         }
     };
-    candidates.retain(|candidate| match candidate.kind {
-        CandidateKind::Item(kind) => item_allowed_for_command(kind, first_token(line)),
-        _ => true,
-    });
     Completion {
         replace,
         candidates,
@@ -1768,11 +1728,9 @@ mod tests {
     fn kind_label_covers_every_item_kind() {
         assert_eq!(kind_label(ItemKind::Fn, true), "pub fn");
         assert_eq!(kind_label(ItemKind::Fn, false), "fn");
-        assert_eq!(kind_label(ItemKind::Newtype, true), "newtype");
+        assert_eq!(kind_label(ItemKind::Newtype, true), "nominal type");
         assert_eq!(kind_label(ItemKind::TypeAlias, false), "type");
         assert_eq!(kind_label(ItemKind::Literal, true), "literal");
-        assert_eq!(kind_label(ItemKind::Labels, true), "labels");
-        assert_eq!(kind_label(ItemKind::LabelForward, true), "label");
         assert_eq!(kind_label(ItemKind::Op, false), "op");
         assert_eq!(kind_label(ItemKind::Equiv, false), "equiv");
     }
@@ -1997,11 +1955,11 @@ mod tests {
         );
         assert_eq!(
             description_for(&set, ":t Tok", "Token"),
-            Some("newtype — demo/lex".to_owned())
+            Some("nominal type — demo/lex".to_owned())
         );
         assert_eq!(
             description_for(&set, ":t demo/lex.Tok", "demo/lex.Token"),
-            Some("newtype — demo/lex".to_owned())
+            Some("nominal type — demo/lex".to_owned())
         );
     }
 
@@ -2461,34 +2419,106 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_completion_keeps_declaration_selectors_out_of_expression_names() {
+    fn compact_nominals_use_ordinary_type_selectors_and_kinds() {
+        let source = "module pkg/api; pub type Color = { Red: .; Green: .; }; \
+            rec { type { Node: Tail; }; type Tail = Node; } \
+            type { Box: . { mk; get; }; }";
+        let session = session_with(&[("pkg/api", source)]);
+        let mut names = NameSet::from_session(&session);
+        names.current_module_src = Some(source.to_owned());
+        for name in ["Red", "Green", "Node", "Box"] {
+            let item = names
+                .items
+                .iter()
+                .find(|item| item.short_name == name)
+                .unwrap();
+            assert_eq!(item.kind, ItemKind::Newtype, "{name}");
+            assert_eq!(item.kind.tag(), "newtype", "stable semantic tag");
+            assert_eq!(item.fqn, format!("pkg/api.{name}"));
+        }
+        for name in ["Color", "Tail"] {
+            let item = names
+                .items
+                .iter()
+                .find(|item| item.short_name == name)
+                .unwrap();
+            assert_eq!(item.kind, ItemKind::TypeAlias, "{name}");
+        }
+        assert!(
+            names
+                .items
+                .iter()
+                .all(|item| !item.short_name.contains('{'))
+        );
+        for command in [
+            "doc",
+            "signature",
+            "source",
+            "refs",
+            "which",
+            "type",
+            "pure",
+        ] {
+            for (prefix, expected) in [("Re", "Red"), ("pkg/api.Re", "pkg/api.Red")] {
+                let line = format!(":{command} {prefix}");
+                let completion = run(&names, &line, line.len());
+                let candidate = completion
+                    .candidates
+                    .iter()
+                    .find(|candidate| candidate.label == expected)
+                    .unwrap_or_else(|| panic!("{line}: {:?}", completion.candidates));
+                assert_eq!(candidate.kind, CandidateKind::Item(ItemKind::Newtype));
+                let mut accepted = line.clone();
+                accepted.replace_range(completion.replace, &candidate.label);
+                assert_eq!(accepted, format!(":{command} {expected}"));
+            }
+        }
+    }
+
+    #[test]
+    fn alias_completion_uses_ordinary_type_names() {
         let source = concat!(
             "module pkg/api; fn field() -> . { () } ",
-            "pub type {field} = {original};",
+            "pub type { Original: .; } pub type Field = Original;",
         );
         let session = session_with(&[("pkg/api", source)]);
         let mut names = NameSet::from_session(&session);
         names.current_module_src = Some(source.to_owned());
-        assert_eq!(names.items.len(), 2);
-        assert_eq!(names.items[1].short_name, "{field}");
-        assert_eq!(names.items[1].fqn, "pkg/api.{field}");
-        assert_eq!(names.items[1].kind, ItemKind::LabelForward);
-        assert_eq!(names.items[1].kind.tag(), "label");
+        let alias = names
+            .items
+            .iter()
+            .find(|item| item.short_name == "Field")
+            .unwrap();
+        assert_eq!(alias.fqn, "pkg/api.Field");
+        assert_eq!(alias.kind, ItemKind::TypeAlias);
+        assert_eq!(alias.kind.tag(), "type");
+        assert!(
+            names
+                .items
+                .iter()
+                .all(|item| !item.short_name.contains('{'))
+        );
         for command in ["doc", "signature", "source", "refs", "which"] {
-            let line = format!(":{command} {{fi");
+            let line = format!(":{command} Fi");
             let completion = run(&names, &line, line.len());
             let candidate = completion
                 .candidates
                 .iter()
-                .find(|candidate| candidate.label == "{field}")
+                .find(|candidate| candidate.label == "Field")
                 .unwrap();
-            assert_eq!(candidate.kind, CandidateKind::Item(ItemKind::LabelForward));
+            assert_eq!(candidate.kind, CandidateKind::Item(ItemKind::TypeAlias));
             let mut accepted = line.clone();
             accepted.replace_range(completion.replace, &candidate.label);
-            assert_eq!(accepted, format!(":{command} {{field}}"));
+            assert_eq!(accepted, format!(":{command} Field"));
         }
-        for line in ["fi", ":normalize fi", ":t fi", ":type fi", ":pure fi"] {
-            let completion = run(&names, line, line.len());
+        for (line, includes_alias) in [
+            ("fi", false),
+            (":normalize fi", false),
+            (":t fi", true),
+            (":type fi", true),
+            (":pure fi", true),
+        ] {
+            let completion = complete(&names, &AstScopeProvider::new(&names), line, line.len());
             assert!(
                 completion
                     .candidates
@@ -2496,13 +2526,27 @@ mod tests {
                     .any(|candidate| candidate.label == "field")
             );
             assert!(
-                completion.candidates.iter().all(|candidate| {
-                    candidate.label != "Field" && !candidate.label.contains('{')
-                })
+                completion
+                    .candidates
+                    .iter()
+                    .all(|candidate| !candidate.label.contains('{'))
+            );
+            assert_eq!(
+                completion
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.label == "Field"),
+                includes_alias,
+                "{line}"
             );
         }
         let ast = AstScopeProvider::new(&names);
         let candidates = ast.in_scope("fi", 2);
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.label != "Field")
+        );
         assert!(
             candidates
                 .iter()
@@ -2511,7 +2555,7 @@ mod tests {
         assert!(
             candidates
                 .iter()
-                .all(|candidate| { candidate.label != "Field" && !candidate.label.contains('{') })
+                .all(|candidate| !candidate.label.contains('{'))
         );
     }
 

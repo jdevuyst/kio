@@ -11,10 +11,9 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-// A payload-free label enum: each label carries `()`. `Color` is the
-// sum of the three label-generated types — the labels-derived nominal
-// shape an `Array(Color)` carries across the FFI.
-labels { red: ., green: ., blue: . };
+// A payload-free nominal enum: each case carries `()`. `Color` is the
+// sum of the three nominal types carried by an `Array[Color]` across the FFI.
+type { Red: . { mk; get }; Green: . { mk; get }; Blue: . { mk; get } }
 
 type Color = Red | Green | Blue;
 
@@ -24,9 +23,9 @@ fn show_color(c: Color) -> String {
   }
 }
 
-// A payload-bearing label enum: `circle` carries an `I32` radius,
-// `square` carries an `I32 & I32` (side, color-index) product.
-labels { circle: I32, square: I32 & I32 };
+// A payload-bearing nominal enum: `Circle` carries an `I32` radius,
+// `Square` carries an `I32 & I32` (side, color-index) product.
+type { Circle: I32 { mk; get }; Square: I32 & I32 { mk; get } }
 
 type Shape = Circle | Square;
 
@@ -73,19 +72,19 @@ fn render[A](show: A -> String, arr: Array[A]) -> String {
 }
 
 pub fn main() {
-  // Array(Color): a payload-free labels-derived enum across the FFI.
+  // Array[Color]: a payload-free nominal enum across the FFI.
   let colors = array_make_empty[Color](());
-  array_push(colors, widen_sum({green=})[Color]);
-  array_push(colors, widen_sum({red=})[Color]);
-  array_push(colors, widen_sum({blue=})[Color]);
+  array_push(colors, widen_sum(Green.mk(()))[Color]);
+  array_push(colors, widen_sum(Red.mk(()))[Color]);
+  array_push(colors, widen_sum(Blue.mk(()))[Color]);
   print(render(show_color, colors));
   print("\n");
-  // Array(Shape): a payload-bearing labels-derived enum across the
-  // FFI — each element carries the label's payload alongside its
+  // Array[Shape]: a payload-bearing nominal enum across the
+  // FFI — each element carries the case payload alongside its
   // discriminant.
   let shapes = array_make_empty[Shape](());
-  array_push(shapes, widen_sum({circle = 5})[Shape]);
-  array_push(shapes, widen_sum({square = (3, 7)})[Shape]);
+  array_push(shapes, widen_sum(Circle.mk(5))[Shape]);
+  array_push(shapes, widen_sum(Square.mk((3, 7)))[Shape]);
   print(render(show_shape, shapes));
   print("\n")
 }

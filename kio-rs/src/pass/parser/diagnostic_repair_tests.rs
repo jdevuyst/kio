@@ -107,7 +107,12 @@ fn identifier_word_repairs_are_role_correct_and_token_local() {
             "Foo_Bar",
             "Foo_bar",
         ),
-        ("module main; labels { _foo: . };", "label", "_foo", "foo"),
+        (
+            "module main; type { Foo_Bar: . };",
+            "type",
+            "Foo_Bar",
+            "Foo_bar",
+        ),
         ("module foo_123;", "module", "foo_123", "foo123"),
     ] {
         let error = parse(source).expect_err("invalid governed name");
@@ -408,12 +413,8 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
         ("host fn value() -> .", "host function declaration"),
         ("type Value = .", "type alias"),
         ("literal value = 1", "literal declaration"),
-        ("labels { value: . }", "labels declaration"),
+        ("type Named = { Value: . }", "type declaration"),
         ("fn value() -> . { let local = () }", "let binding"),
-        (
-            "fn value() -> . { let .({field as local}) = row }",
-            "row-let binding",
-        ),
         (
             "fn value() -> . { let .(left, right) = pair }",
             "destructuring let binding",
@@ -433,7 +434,8 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
         "expected `;` after neutral let",
     );
     for tail in [
-        "newtype Value : . { constructor mk; projector get; }",
+        "type { Value: . { mk; get; }; }",
+        "type { Value: . }",
         "macro value : . -> . { impl value; }",
         "op + __ { impl value; }",
         "varop [% %] { foldr push empty; }",
@@ -538,13 +540,10 @@ fn malformed_declaration_headers_explain_the_owned_form() {
             "type Value Other = .;",
             "expected `=` before the type alias body",
         ),
+        ("type { Value Other : . { mk; get; }; };", "expected `:`"),
         (
-            "newtype Value Other : . { constructor mk; projector get; };",
-            "expected `:` before the newtype payload type",
-        ),
-        (
-            "labels Value Other = { field: . };",
-            "expected `=` before the named labels declaration body",
+            "type Value Other = { Field: . };",
+            "expected `=` before the named type declaration body",
         ),
         (
             "fn value() other;",
@@ -789,5 +788,25 @@ fn correct_unit_values_tuple_values_and_type_groups_remain_accepted() {
             .expect("valid lazy source")
             .force_all()
             .expect("valid body");
+    }
+}
+
+#[test]
+fn existential_payload_error_teaches_current_nominal_header() {
+    let header = "type { Name[A] <U>: A & U; }";
+    parse(&format!("module x; {header}")).expect("suggested nominal header parses");
+    for source in [
+        "module x; type Alias = (<U>, U);",
+        "module x; type { Pack[A]: (<U>, A & U); };",
+        "module x; type { Pack[A]: (<U>, A & U) { mk; get; }; };",
+    ] {
+        let error = assert_eager_lazy_error(source);
+        let diagnostic = error.diagnostic();
+        assert_eq!(
+            &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
+            "<"
+        );
+        assert!(diagnostic.message.contains(header), "{diagnostic:?}");
+        assert!(diagnostic.message.contains("`Name.get`"), "{diagnostic:?}");
     }
 }

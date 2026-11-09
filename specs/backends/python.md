@@ -185,7 +185,7 @@ Polymorphic exports erase type arguments at the FFI, per
 [`README.md` § Type erasure at the FFI](README.md#2-type-erasure-at-the-ffi).
 A `pub fn id[T](x: T) -> T` is called as `pkg.m.id(value)`.
 
-For each explicit `pub newtype` in a bridged module, the package exposes a
+For each public nominal type in a bridged module, the package exposes a
 namespace object under `KioType_<exact-component>` whose attributes are the
 newtype's public constructor and projector members. The constructor accepts the payload's
 FFI shape and returns the newtype's FFI shape; the projector accepts that
@@ -444,7 +444,7 @@ factory.
   which a type checker could infer that exact choice.
 - `<Handle>` is a class whose attribute tree mirrors the package surface
   (§ Package API): role-framed nested module and public-type attributes, a
-  method per `pub fn`, and a nested class per `pub newtype` carrying its
+  method per `pub fn`, and a nested class per public nominal type carrying its
   public constructor / projector methods. The stub and runtime resolve the
   same selectors.
 - `<Handle>Host[...]` is a `typing.Protocol` parameterized by one exact

@@ -3,11 +3,10 @@ module forms;
 import __comptime__;
 
 pure fn pair_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _a: __Type__
 , _b: __Type__
-, prefix: __Checked_term__
-, body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { inputs }
 
-pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+pub macro block_pair : [A][B] (A & B) -> (A & B) { trailing product; impl pair_impl }

@@ -1,0 +1,191 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import __comptime__;
+import macros/derive(macro derive);
+import testapi(String);
+import testapi/io(print);
+
+type Type_pair = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Type_view_tail7 = __Type_name__;
+
+type Type_view_tail6 = __Type_var__ | Type_view_tail7;
+
+type Type_view_tail5 = Forall_view | Type_view_tail6;
+
+type Type_view_tail4 = Function_view | Type_view_tail5;
+
+type Type_view_tail3 = Type_pair | Type_view_tail4;
+
+type Type_view_tail2 = Type_pair | Type_view_tail3;
+
+type Type_view_tail1 = . | Type_view_tail2;
+
+type Maybe_function_view = Function_view | .;
+
+pure fn some_function_view(ct: __Comptime__, view: Function_view) -> Maybe_function_view {
+  __left__[Function_view][.](view)
+}
+
+pure fn no_function_view(ct: __Comptime__) -> Maybe_function_view {
+  __right__[Function_view][.](())
+}
+
+pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
+  __either__[.][Type_view_tail1][Maybe_function_view](
+  , __type_view__(ct, typ)
+  , .(_unit: .) -> Maybe_function_view { no_function_view(ct) }
+  , .(tail1: Type_view_tail1) -> Maybe_function_view {
+      __either__[.][Type_view_tail2][Maybe_function_view](
+      , tail1
+      , .(_bottom: .) -> Maybe_function_view { no_function_view(ct) }
+      , .(tail2: Type_view_tail2) -> Maybe_function_view {
+          __either__[Type_pair][Type_view_tail3][Maybe_function_view](
+          , tail2
+          , .(_product: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+          , .(tail3: Type_view_tail3) -> Maybe_function_view {
+              __either__[Type_pair][Type_view_tail4][Maybe_function_view](
+              , tail3
+              , .(_sum: Type_pair) -> Maybe_function_view { no_function_view(ct) }
+              , .(tail4: Type_view_tail4) -> Maybe_function_view {
+                  __either__[Function_view][Type_view_tail5][Maybe_function_view](
+                  , tail4
+                  , .(view: Function_view) -> Maybe_function_view { some_function_view(ct, view) }
+                  , .(_tail5: Type_view_tail5) -> Maybe_function_view { no_function_view(ct) }
+                  )
+                }
+              )
+            }
+          )
+        }
+      )
+    }
+  )
+}
+
+pure fn rebuild_impl(ct: __Comptime__, typ: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __either__[Function_view][.][__Checked_term__](
+  , function_view(ct, typ)
+  , .(view: Function_view) -> __Checked_term__ {
+      let domain = __fst__[__Type__][__Type__](view);
+      let result = __snd__[__Type__][__Type__](view);
+      let rebuilt = __type_arrow__(ct, domain, result);
+      __if_then_else__(
+      , __type_equal__(ct, rebuilt, typ)
+      , .() -> __Checked_term__ {
+          __term_fn__(
+          , ct
+          , rebuilt
+          , .(packet: __Checked_term__) -> __Checked_term__ {
+              __term_call__(ct, typ, value, packet)
+            }
+          )
+        }
+      , .() -> __Checked_term__ { __macro_error__(ct, "function domain/result changed") }
+      )
+    }
+  , .() -> __Checked_term__ { __macro_error__(ct, "expected a function") }
+  )
+}
+
+macro rebuild : [F] F -> F { impl rebuild_impl }
+
+pure fn projected_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, typ: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (rebuild_impl(ct, typ, value), fills) }
+
+macro projected : [F] F -> F { impl(fills) projected_impl }
+
+type Unit_alias = .;
+
+pure fn direct_alias_impl(ct: __Comptime__, typ: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  let domain = __reflect_type__(ct)[Unit_alias];
+  let arrow = __type_arrow__(ct, domain, domain);
+  __term_fn__(
+  , ct
+  , arrow
+  , .(packet: __Checked_term__) -> __Checked_term__ { __term_call__(ct, typ, value, packet) }
+  )
+}
+
+macro direct_alias : [F] F -> F { impl direct_alias_impl }
+
+type { A: . { mk; get }; B: . { mk; get }; C: . { mk; get } }
+
+fn consume(a: String, b: String, c: String) { print(a); print(b); print(c) }
+
+fn consume_tail(a: String, rest: String & String) { let .(b, c) = rest; consume(a, b, c) }
+
+fn packet() -> String & String & String { print("packet\n"); ("a\n", "b\n", "c\n") }
+
+fn no_args() { print("called\n") }
+
+fn unit_arg(_value: Unit_alias) { print("called\n") }
+
+fn unit_packet() -> Unit_alias { print("unit packet\n") }
+
+type { Derived[T]: String { mk; get } }
+
+fn a() -> A { print("A\n"); A.mk(()) }
+
+fn b() -> B { print("B\n"); B.mk(()) }
+
+fn c() -> C { print("C\n"); C.mk(()) }
+
+fn split(_a: A, _b: B, _c: C) -> Derived[A & B & C] { Derived.mk("derived\n") }
+
+fn tupled(_packet: A & B & C) -> Derived[A & B & C] { Derived.mk("derived\n") }
+
+fn tailed(_a: A, _tail: B & C) -> Derived[A & B & C] { Derived.mk("derived\n") }
+
+fn unit_base() -> String { "base\n" }
+
+fn unit_parameter_base(_value: Unit_alias) -> String { "base\n" }
+
+fn unit_rule() { print("unit prerequisite\n") }
+
+fn unit_component(_value: ., _a: A) -> Derived[A] { Derived.mk("unit component\n") }
+
+fn ab(left: A, right: B) -> A & B { (left, right) }
+
+fn left_group(_pair: A & B, _c: C) -> Derived[A & B & C] { Derived.mk("left group\n") }
+
+pub fn main() {
+  print("reflection inferred\n");
+  rebuild(consume)(packet());
+  print("reflection explicit\n");
+  rebuild[(String & String & String) -> .](consume)(packet());
+  print("reflection projected\n");
+  projected(consume_tail)(packet());
+  print("reflection nullary\n");
+  rebuild(no_args)(unit_packet());
+  print("reflection alias Unit\n");
+  projected(unit_arg)(unit_packet());
+  print("reflection direct alias\n");
+  direct_alias(unit_arg)(unit_packet());
+  print("derive split\n");
+  print(Derived.get(derive((split, a, b, c))[Derived[A & B & C]]));
+  print("derive explicit\n");
+  let .(typed: (A & B & C) -> Derived[A & B & C]) = split;
+  print(Derived.get(derive((typed, a, b, c))[Derived[A & B & C]]));
+  print("derive tuple\n");
+  print(Derived.get(derive((tupled, a, b, c))[Derived[A & B & C]]));
+  print("derive tail\n");
+  print(Derived.get(derive((tailed, a, b, c))[Derived[A & B & C]]));
+  print("derive Unit\n");
+  print(derive(unit_base)[String]);
+  print(derive(unit_parameter_base)[String]);
+  print("derive Unit component\n");
+  print(Derived.get(derive((unit_component, unit_rule, a))[Derived[A]]));
+  print("derive left product\n");
+  print(Derived.get(derive((left_group, ab, a, b, c))[Derived[A & B & C]]))
+}

@@ -6,9 +6,9 @@
 //! AST recursion.
 
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, FnDef, HostFn, HostFnParam, HostType, Item, LitAnnotationExt,
-    Lowered, Module, Never, Newtype, Phase, Prime, Signature, SignatureParam, Type, TypeAlias,
-    TypeParam, UserMacroDef,
+    CallArg, Expr, FnDef, HostFn, HostFnParam, HostType, Item, LitAnnotationExt, Lowered, Module,
+    Never, Newtype, Phase, Prime, Signature, SignatureParam, Type, TypeAlias, TypeParam,
+    UserMacroDef,
 };
 use crate::pass::resolve::Package;
 use crate::span::Span;
@@ -20,14 +20,11 @@ pub trait TypecheckVisitPhase:
         ExprTuple = Never,
         ExprFnPlaceholder = Never,
         ExprOpChain = Never,
-        ExprLabelValue = Never,
-        ExprRowLet = Never,
         ExprBlockSyntax = Never,
         ExprRecCall = Never,
         ExprEnriched = Never,
         ExprEnrichedSynthTy = Never,
         ExprLow = Never,
-        TypeLabelSugar = Never,
         ItemLabels = Never,
         ItemOp = Never,
         ItemRecGroup = Never,
@@ -135,7 +132,6 @@ where
         Item::RecGroup(_, ext)
         | Item::LiteralAlias(_, ext)
         | Item::Labels(_, ext)
-        | Item::LabelForward(_, ext)
         | Item::Op(_, ext)
         | Item::VariadicOperator(_, ext) => match *ext {},
     }
@@ -306,7 +302,6 @@ where
             visitor.exit_type_binder(param, scope);
         }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -366,17 +361,6 @@ where
                 visitor.visit_type(ty);
             }
         }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => visitor.visit_expr(receiver),
-            ElaboratorCall::FieldUpdate { base, updates, .. } => {
-                if let Some(receiver) = base.receiver_mut() {
-                    visitor.visit_expr(receiver);
-                }
-                for update in updates {
-                    visitor.visit_expr(&mut update.value);
-                }
-            }
-        },
         Expr::RecOrder { plan, .. } => {
             if let Some(continuation) = &mut plan.tail_continuation {
                 visitor.visit_expr(continuation);
@@ -429,10 +413,8 @@ where
             visitor.visit_expr(callee);
             visit_call_args(visitor, args);
         }
-        Expr::RowLet { ext, .. }
-        | Expr::Tuple { ext, .. }
+        Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::EnrichedTuple { ext, .. }
         | Expr::EnrichedProject { ext, .. }

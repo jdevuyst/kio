@@ -1,0 +1,3 @@
+module testapi/types;
+
+pub type Unit_alias = .;

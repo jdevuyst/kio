@@ -1,7 +1,7 @@
 module testapi/forward;
 
-import middle({caption});
+import middle(Alias);
 
-pub type {display} = {caption};
+pub type Display = Alias;
 
-pub(testapi) type {local} = {display};
+pub(testapi) type Local = Display;

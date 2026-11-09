@@ -28,7 +28,7 @@ its separately specified meaning.
 **Semicolon boundaries.** A complete outer braced declaration or section
 accepts at most one redundant suffix `;`. Nonbraced outer entries retain their
 terminator. Braces inside an entry do not change that classification:
-`host type T { owned };` has a qualifier, and `labels N = { x: . };` has a
+`host type T { owned };` has a qualifier, and `type N = { X: .; };` has a
 braced operand, not a declaration body. Inside a semicolon-delimited block,
 the enclosing sequence owns the separators between entries. Edge separators
 are allowed under the sequence's repeated-separator policy; comma lists and
@@ -73,7 +73,7 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 
 **No user-operator productions in Kio'.** Kio' shares full Kio's lexical rules and structural delimiters, but has no fixed or variadic declaration, tagged operator import, or operator expression production. Native parsing cannot create such a production.
 
-**Contextual keywords (Kio').** The words `module`, `import`, `as`, `pub`, `pure`, `type`, `fn`, `rec`, `newtype`, `let`, `constructor`, `projector`, `host`, and the magic phrase `__intrinsics__` lex as ordinary `IDENT` tokens. They are recognized as keywords *only* in the grammatical positions where the productions below show them as literal terminals; in any other position the same spelling is an identifier. `pure` is a modifier only on an ordinary `fn` declaration. `rec` marks either one self-recursive `newtype` or one mutually recursive type group; it takes no runtime capability in Kio'. `host` is a host-declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub` between them); elsewhere `host` is an ordinary identifier, so existing code that uses `host` as a name keeps parsing. Package-boundary words such as `package` and `bridge` are recognized only inside the package shapes that admit them. (`file` is not a Kio grammar keyword; it is a kiodoc fence attribute — see [`kiodoc.md`](kiodoc.md).)
+**Contextual keywords (Kio').** The words `module`, `import`, `as`, `pub`, `pure`, `type`, `fn`, `rec`, `let`, `mk`, `get`, `host`, and the magic phrase `__intrinsics__` lex as ordinary `IDENT` tokens. They are recognized as keywords *only* in the grammatical positions where the productions below show them as literal terminals; in any other position the same spelling is an identifier. `pure` is a modifier only on an ordinary `fn` declaration. `rec` marks either one self-recursive nominal declaration or one mutually recursive type group; it takes no runtime capability in Kio'. `host` is a host-declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub` between them); elsewhere `host` is an ordinary identifier, so existing code that uses `host` as a name keeps parsing. Package-boundary words such as `package` and `bridge` are recognized only inside the package shapes that admit them. (`file` is not a Kio grammar keyword; it is a kiodoc fence attribute — see [`kiodoc.md`](kiodoc.md).)
 
 **Comment markers require trailing whitespace.** A comment marker — `//` (line comment) or `///` (doc-comment line) — must be followed immediately by whitespace, end-of-line, or end-of-file. A non-whitespace character flush against the marker is a lex error: `//foo`, `///bar`, and `//=` are all rejected, with no exception for alphanumeric or underscore characters. In particular a fourth slash (`////`, `////////`) is rejected — four or more slashes are **not** a section ruler. This reserves the whole `//…` operator family (`//!`, `//?`, `//=`, …) for future syntax (see [§ Lexical structure (Kio surface)](#lexical-structure-kio-surface) for the matching `op`-pattern reservation).
 
@@ -118,10 +118,10 @@ TypeAlias         ::= TypeAliasBody ';'
 TypeAliasBody     ::= Vis? 'type' IDENT TypeParamList? '=' Type
 Newtype           ::= Vis? NewtypeAfterVis
 RecursiveNewtype  ::= Vis? 'rec' NewtypeAfterVis
-NewtypeAfterVis   ::= 'newtype' IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
-NewtypeBody       ::= '{' SemiRunEntries<NewtypeMember> '}'  (* exactly one constructor and one projector *)
-NewtypeMember     ::= Vis? 'constructor' IDENT
-                    | Vis? 'projector' IDENT
+NewtypeAfterVis   ::= 'type' '{' ';'? NewtypeEntry ';'? '}'
+NewtypeEntry      ::= IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
+NewtypeBody       ::= '{' SemiRunEntries<NewtypeMember> '}'  (* exactly one mk and one get *)
+NewtypeMember     ::= Vis? 'mk' | Vis? 'get'
 
 TypeRecGroup      ::= 'rec' '{' SemiEntries<TypeRecMember> '}'  (* at least two members *)
 TypeRecMember     ::= DocBlock? (TypeAliasBody | Newtype)
@@ -209,9 +209,9 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
 - A named type path collects its consecutive singleton argument groups before kind and exact-arity checks. `Pair[A][B]` supplies two arguments to the one named head; it does not validate an intermediate undersaturated alias. Existing nominal partial application and transparent-alias exact saturation rules remain unchanged. Grouped types still use parentheses, while arbitrary type expressions do not acquire a new postfix-application production.
 - **Higher-kinded type application** is the ordinary `TypePath` shape applied to a kind-`*→*`-or-higher binder or newtype head: `F[A]` where `[*F]` is a kind-`*→*` binder, `Either[String]` where `Either` is an arity-2 newtype. Both parse to one `Type::Path { segments, args }`; there is no dedicated application node and no `__App__` keyword. The kind discipline (§ Kind grammar) decides admissibility — a kind-`*` head applied to an argument is a kind error, surfaced by semantic kind checking rather than the parser. A parametric transparent alias uses the same parsed shape but is well-formed only when every parameter declared by that alias has an argument; underapplication cannot retain the alias's own binders. See [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω) and [`language.md` § Higher-kinded types](language.md#higher-kinded-types).
 - `pub` is a contextual keyword only in two positions: leading an `Item` and leading a `NewtypeMember`. Elsewhere the same spelling is an `IDENT`.
-- A `NewtypeBody` holds an **unordered set** of members: exactly one `constructor` and exactly one `projector`, in **either order** (`constructor` then `projector`, or `projector` then `constructor`). Both must be present and neither may be duplicated; the order carries no meaning. `kio fmt` canonicalizes the pair to `constructor`-then-`projector` (see [`style.md`](style.md)).
-- `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec newtype`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
-- `TypeRecGroup` is capability-free and has no group-level visibility. It contains at least two ordinary `type` / `newtype` members, with visibility and doc comments attached to each member. The complete member heads are in scope throughout the group. Static validation requires the written group to be exactly one genuinely mutual cyclic component and requires every alias cycle to cross a `newtype` boundary; a one-member, acyclic, multi-component, or alias-only group is rejected. A member does not repeat the singleton `rec` marker.
+- A `NewtypeBody` holds an **unordered set** of members: exactly one `mk` and exactly one `get`, in either order. Both must be present and neither may be duplicated; the names are fixed and the order carries no meaning. `kio fmt` canonicalizes the pair to `mk` then `get` (see [`style.md`](style.md)).
+- `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec type { N: Payload { mk; get; }; }`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
+- `TypeRecGroup` is capability-free and has no group-level visibility. It contains at least two ordinary alias or explicit singleton nominal `type` declarations, with visibility and doc comments attached to each member. The complete member heads are in scope throughout the group. Static validation requires the written group to be exactly one genuinely mutual cyclic component and requires every alias cycle to cross a `newtype` boundary; a one-member, acyclic, multi-component, or alias-only group is rejected. A member does not repeat the singleton `rec` marker.
 - The keyword `'fn'` leads only item declarations. Ordinary declarations and dot-led anonymous functions require at least one type or value group: `fn value[A] { … }` and `.[A] { … }` are admitted alongside `fn value() { … }` and `.() { … }`. No value group is implied by a type-only signature. `host fn`, `RecFnDef`, and a written `Equiv` signature instead use `ValueSignature`, which requires at least one value group. Expression position does not reserve `fn`.
 - A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m(X);` creates a `→ m` import edge wherever it sits. See the module-cycle rule in [`language.md` § Module system](language.md#module-system).
 - `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation records its literal-admission metadata (see [`language.md` § Literals](language.md#literals)); `role(bool)` also participates in [checked Boolean specialization](language.md#conditionals). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The optional `{ owned }` block remains accepted and formatted for source compatibility, but selects no alternate representation: the Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and an omitted `-> Type` result defaults to `.`. This is a fixed Unit default, not inference. `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
@@ -262,9 +262,9 @@ The symbols `< > [ ] = ! : . / -> .? .! .> .>> .< .<<` have fixed native roles i
 In addition to Kio''s contextual keywords, Kio surface recognizes:
 
 - `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in a macro declaration.
-- `rec` — the recursive-declaration marker. `rec newtype` and bare `rec { ... }` retain their Kio' meanings; `rec labels` and `rec(loop)` are surface additions.
+- `rec` — the recursive-declaration marker. Explicit singleton `rec type { N: Payload { mk; get; }; }` and bare `rec { ... }` retain their Kio' meanings; compact `rec type` declarations and `rec(loop)` are surface additions.
 - `recur` — the surface recursive-call introducer, optionally followed by call annotations and then a group-local callee. Outside that grammatical position it is an ordinary identifier.
-- `labels`, `type`, `literal`, `macro`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec labels`, `pub rec newtype`, or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
+- `type`, `literal`, `macro`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec type` or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
 - `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by macro implementations.
 
 Macro calls use ordinary direct call syntax. A scoped `macro` selector or an
@@ -275,20 +275,19 @@ See [Macros are imported, not ambient](language.md#macros-are-imported-not-ambie
 ### Surface item additions
 
 ```ebnf
-Item += Labels | RecursiveLabels | LabelForward | LiteralAlias
+Item += NominalDeclaration | RecursiveNominalDeclaration | LiteralAlias
       | (MacroItem | Op | VariadicOperator | Equiv | RecItem) ';'?
 
-Labels         ::= Vis? LabelsAfterVis
-RecursiveLabels ::= Vis? 'rec' LabelsAfterVis
-LabelsAfterVis ::= 'labels' LabelsForm
-LabelsForm     ::= LabelsBody ';'
-LabelsBody     ::= LabelsProduct                                    (* anonymous product *)
-                    | IDENT TypeParamList? '=' LabelsSum             (* named product/sum alias *)
-LabelsSum      ::= LabelsProduct ('|' LabelsProduct)*
-LabelsProduct  ::= '{' LabelEntry (',' LabelEntry)* ','? '}'
-LabelEntry     ::= IDENT TypeParamList? ExistsBinder* ':' LabelPayload
-LabelPayload   ::= Type                                            (* exact bare `_` is a reuse marker here *)
-LabelForward   ::= Vis? 'type' '{' IDENT '}' '=' '{' LabelPath '}' ';'
+NominalDeclaration ::= Vis? NominalDeclarationBody
+RecursiveNominalDeclaration ::= Vis? 'rec' NominalDeclarationBody
+NominalDeclarationBody ::= 'type' NominalGroup ';'?
+                        | 'type' IDENT TypeParamList? '=' NominalRhs ';'
+NominalGroup   ::= '{' SemiEntries<NominalEntry> '}'
+NominalEntry   ::= IDENT TypeParamList? ExistsBinder* ':' NominalPayload NewtypeBody?
+NominalPayload ::= Type                                  (* a complete payload cannot be `_` *)
+NominalRhs     ::= NominalOperand NominalChainTail?
+NominalChainTail ::= ('&' NominalOperand)+ | ('|' NominalOperand)+
+NominalOperand ::= NominalGroup | '(' NominalRhs ')' | TypeAtom
 
 LiteralAlias   ::= Vis? 'literal' IDENT '=' LiteralAliasValue ';'           (* lowercase name only *)
 LiteralAliasValue ::= INT_LIT | FLOAT_LIT | STR_LIT | BoolLit
@@ -310,7 +309,8 @@ RecItem        ::= Vis? 'rec' '(' GroupedValuePath ')' RecFnDef                 
                  | 'rec' '(' GroupedValuePath ')' '{' SemiEntries<RecFnDef> '}' (* grouping braces carry no visibility; each member does *)
 RecFnDef       ::= Vis? 'fn' IDENT ValueSignature ('->' Type)? Block
 
-TypeRecMember += DocBlock? Vis? 'labels' LabelsBody
+TypeRecMember += DocBlock? Vis? 'type' NominalGroup
+               | DocBlock? Vis? 'type' IDENT TypeParamList? '=' NominalRhs
 
 Op             ::= Vis? 'op' OpBody
 OpBody         ::= OpPattern '{' SemiEntries<OpEntry> '}'                 (* fixed arity only *)
@@ -359,14 +359,15 @@ expansions are specified in [language.md](language.md#operators).
 
 `VaropHead` is one structural square pair. It contains either nothing or one marker and its character reversal; a legal fused empty pair is split at its unique mirrored midpoint. `[]`, `[**]`, and `[* *]` select the bare, marker-`*`, and marker-`*` forms respectively. Commas, slots, nested bracket pairs, dots, and symbol words outside the square edges are rejected in a head. Canonical spelling is `[]` or a spaced pair such as `[* *]`.
 
-`Labels` admits a leading underscore in label names only via the lexer's `IDENT` rule, but the parser rejects `_`-prefixed label names at declaration (see [`language.md` § Naming conventions](language.md#naming-conventions)). Anonymous `labels` declarations are single products; sum syntax requires the named form so there is an alias to bind. In `LabelPayload`, exact bare `_` is not an inferred top-level annotation: it is the surface-only marker that reuses an earlier explicit module-local label declaration. A nested `_` remains the ordinary inference placeholder governed by its surrounding type position. A `pub op` or `pub varop` exports its operator binding for module imports via complete tagged operator import selections below (see [`language.md` § Operators — Module-local by default; `pub` exports the binding](language.md#operators)). `Equiv` enforces `N >= 2` arms at parse time. Its arms are semicolon-separated expressions; repeated semicolons are accepted and a final semicolon is ignored.
+Compact entries use ordinary type names, including `_Name`, and introduce those exact nominal identities. An anonymous group declares entries without an aggregate alias. A named declaration RHS composes compact groups and ordinary type operands through products, sums and parentheses; it contains at least one compact group. Each group contributes the right-associated product of its entry types. The ordinary same-operator chain rules apply, and mixing `&` with `|` requires parentheses. Parenthesized function and polymorphic types and ordinary applied types can be operands. Compact groups are declaration syntax: they cannot occur inside a type argument, arrow, internal binder, payload, function signature or other ordinary `Type` position.
 
-`LabelForward` binds one lowercase label spelling to one existing label family.
-The target is an ordinary local or explicitly imported `LabelPath`; both sides
-use braces, and neither side admits type arguments. It has no type expression,
-uppercase declaration, member block, or `rec` form, and is not a `TypeRecMember`.
-Visibility applies to the new label spelling. See
-[`language.md` § Labels](language.md#labels).
+Each entry has its own universal and existential header; an owner's parameters do not become implicit entry parameters. Omitting an entry's member body supplies `mk` and `get` with the enclosing declaration's visibility. A written body requires both fixed roles and gives each its own independent visibility marker, private when omitted. Kio' admits only the anonymous singleton form with a written body; multiple entries, omitted bodies and declaration-bearing alias RHSs are surface forms.
+
+Each compact entry declares a new nominal with an explicit payload type; `_` cannot be its complete payload. Existing types are ordinary RHS operands, such as `type Result = { Ok: .; } | Error;` or `type Pair[A] = Existing[A] & { Extra: .; };`. Nested `_` remains the ordinary inference placeholder governed by its surrounding type position. A named owner and an entry cannot introduce the same name.
+
+A compact `rec type` introduces exactly its written owner and entries into one atomic recursive scope. Positivity, nominal grounding and minimal recursive partitioning follow the existing recursive-data rules. A recursive alias without a nominal boundary remains rejected. Bare `rec { ... }` groups retain their minimum of two declarations.
+
+A `pub op` or `pub varop` exports its operator binding for module imports via complete tagged operator import selections below (see [`language.md` § Operators — Module-local by default; `pub` exports the binding](language.md#operators)). `Equiv` enforces `N >= 2` arms at parse time. Its arms are semicolon-separated expressions; repeated semicolons are accepted and a final semicolon is ignored.
 
 `ValuePath` is the ordinary lexical value-path shape shared by expressions and
 declaration callable targets. Its head may be a local declaration or selective
@@ -395,7 +396,7 @@ imported, not ambient](language.md#macros-are-imported-not-ambient).
 `MacroItem` and both implementation modes are Kio-surface-only.
 The Kio' item grammar has no `macro`, `impl`, or `impl(fills)` production.
 
-`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
+`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
 
 `OpPattern` requires alternating single words and value slots, with at least one of each. Adjacent slots, adjacent words, zero-slot patterns, and pattern parentheses containing slots are rejected. Arbitrary numbers of `_`, `__`, and `___` are admitted subject to [`language.md` § Operators](language.md#operators): every `__` must be useful, and an operand-ending non-prefix pattern cannot have chain permission at both exposed ends. Dots and square brackets are forbidden in quoted and unquoted words. A word contains at most one `/`; comment spellings do not become operator words.
 
@@ -430,9 +431,9 @@ This is a surface-only extension. The desugar pass eliminates every destructurin
 
 ### Surface import-clause additions
 
-Kio surface widens the parenthesized selection list with braced label selectors
-and explicitly tagged operator grammars and macros. An ordinary name selects the value/type
-namespace; `{field}` selects label syntax. Standalone `op` and `varop` selections
+Kio surface widens the parenthesized selection list with explicitly tagged
+operator grammars and macros. An ordinary name selects the value/type
+namespace. Standalone `op` and `varop` selections
 are ordinary identifiers; a tag introduces an operator only when followed by
 its pattern or delimiter pair. A complete `macro IDENT` selector selects a
 macro, with an optional ordinary `as IDENT` destination. `macro` alone or
@@ -442,9 +443,8 @@ complete importing text, without consulting provider contents.
 
 ```ebnf
 ImportSelective  ::= 'import' ModulePath '(' ImportItem (',' ImportItem)* ')'
-ImportItem       ::= NamedImport | LabelImport | OperatorImport | MacroImport
+ImportItem       ::= NamedImport | OperatorImport | MacroImport
 MacroImport      ::= 'macro' IDENT ('as' IDENT)?
-LabelImport      ::= '{' IDENT '}'                    (* lowercase label name *)
 OperatorImport   ::= 'op' OpPattern ('as' OpPattern)?
                    | 'varop' VaropHead ('as' VaropHead)?
 ```
@@ -486,10 +486,9 @@ export, not part of the import projection. The shorter parser dispatch/conflict
 key does not replace this complete import identity (see
 [language.md](language.md#operator-grammar)).
 
-`LabelImport` braces are namespace syntax, not a label value. Its `IDENT` obeys
-the lowercase label-name rule. Label and operator selectors are consumed before
-Kio'; its `ImportSelective` production admits only `NamedImport`, including
-its optional same-class destination. Braced label selections have no `as` form.
+Operator and macro selectors are consumed before Kio'; its
+`ImportSelective` production admits only `NamedImport`, including its optional
+same-class destination.
 
 Kio surface also adds a builtin block import for the complete compile-time
 reflection/helper surface. It has no qualified or selective form and is not
@@ -510,28 +509,20 @@ TypeAtom += '_'
 positions that admit it, including the post-materialization rejection of a
 source occurrence beneath a structural `forall` introduced inside the same
 annotation (see [`language.md` § Type system](language.md#type-system)). The
-grammar does not decide that predicate. Kio' does not include this alternative. `labels`
-introduces generated nominal type names, so it adds no other type grammar.
-Type positions use the existing type-path production with generated names such
-as `Foo` and `Foo[T]`. Lowercase labels and braced label forms are value syntax;
-`{foo}`, `{foo: T}`, and `foo` as a type spelling are rejected.
+grammar does not decide that predicate. Kio' does not include this alternative.
+Compact nominal entries introduce ordinary written type names and add no atom
+to the ordinary `Type` grammar. Type positions use exact names such as `Foo`,
+`_Foo` and `Foo[T]`; a declaration group belongs only to a `type` declaration.
 
 ### Surface expression additions
 
 ```ebnf
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)                    (* unannotated literal — surface only *)
 
-ExprAtom += TupleLit | LabelValue | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
-ExprSuffix += FieldAccess | FieldUpdate
+ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
 
 TupleLit          ::= '(' Expr ',' Expr (',' Expr)* ','? ')'                  (* n-ary tuple; n >= 2 *)
-LabelPath         ::= IDENT ('.' IDENT)*                                      (* local or qualified label path *)
-LabelValue        ::= '{' (LabelValueLabel (',' LabelValueLabel)* ','?)? '}'
-LabelValueLabel   ::= LabelPath ('=' Expr?)?                                  (* bare means local payload; bare `=` means `= ()` *)
-FieldAccess       ::= '.?' '{' (FieldAccessLabel (',' FieldAccessLabel)* ','?)? '}'
-FieldAccessLabel  ::= LabelPath
-FieldUpdate       ::= '.!' '{' (FieldUpdateLabel (',' FieldUpdateLabel)* ','?)? '}'
-FieldUpdateLabel  ::= LabelPath ('=' Expr?)?                                  (* bare means local payload; bare `=` means `= ()` *)
+BraceUnit         ::= '{' ','* '}'                                            (* unit value *)
 
 MacroHead         ::= IDENT | '(' MacroHead ')'
 MacroCall         ::= MacroHead (TypeApplication | ValueApplication)+
@@ -541,7 +532,7 @@ BlockValueArgs    ::= '(' (Expr (',' Expr)*)? ','? ')'
 LabelledBlock     ::= IDENT NeutralBlock
 FinalElidedBlock  ::= IDENT BlockMacroCall
 NeutralBlock      ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
-NeutralBinding    ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
+NeutralBinding    ::= LetStmt | PatternLet | ExistentialLet | NeutralBind
 NeutralBind       ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder     ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
 RecCall           ::= 'recur' RecCallAnnotationList? IDENT (TypeApplication | ValueApplication)+       (* group-local callee *)
@@ -567,8 +558,7 @@ selected exposure determines their meaning or rejection.
 Every nonempty written prefix is a parenthesized value-argument list, including a
 single name, literal or expression. `outer(value) { body }` has one prefix,
 `outer(a, b) { body }` and `outer((a, b)) { body }` have one product
-prefix stage. `outer(a)(b) { body }` has two successive prefix stages. Direct `outer() { body }` has one unit prefix; `outer { body }` has
-none. Type-shaped argument roots are rejected; type arguments inside ordinary
+prefix value. `outer(a)(b) { body }` retains `(a)` as an earlier stage and combines `(b)` with the projected block. Direct `outer() { body }` includes a unit prefix; `outer { body }` has none. Type-shaped argument roots are rejected; type arguments inside ordinary
 value expressions such as `outer(f[A]) { body }` remain admissible.
 
 The prefix list fixes ownership of nested expressions before the following
@@ -621,18 +611,16 @@ These schematic fixed-operator productions instantiate the complete pattern expl
 ### Surface statement additions
 
 ```ebnf
-Stmt += PatternLet | ExistentialLet | RowLet
+Stmt += PatternLet | ExistentialLet
 
 PatternLet        ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ExistentialLet    ::= 'let' '.' '(' ExistsBinder+ ExistentialLetBinder ')' '=' Expr ';'
 ExistentialLetBinder ::= IDENT | ParamPatternTuple                           (* existing parameter as-pattern disambiguation applies *)
-RowLet            ::= 'let' '.' '(' '{' RowLetEntry (',' RowLetEntry)* ','? '}' ')' '=' Expr ';'
-RowLetEntry       ::= LabelPath ('as' IDENT)?                                 (* no empty row-let list *)
 ```
 
 `ExistentialLet` denotes the two-step CPS call against the underlying newtype's CPS projector — see [`language.md` § Existential type binders](language.md#existential-type-binders). Inside a neutral block, parsing retains the binding and its following items without selecting a block exposure. Its value binder is a name or a parenthesized parameter pattern under the existing parameter as-pattern disambiguation. Examples include `(left: Hidden, right: Hidden)` and `(left: _, right: _)`; an untyped opening pattern `(left, right)` is not admitted. Nested patterns and wildcard components retain the parameter-pattern rules. The existential witnesses scope over the pattern's annotations and the rest of the block, with the same escape check as a named opening.
 
-`PatternLet` extends ordinary `let NAME = ...;` with the explicit `let .(PATTERN) = ...;` form. Typed unary `let .(x: T) = e;`, tuple `let .(x, y) = e;`, and as-pattern `let .(whole: (x: A, y: B)) = e;` bindings retain the same checking and projection semantics as parameter patterns. A unary name-only pattern formats as ordinary `let x = e;`. Tuple/as-patterns lower to a scrutinee binding and ordinary projection lets. `RowLet` evaluates its RHS once; a shorthand entry binds the last label-path segment and an `as` entry binds the explicit alias. Row and existential patterns are pure `=` bindings, including in a neutral block; they are not `<-` binders.
+`PatternLet` extends ordinary `let NAME = ...;` with the explicit `let .(PATTERN) = ...;` form. Typed unary `let .(x: T) = e;`, tuple `let .(x, y) = e;`, and as-pattern `let .(whole: (x: A, y: B)) = e;` bindings retain the same checking and projection semantics as parameter patterns. A unary name-only pattern formats as ordinary `let x = e;`. Tuple/as-patterns lower to a scrutinee binding and ordinary projection lets. Existential patterns are pure `=` bindings, including in a neutral block; they are not `<-` binders.
 
 `let .stem. = e;` and a neutral `let .stem. <- e;` introduce a numbered binding with the same adjacent-dot spelling and index rules as a placeholder lambda. The highest owned index in the remaining block determines the unannotated pattern's slot count. The initializer is outside the new scope; later same-stem bindings shadow the family, while different-stem bindings retain it. Actual nested placeholder lambdas remain ownership barriers. See [Numbered bindings](language.md#numbered-bindings).
 
@@ -645,7 +633,8 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 - The dot-splice forms are one syntax family. Forward forms take a path-shaped callee with optional explicit type applications and select its immediately following value group. Reverse forms are suffixes on the preceding expression and select its outermost value application. Whole-expression grouping is transparent; a trailing type application is a boundary that makes the receiver a new value stage. Complete block calls instead use first/last prefix insertion. An omitted selected UFCS value group is receiver-only; a present selected group must be nonempty. `r.>f()`, `r.>>f()`, `f().<r` and `f().<<r` reject, including member/macro analogues. An earlier ordinary empty group is unaffected: `factory()(b).<r` modifies `(b)`. The forward callee's adjacent group belongs to that splice, and cannot be reinterpreted as a call on its result. A tight reverse receiver stops before another splice: `f.<x.>g` means `(f.<x).>g`; use `f.<(x.>g)` to insert a splice result.
 
 - A block-call splice inserts its receiver first (`.>` / `.<<`) or last
-  (`.>>` / `.<`) among the prefix values, before all projected block arguments.
+  (`.>>` / `.<`) among the prefix values, before projection combines the final
+  prefix value and whole block values into one right-associated product.
   Reverse splices follow the complete block chain, not its prefix:
   `f(a) { B }.<r` means `f(a, r) { B }`; `f(a).<r { B }` is rejected as
   a same-call arrangement. Grouping is transparent,
@@ -661,8 +650,7 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
   or `f(()) { B }.<r` for an additional Unit. Direct `f() { B }` keeps its
   ordinary Unit meaning.
 - Non-block dot-splice value lists contain values only. Brackets on the written callee instantiate its exposed binders before receiver insertion. Forward `.>` / `.>>` select the immediately following value group; reverse `.<` / `.<<` select the immediately preceding outermost value application. Insertion is first for `.>` / `.<<`, last for `.>>` / `.<`. A trailing type application is a boundary: `f(a)[B].<r` applies the instantiated result to `r`; it never searches backward to modify `(a)`. Written stages, not declaration groups or inferred argument types, select the receiver's stage.
-- A braced label-value prefix is parenthesized, as in `outer({field = value}) { body }`.
-- `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use `rec newtype` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. `rec labels` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
+- `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use an explicit singleton `rec type` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. Compact `rec type` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
 - An expression's fixed-operator scope contains exactly its written imports and local declarations preceding the enclosing item, including lazily parsed bodies. A leading word without a registered prefix pattern is rejected. Native atom introducers, whole pending following words, and square-frame edges have their source-local roles before custom dispatch. The signed-number rule includes expression-ending `]`, so `[a, b]-1` has subtraction shape and `[-1]` remains a signed-literal frame. Missing variadic bindings never change a frame's marker.
 - A program that parses against the Kio' productions also parses against the full Kio grammar with the same meaning. It needs none of the additional surface productions; the full grammar is a strict superset.
 - **Native structural prefixes.** Required native symbols such as `->`, existential `>`, kind stars, and type-chain separators retain their grammatical prefix handling. Brackets and dots are already structural, preserving `[*F]`, `[A][*F]`, and `.[*F]`. Native dot compounds retain their adjacent spelling. User-operator positions consume complete words and never carve a word into shorter imported operators.
@@ -701,7 +689,7 @@ Notes:
 - The file must begin with a `package <name>;` directive whose `<name>` is the filename stem (for example, `app.pkg.kio` begins `package app;`). A missing directive or a name that does not match the stem is a parse error.
 - After the required header, a package file admits at most one `build` block and at most one `bridge` block, in either order. Other entries, including a stray `env` / `export`, are parse errors.
 - A package file declares no host items and no `import` clauses. The host boundary lives in modules: a module declares what it needs from the host with `host type` / `host fn` items and what it offers with ordinary `pub` items (see [§ Productions (Kio')](#productions-kio)). The package file only names, with module globs, which modules participate.
-- `BridgeBlock` is a `;`-separated list of module-path globs spelled the same way a `ModulePath` is, extended with `*` (matches one path segment) and `**` (matches a whole subtree, zero or more segments) following shell glob semantics. It selects **modules**; from each matched module, every `pub host` item becomes a host requirement (the env — what the host must supply), every other public callable becomes a host-invocable entry (an export), and public type declarations contribute the type surface those signatures use. A plain-public `newtype` contributes its nominal type; its constructor and projector contribute independent host operations only when the corresponding member is also plain `pub`. A private or `pub(path)` outer newtype contributes no host surface regardless of its member markers. Entries keep their module namespace; there is no rename. A glob that matches no module is a build error. The module-completeness and type-closure rules that keep the exposed contract self-contained are stated in [`package.md` § The bridge block](package.md#the-bridge-block).
+- `BridgeBlock` is a `;`-separated list of module-path globs spelled the same way a `ModulePath` is, extended with `*` (matches one path segment) and `**` (matches a whole subtree, zero or more segments) following shell glob semantics. It selects **modules**; from each matched module, every `pub host` item becomes a host requirement (the env — what the host must supply), every other public callable becomes a host-invocable entry (an export), and public type declarations contribute the type surface those signatures use. A plain-public nominal type contributes its identity; its constructor and projector contribute independent host operations only when the corresponding member is also plain `pub`. A private or `pub(path)` outer nominal type contributes no host surface regardless of its member markers. Entries keep their module namespace; there is no rename. A glob that matches no module is a build error. The module-completeness and type-closure rules that keep the exposed contract self-contained are stated in [`package.md` § The bridge block](package.md#the-bridge-block).
 - `pub` is not admissible on package-file entries. Only the optional `build` and `bridge` blocks follow the required package header.
 
 ### Build block

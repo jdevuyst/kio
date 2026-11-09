@@ -1,3 +1,0 @@
-module feature/target;
-
-pub(feature) newtype Token : . { constructor make; pub projector unwrap }

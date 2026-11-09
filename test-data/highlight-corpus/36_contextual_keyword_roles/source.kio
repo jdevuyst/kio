@@ -8,12 +8,6 @@ fn identity(as: .) -> . {
 }
 
 fn row(row: .) -> . {
-  let .({
-    ,, as // label
-       as // separator
-       as ,,, owner. // path
-                 as // label leaf
-                 as local ,,
-  }) = row;
+  let local = row;
   local
 }

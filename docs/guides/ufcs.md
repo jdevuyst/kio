@@ -117,7 +117,8 @@ searching backwards to insert into `(a)`.
 
 ## Type arguments
 
-UFCS calls accept explicit type arguments anywhere the equivalent prefix call would:
+Blockless UFCS calls accept explicit type arguments wherever the equivalent
+prefix call would:
 
 ```kio {@module}
 fn id[A](x: A) -> A { x }
@@ -135,6 +136,8 @@ Brackets on a forward callee instantiate its leading binders before receiver
 insertion: `x.>f[A](b)` means `f[A](x,b)`. If consuming `x` exposes another
 binder, instantiate that result afterward: `f(x)[T]` or `(x.>f)[T]`.
 The brackets never choose a type slot by searching around the receiver.
+[Calls with trailing blocks](#calls-with-trailing-blocks) infer their type
+arguments and do not admit explicit type arguments in the block-call spelling.
 
 The Unit type is `.`, while `()` is a value. For
 `nil : [A] . -> List[A]`, `nil[A]` retains `. -> List[A]`;
@@ -198,7 +201,7 @@ Both functions build the same macro call: `narrow_prod(p)[String]`.
 Trailing blocks stay attached to the macro in every direction. The receiver
 enters a prefix group **before the blocks**, even when written after them.
 Forward forms select the first prefix group and reverse forms the last.
-With no prefix group, insertion creates a receiver-only stage:
+With no prefix group, insertion creates a receiver-only prefix group:
 
 | Spelling | Means |
 | --- | --- |
@@ -208,9 +211,11 @@ With no prefix group, insertion creates a receiver-only stage:
 | `f(a) { body }.<r` | `f(a, r) { body }` |
 
 Here `f` stands for an imported macro with the corresponding ordinary values
-and trailing block. Each block projects one value for a successive function
-stage; multiple prefix groups likewise supply successive stages. These are
-the same quoted macro arguments as in the direct call; the notation does not make their contents run eagerly.
+and trailing block. The final prefix value and each whole projected block
+value form one right-associated product for one function stage; earlier prefix
+groups remain separate stages. Each spelling has the same call plan and
+runtime behavior as the equivalent direct call. Macro inputs are quoted; the
+generated code determines whether and how they run.
 
 For example, the library `match` macro accepts a scrutinee and a clause block.
 Here its module is available as `match`; use your configured dependency path

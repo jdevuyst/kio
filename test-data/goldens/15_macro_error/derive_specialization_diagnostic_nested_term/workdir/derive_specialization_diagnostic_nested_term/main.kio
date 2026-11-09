@@ -5,9 +5,9 @@ import testapi(Int);
 
 host fn zero_int() -> Int;
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
-fn root(value: Int) -> Box[Int] { Box.mk_box(value) }
+fn root(value: Int) -> Box[Int] { Box.mk(value) }
 
 fn unused[Unused]() -> Int { zero_int() }
 

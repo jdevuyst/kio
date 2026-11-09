@@ -1,0 +1,14 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+import testapi/types(Unit_alias);
+
+fn tick(message: String) -> Unit_alias { print(message); () }
+
+pub fn main() {
+  tick("checked\n");
+  let inferred = .() { tick("synthesized\n"); () };
+  inferred();
+  print("unit alias statements preserved\n")
+}

@@ -1,6 +1,7 @@
 module river_bytecode_vm/vm;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import river_bytecode_vm/constants as c;
 import river_bytecode_vm/model as model;
 import river_bytecode_vm/model(
@@ -16,17 +17,6 @@ import river_bytecode_vm/model(
 , Ticks
 , Waits
 , Wolf
-, {alerts}
-, {cabbage}
-, {checksum}
-, {farmer}
-, {goat}
-, {halt_code}
-, {moves}
-, {pc}
-, {ticks}
-, {waits}
-, {wolf}
 );
 import river_bytecode_vm/program as program;
 import river_bytecode_vm/util as util;
@@ -41,8 +31,8 @@ fn next_side(side: I32) -> I32 {
 fn same_side(left: I32, right: I32) -> Bool { eq_i32(left, right) }
 
 pub fn done(state: Snapshot) -> Bool {
-  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
-    state;
+  let .(farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   util.and(
   , same_side(farmer_side, c.east())
   , util.and(
@@ -53,8 +43,8 @@ pub fn done(state: Snapshot) -> Bool {
 }
 
 pub fn safe(state: Snapshot) -> Bool {
-  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
-    state;
+  let .(farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   if(same_side(farmer_side, goat_side)) {
     .t
   } else {
@@ -63,14 +53,8 @@ pub fn safe(state: Snapshot) -> Bool {
 }
 
 fn stamp(state: Snapshot, op: I32) -> I32 {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  , checksum as checksum_value
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side, checksum_value) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get; Checksum.get };
   add_i32(
   , add_i32(
     , add_i32(mul_i32(checksum_value, 31), mul_i32(pc_value, 7))
@@ -93,8 +77,8 @@ fn with_common(
 , next_halt: I32
 , op: I32
 ) -> Snapshot {
-  let .({moves as move_count, waits as wait_count, alerts as alert_count, ticks as tick_count}) =
-    state;
+  let .(move_count, wait_count, alert_count, tick_count) =
+    state.>select { Moves.get; Waits.get; Alerts.get; Ticks.get };
   model.state(
   , next_pc
   , next_farmer
@@ -111,13 +95,8 @@ fn with_common(
 }
 
 fn wait_step(state: Snapshot, op: I32) -> Snapshot {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   with_common(
   , state
   , add_i32(pc_value, 1)
@@ -134,13 +113,8 @@ fn wait_step(state: Snapshot, op: I32) -> Snapshot {
 }
 
 fn ferry_alone_step(state: Snapshot, op: I32) -> Snapshot {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   with_common(
   , state
   , add_i32(pc_value, 1)
@@ -157,13 +131,8 @@ fn ferry_alone_step(state: Snapshot, op: I32) -> Snapshot {
 }
 
 fn move_step(state: Snapshot, item: I32, op: I32) -> Snapshot {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   let cargo_side =
     if(eq_i32(item, c.item_goat())) {
       goat_side
@@ -208,13 +177,8 @@ fn move_step(state: Snapshot, item: I32, op: I32) -> Snapshot {
 }
 
 fn assert_safe_step(state: Snapshot, op: I32) -> Snapshot {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   if(safe(state)) {
     with_common(
     , state
@@ -247,13 +211,8 @@ fn assert_safe_step(state: Snapshot, op: I32) -> Snapshot {
 }
 
 fn jump_if_done_step(state: Snapshot, target: I32, op: I32) -> Snapshot {
-  let .({
-  , pc as pc_value
-  , farmer as farmer_side
-  , wolf as wolf_side
-  , goat as goat_side
-  , cabbage as cabbage_side
-  }) = state;
+  let .(pc_value, farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Pc.get; Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   let next_pc = if(done(state)) { target } else { add_i32(pc_value, 1) };
   with_common(
   , state
@@ -271,8 +230,8 @@ fn jump_if_done_step(state: Snapshot, target: I32, op: I32) -> Snapshot {
 }
 
 fn halt_step(state: Snapshot, code: I32, op: I32) -> Snapshot {
-  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
-    state;
+  let .(farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   with_common(
   , state
   , program.program_len()
@@ -289,8 +248,8 @@ fn halt_step(state: Snapshot, code: I32, op: I32) -> Snapshot {
 }
 
 fn bad_pc_step(state: Snapshot) -> Snapshot {
-  let .({farmer as farmer_side, wolf as wolf_side, goat as goat_side, cabbage as cabbage_side}) =
-    state;
+  let .(farmer_side, wolf_side, goat_side, cabbage_side) =
+    state.>select { Farmer.get; Wolf.get; Goat.get; Cabbage.get };
   with_common(
   , state
   , program.program_len()
@@ -307,12 +266,12 @@ fn bad_pc_step(state: Snapshot) -> Snapshot {
 }
 
 fn running(state: Snapshot) -> Bool {
-  let .({pc as pc_value, halt_code as halt_value}) = state;
+  let .(pc_value, halt_value) = state.>select { Pc.get; Halt_code.get };
   util.and(eq_i32(halt_value, c.halt_running()), lt_i32(pc_value, program.program_len()))
 }
 
 fn step(state: Snapshot) -> Snapshot {
-  let .({pc as pc_value}) = state;
+  let pc_value = state.>select { Pc.get };
   if(lt_i32(pc_value, program.program_len())) {
     let op = program.opcode(pc_value);
     if(eq_i32(op, c.op_wait())) {

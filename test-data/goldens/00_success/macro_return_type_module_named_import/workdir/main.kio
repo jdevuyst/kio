@@ -12,4 +12,4 @@ import __intrinsics__;
 
 import repmod(Rep, macro repmod);
 
-pub fn use_rep() -> Rep { Rep.un_rep(repmod(())); Rep.mk_rep(()) }
+pub fn use_rep() -> Rep { Rep.get(repmod(())); Rep.mk(()) }

@@ -20,11 +20,10 @@
 //! AST after desugar runs.
 
 use crate::ast::{
-    CallArg, Desugared, ElaboratorCall, Equiv, Expr, FieldAccessLabel, FieldUpdateLabel, FnDef,
-    HostFn, HostFnParam, HostFnValueParam, HostType, Item, LabelEntry, LabelSugarLabel,
-    LabelValueLabel, Labels, LabelsArm, LiteralAlias, Meta, Module, Op, PackageFile, Param,
-    PathSegment, PlaceholderState, RecGroup, RowLetEntry, Signature, SignatureParam, Surface, Type,
-    TypeAlias, VariadicOperator, convert_type_member,
+    CallArg, Desugared, Equiv, Expr, FnDef, HostFn, HostFnParam, HostFnValueParam, HostType, Item,
+    LabelEntry, Labels, LabelsArm, LiteralAlias, Meta, Module, Op, PackageFile, Param, PathSegment,
+    PlaceholderState, RecGroup, Signature, SignatureParam, Surface, Type, TypeAlias,
+    VariadicOperator, convert_type_member,
 };
 use crate::error::Error;
 
@@ -55,15 +54,6 @@ pub trait SurfaceToDesugared {
     fn rewrite_expr_op_chain(
         &mut self,
         kind: crate::ast::OpChainKind<Surface>,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Desugared>, Error>;
-
-    fn rewrite_expr_row_let(
-        &mut self,
-        entries: Vec<RowLetEntry<Surface>>,
-        value: Box<Expr<Surface>>,
-        body: Box<Expr<Surface>>,
-        temp_name: String,
         meta: Meta<Surface>,
     ) -> Result<Expr<Desugared>, Error>;
 
@@ -322,94 +312,6 @@ pub trait SurfaceToDesugared {
         })
     }
 
-    fn visit_expr_label_value(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::LabelValue {
-            occurrence: _,
-            labels,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        let labels: Vec<LabelValueLabel<Desugared>> = labels
-            .into_iter()
-            .map(|l| self.walk_label_value_label(l))
-            .collect::<Result<_, _>>()?;
-        Ok(Expr::LabelValue {
-            occurrence: Default::default(),
-            labels,
-            meta: Meta::new(span),
-            ext,
-        })
-    }
-
-    fn visit_expr_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::Elaborator {
-            source_trivia: _,
-            occurrence: _,
-            kind,
-            call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        let call = match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => ElaboratorCall::FieldAccess {
-                receiver: Box::new(self.walk_expr(*receiver)?),
-                labels: labels
-                    .into_iter()
-                    .map(|label| {
-                        let FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta { span, .. },
-                        } = label;
-                        Ok(FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
-                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
-                updates: updates
-                    .into_iter()
-                    .map(|update| {
-                        let FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value,
-                            meta: Meta { span, .. },
-                        } = update;
-                        Ok(FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value: self.walk_expr(value)?,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-        };
-        Ok(Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind,
-            call,
-            meta: Meta::new(span),
-            ext,
-        })
-    }
-
     fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::UserMacro {
             name,
@@ -559,26 +461,6 @@ pub trait SurfaceToDesugared {
         })
     }
 
-    fn visit_type_label_sugar(&mut self, ty: Type<Surface>) -> Result<Type<Desugared>, Error> {
-        let Type::LabelSugar {
-            labels,
-            meta: Meta { span, .. },
-            ext,
-        } = ty
-        else {
-            unreachable!()
-        };
-        let labels: Vec<LabelSugarLabel<Desugared>> = labels
-            .into_iter()
-            .map(|l| self.walk_label_sugar_label(l))
-            .collect::<Result<_, _>>()?;
-        Ok(Type::LabelSugar {
-            labels,
-            meta: Meta::new(span),
-            ext,
-        })
-    }
-
     fn visit_type_infer(&mut self, ty: Type<Surface>) -> Result<Type<Desugared>, Error> {
         let Type::Infer {
             meta: Meta { span, .. },
@@ -611,26 +493,6 @@ pub trait SurfaceToDesugared {
 
     fn visit_item_labels(&mut self, d: Labels<Surface>) -> Result<Item<Desugared>, Error> {
         Ok(Item::Labels(self.walk_labels(d)?, ()))
-    }
-
-    fn visit_item_label_forward(
-        &mut self,
-        forward: crate::ast::LabelForward<Surface>,
-    ) -> Result<Item<Desugared>, Error> {
-        Ok(Item::LabelForward(
-            crate::ast::LabelForward {
-                vis: forward.vis,
-                name: forward.name,
-                name_span: forward.name_span,
-                target: forward.target,
-                target_span: forward.target_span,
-                body_trivia: Default::default(),
-                meta: Meta::new(forward.meta.span),
-                editable_span: forward.editable_span,
-                doc: forward.doc,
-            },
-            (),
-        ))
     }
 
     fn visit_item_equiv(&mut self, e: Equiv<Surface>) -> Result<Item<Desugared>, Error> {
@@ -730,7 +592,7 @@ pub trait SurfaceToDesugared {
             Item::LiteralAlias(a, _) => self.rewrite_item_literal_alias(a),
             Item::Newtype(d) => Ok(vec![self.visit_item_newtype(d)?]),
             Item::Labels(d, _) => Ok(vec![self.visit_item_labels(d)?]),
-            Item::LabelForward(d, _) => Ok(vec![self.visit_item_label_forward(d)?]),
+
             Item::Equiv(e, _) => Ok(vec![self.visit_item_equiv(e)?]),
             Item::Macro(s, _) => Ok(vec![self.visit_item_macro(s)?]),
             Item::RecGroup(d, _) => self.rewrite_item_rec_group(d),
@@ -860,6 +722,7 @@ pub trait SurfaceToDesugared {
             type_alias_span,
             type_alias_params,
             type_alias_arms,
+            type_alias_rhs,
             entries,
             meta: Meta { span, .. },
             editable_span,
@@ -872,6 +735,9 @@ pub trait SurfaceToDesugared {
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
+        let type_alias_rhs = type_alias_rhs
+            .map(|rhs| self.walk_nominal_rhs(rhs))
+            .transpose()?;
         let entries: Vec<LabelEntry<Desugared>> = entries
             .into_iter()
             .map(|e| self.walk_label_entry(e))
@@ -883,10 +749,36 @@ pub trait SurfaceToDesugared {
             type_alias_span,
             type_alias_params,
             type_alias_arms,
+            type_alias_rhs,
             entries,
             meta: Meta::new(span),
             editable_span,
             doc,
+        })
+    }
+
+    fn walk_nominal_rhs(
+        &mut self,
+        rhs: crate::ast::NominalRhs<Surface>,
+    ) -> Result<crate::ast::NominalRhs<Desugared>, Error> {
+        use crate::ast::NominalRhs;
+        Ok(match rhs {
+            NominalRhs::Group(index) => NominalRhs::Group(index),
+            NominalRhs::Type(ty) => NominalRhs::Type(self.walk_type(ty)?),
+            NominalRhs::Product(left, right, meta) => NominalRhs::Product(
+                Box::new(self.walk_nominal_rhs(*left)?),
+                Box::new(self.walk_nominal_rhs(*right)?),
+                Meta::new(meta.span),
+            ),
+            NominalRhs::Sum(left, right, meta) => NominalRhs::Sum(
+                Box::new(self.walk_nominal_rhs(*left)?),
+                Box::new(self.walk_nominal_rhs(*right)?),
+                Meta::new(meta.span),
+            ),
+            NominalRhs::Grouped(inner, meta) => NominalRhs::Grouped(
+                Box::new(self.walk_nominal_rhs(*inner)?),
+                Meta::new(meta.span),
+            ),
         })
     }
 
@@ -912,6 +804,7 @@ pub trait SurfaceToDesugared {
             type_params,
             existential_params,
             payload,
+            members,
             meta: Meta { span, .. },
         } = e;
         Ok(LabelEntry {
@@ -920,6 +813,11 @@ pub trait SurfaceToDesugared {
             type_params,
             existential_params,
             payload: self.walk_type(payload)?,
+            members: members.map(|members| crate::ast::NominalMembers {
+                constructor: convert_type_member(&members.constructor),
+                projector: convert_type_member(&members.projector),
+                trailing_trivia: Default::default(),
+            }),
             meta: Meta::new(span),
         })
     }
@@ -1054,42 +952,6 @@ pub trait SurfaceToDesugared {
         })
     }
 
-    fn walk_label_value_label(
-        &mut self,
-        l: LabelValueLabel<Surface>,
-    ) -> Result<LabelValueLabel<Desugared>, Error> {
-        let LabelValueLabel {
-            label,
-            label_span,
-            value,
-            meta: Meta { span, .. },
-        } = l;
-        Ok(LabelValueLabel {
-            label,
-            label_span,
-            value: self.walk_expr(value)?,
-            meta: Meta::new(span),
-        })
-    }
-
-    fn walk_label_sugar_label(
-        &mut self,
-        l: LabelSugarLabel<Surface>,
-    ) -> Result<LabelSugarLabel<Desugared>, Error> {
-        let LabelSugarLabel {
-            label,
-            label_span,
-            payload,
-            meta: Meta { span, .. },
-        } = l;
-        Ok(LabelSugarLabel {
-            label,
-            label_span,
-            payload: payload.map(|p| self.walk_type(p)).transpose()?,
-            meta: Meta::new(span),
-        })
-    }
-
     fn walk_expr(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         match e {
             Expr::Path { .. } => self.visit_expr_path(e),
@@ -1104,22 +966,12 @@ pub trait SurfaceToDesugared {
             } => self.rewrite_expr_rec_call(modes, callee, stages, ext, meta),
             Expr::FnExpr { .. } => self.visit_expr_fn(e),
             Expr::Let { .. } => self.visit_expr_let(e),
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                temp_name,
-                meta,
-                ..
-            } => self.rewrite_expr_row_let(entries, value, body, temp_name, meta),
             Expr::Seq { .. } => self.visit_expr_seq(e),
             Expr::Unit { .. } => self.visit_expr_unit(e),
             Expr::StrLit { .. } => self.visit_expr_str_lit(e),
             Expr::IntLit { .. } => self.visit_expr_int_lit(e),
             Expr::FloatLit { .. } => self.visit_expr_float_lit(e),
             Expr::BoolLit { .. } => self.visit_expr_bool_lit(e),
-            Expr::LabelValue { .. } => self.visit_expr_label_value(e),
-            Expr::Elaborator { .. } => self.visit_expr_elaborator(e),
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
             Expr::UserMacro { .. } => self.visit_expr_user_macro(e),
             Expr::BlockCall { .. } => {
@@ -1148,7 +1000,6 @@ pub trait SurfaceToDesugared {
             Type::Product { .. } => self.visit_type_product(ty),
             Type::Sum { .. } => self.visit_type_sum(ty),
             Type::Forall { .. } => self.visit_type_forall(ty),
-            Type::LabelSugar { .. } => self.visit_type_label_sugar(ty),
             Type::Infer { .. } => self.visit_type_infer(ty),
         }
     }

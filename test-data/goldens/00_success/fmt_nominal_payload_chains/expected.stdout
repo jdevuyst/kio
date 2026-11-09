@@ -1,0 +1,10 @@
+module main;
+
+type {
+  Token:
+    | Int_lit_token_a_pretty_long_name
+    | String_lit_token_b_also_pretty_long_indeed
+    | Bool_lit_token_c_lengthy_too
+    | Float_lit_token_d_yet_more
+    { pub mk; pub get }
+}

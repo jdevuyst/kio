@@ -8,7 +8,7 @@
 //! the structural variants every phase shares (`Path` / `Unit` /
 //! `Bottom` / `Function` / `Product` / `Sum` / `Forall`) and renders a
 //! canonical string. Variants that are surface-only and uninhabited in
-//! Kio′ (`LabelSugar`, `Infer`) are not expected here — a sig file is
+//! Kio′ (`Infer`) are not expected here — a sig file is
 //! Kio′ and the live side is post-typecheck — so they normalize to a
 //! distinct sentinel that never alpha-matches a real type rather than
 //! panicking.
@@ -157,7 +157,6 @@ impl<F: Fn(&[String]) -> Vec<String>> Ctx<'_, F> {
             // Surface-only / inference holes do not occur in Kio′ nor in
             // a typechecked contract surface. Render a sentinel that can
             // never alpha-match a real type.
-            Type::LabelSugar { .. } => out.push_str("#label-sugar#"),
             Type::Infer { .. } => out.push_str("#infer#"),
             Type::Goal { .. } => {
                 unreachable!("open type goal cannot enter contract normalization")

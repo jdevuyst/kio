@@ -1,45 +1,45 @@
 module circuit_netlist_eval/fixture;
 
 import circuit_netlist_eval/domain(
+, Checksum
+, Enable
+, Fanout_ok
+, Fanout_probe
+, Gate_ab_and
+, Gate_bc_or
+, Gate_enable_a
+, Gate_mask
+, Gate_xor
+, Pin_a
+, Pin_b
+, Pin_c
+, Probe_alarm
+, Probe_carry
+, Stage
 , State
-, {checksum}
-, {enable}
-, {fanout_ok}
-, {fanout_probe}
-, {gate_ab_and}
-, {gate_bc_or}
-, {gate_enable_a}
-, {gate_mask}
-, {gate_xor}
-, {pin_a}
-, {pin_b}
-, {pin_c}
-, {probe_alarm}
-, {probe_carry}
-, {stage}
-, {truth_ok}
-, {warning_count}
+, Truth_ok
+, Warning_count
 );
 import testapi(Bool, I32);
 
 pub fn initial_state() -> State {
-  {
-  , stage = 0
-  , pin_a = .t
-  , pin_b = .f
-  , pin_c = .t
-  , enable = .t
-  , gate_ab_and = .f
-  , gate_bc_or = .f
-  , gate_enable_a = .f
-  , gate_xor = .f
-  , gate_mask = .f
-  , fanout_probe = .f
-  , probe_carry = .f
-  , probe_alarm = .f
-  , checksum = 0
-  , fanout_ok = .t
-  , truth_ok = .t
-  , warning_count = 0
-  }
+  (
+  , Stage.mk(0)
+  , Pin_a.mk(.t)
+  , Pin_b.mk(.f)
+  , Pin_c.mk(.t)
+  , Enable.mk(.t)
+  , Gate_ab_and.mk(.f)
+  , Gate_bc_or.mk(.f)
+  , Gate_enable_a.mk(.f)
+  , Gate_xor.mk(.f)
+  , Gate_mask.mk(.f)
+  , Fanout_probe.mk(.f)
+  , Probe_carry.mk(.f)
+  , Probe_alarm.mk(.f)
+  , Checksum.mk(0)
+  , Fanout_ok.mk(.t)
+  , Truth_ok.mk(.t)
+  , Warning_count.mk(0)
+  )
 }

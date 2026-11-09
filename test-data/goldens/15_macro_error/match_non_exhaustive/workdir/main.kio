@@ -5,9 +5,9 @@ import macros/match(macro match);
 // Non-exhaustive `match`. The scrutinee `(Foo | Bar)` has DNF
 // branches `[Foo]` and `[Bar]`; only the Foo branch has a covering
 // clause, so the imported `match` macro reports the uncovered branch.
-newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+type { Foo: . { pub mk; pub get } }
 
-newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
+type { Bar: . { pub mk; pub get } }
 
 fn handle(p: Foo | Bar) {
   let _r =

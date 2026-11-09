@@ -1,7 +1,7 @@
 rendered Markdown site to out/docs-md
-Node newtype
+Node type
 rec {
   pub type Chain = Node;
-  pub newtype Node : . | Chain { pub constructor make; pub projector read }
+  pub type { Node: . | Chain { pub mk; pub get } }
 }
 The nominal node view.

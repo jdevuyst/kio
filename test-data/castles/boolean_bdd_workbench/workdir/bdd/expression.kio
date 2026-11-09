@@ -2,24 +2,26 @@ module bdd/expression;
 
 import bdd/logic as logic;
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/iter(loop);
 
-pub rec labels Expression =
-  { constant: Bool }
-  | { variable: I32 }
-  | { negation: Expression }
-  | { binary: logic.Operation & Expression & Expression };
+pub rec type Expression =
+  | { Constant: Bool }
+  | { Variable: I32 }
+  | { Negation: Expression }
+  | { Binary: logic.Operation & Expression & Expression }
+  ;
 
-pub fn value(b: Bool) -> Expression { {constant = b}.>widen_sum }
+pub fn value(b: Bool) -> Expression { Constant.mk(b).>widen_sum }
 
-pub fn variable_expr(v: I32) -> Expression { {variable = v}.>widen_sum }
+pub fn variable_expr(v: I32) -> Expression { Variable.mk(v).>widen_sum }
 
-pub fn negate(e: Expression) -> Expression { {negation = e}.>widen_sum }
+pub fn negate(e: Expression) -> Expression { Negation.mk(e).>widen_sum }
 
 pub fn combine(op: logic.Operation, a: Expression, b: Expression) -> Expression {
-  {binary = (op, a, b)}.>widen_sum
+  Binary.mk((op, a, b)).>widen_sum
 }
 
 pub fn both(a: Expression, b: Expression) -> Expression { combine(logic.conjunction_op(), a, b) }
@@ -30,11 +32,17 @@ pub fn xor(a: Expression, b: Expression) -> Expression { combine(logic.exclusive
 
 pub rec(loop) fn evaluate(expr: Expression, assignment: I32 -> Bool) -> Bool {
   match(expr) {
-    .(c: Constant) { c.?{constant} };
-    .(v: Variable) { assignment(v.?{variable}) };
-    .(n: Negation) { logic.not(recur(cont) evaluate(n.?{negation}, assignment)) };
+    .(c: Constant) {
+      c.>select { Constant.get }
+    };
+    .(v: Variable) {
+      assignment(v.>select { Variable.get })
+    };
+    .(n: Negation) {
+      logic.not(recur(cont) evaluate(n.>select { Negation.get }, assignment))
+    };
     .(b: Binary) {
-      let .(op: logic.Operation, left: Expression, right: Expression) = b.?{binary};
+      let .(op: logic.Operation, left: Expression, right: Expression) = b.>select { Binary.get };
       let a = recur(cont) evaluate(left, assignment);
       let b = recur(cont) evaluate(right, assignment);
       logic.operate(op, a, b)

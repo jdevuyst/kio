@@ -10,11 +10,11 @@ import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
 /// The identity of one host declaration: declaring module and local name.
-pub labels { host_id: String & String };
+pub type { Host_id: String & String }
 
 /// Builds an exact host-declaration identity.
 pub fn mk_host_id(module_name: String, local_name: String) -> Host_id {
-  {host_id = (module_name, local_name)}
+  Host_id.mk((module_name, local_name))
 }
 
 /// The declaring module of a host identity.
@@ -46,20 +46,20 @@ pub fn host_id_render(id: Host_id) -> String {
 }
 
 /// One type parameter's kind: the base case for `*`, or another arrow before the result kind.
-pub rec labels { param_kind: . | Param_kind };
+pub rec type { Param_kind: . | Param_kind }
 
 /// The kind of an ordinary saturated type (`*`, no leading binder stars).
-pub fn base_kind() -> Param_kind { {param_kind = widen_sum(())[. | Param_kind]} }
+pub fn base_kind() -> Param_kind { Param_kind.mk(widen_sum(())[. | Param_kind]) }
 
 /// Adds one leading binder star (`* -> kind`).
 pub fn higher_kind(rest: Param_kind) -> Param_kind {
-  {param_kind = widen_sum(rest)[. | Param_kind]}
+  Param_kind.mk(widen_sum(rest)[. | Param_kind])
 }
 
 /// One-step destructor on a parameter kind.
 pub fn un_param_kind(k: Param_kind) -> . | Param_kind { Param_kind.get(k) }
 
-labels { kind_pair: Param_kind & Param_kind };
+type { Kind_pair: Param_kind & Param_kind }
 
 fn param_kind_eq_step(state: Kind_pair) -> Kind_pair | Bool {
   match(Kind_pair.get(state)) {
@@ -70,7 +70,7 @@ fn param_kind_eq_step(state: Kind_pair) -> Kind_pair | Bool {
             match(un_param_kind(right)) {
               (
               , .(right_rest: Param_kind) {
-                  widen_sum({kind_pair = (left_rest, right_rest)})[Kind_pair | Bool]
+                  widen_sum(Kind_pair.mk((left_rest, right_rest)))[Kind_pair | Bool]
                 }
               , .(_right_base: .) { widen_sum(.f[Bool])[Kind_pair | Bool] }
               )
@@ -92,18 +92,18 @@ fn param_kind_eq_step(state: Kind_pair) -> Kind_pair | Bool {
 
 /// Whether two parameter kinds carry the same star count.
 pub fn param_kind_eq(a: Param_kind, b: Param_kind) -> Bool {
-  loop(param_kind_eq_step, {kind_pair = (a, b)})
+  loop(param_kind_eq_step, Kind_pair.mk((a, b)))
 }
 
 /// An ordered type-parameter kind list.
-pub labels { param_kinds: List[Param_kind] };
+pub type { Param_kinds: List[Param_kind] }
 
 /// The empty kind list.
-pub fn param_kinds_nil() -> Param_kinds { {param_kinds = nil[Param_kind]} }
+pub fn param_kinds_nil() -> Param_kinds { Param_kinds.mk(nil[Param_kind]) }
 
 /// Prepends a kind to a kind list.
 pub fn param_kinds_cons(head: Param_kind, tail: Param_kinds) -> Param_kinds {
-  {param_kinds = cons[Param_kind](head, Param_kinds.get(tail))}
+  Param_kinds.mk(cons[Param_kind](head, Param_kinds.get(tail)))
 }
 
 /// One-step destructor on a kind list.
@@ -111,14 +111,14 @@ pub fn un_param_kinds(ks: Param_kinds) -> . | (Param_kind & Param_kinds) {
   match(uncons[Param_kind](Param_kinds.get(ks))) {
     (
     , .(head: Param_kind, tail: List[Param_kind]) {
-        widen_sum((head, {param_kinds = tail}))[. | (Param_kind & Param_kinds)]
+        widen_sum((head, Param_kinds.mk(tail)))[. | (Param_kind & Param_kinds)]
       }
     , .(_empty: .) { widen_sum(())[. | (Param_kind & Param_kinds)] }
     )
   }
 }
 
-labels { kind_lists: Param_kinds & Param_kinds };
+type { Kind_lists: Param_kinds & Param_kinds }
 
 fn param_kinds_eq_step(state: Kind_lists) -> Kind_lists | Bool {
   match(Kind_lists.get(state)) {
@@ -130,7 +130,7 @@ fn param_kinds_eq_step(state: Kind_lists) -> Kind_lists | Bool {
               (
               , .(right_kind: Param_kind, right_rest: Param_kinds) {
                   if(param_kind_eq(left_kind, right_kind)) {
-                    widen_sum({kind_lists = (left_rest, right_rest)})[Kind_lists | Bool]
+                    widen_sum(Kind_lists.mk((left_rest, right_rest)))[Kind_lists | Bool]
                   } else {
                     widen_sum(.f[Bool])[Kind_lists | Bool]
                   }
@@ -155,50 +155,50 @@ fn param_kinds_eq_step(state: Kind_lists) -> Kind_lists | Bool {
 
 /// Whether two ordered parameter-kind lists are identical.
 pub fn param_kinds_eq(a: Param_kinds, b: Param_kinds) -> Bool {
-  loop(param_kinds_eq_step, {kind_lists = (a, b)})
+  loop(param_kinds_eq_step, Kind_lists.mk((a, b)))
 }
 
 /// Defines role `i8`.
-pub labels { role_i8: . };
+pub type { Role_i8: . }
 
 /// Defines role `i16`.
-pub labels { role_i16: . };
+pub type { Role_i16: . }
 
 /// Defines role `i32`.
-pub labels { role_i32: . };
+pub type { Role_i32: . }
 
 /// Defines role `i64`.
-pub labels { role_i64: . };
+pub type { Role_i64: . }
 
 /// Defines role `i128`.
-pub labels { role_i128: . };
+pub type { Role_i128: . }
 
 /// Defines role `u8`.
-pub labels { role_u8: . };
+pub type { Role_u8: . }
 
 /// Defines role `u16`.
-pub labels { role_u16: . };
+pub type { Role_u16: . }
 
 /// Defines role `u32`.
-pub labels { role_u32: . };
+pub type { Role_u32: . }
 
 /// Defines role `u64`.
-pub labels { role_u64: . };
+pub type { Role_u64: . }
 
 /// Defines role `u128`.
-pub labels { role_u128: . };
+pub type { Role_u128: . }
 
 /// Defines role `f32`.
-pub labels { role_f32: . };
+pub type { Role_f32: . }
 
 /// Defines role `f64`.
-pub labels { role_f64: . };
+pub type { Role_f64: . }
 
 /// Defines role `bool`.
-pub labels { role_bool: . };
+pub type { Role_bool: . }
 
 /// Defines role `str`.
-pub labels { role_str: . };
+pub type { Role_str: . }
 
 /// The closed role vocabulary admitted by host-type declarations.
 pub type Role =
@@ -219,46 +219,46 @@ pub type Role =
   ;
 
 /// The role named `i8`.
-pub fn i8_role() -> Role { widen_sum({role_i8=})[Role] }
+pub fn i8_role() -> Role { widen_sum(Role_i8.mk(()))[Role] }
 
 /// The role named `i16`.
-pub fn i16_role() -> Role { widen_sum({role_i16=})[Role] }
+pub fn i16_role() -> Role { widen_sum(Role_i16.mk(()))[Role] }
 
 /// The role named `i32`.
-pub fn i32_role() -> Role { widen_sum({role_i32=})[Role] }
+pub fn i32_role() -> Role { widen_sum(Role_i32.mk(()))[Role] }
 
 /// The role named `i64`.
-pub fn i64_role() -> Role { widen_sum({role_i64=})[Role] }
+pub fn i64_role() -> Role { widen_sum(Role_i64.mk(()))[Role] }
 
 /// The role named `i128`.
-pub fn i128_role() -> Role { widen_sum({role_i128=})[Role] }
+pub fn i128_role() -> Role { widen_sum(Role_i128.mk(()))[Role] }
 
 /// The role named `u8`.
-pub fn u8_role() -> Role { widen_sum({role_u8=})[Role] }
+pub fn u8_role() -> Role { widen_sum(Role_u8.mk(()))[Role] }
 
 /// The role named `u16`.
-pub fn u16_role() -> Role { widen_sum({role_u16=})[Role] }
+pub fn u16_role() -> Role { widen_sum(Role_u16.mk(()))[Role] }
 
 /// The role named `u32`.
-pub fn u32_role() -> Role { widen_sum({role_u32=})[Role] }
+pub fn u32_role() -> Role { widen_sum(Role_u32.mk(()))[Role] }
 
 /// The role named `u64`.
-pub fn u64_role() -> Role { widen_sum({role_u64=})[Role] }
+pub fn u64_role() -> Role { widen_sum(Role_u64.mk(()))[Role] }
 
 /// The role named `u128`.
-pub fn u128_role() -> Role { widen_sum({role_u128=})[Role] }
+pub fn u128_role() -> Role { widen_sum(Role_u128.mk(()))[Role] }
 
 /// The role named `f32`.
-pub fn f32_role() -> Role { widen_sum({role_f32=})[Role] }
+pub fn f32_role() -> Role { widen_sum(Role_f32.mk(()))[Role] }
 
 /// The role named `f64`.
-pub fn f64_role() -> Role { widen_sum({role_f64=})[Role] }
+pub fn f64_role() -> Role { widen_sum(Role_f64.mk(()))[Role] }
 
 /// The role named `bool`.
-pub fn bool_role() -> Role { widen_sum({role_bool=})[Role] }
+pub fn bool_role() -> Role { widen_sum(Role_bool.mk(()))[Role] }
 
 /// The role named `str`.
-pub fn str_role() -> Role { widen_sum({role_str=})[Role] }
+pub fn str_role() -> Role { widen_sum(Role_str.mk(()))[Role] }
 
 /// A role's canonical source spelling.
 pub fn role_name(role: Role) -> String {
@@ -321,25 +321,25 @@ pub fn role_from_name(name: String) -> . | Role {
 pub fn role_eq(a: Role, b: Role) -> Bool { string_eq(role_name(a), role_name(b)) }
 
 /// A roleless host type, carrying its ordered parameter kinds.
-pub labels { roleless_host_type: Param_kinds };
+pub type { Roleless_host_type: Param_kinds }
 
 /// A role-bearing nullary host type.
-pub labels { role_host_type: Role };
+pub type { Role_host_type: Role }
 
 /// The two disjoint host-type declaration forms.
 pub type Host_type_shape = Roleless_host_type | Role_host_type;
 
 /// One exact host-type declaration: identity plus its legal declaration form.
-pub labels { host_type: Host_id & Host_type_shape };
+pub type { Host_type: Host_id & Host_type_shape }
 
 /// Builds an exact roleless host-type descriptor.
 pub fn mk_roleless_host_type(id: Host_id, kinds: Param_kinds) -> Host_type {
-  {host_type = (id, widen_sum({roleless_host_type = kinds})[Host_type_shape])}
+  Host_type.mk((id, widen_sum(Roleless_host_type.mk(kinds))[Host_type_shape]))
 }
 
 /// Builds an exact role-bearing nullary host-type descriptor.
 pub fn mk_role_host_type(id: Host_id, role: Role) -> Host_type {
-  {host_type = (id, widen_sum({role_host_type = role})[Host_type_shape])}
+  Host_type.mk((id, widen_sum(Role_host_type.mk(role))[Host_type_shape]))
 }
 
 /// The declaration identity of a host type.
@@ -392,10 +392,10 @@ pub fn host_type_eq(a: Host_type, b: Host_type) -> Bool {
 }
 
 /// One exact host-function declaration: identity and canonical resolved signature.
-pub labels { host_fn: Host_id & String };
+pub type { Host_fn: Host_id & String }
 
 /// Builds an exact host-function descriptor.
-pub fn mk_host_fn(id: Host_id, signature: String) -> Host_fn { {host_fn = (id, signature)} }
+pub fn mk_host_fn(id: Host_id, signature: String) -> Host_fn { Host_fn.mk((id, signature)) }
 
 /// The declaration identity of a host function.
 pub fn host_fn_id(f: Host_fn) -> Host_id {
@@ -421,14 +421,14 @@ pub fn host_fn_eq(a: Host_fn, b: Host_fn) -> Bool {
 }
 
 /// A list of exact host-type descriptors.
-pub labels { host_types: List[Host_type] };
+pub type { Host_types: List[Host_type] }
 
 /// The empty host-type list.
-pub fn host_types_nil() -> Host_types { {host_types = nil[Host_type]} }
+pub fn host_types_nil() -> Host_types { Host_types.mk(nil[Host_type]) }
 
 /// Prepends a host type.
 pub fn host_types_cons(head: Host_type, tail: Host_types) -> Host_types {
-  {host_types = cons[Host_type](head, Host_types.get(tail))}
+  Host_types.mk(cons[Host_type](head, Host_types.get(tail)))
 }
 
 /// One-step destructor on a host-type list.
@@ -436,7 +436,7 @@ pub fn un_host_types(ts: Host_types) -> . | (Host_type & Host_types) {
   match(uncons[Host_type](Host_types.get(ts))) {
     (
     , .(head: Host_type, tail: List[Host_type]) {
-        widen_sum((head, {host_types = tail}))[. | (Host_type & Host_types)]
+        widen_sum((head, Host_types.mk(tail)))[. | (Host_type & Host_types)]
       }
     , .(_empty: .) { widen_sum(())[. | (Host_type & Host_types)] }
     )
@@ -444,34 +444,34 @@ pub fn un_host_types(ts: Host_types) -> . | (Host_type & Host_types) {
 }
 
 /// No offered host type has the requested declaration identity.
-pub labels { missing_host_type: . };
+pub type { Missing_host_type: . }
 
 /// One exact offered host type has the requested declaration identity.
-pub labels { found_host_type: Host_type };
+pub type { Found_host_type: Host_type }
 
 /// The offered inventory contains incompatible descriptors for one identity.
-pub labels { conflicting_host_type: Host_type & Host_type };
+pub type { Conflicting_host_type: Host_type & Host_type }
 
 /// The order-independent result of looking up one exact host-type identity.
 pub type Host_type_lookup = Missing_host_type | Found_host_type | Conflicting_host_type;
 
 fn missing_host_type_lookup() -> Host_type_lookup {
-  widen_sum({missing_host_type=})[Host_type_lookup]
+  widen_sum(Missing_host_type.mk(()))[Host_type_lookup]
 }
 
 fn found_host_type_lookup(found: Host_type) -> Host_type_lookup {
-  widen_sum({found_host_type = found})[Host_type_lookup]
+  widen_sum(Found_host_type.mk(found))[Host_type_lookup]
 }
 
 fn conflicting_host_type_lookup(a: Host_type, b: Host_type) -> Host_type_lookup {
-  widen_sum({conflicting_host_type = (a, b)})[Host_type_lookup]
+  widen_sum(Conflicting_host_type.mk((a, b)))[Host_type_lookup]
 }
 
-labels { host_type_search: Host_types & Host_id & (. | Host_type) };
+type { Host_type_search: Host_types & Host_id & (. | Host_type) }
 
 fn continue_host_type_search(remaining: Host_types, id: Host_id, found: . | Host_type) ->
   Host_type_search | Host_type_lookup
-   { widen_sum({host_type_search = (remaining, id, found)})[Host_type_search | Host_type_lookup] }
+   { widen_sum(Host_type_search.mk((remaining, id, found)))[Host_type_search | Host_type_lookup] }
 
 fn finish_host_type_search(found: . | Host_type) -> Host_type_search | Host_type_lookup {
   match(found) {
@@ -526,18 +526,18 @@ fn find_host_type_step(state: Host_type_search) -> Host_type_search | Host_type_
 
 /// Looks up a host type by exact identity, rejecting conflicting duplicates.
 pub fn find_host_type(types: Host_types, id: Host_id) -> Host_type_lookup {
-  loop(find_host_type_step, {host_type_search = (types, id, widen_sum(())[. | Host_type])})
+  loop(find_host_type_step, Host_type_search.mk((types, id, widen_sum(())[. | Host_type])))
 }
 
 /// A list of exact host-function descriptors.
-pub labels { host_functions: List[Host_fn] };
+pub type { Host_functions: List[Host_fn] }
 
 /// The empty host-function list.
-pub fn host_functions_nil() -> Host_functions { {host_functions = nil[Host_fn]} }
+pub fn host_functions_nil() -> Host_functions { Host_functions.mk(nil[Host_fn]) }
 
 /// Prepends a host function.
 pub fn host_functions_cons(head: Host_fn, tail: Host_functions) -> Host_functions {
-  {host_functions = cons[Host_fn](head, Host_functions.get(tail))}
+  Host_functions.mk(cons[Host_fn](head, Host_functions.get(tail)))
 }
 
 /// One-step destructor on a host-function list.
@@ -545,7 +545,7 @@ pub fn un_host_functions(fs: Host_functions) -> . | (Host_fn & Host_functions) {
   match(uncons[Host_fn](Host_functions.get(fs))) {
     (
     , .(head: Host_fn, tail: List[Host_fn]) {
-        widen_sum((head, {host_functions = tail}))[. | (Host_fn & Host_functions)]
+        widen_sum((head, Host_functions.mk(tail)))[. | (Host_fn & Host_functions)]
       }
     , .(_empty: .) { widen_sum(())[. | (Host_fn & Host_functions)] }
     )
@@ -553,13 +553,13 @@ pub fn un_host_functions(fs: Host_functions) -> . | (Host_fn & Host_functions) {
 }
 
 /// No offered host function has the requested declaration identity.
-pub labels { missing_host_function: . };
+pub type { Missing_host_function: . }
 
 /// One exact offered host function has the requested declaration identity.
-pub labels { found_host_function: Host_fn };
+pub type { Found_host_function: Host_fn }
 
 /// The offered inventory contains incompatible descriptors for one identity.
-pub labels { conflicting_host_function: Host_fn & Host_fn };
+pub type { Conflicting_host_function: Host_fn & Host_fn }
 
 /// The order-independent result of looking up one exact host-function identity.
 pub type Host_function_lookup =
@@ -567,23 +567,23 @@ pub type Host_function_lookup =
   ;
 
 fn missing_host_function_lookup() -> Host_function_lookup {
-  widen_sum({missing_host_function=})[Host_function_lookup]
+  widen_sum(Missing_host_function.mk(()))[Host_function_lookup]
 }
 
 fn found_host_function_lookup(found: Host_fn) -> Host_function_lookup {
-  widen_sum({found_host_function = found})[Host_function_lookup]
+  widen_sum(Found_host_function.mk(found))[Host_function_lookup]
 }
 
 fn conflicting_host_function_lookup(a: Host_fn, b: Host_fn) -> Host_function_lookup {
-  widen_sum({conflicting_host_function = (a, b)})[Host_function_lookup]
+  widen_sum(Conflicting_host_function.mk((a, b)))[Host_function_lookup]
 }
 
-labels { host_function_search: Host_functions & Host_id & (. | Host_fn) };
+type { Host_function_search: Host_functions & Host_id & (. | Host_fn) }
 
 fn continue_host_function_search(remaining: Host_functions, id: Host_id, found: . | Host_fn) ->
   Host_function_search | Host_function_lookup
    {
-  widen_sum({host_function_search = (remaining, id, found)})[| Host_function_search
+  widen_sum(Host_function_search.mk((remaining, id, found)))[| Host_function_search
   | Host_function_lookup]
 }
 
@@ -649,6 +649,6 @@ fn find_host_function_step(state: Host_function_search) ->
 pub fn find_host_function(functions: Host_functions, id: Host_id) -> Host_function_lookup {
   loop(
   , find_host_function_step
-  , {host_function_search = (functions, id, widen_sum(())[. | Host_fn])}
+  , Host_function_search.mk((functions, id, widen_sum(())[. | Host_fn]))
   )
 }

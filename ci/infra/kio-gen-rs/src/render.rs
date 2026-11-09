@@ -137,16 +137,6 @@ fn collect_emitted_value_names(term: &Term, opts: &RenderOpts, names: &mut HashS
             collect_emitted_value_names(then, opts, names);
             collect_emitted_value_names(else_, opts, names);
         }
-        Term::LabelConstruct {
-            constructor,
-            payload,
-            ..
-        } => {
-            if !opts.surface {
-                names.insert(constructor.clone());
-            }
-            collect_emitted_value_names(payload, opts, names);
-        }
         Term::MatchMacro {
             scrutinee,
             left_param,
@@ -250,7 +240,6 @@ pub fn render_type(t: &Type) -> String {
         Type::Sum(a, b) => format!("({} | {})", paren_if_function(a), paren_if_function(b)),
         Type::Nominal { name, .. } => name.clone(),
         Type::Param { name, payload, .. } => format!("{name}[{}]", render_type(payload)),
-        Type::Label { newtype_name, .. } => newtype_name.clone(),
     }
 }
 
@@ -484,23 +473,6 @@ fn render_term_opts_with_context(
                 .map(|x| render_term_opts_with_context(x, opts, context))
                 .collect();
             format!("{type_name}.{member}({})", parts.join(", "))
-        }
-        Term::LabelConstruct {
-            label,
-            constructor,
-            payload,
-        } => {
-            if opts.surface {
-                format!(
-                    "{{{label} = {}}}",
-                    render_term_opts_with_context(payload, opts, context)
-                )
-            } else {
-                format!(
-                    "{constructor}({})",
-                    render_term_opts_with_context(payload, opts, context)
-                )
-            }
         }
         Term::MatchMacro {
             scrutinee,
@@ -942,7 +914,6 @@ fn collect_tuple_items(t: &Term) -> Option<Vec<Term>> {
 /// Today's surface-affected constructs:
 /// - `__pair__` calls (tuple-literal sugar, slice 2.4)
 /// - `Term::IfElse` (ordinary `if` block macro calls)
-/// - `Term::LabelConstruct` (surface `{label = e}`, slice 2.7+2.8)
 /// - `Term::Into` / `Term::Onto` / `Term::Iso` / `Term::Align` /
 ///   `Term::Ease` / `Term::Atom` (the six algebraic macros,
 ///   identity-coercion surface forms).
@@ -953,11 +924,6 @@ fn collect_tuple_items(t: &Term) -> Option<Vec<Term>> {
 ///   identity-coercion surface forms).
 /// - `Term::UserMacro` (generated user-defined macro calls).
 ///
-/// `Type::Label` in the program signature does not trigger surface
-/// rendering today: the generator deliberately renders Label types as
-/// their newtype name in every position (see `render_type_opts`'s
-/// note for why); the surface-form coverage from 2.7+2.8 lives in
-/// the value-construction sugar exclusively.
 pub fn term_uses_surface_forms(t: &Term) -> bool {
     match t {
         Term::NumLit { .. } | Term::StrLit(_) | Term::BoolLit(_) | Term::UnitLit | Term::Var(_) => {
@@ -975,7 +941,6 @@ pub fn term_uses_surface_forms(t: &Term) -> bool {
         }
         Term::TypeMember { args, .. } => args.iter().any(term_uses_surface_forms),
         Term::IfElse { .. }
-        | Term::LabelConstruct { .. }
         | Term::Into { .. }
         | Term::Onto { .. }
         | Term::Iso { .. }
@@ -1022,8 +987,7 @@ fn render_str_lit(s: &str) -> String {
 /// Render a program's `fn` declaration as Kio source. Surface
 /// sugar is enabled iff `prog.uses_surface` is true; in that case
 /// every surface-form recogniser the renderer knows about (tuple
-/// sugar, `if` blocks, label-value sugar, generated user
-/// macros) fires.
+/// sugar, `if` blocks, generated user macros) fires.
 pub fn render_fn_def(prog: &Program) -> String {
     let opts = RenderOpts {
         surface: prog.uses_surface,

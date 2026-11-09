@@ -4,8 +4,8 @@
 //!   kio-gen --output <dir> [--seed <N>] [--count <N>] [-j <N>] [--prime-only]
 //!
 //! Default emission is "full Kio": Kio' core plus the surface forms
-//! the generator has grown (`if`/`else`, tuple literals, label-value
-//! sugar, `match`, the algebraic / spine macros, user-defined
+//! the generator has grown (`if`/`else`, tuple literals,
+//! `match`, the algebraic / spine macros, user-defined
 //! `macro`, and operators). `--prime-only` is an opt-in filter that restricts
 //! output to the Kio' core.
 

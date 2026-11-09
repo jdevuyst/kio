@@ -63,7 +63,6 @@ pub fn main() {
   print(show("pure type: "[String], load_package("module a;\n\npure type Nope = .;\n"[String])));
   print(show(
   , "pure newtype: "[String]
-  , load_package("module a;\n\npure newtype Nope : . { constructor make; projector unmake; "
-                 "};\n"[String])
+  , load_package("module a;\n\npure type { Nope: . { mk; get; }; };\n"[String])
   ))
 }

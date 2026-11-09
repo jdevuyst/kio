@@ -6,16 +6,19 @@
 /// check is done in whole numbers by scaling every term by `2^maxlen`.
 module huffman/report;
 
-import huffman/code(Entry, {entry_len});
+import huffman/code(Entry, Entry_len);
 import huffman/list(List, fold, len);
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 
-labels Divided = { quotient: I32, remainder: I32 };
+type Divided = { Quotient: I32; Remainder: I32 };
 
-fn divided(quotient: I32, remainder: I32) -> Divided { {quotient, remainder} }
+fn divided(quotient: I32, remainder: I32) -> Divided {
+  (Quotient.mk(quotient), Remainder.mk(remainder))
+}
 
 /// Long division by doubling. `divide(n, d)` recurses on `2d` until the divisor
 /// runs past `n`, then unwinds: each level doubles the quotient it got back and
@@ -28,8 +31,8 @@ rec(loop) fn divide(n: I32, d: I32) -> Divided {
     divided(0, n)
   } else {
     let half = recur(cont) divide(n, mul_i32(d, 2));
-    let doubled = mul_i32(half.?{quotient}, 2);
-    let rest = half.?{remainder};
+    let doubled = mul_i32(half.>select { Quotient.get }, 2);
+    let rest = half.>select { Remainder.get };
     if(leq_i32(d, rest)) {
       divided(add_i32(doubled, 1), sub_i32(rest, d))
     } else {
@@ -41,7 +44,11 @@ rec(loop) fn divide(n: I32, d: I32) -> Divided {
 /// `n / d` rounded down. A non-positive divisor has no answer to give, so it
 /// reports zero rather than diverging on a divisor that can never reach `n`.
 fn div_floor(n: I32, d: I32) -> I32 {
-  if(leq_i32(d, 0)) { 0 } else { divide(n, d).?{quotient} }
+  if(leq_i32(d, 0)) {
+    0
+  } else {
+    divide(n, d).>select { Quotient.get }
+  }
 }
 
 rec(loop) fn pow2_from(exponent: I32, acc: I32) -> I32 {
@@ -65,7 +72,7 @@ pub fn longest_code(rows: List[Entry]) -> I32 {
   fold(
   , rows
   , .(best: I32, row: Entry) {
-      let width = row.?{entry_len};
+      let width = row.>select { Entry_len.get };
       if(lt_i32(best, width)) { width } else { best }
     }
   , 0
@@ -78,22 +85,28 @@ pub fn longest_code(rows: List[Entry]) -> I32 {
 /// lengths account for the complete leaf tree. It does not select a tie-break or
 /// independently establish prefix-freeness or optimality.
 pub fn kraft_sum(rows: List[Entry], longest: I32) -> I32 {
-  fold(rows, .(acc: I32, row: Entry) { add_i32(acc, pow2(sub_i32(longest, row.?{entry_len}))) }, 0)
+  fold(
+  , rows
+  , .(acc: I32, row: Entry) {
+      add_i32(acc, pow2(sub_i32(longest, row.>select { Entry_len.get })))
+    }
+  , 0
+  )
 }
 
 pub fn kraft_holds(rows: List[Entry], longest: I32) -> Bool {
   eq_i32(kraft_sum(rows, longest), pow2(longest))
 }
 
-pub labels Savings = {
-, symbol_count: I32
-, alphabet: I32
-, fixed_width: I32
-, baseline_bits: I32
-, coded_bits: I32
-, saved_bits: I32
-, saved_permille: I32
-, milli_bits_each: I32
+pub type Savings = {
+  Symbol_count: I32;
+  Alphabet: I32;
+  Fixed_width: I32;
+  Baseline_bits: I32;
+  Coded_bits: I32;
+  Saved_bits: I32;
+  Saved_permille: I32;
+  Milli_bits_each: I32
 };
 
 /// The baseline is what a fixed-width code would have cost: every symbol spends
@@ -105,14 +118,14 @@ pub fn savings(symbols: List[I32], alphabet: I32, coded_bits: I32) -> Savings {
   let fixed_width = ceil_log2(alphabet);
   let baseline_bits = mul_i32(symbol_count, fixed_width);
   let saved_bits = sub_i32(baseline_bits, coded_bits);
-  {
-  , symbol_count
-  , alphabet
-  , fixed_width
-  , baseline_bits
-  , coded_bits
-  , saved_bits
-  , saved_permille = div_floor(mul_i32(saved_bits, 1000), baseline_bits)
-  , milli_bits_each = div_floor(mul_i32(coded_bits, 1000), symbol_count)
-  }
+  (
+  , Symbol_count.mk(symbol_count)
+  , Alphabet.mk(alphabet)
+  , Fixed_width.mk(fixed_width)
+  , Baseline_bits.mk(baseline_bits)
+  , Coded_bits.mk(coded_bits)
+  , Saved_bits.mk(saved_bits)
+  , Saved_permille.mk(div_floor(mul_i32(saved_bits, 1000), baseline_bits))
+  , Milli_bits_each.mk(div_floor(mul_i32(coded_bits, 1000), symbol_count))
+  )
 }

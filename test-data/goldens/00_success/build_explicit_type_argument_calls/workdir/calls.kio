@@ -1,6 +1,6 @@
 module calls;
 
-newtype List[A] : . { constructor mk; projector get }
+type { List[A]: . { mk; get } }
 
 fn nil[A]() -> List[A] { List.mk[A](()) }
 

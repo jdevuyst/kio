@@ -3,4 +3,4 @@ module pkg;
 /// ```kio
 /// ()
 /// ```
-pub newtype Wrapped : . { constructor make; projector read; };
+pub type { Wrapped: . { mk; get; }; };

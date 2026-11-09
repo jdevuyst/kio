@@ -2,10 +2,10 @@ module main;
 
 import testapi(I32);
 
-newtype Boxed : I32 { constructor wrap; projector unwrap }
+type { Boxed: I32 { mk; get } }
 
-literal wrap = 1;
+literal mk = 1;
 
-literal unwrap = 2;
+literal get = 2;
 
-fn exercise() -> I32 & I32 { (Boxed.unwrap(Boxed.wrap(wrap)), unwrap) }
+fn exercise() -> I32 & I32 { (Boxed.get(Boxed.mk(mk)), get) }

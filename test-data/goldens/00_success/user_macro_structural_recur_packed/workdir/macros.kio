@@ -4,7 +4,7 @@ import __intrinsics__;
 
 import __comptime__;
 
-rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
+rec type { Fuel: . | Fuel { pub mk; pub get } }
 
 type Fuel_recur = (Fuel & .) -> __Checked_term__;
 
@@ -14,9 +14,9 @@ type Fuel_structural = (Fuel & . & Fuel_step) -> __Checked_term__;
 
 type Structural_recur = __Comptime__ -> [F][I][R] (F & I & ((((F & I) -> R) & F & I) -> R)) -> R;
 
-pure fn stop() -> Fuel { Fuel.mk_fuel(__left__[.][Fuel](())) }
+pure fn stop() -> Fuel { Fuel.mk(__left__[.][Fuel](())) }
 
-pure fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__[.][Fuel](rest)) }
+pure fn tick(rest: Fuel) -> Fuel { Fuel.mk(__right__[.][Fuel](rest)) }
 
 pure fn retain_structural(_ct: __Comptime__, structural: Fuel_structural) -> Fuel_structural {
   structural
@@ -32,7 +32,7 @@ pure fn direct_flattened(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   , ()
   , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
       __either__[.][Fuel][__Checked_term__](
-      , Fuel.un_fuel(current)
+      , Fuel.get(current)
       , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
       , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
       )
@@ -47,7 +47,7 @@ pure fn indirect_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   , ()
   , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
       __either__[.][Fuel][__Checked_term__](
-      , Fuel.un_fuel(current)
+      , Fuel.get(current)
       , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
       , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
       )
@@ -65,7 +65,7 @@ pure fn bare_hof_packed(ct: __Comptime__, fuel: Fuel) -> __Checked_term__ {
   , ()
   , .(recur: (Fuel & .) -> __Checked_term__, current: Fuel, _input: .) -> __Checked_term__ {
       __either__[.][Fuel][__Checked_term__](
-      , Fuel.un_fuel(current)
+      , Fuel.get(current)
       , .(_done: .) -> __Checked_term__ { __term_unit__(ct) }
       , .(rest: Fuel) -> __Checked_term__ { recur((rest, ())) }
       )

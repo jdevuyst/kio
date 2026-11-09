@@ -1,16 +1,16 @@
 module api;
 
-pub newtype Alpha : . { pub constructor mk; pub projector get }
+pub type { Alpha: . { pub mk; pub get } }
 
-pub newtype Bravo : . { pub constructor mk; pub projector get }
+pub type { Bravo: . { pub mk; pub get } }
 
-pub newtype Charlie : . { pub constructor mk; pub projector get }
+pub type { Charlie: . { pub mk; pub get } }
 
-pub newtype Delta : . { pub constructor mk; pub projector get }
+pub type { Delta: . { pub mk; pub get } }
 
-pub newtype Echo : . { pub constructor mk; pub projector get }
+pub type { Echo: . { pub mk; pub get } }
 
-pub newtype Foxtrot : . { pub constructor mk; pub projector get }
+pub type { Foxtrot: . { pub mk; pub get } }
 
 host fn product(value: Alpha & Bravo & Charlie & Delta & Echo) -> & Alpha
 & Bravo

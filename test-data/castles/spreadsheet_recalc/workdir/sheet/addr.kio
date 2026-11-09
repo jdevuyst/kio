@@ -15,13 +15,13 @@ import testapi/fmt(int_to_string);
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-pub newtype Addr : I32 & I32 { pub constructor at; pub projector parts }
+pub type { Addr: I32 & I32 { pub mk; pub get } }
 
-pub fn make_addr(row: I32, col: I32) -> Addr { Addr.at((row, col)) }
+pub fn make_addr(row: I32, col: I32) -> Addr { Addr.mk((row, col)) }
 
-pub fn row_of(a: Addr) -> I32 { let .(row: I32, _col: I32) = a.>Addr.parts; row }
+pub fn row_of(a: Addr) -> I32 { let .(row: I32, _col: I32) = a.>Addr.get; row }
 
-pub fn col_of(a: Addr) -> I32 { let .(_row: I32, col: I32) = a.>Addr.parts; col }
+pub fn col_of(a: Addr) -> I32 { let .(_row: I32, col: I32) = a.>Addr.get; col }
 
 pub fn addr_eq(a: Addr, b: Addr) -> Bool {
   if(eq_i32(row_of(a), row_of(b))) { eq_i32(col_of(a), col_of(b)) } else { .f }
@@ -80,7 +80,7 @@ rec(loop) fn addrs_onto(row: I32, col: I32, acc: List[Addr]) -> List[Addr] {
 pub fn all_addrs() -> List[Addr] { addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil[Addr]) }
 
 pub rec(loop) fn mem(xs: List[Addr], a: Addr) -> Bool {
-  match(xs.>List.unpack) {
+  match(xs.>List.get) {
     (
     , .(head: Addr, rest: List[Addr]) {
         if(addr_eq(head, a)) { .t } else { recur mem(rest, a) }
@@ -98,7 +98,7 @@ pub fn add_unique(xs: List[Addr], a: Addr) -> List[Addr] {
 
 /// Union `ys` into `xs`, keeping the order the two lists already have.
 pub rec(loop) fn add_all(xs: List[Addr], ys: List[Addr]) -> List[Addr] {
-  match(ys.>List.unpack) {
+  match(ys.>List.get) {
     (
     , .(head: Addr, rest: List[Addr]) { recur add_all(add_unique(xs, head), rest) }
     , .(_empty: .) { xs }

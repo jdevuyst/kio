@@ -17,7 +17,7 @@ pub type Surface[P] = (String -> P) & (P -> String);
 
 /// The existential boundary — hides the representation `P` behind the
 /// surface record.
-pub labels { boxed <P> : Surface[P] };
+pub type { Boxed <P>: Surface[P] { pub mk; pub get } }
 
 /// The concrete surface over `String`: `P` is `String`, so wrap / unwrap
 /// are the identity. Packing this as `Surface(P)` is the no-op

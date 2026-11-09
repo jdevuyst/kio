@@ -66,7 +66,7 @@ function ordinaryAtoms($) {
     $.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr),
     $.expression_path, $.grouped_expression, $.unit_expression,
     $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation,
-    $.fn_lambda_expr, $.label_value_expr, $.field_expression,
+    $.fn_lambda_expr,
     $.placeholder_expression,
   );
 }
@@ -120,7 +120,7 @@ module.exports = grammar({
     [$.macro_captures_clause],
     [$.binding_pattern, $._type],
     [$.local_binding_pattern, $._type],
-    [$.expression_path, $.call_callee, $.label_path],
+    [$.expression_path, $.call_callee],
     [$._token, $.recursive_function_definition, $.recursive_function_group, $.call_callee],
     [$._token, $.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
     [$.expression_path, $.recursive_call_expression, $.incomplete_recursive_call_expression, $.call_callee],
@@ -130,9 +130,7 @@ module.exports = grammar({
     [$.expression_path, $._recursive_annotation_tail],
     [$.expression_path, $._star_type_param_binder],
     [$.recursive_call_annotation],
-    [$.expression_path, $.label_path],
-    [$.row_let_shorthand_path, $.label_path],
-    [$._complete_expression_block, $.label_value_expr],
+    [$._complete_expression_block, $.unit_expression],
     [$.expression_block, $.unowned_function],
     [$._token, $.call_callee, $._visibility_modifier],
     [$.call_callee, $._visibility_modifier],
@@ -161,15 +159,13 @@ module.exports = grammar({
       choice(
         $.host_decl,
         prec.right(seq(choice($.function_definition, $.recursive_function_definition,
-          $.recursive_function_group, $.type_rec_group, $.newtype_decl_head,
+          $.recursive_function_group, $.type_rec_group, $.nominal_decl_head,
           $.equiv_definition, $.op_decl, $.variadic_decl, $.macro_decl),
         optional($.separator_semicolon))),
-        $.labels_decl_head,
         $.literal_definition,
         $.incomplete_op_decl,
         $.incomplete_variadic_decl,
         $.type_alias_decl_head,
-        $.label_forward_decl,
       ),
     _unit: ($) => choice($.module_decl, $.import_decl, $._body_unit),
     _body_unit: ($) => choice($._declaration, $._raw_unit),
@@ -192,7 +188,7 @@ module.exports = grammar({
       $.unowned_symbol_run,
       $.bool_literal, $.number_literal,
       $.string_literal, $.slot, $.operator_arrow_type, $.operator_arrow_ufcs,
-      $.operator_row_suffix, $.operator_builtin, $.module_path_sep, $.operator_run,
+      $.operator_builtin, $.module_path_sep, $.operator_run,
       $.bracket_lparen, $.bracket_rparen, $.bracket_lbrace, $.bracket_rbrace,
       $.bracket_lbracket, $.bracket_rbracket,
       $.separator_semicolon, $.separator_comma, $.separator_dot,
@@ -323,8 +319,8 @@ module.exports = grammar({
     _variant_import: ($) => alias($._import_decl_body, $.import_decl),
     _variant_entry: ($) => choice(
       alias($._variant_host_decl, $.host_decl), $.fn_decl_head,
-      alias($._type_alias_decl_body, $.type_alias_decl_head), $.type_rec_group,
-      $.newtype_decl_head, alias($._labels_decl_body, $.labels_decl_head),
+      alias($._type_alias_decl_body, $.type_alias_decl_head),
+      $.type_rec_group, $.nominal_decl_head,
     ),
     build_block: ($) => seq($.keyword_build,
       semicolonBody($, fieldOrders([], [$.cache_declaration, $.docs_block], [$.target_block], repeat1($.separator_semicolon)), { runs: true, empty: true })),
@@ -346,7 +342,7 @@ module.exports = grammar({
     _resolved_config_field: ($) => configField($, ["git", "ref", "path", "commit", "sig"]),
     _docs_config_field: ($) => configField($, ["md", "support", "md_out", "html"]),
     _field_value: ($) => choice($._config_scalar, $.number_literal),
-    _config_scalar: ($) => choice($.unit_expression, $._config_string, $.identifier, $.grouped_config_value),
+    _config_scalar: ($) => choice(alias($._parenthesized_unit, $.unit_expression), $._config_string, $.identifier, $.grouped_config_value),
     _config_string: ($) => repeat1($.string_literal),
     _config_string_value: ($) => choice($._config_string, $.grouped_config_string),
     grouped_config_string: ($) => seq($.bracket_lparen, $._config_string_value, $.bracket_rparen),
@@ -445,11 +441,7 @@ module.exports = grammar({
         $.keyword_pure,
         $.keyword_fn,
         $.keyword_literal,
-        $.keyword_newtype,
-        $.keyword_labels,
         $.keyword_equiv,
-        $.keyword_constructor,
-        $.keyword_projector,
       ),
     module_decl: ($) =>
       seq(
@@ -509,7 +501,6 @@ module.exports = grammar({
           optional(sep1(choice(
             $.import_macro_item,
             $.import_operator_item,
-            $.import_label_item,
             $.import_named_item,
           ), $.separator_comma)),
           $.bracket_rparen,
@@ -556,14 +547,6 @@ module.exports = grammar({
         $.operator_arrow_type,
         $._operator_run,
       ),
-    import_label_item: ($) =>
-      seq(
-        $.bracket_lbrace,
-        repeat(choice($.comment_doc, $.comment_line)),
-        alias($.lowercase_identifier, $.entity_name_label),
-        repeat(choice($.comment_doc, $.comment_line)),
-        $.bracket_rbrace,
-      ),
     type_rec_group: ($) =>
       prec.dynamic(50,
         seq(
@@ -573,33 +556,30 @@ module.exports = grammar({
         ),
       ),
     _type_rec_member: ($) => choice(alias($._type_alias_decl_body, $.type_alias_decl_head),
-      $.newtype_decl_head, alias($._labels_decl_body, $.labels_decl_head)),
-    newtype_decl_head: ($) =>
-      prec.dynamic(20, prec.right(
-        seq(
-          optional($._visibility_modifier),
-          optional($.keyword_rec),
-          $.keyword_newtype,
-          alias($._identifier_like, $.entity_name_type),
-          optional($.type_param_list),
-          repeat($.existential_binder),
-          alias(":", $.operator_builtin),
-          $._type,
-          $.newtype_body,
-        ),
-      )),
-    newtype_body: ($) =>
-      semicolonBody($, separated($.newtype_member, repeat1($.separator_semicolon)), { runs: true, empty: true }),
-
-    newtype_member: ($) =>
-      seq(
+      $.nominal_decl_head),
+    nominal_decl_head: ($) =>
+      prec.dynamic(40, seq(
         optional($._visibility_modifier),
-        choice($.keyword_constructor, $.keyword_projector),
-        alias($._identifier_like, $.entity_name_function),
-      ),
-
-    keyword_constructor: ($) => kw("constructor"),
-    keyword_projector: ($) => kw("projector"),
+        optional($.keyword_rec),
+        $.keyword_type,
+        $.nominal_group,
+      )),
+    nominal_group: ($) => semicolonBody($,
+      separated($.nominal_entry, repeat1($.separator_semicolon)), { runs: true }),
+    nominal_entry: ($) => prec.right(seq(
+      alias($.uppercase_identifier, $.entity_name_type),
+      optional($.type_param_list),
+      repeat($.existential_binder),
+      alias(":", $.operator_builtin),
+      $._type,
+      optional($.nominal_members),
+    )),
+    nominal_members: ($) => semicolonBody($,
+      separated($.nominal_member, repeat1($.separator_semicolon)), { runs: true }),
+    nominal_member: ($) => seq(
+      optional($._visibility_modifier),
+      alias(kw(choice("mk", "get")), $.entity_name_function),
+    ),
 
     keyword_literal: ($) => kw("literal"),
 
@@ -632,12 +612,12 @@ module.exports = grammar({
     expression_block: ($) => choice($._complete_expression_block, $.incomplete_expression_block),
     _complete_expression_block: ($) => seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
-      repeat(seq(choice($.let_statement, $.row_let_stmt, $._expression), repeat1($.separator_semicolon))),
+      repeat(seq(choice($.let_statement, $._expression), repeat1($.separator_semicolon))),
       optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.unowned_function), $.bracket_rbrace,
     ),
     incomplete_expression_block: ($) => seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
-      repeat(seq(choice($.let_statement, $.row_let_stmt, $._expression), repeat1($.separator_semicolon))),
+      repeat(seq(choice($.let_statement, $._expression), repeat1($.separator_semicolon))),
       optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.function_definition), $._editor_eof,
     ),
     unowned_function: ($) => seq(
@@ -742,11 +722,11 @@ module.exports = grammar({
       $.recursive_call_expression, $.incomplete_recursive_call_expression,
       $.bool_literal, $.number_literal, $.string_literal,
       $.fn_lambda_expr, $.placeholder_expression, $.block_call,
-      $.label_value_expr, alias($._closed_operator_expression, $.operator_expression),
+      alias($._closed_operator_expression, $.operator_expression),
       alias($.block_receiver_call, $.call_expr),
     ),
     block_receiver_call: ($) => prec.left(seq(
-      choice($.block_call, $.label_value_expr, $.unit_expression, $.placeholder_expression,
+      choice($.block_call, $.unit_expression, $.placeholder_expression,
         $.recursive_call_expression, alias($.block_receiver_call, $.call_expr)),
       choice($.expression_arguments, $.call_type_arguments),
     )),
@@ -757,13 +737,13 @@ module.exports = grammar({
     neutral_block: ($) => choice($._complete_neutral_block, $.incomplete_neutral_block),
     _complete_neutral_block: ($) => prec(2, seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
-      repeat(seq(choice($.neutral_bind, $.let_statement, $.row_let_stmt, $._expression),
+      repeat(seq(choice($.neutral_bind, $.let_statement, $._expression),
         repeat1($.separator_semicolon))),
       optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.unowned_function), $.bracket_rbrace,
     )),
     incomplete_neutral_block: ($) => prec(2, seq(
       $.bracket_lbrace, repeat($.separator_semicolon),
-      repeat(seq(choice($.neutral_bind, $.let_statement, $.row_let_stmt, $._expression),
+      repeat(seq(choice($.neutral_bind, $.let_statement, $._expression),
         repeat1($.separator_semicolon))),
       optional(choice($._expression, $.incomplete_numbered_binding)), repeat($.function_definition), $._editor_eof,
     )),
@@ -840,7 +820,6 @@ module.exports = grammar({
     _type_chain_operator: ($) => choice(
       alias(choice("&", "|"), $.operator_builtin), alias(choice(/&&+/, /\|\|+/), $.operator_run),
     ),
-    field_expression: ($) => prec.left(30, seq($._expression_atom, $.operator_row_suffix, $.label_value_expr)),
 
     _expression_name: ($) =>
       $._identifier_like,
@@ -919,41 +898,33 @@ module.exports = grammar({
       $.unowned_symbol_run,
       $.bool_literal, $.number_literal,
       $.string_literal, $.slot, $.operator_arrow_type, $.operator_arrow_ufcs,
-      $.operator_row_suffix, $.operator_builtin, $.module_path_sep, $.operator_run,
+      $.operator_builtin, $.module_path_sep, $.operator_run,
       $.separator_semicolon, $.separator_dot,
     ),
 
     grouped_expression: ($) => seq($.bracket_lparen, sep1($._expression, $.separator_comma), $.bracket_rparen),
-    unit_expression: ($) => seq($.bracket_lparen, $.bracket_rparen),
+    _parenthesized_unit: ($) => seq($.bracket_lparen, $.bracket_rparen),
+    unit_expression: ($) => choice(
+      $._parenthesized_unit,
+      seq($.bracket_lbrace, repeat($.separator_comma), $.bracket_rbrace),
+    ),
 
     type_alias_decl_head: ($) => seq($._type_alias_decl_body, $.separator_semicolon),
     _type_alias_decl_body: ($) =>
       prec.dynamic(20, prec.right(
         seq(
           optional($._visibility_modifier),
+          optional($.keyword_rec),
           $.keyword_type,
           alias($.uppercase_identifier, $.entity_name_type),
           optional($.type_param_list),
           seq(
-            $.operator_builtin, // `=`
-            $._type,
+            alias("=", $.operator_builtin),
+            $._declaration_type,
           ),
         ),
       )),
 
-    label_forward_decl: ($) =>
-      prec.dynamic(20, seq(
-        optional($._visibility_modifier),
-        $.keyword_type,
-        $.bracket_lbrace,
-        alias($.lowercase_identifier, $.entity_name_label),
-        $.bracket_rbrace,
-        alias("=", $.operator_builtin),
-        $.bracket_lbrace,
-        $.label_path,
-        $.bracket_rbrace,
-        $.separator_semicolon,
-      )),
     uppercase_identifier: ($) => token(prec(1, TYPE_REFERENCE_NAME)),
     lowercase_identifier: ($) => token(prec(1, LABEL_NAME)),
     type_param_list: ($) => prec.right(repeat1($.type_param_group)),
@@ -1001,7 +972,7 @@ module.exports = grammar({
       alias($._raw_call_expr, $.call_expr), alias($._raw_ufcs_expr, $.ufcs_expr),
       $.expression_path, $.grouped_expression, $.unit_expression,
       $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation, $.fn_lambda_expr,
-      $.label_value_expr, $.placeholder_expression,
+      $.placeholder_expression,
     ),
     _raw_ufcs_expr: ($) => choice(
       prec.right(20, seq(field("receiver", $._raw_native_atom),
@@ -1055,114 +1026,24 @@ module.exports = grammar({
     _left_ufcs_arrow: ($) => token(prec(2, choice(".<", ".<<"))),
     _call_args_group: ($) => $.expression_arguments,
 
-    row_let_stmt: ($) =>
-      prec.dynamic(30,
-        seq(
-          $.keyword_let,
-          $.separator_dot,
-          $.bracket_lparen,
-          $.bracket_lbrace,
-          repeat($.separator_comma),
-          $.row_let_entry,
-          repeat(seq(
-            repeat1($.separator_comma),
-            $.row_let_entry,
-          )),
-          repeat($.separator_comma),
-          $.bracket_rbrace,
-          $.bracket_rparen,
-          alias("=", $.operator_builtin),
-          $._expression,
-        ),
-      ),
-
-    row_let_entry: ($) =>
-      prec.right(
-        choice(
-          seq(
-            $.label_path,
-            alias($.keyword_as, $.keyword_declaration),
-            alias($.identifier, $.variable_parameter),
-          ),
-          $.row_let_shorthand_path,
-        ),
-      ),
-
-    row_let_shorthand_path: ($) =>
-      seq(
-        repeat(seq($.identifier, $.separator_dot)),
-        alias($.identifier, $.variable_parameter),
-      ),
-
-    label_path: ($) =>
-      seq(
-        repeat(seq(alias($._identifier_like, $.identifier), $.separator_dot)),
-        alias($._identifier_like, $.entity_name_label),
-      ),
-    label_value_expr: ($) =>
-      prec.dynamic(20,
-        seq(
-          $.bracket_lbrace,
-          optional(sep1($.label_value_label, $.separator_comma)),
-          $.bracket_rbrace,
-        ),
-      ),
-
-    label_value_label: ($) =>
-      prec.right(
-        choice(
-          seq(
-            $.label_path,
-            alias("=", $.operator_builtin),
-            optional($._expression),
-          ),
-          $.label_path,
-        ),
-      ),
-
-    labels_decl_head: ($) => seq($._labels_decl_body, $.separator_semicolon),
-    _labels_decl_body: ($) =>
-      prec.dynamic(40,
-        seq(
-          optional($._visibility_modifier),
-          optional($.keyword_rec),
-          $.keyword_labels,
-          optional(
-            seq(
-              alias($._identifier_like, $.entity_name_type),
-              optional($.type_param_list),
-              $.operator_builtin, // `=`
-            ),
-          ),
-          $.labels_arms,
-        ),
-      ),
-
-    labels_arms: ($) => sep1($.labels_block, $.operator_builtin),
-
-    labels_block: ($) =>
-      seq(
-        $.bracket_lbrace,
-        optional(sep1($.label_entry, $.separator_comma)),
-        $.bracket_rbrace,
-      ),
-    label_entry: ($) =>
-      prec.right(
-        seq(
-          alias($._identifier_like, $.entity_name_label),
-          optional($.type_param_list),
-          repeat($.existential_binder),
-          $.operator_builtin, // `:`
-          $._type,
-        ),
-      ),
+    _declaration_type: ($) => choice(
+      // Ordinary grouped types keep their existing node shape; the declaration
+      // grouping alternative is needed only when a nominal group occurs inside.
+      prec(-1, $._type), $.nominal_group, $.nominal_type_group, $.nominal_type_product,
+    ),
+    nominal_type_group: ($) => seq(
+      $.bracket_lparen, $._declaration_type, $.bracket_rparen,
+    ),
+    nominal_type_product: ($) => prec.right(2, seq(
+      choice($._type_atom, $.nominal_group, $.nominal_type_group),
+      alias(choice("&", "|"), $.operator_builtin),
+      $._declaration_type,
+    )),
 
     keyword_pub: ($) => kw("pub"),
     keyword_fn: ($) => kw("fn"),
     keyword_rec: ($) => kw("rec"),
     keyword_recur: ($) => kw("recur"),
-    keyword_newtype: ($) => kw("newtype"),
-    keyword_labels: ($) => kw("labels"),
     keyword_equiv: ($) => kw("equiv"),
 
     _visibility_modifier: ($) => prec.dynamic(3, seq($.keyword_pub, optional(seq($.bracket_lparen, $.module_path, $.bracket_rparen)))),
@@ -1335,7 +1216,7 @@ module.exports = grammar({
     grouped_capture_value: ($) => seq($.bracket_lparen, $._capture_value, $.bracket_rparen),
     _callable_value: ($) => choice($.callable_path, $.grouped_callable_value),
     grouped_callable_value: ($) => seq($.bracket_lparen, $._callable_value, $.bracket_rparen),
-    _optional_callable_value: ($) => choice($.callable_path, $.unit_expression, $.grouped_optional_callable_value),
+    _optional_callable_value: ($) => choice($.callable_path, alias($._parenthesized_unit, $.unit_expression), $.grouped_optional_callable_value),
     grouped_optional_callable_value: ($) => seq($.bracket_lparen, $._optional_callable_value, $.bracket_rparen),
 
     callable_path: ($) =>
@@ -1433,7 +1314,6 @@ module.exports = grammar({
     ),
     operator_arrow_type: ($) => "->",
     operator_arrow_ufcs: ($) => token(prec(2, choice(".>", ".>>", ".<", ".<<"))),
-    operator_row_suffix: ($) => token(prec(2, choice(".?", ".!"))),
     operator_builtin: ($) => choice("&", "|", "=", ":", "!"),
     operator_run: ($) => choice($._fixed_run, $._minus, "/"),
     unowned_symbol_run: ($) => $._unowned_bracket_run,

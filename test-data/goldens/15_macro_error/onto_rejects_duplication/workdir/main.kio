@@ -2,6 +2,6 @@ module main;
 
 import macros/algebraic_macros(macro onto);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
 fn diagonal(a: A) -> A & A { onto(a) }

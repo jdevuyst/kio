@@ -2,6 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -9,19 +10,19 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-labels Gate_state = {
-, locked: Bool
-, maintenance: Bool
-, credit: Bool
-, entries: I32
-, accepted_badges: I32
-, denied_badges: I32
-, coins: I32
-, pushes: I32
-, forced_pushes: I32
-, maintenance_events: I32
-, unknown_events: I32
-, line_no: I32
+type Gate_state = {
+  Locked: Bool;
+  Maintenance: Bool;
+  Credit: Bool;
+  Entries: I32;
+  Accepted_badges: I32;
+  Denied_badges: I32;
+  Coins: I32;
+  Pushes: I32;
+  Forced_pushes: I32;
+  Maintenance_events: I32;
+  Unknown_events: I32;
+  Line_no: I32
 };
 
 fn cat3(a: String, b: String, c: String) -> String {
@@ -54,20 +55,20 @@ fn make_state(
 , unknown_events_value: I32
 , line_no_value: I32
 ) -> Gate_state {
-  {
-  , locked = locked_value
-  , maintenance = maintenance_value
-  , credit = credit_value
-  , entries = entries_value
-  , accepted_badges = accepted_badges_value
-  , denied_badges = denied_badges_value
-  , coins = coins_value
-  , pushes = pushes_value
-  , forced_pushes = forced_pushes_value
-  , maintenance_events = maintenance_events_value
-  , unknown_events = unknown_events_value
-  , line_no = line_no_value
-  }
+  (
+  , Locked.mk(locked_value)
+  , Maintenance.mk(maintenance_value)
+  , Credit.mk(credit_value)
+  , Entries.mk(entries_value)
+  , Accepted_badges.mk(accepted_badges_value)
+  , Denied_badges.mk(denied_badges_value)
+  , Coins.mk(coins_value)
+  , Pushes.mk(pushes_value)
+  , Forced_pushes.mk(forced_pushes_value)
+  , Maintenance_events.mk(maintenance_events_value)
+  , Unknown_events.mk(unknown_events_value)
+  , Line_no.mk(line_no_value)
+  )
 }
 
 fn initial_state() -> Gate_state { make_state(.t, .f, .f, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
@@ -77,9 +78,9 @@ fn bool_word(value: Bool) -> String {
 }
 
 fn gate_mode(state: Gate_state) -> String {
-  if(state.?{maintenance}) {
+  if(state.>select { Maintenance.get }) {
     "maintenance-open"
-  } else if(state.?{locked}) {
+  } else if(state.>select { Locked.get }) {
     "locked"
   } else {
     "unlocked"
@@ -105,20 +106,20 @@ fn is_authorized_badge(badge_id: I32) -> Bool {
 }
 
 fn handle_coin(state: Gate_state, next_line: I32) -> Gate_state {
-  if(state.?{maintenance}) {
+  if(state.>select { Maintenance.get }) {
     print_plain_event(next_line, "coin ignored while maintenance open\n");
     make_state(
-    , state.?{locked}
-    , state.?{maintenance}
-    , state.?{credit}
-    , state.?{entries}
-    , state.?{accepted_badges}
-    , state.?{denied_badges}
-    , state.?{coins}
-    , state.?{pushes}
-    , state.?{forced_pushes}
-    , state.?{maintenance_events}
-    , state.?{unknown_events}
+    , state.>select { Locked.get }
+    , state.>select { Maintenance.get }
+    , state.>select { Credit.get }
+    , state.>select { Entries.get }
+    , state.>select { Accepted_badges.get }
+    , state.>select { Denied_badges.get }
+    , state.>select { Coins.get }
+    , state.>select { Pushes.get }
+    , state.>select { Forced_pushes.get }
+    , state.>select { Maintenance_events.get }
+    , state.>select { Unknown_events.get }
     , next_line
     )
   } else {
@@ -127,66 +128,66 @@ fn handle_coin(state: Gate_state, next_line: I32) -> Gate_state {
     , .f
     , .f
     , .t
-    , state.?{entries}
-    , state.?{accepted_badges}
-    , state.?{denied_badges}
-    , arith.add_i32(state.?{coins}, 1)
-    , state.?{pushes}
-    , state.?{forced_pushes}
-    , state.?{maintenance_events}
-    , state.?{unknown_events}
+    , state.>select { Entries.get }
+    , state.>select { Accepted_badges.get }
+    , state.>select { Denied_badges.get }
+    , arith.add_i32(state.>select { Coins.get }, 1)
+    , state.>select { Pushes.get }
+    , state.>select { Forced_pushes.get }
+    , state.>select { Maintenance_events.get }
+    , state.>select { Unknown_events.get }
     , next_line
     )
   }
 }
 
 fn handle_push(state: Gate_state, next_line: I32) -> Gate_state {
-  if(state.?{maintenance}) {
+  if(state.>select { Maintenance.get }) {
     print_plain_event(next_line, "push allowed by maintenance\n");
     make_state(
-    , state.?{locked}
-    , state.?{maintenance}
-    , state.?{credit}
-    , arith.add_i32(state.?{entries}, 1)
-    , state.?{accepted_badges}
-    , state.?{denied_badges}
-    , state.?{coins}
-    , arith.add_i32(state.?{pushes}, 1)
-    , state.?{forced_pushes}
-    , state.?{maintenance_events}
-    , state.?{unknown_events}
+    , state.>select { Locked.get }
+    , state.>select { Maintenance.get }
+    , state.>select { Credit.get }
+    , arith.add_i32(state.>select { Entries.get }, 1)
+    , state.>select { Accepted_badges.get }
+    , state.>select { Denied_badges.get }
+    , state.>select { Coins.get }
+    , arith.add_i32(state.>select { Pushes.get }, 1)
+    , state.>select { Forced_pushes.get }
+    , state.>select { Maintenance_events.get }
+    , state.>select { Unknown_events.get }
     , next_line
     )
-  } else if(state.?{credit}) {
+  } else if(state.>select { Credit.get }) {
     print_plain_event(next_line, "push accepted; gate relocked\n");
     make_state(
     , .t
     , .f
     , .f
-    , arith.add_i32(state.?{entries}, 1)
-    , state.?{accepted_badges}
-    , state.?{denied_badges}
-    , state.?{coins}
-    , arith.add_i32(state.?{pushes}, 1)
-    , state.?{forced_pushes}
-    , state.?{maintenance_events}
-    , state.?{unknown_events}
+    , arith.add_i32(state.>select { Entries.get }, 1)
+    , state.>select { Accepted_badges.get }
+    , state.>select { Denied_badges.get }
+    , state.>select { Coins.get }
+    , arith.add_i32(state.>select { Pushes.get }, 1)
+    , state.>select { Forced_pushes.get }
+    , state.>select { Maintenance_events.get }
+    , state.>select { Unknown_events.get }
     , next_line
     )
   } else {
     print_plain_event(next_line, "push rejected; gate locked\n");
     make_state(
-    , state.?{locked}
+    , state.>select { Locked.get }
     , .f
     , .f
-    , state.?{entries}
-    , state.?{accepted_badges}
-    , state.?{denied_badges}
-    , state.?{coins}
-    , arith.add_i32(state.?{pushes}, 1)
-    , arith.add_i32(state.?{forced_pushes}, 1)
-    , state.?{maintenance_events}
-    , state.?{unknown_events}
+    , state.>select { Entries.get }
+    , state.>select { Accepted_badges.get }
+    , state.>select { Denied_badges.get }
+    , state.>select { Coins.get }
+    , arith.add_i32(state.>select { Pushes.get }, 1)
+    , arith.add_i32(state.>select { Forced_pushes.get }, 1)
+    , state.>select { Maintenance_events.get }
+    , state.>select { Unknown_events.get }
     , next_line
     )
   }
@@ -198,14 +199,14 @@ fn handle_maintenance_open(state: Gate_state, next_line: I32) -> Gate_state {
   , .f
   , .t
   , .f
-  , state.?{entries}
-  , state.?{accepted_badges}
-  , state.?{denied_badges}
-  , state.?{coins}
-  , state.?{pushes}
-  , state.?{forced_pushes}
-  , arith.add_i32(state.?{maintenance_events}, 1)
-  , state.?{unknown_events}
+  , state.>select { Entries.get }
+  , state.>select { Accepted_badges.get }
+  , state.>select { Denied_badges.get }
+  , state.>select { Coins.get }
+  , state.>select { Pushes.get }
+  , state.>select { Forced_pushes.get }
+  , arith.add_i32(state.>select { Maintenance_events.get }, 1)
+  , state.>select { Unknown_events.get }
   , next_line
   )
 }
@@ -216,14 +217,14 @@ fn handle_maintenance_close(state: Gate_state, next_line: I32) -> Gate_state {
   , .t
   , .f
   , .f
-  , state.?{entries}
-  , state.?{accepted_badges}
-  , state.?{denied_badges}
-  , state.?{coins}
-  , state.?{pushes}
-  , state.?{forced_pushes}
-  , arith.add_i32(state.?{maintenance_events}, 1)
-  , state.?{unknown_events}
+  , state.>select { Entries.get }
+  , state.>select { Accepted_badges.get }
+  , state.>select { Denied_badges.get }
+  , state.>select { Coins.get }
+  , state.>select { Pushes.get }
+  , state.>select { Forced_pushes.get }
+  , arith.add_i32(state.>select { Maintenance_events.get }, 1)
+  , state.>select { Unknown_events.get }
   , next_line
   )
 }
@@ -232,16 +233,16 @@ fn handle_accepted_badge(state: Gate_state, next_line: I32, badge_text: String) 
   print_badge_event(next_line, badge_text, "accepted; gate unlocked\n");
   make_state(
   , .f
-  , state.?{maintenance}
-  , if(state.?{maintenance}) { .f } else { .t }
-  , state.?{entries}
-  , arith.add_i32(state.?{accepted_badges}, 1)
-  , state.?{denied_badges}
-  , state.?{coins}
-  , state.?{pushes}
-  , state.?{forced_pushes}
-  , state.?{maintenance_events}
-  , state.?{unknown_events}
+  , state.>select { Maintenance.get }
+  , if(state.>select { Maintenance.get }) { .f } else { .t }
+  , state.>select { Entries.get }
+  , arith.add_i32(state.>select { Accepted_badges.get }, 1)
+  , state.>select { Denied_badges.get }
+  , state.>select { Coins.get }
+  , state.>select { Pushes.get }
+  , state.>select { Forced_pushes.get }
+  , state.>select { Maintenance_events.get }
+  , state.>select { Unknown_events.get }
   , next_line
   )
 }
@@ -249,17 +250,17 @@ fn handle_accepted_badge(state: Gate_state, next_line: I32, badge_text: String) 
 fn handle_denied_badge(state: Gate_state, next_line: I32, badge_text: String) -> Gate_state {
   print_badge_event(next_line, badge_text, "denied; gate unchanged\n");
   make_state(
-  , state.?{locked}
-  , state.?{maintenance}
-  , state.?{credit}
-  , state.?{entries}
-  , state.?{accepted_badges}
-  , arith.add_i32(state.?{denied_badges}, 1)
-  , state.?{coins}
-  , state.?{pushes}
-  , state.?{forced_pushes}
-  , state.?{maintenance_events}
-  , state.?{unknown_events}
+  , state.>select { Locked.get }
+  , state.>select { Maintenance.get }
+  , state.>select { Credit.get }
+  , state.>select { Entries.get }
+  , state.>select { Accepted_badges.get }
+  , arith.add_i32(state.>select { Denied_badges.get }, 1)
+  , state.>select { Coins.get }
+  , state.>select { Pushes.get }
+  , state.>select { Forced_pushes.get }
+  , state.>select { Maintenance_events.get }
+  , state.>select { Unknown_events.get }
   , next_line
   )
 }
@@ -267,17 +268,17 @@ fn handle_denied_badge(state: Gate_state, next_line: I32, badge_text: String) ->
 fn handle_unknown(state: Gate_state, next_line: I32, line: String) -> Gate_state {
   print_plain_event(next_line, cat3("unknown event ", line, "\n"));
   make_state(
-  , state.?{locked}
-  , state.?{maintenance}
-  , state.?{credit}
-  , state.?{entries}
-  , state.?{accepted_badges}
-  , state.?{denied_badges}
-  , state.?{coins}
-  , state.?{pushes}
-  , state.?{forced_pushes}
-  , state.?{maintenance_events}
-  , arith.add_i32(state.?{unknown_events}, 1)
+  , state.>select { Locked.get }
+  , state.>select { Maintenance.get }
+  , state.>select { Credit.get }
+  , state.>select { Entries.get }
+  , state.>select { Accepted_badges.get }
+  , state.>select { Denied_badges.get }
+  , state.>select { Coins.get }
+  , state.>select { Pushes.get }
+  , state.>select { Forced_pushes.get }
+  , state.>select { Maintenance_events.get }
+  , arith.add_i32(state.>select { Unknown_events.get }, 1)
   , next_line
   )
 }
@@ -300,7 +301,7 @@ fn handle_numeric_or_unknown(state: Gate_state, next_line: I32, line: String) ->
 }
 
 fn apply_event(state: Gate_state, line: String) -> Gate_state {
-  let next_line = arith.add_i32(state.?{line_no}, 1);
+  let next_line = arith.add_i32(state.>select { Line_no.get }, 1);
   if(text.string_eq(line, "coin")) {
     handle_coin(state, next_line)
   } else if(text.string_eq(line, "push")) {
@@ -322,17 +323,17 @@ rec(loop) fn replay(state: Gate_state) -> Gate_state {
 
 fn print_summary(state: Gate_state) {
   io.print("\nfinal counters\n");
-  show_i32("lines", state.?{line_no});
-  show_i32("entries", state.?{entries});
-  show_i32("pushes", state.?{pushes});
-  show_i32("forced_pushes", state.?{forced_pushes});
-  show_i32("coins", state.?{coins});
-  show_i32("accepted_badges", state.?{accepted_badges});
-  show_i32("denied_badges", state.?{denied_badges});
-  show_i32("maintenance_events", state.?{maintenance_events});
-  show_i32("unknown_events", state.?{unknown_events});
+  show_i32("lines", state.>select { Line_no.get });
+  show_i32("entries", state.>select { Entries.get });
+  show_i32("pushes", state.>select { Pushes.get });
+  show_i32("forced_pushes", state.>select { Forced_pushes.get });
+  show_i32("coins", state.>select { Coins.get });
+  show_i32("accepted_badges", state.>select { Accepted_badges.get });
+  show_i32("denied_badges", state.>select { Denied_badges.get });
+  show_i32("maintenance_events", state.>select { Maintenance_events.get });
+  show_i32("unknown_events", state.>select { Unknown_events.get });
   io.print(cat3("final_mode: ", gate_mode(state), "\n"));
-  show_bool("credit_pending", state.?{credit})
+  show_bool("credit_pending", state.>select { Credit.get })
 }
 
 pub fn main() {

@@ -6,12 +6,12 @@ let pkg = createCarrierControls(host: One())
 let opaque = pkg.api.opaque(42, "opaque")
 let transported: KioNewtype_api__Opaque<One, Int, String> = opaque
 
-let input = pkg.api.KioType_Both.make(Product(_0: KioUnit(), _1: "partial"))
+let input = pkg.api.KioType_Both.mk(Product(_0: KioUnit(), _1: "partial"))
 let flat: KioApply2<KioNewtypeMk_api__Both<One>, KioUnit, String> = input
 let grouped: KioApply1<KioApply1<KioNewtypeMk_api__Both<One>, KioUnit>, String> = flat
-let mapping = pkg.api.KioType_Using.read(pkg.api.partial())
+let mapping = pkg.api.KioType_Using.get(pkg.api.partial())
 let output = mapping.specialize(asKioType: String.self)(grouped)
-precondition(pkg.api.KioType_Both.read(output)._1 == "partial")
+precondition(pkg.api.KioType_Both.get(output)._1 == "partial")
 
 let nativeConstructor = KioHostTypeMk_api__Native.constructor.applying(Int.self)
 let native: KioApply2<KioHostTypeMk_api__Native, Int, String> =

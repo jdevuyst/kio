@@ -2,9 +2,10 @@ module fold/reconstruct;
 
 import fold/numbers as numbers;
 import fold/plan as plan;
-import fold/plan({decisions}, {hi}, {length}, {lo}, {paired});
+import fold/plan(Decisions, Hi, Length, Lo, Paired);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -12,18 +13,21 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 fn enqueue(stack: Array[plan.Interval], i: I32, j: I32) {
-  if(numbers.less(i, j)) { array.array_push(stack, {lo = i, hi = j}) } else { () }
+  if(numbers.less(i, j)) { array.array_push(stack, (Lo.mk(i), Hi.mk(j))) } else { () }
 }
 
 rec(loop) fn trace(program: plan.Program, stack: Array[plan.Interval], partners: Array[I32]) -> Array[I32] {
   match(array.array_pop_back(stack)) {
     .(interval: plan.Interval) {
-      let i = interval.?{lo};
-      let j = interval.?{hi};
-      match(array.array_get(program.?{decisions}, numbers.index(program.?{length}, i, j))) {
+      let i = interval.>select { Lo.get };
+      let j = interval.>select { Hi.get };
+      match(array.array_get(
+      , program.>select { Decisions.get }
+      , numbers.index(program.>select { Length.get }, i, j)
+      )) {
         .(_skip: plan.Unpaired) { enqueue(stack, arith.add_i32(i, 1), j) };
         .(pair: plan.Paired) {
-          let k = pair.?{paired};
+          let k = pair.>select { Paired.get };
           array.array_set(partners, i, k);
           array.array_set(partners, k, i);
           enqueue(stack, arith.add_i32(k, 1), j);
@@ -38,8 +42,8 @@ rec(loop) fn trace(program: plan.Program, stack: Array[plan.Interval], partners:
 
 pub fn partners(program: plan.Program) -> Array[I32] {
   let stack = array.array_make_empty[plan.Interval](());
-  enqueue(stack, 0, arith.sub_i32(program.?{length}, 1));
-  trace(program, stack, array.array_make_filled(program.?{length}, -1))
+  enqueue(stack, 0, arith.sub_i32(program.>select { Length.get }, 1));
+  trace(program, stack, array.array_make_filled(program.>select { Length.get }, -1))
 }
 
 rec(loop) fn render(partners: Array[I32], i: I32, out: String) -> String {

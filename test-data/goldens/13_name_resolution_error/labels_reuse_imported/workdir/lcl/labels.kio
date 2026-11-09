@@ -1,3 +1,0 @@
-module lcl/labels;
-
-pub labels { field: . };

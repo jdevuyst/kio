@@ -6,13 +6,12 @@
 //! `Call`, `FnExpr`, literals, `Type::Path`, `Type::Function`,
 //! `Item::FnDef`, …) have default implementations that
 //! clone-and-recurse via `self.walk_*`. Variants that are
-//! uninhabited at PrePrime (the eight `ExprElab`-bearing arms on the
-//! Expr side, `Type::Infer` on the Type side, `Item::Equiv` on the
+//! uninhabited at PrePrime (including `Type::Infer` on the Type side and `Item::Equiv` on the
 //! Item side) have **no default** — the implementer must provide
 //! one via a `rewrite_*` method.
 //!
 //! The Lowered phase has already stripped the early surface-only
-//! variants (`Tuple`, `FnPlaceholder`, `LabelValue`, `LabelSugar`,
+//! variants (`Tuple`, `FnPlaceholder`,
 //! `Labels`, `Op`, and `LiteralAlias`), so
 //! those variants discharge via `match *ext {}` in the
 //! dispatchers and never reach a method.
@@ -52,8 +51,6 @@ pub(super) trait LoweredToPrePrime {
     // -------------------------------------------------------------
     // Rewrite hooks (no defaults).
     // -------------------------------------------------------------
-
-    fn rewrite_expr_elaborator(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
     fn rewrite_expr_rec_order(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
     fn rewrite_expr_rec_quote(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
@@ -516,7 +513,7 @@ pub(super) trait LoweredToPrePrime {
             // Statically uninhabited at Lowered.
             Item::LiteralAlias(_, ext) => match *ext {},
             Item::Labels(_, ext) => match *ext {},
-            Item::LabelForward(_, ext) => match *ext {},
+
             Item::Op(_, ext) => match *ext {},
             Item::VariadicOperator(_, ext) => match *ext {},
             Item::RecGroup(_, ext) => match *ext {},
@@ -713,7 +710,6 @@ pub(super) trait LoweredToPrePrime {
             Expr::IntLit { .. } => self.visit_expr_int_lit(e),
             Expr::FloatLit { .. } => self.visit_expr_float_lit(e),
             Expr::BoolLit { .. } => self.visit_expr_bool_lit(e),
-            Expr::Elaborator { .. } => self.rewrite_expr_elaborator(e),
             Expr::RecOrder { .. } => self.rewrite_expr_rec_order(e),
             Expr::RecQuote { .. } => self.rewrite_expr_rec_quote(e),
             Expr::UserMacro { .. } => self.rewrite_expr_user_macro(e),
@@ -722,8 +718,6 @@ pub(super) trait LoweredToPrePrime {
             // `desugar` stripped these at earlier boundaries).
             Expr::Tuple { ext, .. } => match *ext {},
             Expr::FnPlaceholder { ext, .. } => match *ext {},
-            Expr::LabelValue { ext, .. } => match *ext {},
-            Expr::RowLet { ext, .. } => match *ext {},
             Expr::OpChain { ext, .. } => match *ext {},
             Expr::RecCall { ext, .. } => match *ext {},
             // Statically uninhabited at Lowered — the enriched
@@ -769,8 +763,6 @@ pub(super) trait LoweredToPrePrime {
                 );
                 unreachable!("goal-free assertion returned for Type::Goal")
             }
-            // Statically uninhabited at Lowered.
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 }

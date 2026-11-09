@@ -1582,7 +1582,7 @@ fn render_export_driver(
             );
             let packed = go_type_handle_selector("Packed");
             format!(
-                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {ns}.NativeAtom[int32]({types}.{packed}.ReadPacked(value, func() func({ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ return func(pair {ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ openings++; return {ns}.Atom(pair.F1(pair.F0)) }} }}))\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
+                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {ns}.NativeAtom[int32]({types}.{packed}.Get(value, func() func({ns}.Exp_Testapi_types__Packed_get_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ return func(pair {ns}.Exp_Testapi_types__Packed_get_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ openings++; return {ns}.Atom(pair.F1(pair.F0)) }} }}))\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
             )
         }
         ExportDriver::FunctorDictRoundtrip => {
@@ -1597,27 +1597,27 @@ fn render_export_driver(
     type boxIndex = {ns}.Index_testapi__types__Box
     type numberValue = {ns}.Prepared[numberIndex]
     type textValue = {ns}.Prepared[textIndex]
-    type numberBox = {ns}.Exp_Testapi_types__Box_mkBox_arg0[{roots}, numberIndex]
-    type textBox = {ns}.Exp_Testapi_types__Box_mkBox_arg0[{roots}, textIndex]
+    type numberBox = {ns}.Exp_Testapi_types__Box_mk_arg0[{roots}, numberIndex]
+    type textBox = {ns}.Exp_Testapi_types__Box_mk_arg0[{roots}, textIndex]
     integers := []int32{{}}
     texts := []string{{}}
     toText := func(value numberValue) textValue {{ number := {ns}.UnprepareHost_testapi_I32(pkg, value); integers = append(integers, number); return {ns}.PrepareHost_testapi_String(pkg, fmt.Sprintf("v:%d", number)) }}
     toInteger := func(value textValue) numberValue {{ text := {ns}.UnprepareHost_testapi_String(pkg, value); texts = append(texts, text); return {ns}.PrepareHost_testapi_I32(pkg, int32(len(text))) }}
     dict := {main}.EchoFunctor({main}.BoxFunctor())
-    first := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toText, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 42), F1: {ns}.Unit{{}}}}))
-    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, first).F0) != "v:42" {{ panic("functor integer input") }}
-    second := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toInteger, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "apple"), F1: {ns}.Unit{{}}}}))
-    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, second).F0) != int32(5) {{ panic("functor text input") }}
-    abstractDict := {ns}.NativeExp_Testapi_types__Functor_fmap_arg0[{roots}, boxIndex](pkg, {ns}.ValueExp_Testapi_main__boxFunctor_ret(pkg, dict))
-    mapping := {ns}.CallExp_Testapi_types__Functor_fmap({functor}, abstractDict)
-    numberMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[textIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[numberIndex](mapping))
-    thirdValue := numberMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, numberIndex, textIndex]{{F0: toText, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, numberIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 7), F1: {ns}.Unit{{}}}}))}})
-    third := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, textIndex](pkg, thirdValue)
-    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, third).F0) != "v:7" {{ panic("projected functor integer input") }}
-    textMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[numberIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[textIndex](mapping))
-    fourthValue := textMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, textIndex, numberIndex]{{F0: toInteger, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, textIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "pear"), F1: {ns}.Unit{{}}}}))}})
-    fourth := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, numberIndex](pkg, fourthValue)
-    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, fourth).F0) != int32(4) {{ panic("projected functor text input") }}
+    first := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toText, {ns}.CallExp_Testapi_types__Box_mk({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 42), F1: {ns}.Unit{{}}}}))
+    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_get({box_type}, first).F0) != "v:42" {{ panic("functor integer input") }}
+    second := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toInteger, {ns}.CallExp_Testapi_types__Box_mk({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "apple"), F1: {ns}.Unit{{}}}}))
+    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_get({box_type}, second).F0) != int32(5) {{ panic("functor text input") }}
+    abstractDict := {ns}.NativeExp_Testapi_types__Functor_get_arg0[{roots}, boxIndex](pkg, {ns}.ValueExp_Testapi_main__boxFunctor_ret(pkg, dict))
+    mapping := {ns}.CallExp_Testapi_types__Functor_get({functor}, abstractDict)
+    numberMapping := {ns}.SelectExp_Testapi_types__Functor_get_ret_selected[textIndex]({ns}.SelectExp_Testapi_types__Functor_get_ret[numberIndex](mapping))
+    thirdValue := numberMapping({ns}.Exp_Testapi_types__Functor_get_ret_selected_selected_cbarg0[{roots}, boxIndex, numberIndex, textIndex]{{F0: toText, F1: {ns}.PrepareExp_Testapi_types__Box_mk_ret[{roots}, numberIndex](pkg, {ns}.CallExp_Testapi_types__Box_mk({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 7), F1: {ns}.Unit{{}}}}))}})
+    third := {ns}.UnprepareExp_Testapi_types__Box_get_arg0[{roots}, textIndex](pkg, thirdValue)
+    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_get({box_type}, third).F0) != "v:7" {{ panic("projected functor integer input") }}
+    textMapping := {ns}.SelectExp_Testapi_types__Functor_get_ret_selected[numberIndex]({ns}.SelectExp_Testapi_types__Functor_get_ret[textIndex](mapping))
+    fourthValue := textMapping({ns}.Exp_Testapi_types__Functor_get_ret_selected_selected_cbarg0[{roots}, boxIndex, textIndex, numberIndex]{{F0: toInteger, F1: {ns}.PrepareExp_Testapi_types__Box_mk_ret[{roots}, textIndex](pkg, {ns}.CallExp_Testapi_types__Box_mk({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "pear"), F1: {ns}.Unit{{}}}}))}})
+    fourth := {ns}.UnprepareExp_Testapi_types__Box_get_arg0[{roots}, numberIndex](pkg, fourthValue)
+    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_get({box_type}, fourth).F0) != int32(4) {{ panic("projected functor text input") }}
     if len(integers) != 2 || integers[0] != 42 || integers[1] != 7 || len(texts) != 2 || texts[0] != "apple" || texts[1] != "pear" {{ panic("functor callback events") }}
     fmt.Println("functor dictionary ok")
 "#
@@ -1766,7 +1766,7 @@ fn render_export_driver(
             );
             format!(
                 r#"
-    wrapped := {ns}.CallExp_Testapi_main__Wrapped_mkWrapped({wrapped}, {ns}.PrepareHost_testapi_I32(pkg, 1037))
+    wrapped := {ns}.CallExp_Testapi_main__Wrapped_mk({wrapped}, {ns}.PrepareHost_testapi_I32(pkg, 1037))
     hostBox := {boxed}(&kioBox{{value: {ns}.ValueExp_Testapi_main__unwrap_arg0(pkg, wrapped)}})
     fmt.Println({main}.Read(hostBox) - 1000)
     made := {main}.Make(1061)
@@ -1835,7 +1835,7 @@ fn render_export_driver(
     nativeStep := {ns}.NativeExp_Testapi_main__call_arg0_typearg0(pkg, kioCallable.UnsafeNative().(*kioBox).value)
     if nativeStep({number}(61)) != {number}(61) {{ panic("native callable extraction changed") }}
     fmt.Println({main}.Call(kioCallable, {number}(47)))
-    nativeNominal := {wrapped}.MkWrapped({ns}.Exp_Testapi_main__Wrapped_mkWrapped_arg0{root_arguments}{{F0: 41, F1: 43}})
+    nativeNominal := {wrapped}.Mk({ns}.Exp_Testapi_main__Wrapped_mk_arg0{root_arguments}{{F0: 41, F1: 43}})
     hostNominal := {nominal_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__readNominal_arg0_typearg0(pkg, nativeNominal)}})
     for _, value := range []{nominal}{{{main}.ReadNominal(hostNominal), {main}.ReadNominal({main}.MakeNominal())}} {{ fmt.Println(value.F0, value.F1) }}
 "#
@@ -1920,7 +1920,7 @@ fn render_export_driver(
             format!("\tfmt.Println({main}.FirstOr(0, {main}.Pack(7, \"hi\")))\n")
         }
         // `bump(Wrap) -> Wrap` exported in `testapi/main`, where `Wrap`
-        // is a bare scalar-payload newtype (`newtype Wrap : I32`). The Go
+        // is a bare scalar-payload newtype (`type { Wrap: I32 }`). The Go
         // facade exposes the bare scalar payload directly, so the
         // export takes / returns the raw `int32` payload directly
         // (`Bump(int32) int32`). Round-trip `7` through it; it prints as
@@ -1941,9 +1941,9 @@ fn render_export_driver(
             let root = type_handle(&main, "Root");
             format!(
                 "\tpayload := {main}.BasePayload()\n\
-                 \troot := {root}.MakeRoot(payload)\n\
+                 \troot := {root}.Mk(payload)\n\
                  \tkept := {main}.Keep(root)\n\
-                 \tprojected := {root}.ReadRoot(kept)\n\
+                 \tprojected := {root}.Get(kept)\n\
                  \tfmt.Println({main}.AcceptPayload(projected))\n"
             )
         }
@@ -1978,21 +1978,16 @@ fn render_export_driver(
                     host_api::go_qualified_boundary_member("testapi/types", Some(owner), member)
                 )
             };
-            let constructor_pair_arg =
-                member_alias("Constructor_pair", "make_constructor_pair", "arg0");
-            let packed_function_arg =
-                member_alias("Packed_function", "make_packed_function", "arg0_cbarg0");
-            let constructor_spread_arg = member_alias(
-                "Constructor_spread",
-                "make_constructor_spread",
-                "arg0_result_cbarg0",
-            );
+            let constructor_pair_arg = member_alias("Constructor_pair", "mk", "arg0");
+            let packed_function_arg = member_alias("Packed_function", "mk", "arg0_cbarg0");
+            let constructor_spread_arg =
+                member_alias("Constructor_spread", "mk", "arg0_result_cbarg0");
             let constructor_spread_stage = format!(
                 "{ns}.NewExp_{}_arg0Stage{root_arguments}",
                 host_api::go_qualified_boundary_member(
                     "testapi/types",
                     Some("Constructor_spread"),
-                    "make_constructor_spread"
+                    "mk"
                 )
             );
             let constructor_generic_call = format!(
@@ -2000,7 +1995,7 @@ fn render_export_driver(
                 host_api::go_qualified_boundary_member(
                     "testapi/types",
                     Some("Constructor_generic"),
-                    "make_constructor_generic"
+                    "mk"
                 )
             );
             let projector_generic_call = format!(
@@ -2008,19 +2003,12 @@ fn render_export_driver(
                 host_api::go_qualified_boundary_member(
                     "testapi/types",
                     Some("Projector_generic"),
-                    "read_projector_generic"
+                    "get"
                 )
             );
-            let projector_spread_arg = member_alias(
-                "Projector_spread",
-                "read_projector_spread",
-                "ret_result_cbarg0",
-            );
-            let existential_spread_arg = member_alias(
-                "Existential_spread",
-                "read_existential_spread",
-                "arg1_result_cbarg0",
-            );
+            let projector_spread_arg = member_alias("Projector_spread", "get", "ret_result_cbarg0");
+            let existential_spread_arg =
+                member_alias("Existential_spread", "get", "arg1_result_cbarg0");
             format!(
                 "\tvar inputA {i32_type} = 11\n\
              \ta := {types}.MakeA(inputA)\n\
@@ -2031,59 +2019,59 @@ fn render_export_driver(
              \tvar outB {i32_type} = {types}.ReadB(b)\n\
              \tfmt.Println(outB)\n\
              \tvar inputC {i32_type} = 33\n\
-             \tc := {constructor_only}.MakeConstructorOnly(inputC)\n\
+             \tc := {constructor_only}.Mk(inputC)\n\
              \tvar outC {i32_type} = {types}.ReadConstructorOnlyValue(c)\n\
              \tfmt.Println(outC)\n\
              \tvar inputP {i32_type} = 44\n\
              \tp := {types}.MakeProjectorOnlyValue(inputP)\n\
-             \tvar outP {i32_type} = {projector_only}.ReadProjectorOnly(p)\n\
+             \tvar outP {i32_type} = {projector_only}.Get(p)\n\
              \tfmt.Println(outP)\n\
              \tvar inputBoth {i32_type} = 55\n\
-             \tboth := {both_public}.MakeBothPublic(inputBoth)\n\
-             \tvar outBoth {i32_type} = {both_public}.ReadBothPublic(both)\n\
+             \tboth := {both_public}.Mk(inputBoth)\n\
+             \tvar outBoth {i32_type} = {both_public}.Get(both)\n\
              \tfmt.Println(outBoth)\n\
              \tvar inputLeft {i32_type} = 66\n\
              \tleftValue := {left}.Make(inputLeft)\n\
-             \tvar outLeft {i32_type} = {left_shared}.ReadShared({left_shared}.MakeShared({left}.Read(leftValue)))\n\
+             \tvar outLeft {i32_type} = {left_shared}.Get({left_shared}.Mk({left}.Read(leftValue)))\n\
              \tfmt.Println(outLeft)\n\
              \tvar inputRight {i32_type} = 77\n\
              \trightValue := {right}.Make(inputRight)\n\
-             \tvar outRight {i32_type} = {right_shared}.ReadShared({right_shared}.MakeShared({right}.Read(rightValue)))\n\
+             \tvar outRight {i32_type} = {right_shared}.Get({right_shared}.Mk({right}.Read(rightValue)))\n\
              \tfmt.Println(outRight)\n\
-             \tconstructorPairValue := {constructor_pair}.MakeConstructorPair({constructor_pair_arg}{{F0: {i32_type}(81), F1: {i32_type}(82)}})\n\
+             \tconstructorPairValue := {constructor_pair}.Mk({constructor_pair_arg}{{F0: {i32_type}(81), F1: {i32_type}(82)}})\n\
              \tconstructorPairOut := {types}.ReadConstructorPairValue(constructorPairValue)\n\
              \tfmt.Println(constructorPairOut.F0, constructorPairOut.F1)\n\
              \tprojectorPairValue := {types}.MakeProjectorPairValue(constructorPairOut)\n\
-             \tprojectorPairOut := {projector_pair}.ReadProjectorPair(projectorPairValue)\n\
+             \tprojectorPairOut := {projector_pair}.Get(projectorPairValue)\n\
              \tfmt.Println(projectorPairOut.F0, projectorPairOut.F1)\n\
              \tconstructorGenericValue := {constructor_generic_call}({constructor_generic}, {ns}.PrepareHost_testapi_I32(pkg, 85))\n\
              \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__readConstructorGenericValue({types}, constructorGenericValue)))\n\
              \tprojectorGenericValue := {ns}.CallExp_Testapi_types__makeProjectorGenericValue({types}, {ns}.PrepareHost_testapi_I32(pkg, 86))\n\
              \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {projector_generic_call}({projector_generic}, projectorGenericValue)))\n\
-             \tpacked := {packed_function}.MakePackedFunction(func(pair {packed_function_arg}) {i32_type} {{ return pair.F0 + pair.F1 }})\n\
-             \tunpacked := {packed_function}.ReadPackedFunction(packed)\n\
+             \tpacked := {packed_function}.Mk(func(pair {packed_function_arg}) {i32_type} {{ return pair.F0 + pair.F1 }})\n\
+             \tunpacked := {packed_function}.Get(packed)\n\
              \tfmt.Println(unpacked(constructorPairOut))\n\
              \texistential := {types}.MakeExistentialUnitValue()\n\
-             \tfmt.Println({ns}.NativeAtom[int32]({existential_unit}.ReadExistentialUnit(existential, func() func({ns}.Value) {ns}.Value {{ return func(_ {ns}.Value) {ns}.Value {{ return {ns}.Atom(int32(89)) }} }})))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_unit}.Get(existential, func() func({ns}.Value) {ns}.Value {{ return func(_ {ns}.Value) {ns}.Value {{ return {ns}.Atom(int32(89)) }} }})))\n\
              \texistentialEmptyValue := {types}.MakeExistentialEmptyValue()\n\
-             \tfmt.Println({ns}.NativeAtom[int32]({existential_empty}.ReadExistentialEmpty(existentialEmptyValue, func() func() {ns}.Value {{ return func() {ns}.Value {{ return {ns}.Atom(int32(90)) }} }})))\n\
-             \trecursiveBothValue := {recursive_both}.MakeRecursiveBoth({types}.RecursiveBothBasePayload())\n\
-             \tfmt.Println({types}.RecursiveBothPayloadIsBase({recursive_both}.ReadRecursiveBoth(recursiveBothValue)))\n\
-             \trecursiveConstructorValue := {recursive_constructor}.MakeRecursiveConstructor({types}.RecursiveConstructorBasePayload())\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_empty}.Get(existentialEmptyValue, func() func() {ns}.Value {{ return func() {ns}.Value {{ return {ns}.Atom(int32(90)) }} }})))\n\
+             \trecursiveBothValue := {recursive_both}.Mk({types}.RecursiveBothBasePayload())\n\
+             \tfmt.Println({types}.RecursiveBothPayloadIsBase({recursive_both}.Get(recursiveBothValue)))\n\
+             \trecursiveConstructorValue := {recursive_constructor}.Mk({types}.RecursiveConstructorBasePayload())\n\
              \tfmt.Println({types}.RecursiveConstructorPayloadIsBase({types}.ReadRecursiveConstructorValue(recursiveConstructorValue)))\n\
              \trecursiveProjectorValue := {types}.MakeRecursiveProjectorBase()\n\
-             \tfmt.Println({types}.RecursiveProjectorPayloadIsBase({recursive_projector}.ReadRecursiveProjector(recursiveProjectorValue)))\n\
+             \tfmt.Println({types}.RecursiveProjectorPayloadIsBase({recursive_projector}.Get(recursiveProjectorValue)))\n\
              \tinputs := []{i32_type}{{}}\n\
-             \tconstructed := {constructor_spread}.MakeConstructorSpread({constructor_spread_stage}(StubHost{{}}, func() func({constructor_spread_arg}) {i32_type} {{ return func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }} }}))\n\
+             \tconstructed := {constructor_spread}.Mk({constructor_spread_stage}(StubHost{{}}, func() func({constructor_spread_arg}) {i32_type} {{ return func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }} }}))\n\
              \tif {types}.InvokeConstructorSpreadI32(constructed, 101) != 104 || {types}.InvokeConstructorSpreadUnit(constructed, 102) != 105 || len(inputs) != 2 || inputs[0] != 101 || inputs[1] != 102 {{ panic(\"constructor callback changed\") }}\n\
-             \tprojected := {projector_spread}.ReadProjectorSpread({types}.MakeProjectorSpreadValue())\n\
+             \tprojected := {projector_spread}.Get({types}.MakeProjectorSpreadValue())\n\
              \tif projected.Invoke()({projector_spread_arg}{{F0: 111, F1: {ns}.Atom({i32_type}(1))}}) != 111 || projected.Invoke()({projector_spread_arg}{{F0: 112, F1: {ns}.Atom({ns}.Unit{{}})}}) != 112 {{ panic(\"projector callback changed\") }}\n\
              \tspreadOpens, recursiveOpens := 0, 0\n\
-             \topenedSpread := {existential_spread}.ReadExistentialSpread({types}.MakeExistentialSpreadValue(), func() func({existential_spread_arg}) {ns}.Value {{ return func(_ {existential_spread_arg}) {ns}.Value {{ spreadOpens++; return {ns}.Atom(int32(91)) }} }})\n\
-             \topenedRecursive := {recursive_existential}.ReadRecursiveExistentialFunction({types}.MakeRecursiveExistentialFunctionValue(), func() func(func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ return func(_ func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ recursiveOpens++; return {ns}.Atom(int32(92)) }} }})\n\
+             \topenedSpread := {existential_spread}.Get({types}.MakeExistentialSpreadValue(), func() func({existential_spread_arg}) {ns}.Value {{ return func(_ {existential_spread_arg}) {ns}.Value {{ spreadOpens++; return {ns}.Atom(int32(91)) }} }})\n\
+             \topenedRecursive := {recursive_existential}.Get({types}.MakeRecursiveExistentialFunctionValue(), func() func(func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ return func(_ func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ recursiveOpens++; return {ns}.Atom(int32(92)) }} }})\n\
              \tif {ns}.NativeAtom[int32](openedSpread) != 91 || {ns}.NativeAtom[int32](openedRecursive) != 92 || spreadOpens != 1 || recursiveOpens != 1 {{ panic(\"existential continuation count changed\") }}\n\
-             \tinner := {visible_comptime_outer}.ReadVisibleComptimeOuter({types}.MakeVisibleComptimeOuterBase())\n\
-             \t_ = {visible_comptime_outer}.ReadVisibleComptimeOuter({visible_comptime_outer}.MakeVisibleComptimeOuter(inner))\n"
+             \tinner := {visible_comptime_outer}.Get({types}.MakeVisibleComptimeOuterBase())\n\
+             \t_ = {visible_comptime_outer}.Get({visible_comptime_outer}.Mk(inner))\n"
             )
         }
         // `make(String, I32, I32) -> Outer` exported in `testapi/main`,
@@ -2209,8 +2197,8 @@ fn render_export_driver(
                     )
                 )
             };
-            let wrap = member_call("wrap_word");
-            let unwrap = member_call("unwrap_word");
+            let wrap = member_call("mk");
+            let unwrap = member_call("get");
             let keep = format!(
                 "{ns}.CallExp_{}",
                 host_api::go_qualified_boundary_member("word_api/word_nodes", None, "keep_word")
@@ -2251,8 +2239,8 @@ fn render_export_driver(
                  \tfmt.Println(\"api.child function\")\n\
                  \t{child_module}.Value()\n\
                  \tfmt.Println(\"api/child module\")\n\
-                 \tchild := {child_type}.MakeChild(30)\n\
-                 \t{child_type}.ReadChild(child)\n\
+                 \tchild := {child_type}.Mk(30)\n\
+                 \t{child_type}.Get(child)\n\
                  \tfmt.Println(\"api.Child type\")\n"
             )
         }
@@ -2293,11 +2281,11 @@ fn render_export_driver(
             let pair = type_handle(&types, "Pair");
             let input = format!(
                 "{ns}.Exp_{}_arg0[{ns}.AtomIndex[string], {ns}.AtomIndex[string]]",
-                host_api::go_qualified_boundary_member("testapi/types", Some("Pair"), "mk_pair")
+                host_api::go_qualified_boundary_member("testapi/types", Some("Pair"), "mk")
             );
             format!(
-                "\tboxed := {ns}.CallExp_Testapi_types__Pair_mkPair({pair}, {input}{{F0: {ns}.PrepareAtom(\"export-type-left\"), F1: {ns}.PrepareAtom(\"export-type-right\")}})\n\
-                 \tout := {ns}.CallExp_Testapi_types__Pair_unPair({pair}, boxed)\n\
+                "\tboxed := {ns}.CallExp_Testapi_types__Pair_mk({pair}, {input}{{F0: {ns}.PrepareAtom(\"export-type-left\"), F1: {ns}.PrepareAtom(\"export-type-right\")}})\n\
+                 \tout := {ns}.CallExp_Testapi_types__Pair_get({pair}, boxed)\n\
                  \tfmt.Println({ns}.NativeAtom[string](out.F0.Erase()))\n\
                  \tfmt.Println({ns}.NativeAtom[string](out.F1.Erase()))\n"
             )
@@ -3417,8 +3405,8 @@ mod tests {
             "pkg.WordApi.KioItem_readWord_u()",
             "pkg.WordApi.KioItem__ureadWord_u()",
             "pkg.WordApi.KioItem_readWord_u_u()",
-            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__wrapWord(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, demo.PrepareHost_wordApi_CountValue(pkg, 55))",
-            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__unwrapWord(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, boxed)",
+            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__mk(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, demo.PrepareHost_wordApi_CountValue(pkg, 55))",
+            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__get(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, boxed)",
             "demo.CallExp_KioItem_wordApi_swordNodes__keepWord(pkg.WordApi.KioModule_wordNodes, demo.PrepareHost_wordApi_CountValue(pkg, 66))",
             "pkg.WordApi.KeepPair(demo.Exp_KioItem_wordApi__keepPair_arg0",
             "pair.KioKey_B13__uWordBox_u_u",
@@ -3442,8 +3430,8 @@ mod tests {
 
         assert_eq!(
             body,
-            "\tboxed := demo.CallExp_Testapi_types__Pair_mkPair(pkg.Testapi.KioModule_types.KioType_Pair, demo.Exp_Testapi_types__Pair_mkPair_arg0[demo.AtomIndex[string], demo.AtomIndex[string]]{F0: demo.PrepareAtom(\"export-type-left\"), F1: demo.PrepareAtom(\"export-type-right\")})\n\
-             \tout := demo.CallExp_Testapi_types__Pair_unPair(pkg.Testapi.KioModule_types.KioType_Pair, boxed)\n\
+            "\tboxed := demo.CallExp_Testapi_types__Pair_mk(pkg.Testapi.KioModule_types.KioType_Pair, demo.Exp_Testapi_types__Pair_mk_arg0[demo.AtomIndex[string], demo.AtomIndex[string]]{F0: demo.PrepareAtom(\"export-type-left\"), F1: demo.PrepareAtom(\"export-type-right\")})\n\
+             \tout := demo.CallExp_Testapi_types__Pair_get(pkg.Testapi.KioModule_types.KioType_Pair, boxed)\n\
              \tfmt.Println(demo.NativeAtom[string](out.F0.Erase()))\n\
              \tfmt.Println(demo.NativeAtom[string](out.F1.Erase()))\n"
         );

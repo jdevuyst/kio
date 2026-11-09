@@ -15,17 +15,17 @@ fn inspect_packet(value: target.Pack[String]) {
 }
 
 pub fn main() {
-  print(read_item({source.item = "generic-string\n"}));
-  read_item({source.item=});
+  print(read_item(source.Item.mk("generic-string\n")));
+  read_item(source.Item.mk(()));
   print("generic-unit\n");
-  print(target.Item.mk("target-constructor\n"[String]).?{source.item});
+  print(source.Item.get(target.Item.mk("target-constructor\n"[String])));
   let first =
-    {source.pack = ("existential-string: "[String], "payload\n", .(text: String) { text })};
-  let second = {source.pack = ("existential-unit: "[String], (), .(_unit: .) { "unit\n" })};
+    source.Pack.mk(("existential-string: "[String], "payload\n", .(text: String) { text }));
+  let second = source.Pack.mk(("existential-unit: "[String], (), .(_unit: .) { "unit\n" }));
   inspect_packet(first);
   inspect_packet(second);
-  print(source.family_item(({source.item = "named-family\n"}, first)));
-  print(source.later_item(({source.item = "later-family\n"}, second)));
-  source.later_item(({source.item=}, {source.pack = ((), (), .(_unit: .) { "unused" })}));
+  print(source.family_item((source.Item.mk("named-family\n"), first)));
+  print(source.later_item((source.Item.mk("later-family\n"), second)));
+  source.later_item((source.Item.mk(()), source.Pack.mk(((), (), .(_unit: .) { "unused" }))));
   print("later-unit\n")
 }

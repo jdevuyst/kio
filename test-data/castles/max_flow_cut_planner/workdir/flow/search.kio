@@ -3,6 +3,7 @@ module flow/search;
 import flow/math as math;
 import flow/network as net;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, Bool, I32);
 import testapi/arith as a;
@@ -25,7 +26,7 @@ rec(loop) fn reconstruct(
     , network
     , parent
     , source
-    , ar.array_get(network.?{net.edges}, edge_index).?{net.from}
+    , ar.array_get(network.>select { net.Edges.get }, edge_index).>select { net.From.get }
     , path
     )
   }
@@ -44,20 +45,20 @@ rec(loop) fn walk(
   if(math.equal(node, sink)) {
     reconstruct(network, parent, source, sink, ar.array_make_empty[I32](())).>widen_sum
   } else {
-    let edges = network.?{net.edges};
+    let edges = network.>select { net.Edges.get };
     if(math.less(index, ar.array_len(edges))) {
       let edge = ar.array_get(edges, index);
       let usable = math.both(
-      , math.equal(edge.?{net.from}, node)
+      , math.equal(edge.>select { net.From.get }, node)
       , math.both(
         , math.less(0, ar.array_get(residual, index))
-        , math.invert(ar.array_get(seen, edge.?{net.to}))
+        , math.invert(ar.array_get(seen, edge.>select { net.To.get }))
         )
       );
       if(usable) {
-        ar.array_set(parent, edge.?{net.to}, index);
-        ar.array_set(seen, edge.?{net.to}, .t);
-        recur walk(network, residual, source, sink, parent, seen, edge.?{net.to}, 0)
+        ar.array_set(parent, edge.>select { net.To.get }, index);
+        ar.array_set(seen, edge.>select { net.To.get }, .t);
+        recur walk(network, residual, source, sink, parent, seen, edge.>select { net.To.get }, 0)
       } else {
         recur walk(network, residual, source, sink, parent, seen, node, a.add_i32(index, 1))
       }
@@ -72,7 +73,7 @@ rec(loop) fn walk(
       , sink
       , parent
       , seen
-      , ar.array_get(edges, previous).?{net.from}
+      , ar.array_get(edges, previous).>select { net.From.get }
       , a.add_i32(previous, 1)
       )
     }
@@ -82,8 +83,8 @@ rec(loop) fn walk(
 pub fn augmenting_path(network: net.Network, residual: Array[I32], source: I32, sink: I32) ->
   Array[I32] | .
    {
-  let .(parent: Array[I32]) = ar.array_make_filled(network.?{net.vertices}, -1);
-  let .(seen: Array[Bool]) = ar.array_make_filled(network.?{net.vertices}, .f);
+  let .(parent: Array[I32]) = ar.array_make_filled(network.>select { net.Vertices.get }, -1);
+  let .(seen: Array[Bool]) = ar.array_make_filled(network.>select { net.Vertices.get }, .f);
   ar.array_set(seen, source, .t);
   walk(network, residual, source, sink, parent, seen, source, 0)
 }
@@ -96,17 +97,17 @@ rec(loop) fn scan_reachable(
 , node: I32
 , index: I32
 ) {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
     if(math.both(
-    , math.equal(edge.?{net.from}, node)
+    , math.equal(edge.>select { net.From.get }, node)
     , math.both(
       , math.less(0, ar.array_get(residual, index))
-      , math.invert(ar.array_get(reached, edge.?{net.to}))
+      , math.invert(ar.array_get(reached, edge.>select { net.To.get }))
       )
     )) {
-      ar.array_set(reached, edge.?{net.to}, .t);
-      ar.array_push(queue, edge.?{net.to})
+      ar.array_set(reached, edge.>select { net.To.get }, .t);
+      ar.array_push(queue, edge.>select { net.To.get })
     } else {
       ()
     };
@@ -132,7 +133,7 @@ rec(loop) fn breadth_first(
 }
 
 pub fn reachable(network: net.Network, residual: Array[I32], source: I32) -> Array[Bool] {
-  let .(reached: Array[Bool]) = ar.array_make_filled(network.?{net.vertices}, .f);
+  let .(reached: Array[Bool]) = ar.array_make_filled(network.>select { net.Vertices.get }, .f);
   let queue = ar.array_make_empty[I32](());
   ar.array_set(reached, source, .t);
   ar.array_push(queue, source);

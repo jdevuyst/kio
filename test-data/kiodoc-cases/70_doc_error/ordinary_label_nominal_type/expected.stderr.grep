@@ -1,1 +1,1 @@
-`Foo` is a `newtype`; `@type` expects a value binding
+`Foo` is a nominal type; `@type` expects a value binding

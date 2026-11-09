@@ -8,7 +8,7 @@ import testapi/text(string_concat, string_eq);
 
 // `flag`'s `Bool` is imported *bare* (the structural sum). A reference
 // to it here means that sum — `show_flag_bool` eliminates it with the
-// module's own `bool_to`, never naming the labels.
+// module's own `bool_to`, never naming the nominal types.
 fn show_flag_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
 pub fn main() {

@@ -1,6 +1,7 @@
 module robot_vacuum_replay/apply;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import robot_vacuum_replay/command(
 , Charge_cmd
 , Clean_cmd
@@ -12,7 +13,6 @@ import robot_vacuum_replay/command(
 , Start_cmd
 , Step_cmd
 , Unknown_cmd
-, {charge_cmd}
 );
 import robot_vacuum_replay/model(
 , Vacuum
@@ -37,7 +37,9 @@ pub fn apply_command(state: Vacuum, cmd: Command) -> Vacuum {
     , .(_cmd: Step_cmd) { apply_step(state) }
     , .(_cmd: Clean_cmd) { apply_clean(state) }
     , .(_cmd: Dock_cmd) { apply_dock(state) }
-    , .(charge: Charge_cmd) { apply_charge(state, charge.?{charge_cmd}) }
+    , .(charge: Charge_cmd) {
+        apply_charge(state, charge.>select { Charge_cmd.get })
+      }
     , .(_unknown: Unknown_cmd) { apply_unknown(state) }
     )
   }

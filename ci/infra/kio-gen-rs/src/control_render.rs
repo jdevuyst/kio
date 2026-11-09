@@ -101,7 +101,7 @@ fn observe(b: &Block, name: &str) -> String {
 
 fn declaration(name: &str, first: Descriptor, second: Descriptor, label: &str) -> String {
     format!(
-        "pub macro {name} : [Left][Right] (Left -> Right -> .) -> Left -> Right -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
+        "pub macro {name} : [Left][Right] ((Left -> Right -> .) & Left & Right) -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
         descriptor(first),
         descriptor(second)
     )
@@ -188,8 +188,7 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         r#"module kio_gen_control_blocks;
 import __comptime__;
 
-pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_type: __Type__, consumer: __Checked_term__, first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
-  let arguments = __intrinsic_pair__(ct, consumer, __intrinsic_pair__(ct, first, second));
+pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_type: __Type__, arguments: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
   let result = __term_let__(ct, __term_type__(ct, arguments), arguments, .(packet: __Checked_term__) -> __Checked_term__ {
     let consumer = __intrinsic_fst__(ct, __term_type__(ct, packet), packet);
     let blocks = __intrinsic_snd__(ct, __term_type__(ct, packet), packet);
@@ -210,8 +209,8 @@ import testapi/io as io;
 import sequence(Bind, macro do);
 import kio_gen_control_blocks(macro probe, macro nested_probe);
 
-newtype Box[A] : A { constructor mk; projector get };
-newtype Receiver : Bind[Box] { constructor mk; projector get };
+type { Box[A]: A; }
+type { Receiver: Bind[Box]; }
 fn pure[A](v: A) -> Box[A] { Box.mk(v) }
 fn bind[A][B](v: Box[A], k: A -> Box[B]) -> Box[B] { io.print("bind\n"); k(Box.get(v)) }
 fn factory(label: String) -> Bind[Box] { io.print("receiver:"); io.print(label); bind }
@@ -296,13 +295,12 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
 }
 
 fn row_probe(probe: &RowProbe) -> String {
-    let labels = ["first", "middle", "last"];
     let types = ["First", "Middle", "Last"];
     let mut out = String::from(
-        "module kio_gen_rows;\nimport testapi(String);\nimport testapi/io as io;\nlabels { first: String, middle: String, last: String };\n",
+        "module kio_gen_rows;\nimport testapi(String);\nimport testapi/io as io;\nimport row_macros(macro record, macro with, macro select);\ntype { First: String; Middle: String; Last: String; }\n",
     );
     out.push_str(&format!(
-        "type Row = {};\nfn source() -> Row {{ io.print(\"row-source\\n\"); {{ {} }} }}\n",
+        "type Row = {};\nfn source() -> Row {{ io.print(\"row-source\\n\"); record {{ {} }} }}\n",
         probe
             .order
             .iter()
@@ -312,9 +310,9 @@ fn row_probe(probe: &RowProbe) -> String {
         probe
             .order
             .iter()
-            .map(|&i| format!("{} = {}", labels[i], quoted(&probe.original[i])))
+            .map(|&i| format!("{}.mk({})", types[i], quoted(&probe.original[i])))
             .collect::<Vec<_>>()
-            .join(", "),
+            .join("; "),
     ));
     out.push_str("fn replacement(event: String, payload: String) -> String { io.print(event); payload }\nfn binding_source[A](row: A) -> A { io.print(\"row-bind\\n\"); row }\npub fn run() {\n");
     let updates = probe
@@ -322,39 +320,48 @@ fn row_probe(probe: &RowProbe) -> String {
         .iter()
         .map(|(i, payload)| {
             format!(
-                "{} = replacement({}, {})",
-                labels[*i],
+                "{}.mk(replacement({}, {}))",
+                types[*i],
                 quoted(&format!("row-update-{i}\n")),
                 quoted(payload)
             )
         })
         .collect::<Vec<_>>()
-        .join(", ");
-    out.push_str(&format!("let row = source().!{{{updates}}};\n"));
-    for label in labels {
-        out.push_str(&format!("io.print(row.?{{{label}}});\n"));
+        .join("; ");
+    out.push_str(&format!(
+        "let .(row: Row) = source().>with {{{updates}}};\n"
+    ));
+    for ty in types {
+        out.push_str(&format!("io.print(row.>select {{ {ty}.get }});\n"));
     }
-    let bindings = probe
+    let selectors = probe
+        .bindings
+        .iter()
+        .map(|(i, _)| format!("{}.get", types[*i]))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let names = probe
         .bindings
         .iter()
         .enumerate()
         .map(|(slot, (i, alias))| {
             if *alias {
-                format!("{} as bound{slot}", labels[*i])
+                format!("bound{slot}")
             } else {
-                labels[*i].to_owned()
+                format!("field{i}")
             }
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    out.push_str(&format!("let .({{{bindings}}}) = binding_source(row);\n"));
-    for (slot, (i, alias)) in probe.bindings.iter().enumerate() {
-        let bound = if *alias {
-            format!("bound{slot}")
-        } else {
-            labels[*i].to_owned()
-        };
-        out.push_str(&format!("io.print({bound});\n"));
+        .collect::<Vec<_>>();
+    let pattern = if names.len() == 1 {
+        names[0].clone()
+    } else {
+        format!(".({})", names.join(", "))
+    };
+    out.push_str(&format!(
+        "let {pattern} = binding_source(row).>select {{ {selectors} }};\n"
+    ));
+    for name in names {
+        out.push_str(&format!("io.print({name});\n"));
     }
     out.push_str("() }\n");
     out
@@ -397,7 +404,7 @@ fn type_probe(probe: &TypeProbe) -> String {
             out.push_str("pub fn transform(input: String) -> String { let identity = .[A](value: A) -> A { value }; apply(identity, input) }\n");
         }
         TypeProbe::HigherKinded { wrapped, .. } => {
-            out.push_str("newtype Box[A] : A { constructor mk; projector get };\nnewtype Wrapped[A] : . & A { constructor mk; projector get };\nfn unbox[A](value: Box[A]) -> A { Box.get(value) }\nfn unwrap[A](value: Wrapped[A]) -> A { __snd__[.][A](Wrapped.get(value)) }\nfn apply[*F][A](value: F[A], project: [B] F[B] -> B) -> A { project[A](value) }\n");
+            out.push_str("type { Box[A]: A; }\ntype { Wrapped[A]: . & A; }\nfn unbox[A](value: Box[A]) -> A { Box.get(value) }\nfn unwrap[A](value: Wrapped[A]) -> A { __snd__[.][A](Wrapped.get(value)) }\nfn apply[*F][A](value: F[A], project: [B] F[B] -> B) -> A { project[A](value) }\n");
             let call = if *wrapped {
                 "apply[Wrapped][String](Wrapped.mk(((), input)), unwrap)"
             } else {
@@ -413,7 +420,9 @@ fn type_probe(probe: &TypeProbe) -> String {
             first: _,
             last,
         } => {
-            out.push_str("newtype Box[A] : A { constructor mk; projector get };\nnewtype Packed <Hidden> : Hidden & (Hidden -> String) { constructor mk; projector get };\n");
+            out.push_str(
+                "type { Box[A]: A; }\ntype { Packed <Hidden>: Hidden & (Hidden -> String); }\n",
+            );
             let packed = match payload {
                 0 => "Packed.mk((input, .(seed: String) -> String { seed }))".into(),
                 1 => format!(
@@ -441,7 +450,7 @@ fn type_probe(probe: &TypeProbe) -> String {
 
 fn recursion_probe(probe: &RecursionProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(macro match);\nimport testapi(String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec newtype Counter : . | Counter { constructor mk; projector get };\nfn identity(value: String) -> String { value }\n",
+        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(macro match);\nimport testapi(String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec type { Counter: . | Counter; }\nfn identity(value: String) -> String { value }\n",
     );
     let poly = matches!(
         probe.mode,

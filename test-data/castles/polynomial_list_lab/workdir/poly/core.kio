@@ -24,7 +24,7 @@ pub type Coeffs = lc.List[I32];
 /// A polynomial in this fixture workbench *is* its coefficient vector. The
 /// constructor and projector stay private so `of_coeffs` is the only way in, which
 /// is what makes the trimmed normal form an invariant rather than a convention.
-pub newtype Poly : Coeffs { constructor mk; projector un }
+pub type { Poly: Coeffs { mk; get } }
 
 rec(loop) fn drop_zero_head(cs: Coeffs) -> Coeffs {
   match(lc.uncons(cs)) {
@@ -47,7 +47,7 @@ fn trim(cs: Coeffs) -> Coeffs { ll.reverse(drop_zero_head(ll.reverse(cs))) }
 pub fn of_coeffs(cs: Coeffs) -> Poly { Poly.mk(trim(cs)) }
 
 /// The normalized coefficient vector, low degree first.
-pub fn coeffs(p: Poly) -> Coeffs { Poly.un(p) }
+pub fn coeffs(p: Poly) -> Coeffs { Poly.get(p) }
 
 pub fn zero() -> Poly { of_coeffs([* *]) }
 

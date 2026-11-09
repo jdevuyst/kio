@@ -43,7 +43,6 @@ pub const STYLE_CSS: &str = r#"/* kio doc — default stylesheet */
   --kio-tok-entity-name-module: #c18401;
   --kio-tok-entity-name-function: #4078f2;
   --kio-tok-entity-name-type: #c18401;
-  --kio-tok-entity-name-label: #e45649;
   --kio-tok-variable-parameter: #e45649;
 }
 .kio-keyword-control { color: var(--kio-tok-keyword-control); }
@@ -70,7 +69,6 @@ pub const STYLE_CSS: &str = r#"/* kio doc — default stylesheet */
 .kio-entity-name-module { color: var(--kio-tok-entity-name-module); }
 .kio-entity-name-function { color: var(--kio-tok-entity-name-function); }
 .kio-entity-name-type { color: var(--kio-tok-entity-name-type); }
-.kio-entity-name-label { color: var(--kio-tok-entity-name-label); }
 .kio-variable-parameter { color: var(--kio-tok-variable-parameter); font-style: italic; }
 * { box-sizing: border-box; }
 body {
@@ -175,7 +173,6 @@ section.item .sig {
     --kio-tok-entity-name-module: #abb2bf;
     --kio-tok-entity-name-function: #61afef;
     --kio-tok-entity-name-type: #56b6c2;
-    --kio-tok-entity-name-label: #e5c07b;
     --kio-tok-variable-parameter: #e06c75;
   }
 }

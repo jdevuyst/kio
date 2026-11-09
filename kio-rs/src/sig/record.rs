@@ -370,7 +370,7 @@ fn collect_type_refs<'a>(
             body_bound.insert(param.name.as_str());
             collect_type_refs(body, &body_bound, out);
         }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } | Type::LabelSugar { .. } => {}
+        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
     }
 }

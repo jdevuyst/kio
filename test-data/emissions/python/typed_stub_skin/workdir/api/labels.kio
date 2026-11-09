@@ -3,6 +3,6 @@ module api/labels;
 import api(I32);
 import api(String);
 
-pub labels Pair = { name: String, count: I32 };
+pub type Pair = { Name: String; Count: I32 };
 
-pub labels Choice = { left: I32 } | { middle: String } | { right: I32 };
+pub type Choice = { Left: I32 } | { Middle: String } | { Right: I32 };

@@ -5,7 +5,7 @@
 //! 1. Resolve the URI to a canonical path and look up its module path
 //!    in the latest stored [`crate::cmd::check::LspAnalysis`].
 //! 2. Convert the LSP position to a byte offset via the [`LineIndex`].
-//! 3. Prefer declaration, builtin, and surface label-reuse hovers rendered as
+//! 3. Prefer declaration and builtin hovers rendered as
 //!    Markdown.
 //! 4. Otherwise find the smallest span in
 //!    [`crate::pass::typecheck_full::PositionIndex`] whose byte range
@@ -21,9 +21,7 @@ use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range
 
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::docs::{builtin_hover_at, doc_hover_at};
-use crate::lsp::label_reuse::{
-    LabelReuseSnapshot, snapshot_for, typed_label_positions_are_current,
-};
+use crate::lsp::live_syntax::{LiveSyntaxSnapshot, snapshot_for, typed_positions_are_current};
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::util::smallest_containing_span;
 use crate::pass::typecheck_core::{source_type_spelling_with_bound, write_type};
@@ -87,7 +85,7 @@ pub fn handle_hover(
     uri: &Uri,
     position: &Position,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
 ) -> Option<Hover> {
     let canonical = crate::lsp::util::uri_to_canonical(uri)?;
     let module_path = analysis.file_to_module.get(canonical.as_path())?;
@@ -112,22 +110,7 @@ pub fn handle_hover(
     if let Some(hover) = builtin_hover_at(source, byte_offset, &line_index) {
         return Some(hover);
     }
-    if let Some(binding) = syntax.index.and_then(|index| index.binding_at(byte_offset))
-        && binding.cursor_is_reuse
-    {
-        let declaration = crate::lsp::label_reuse::source_entry(source, &binding)?.trim();
-        let contents = HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: format!(
-                "Reuses the earlier module-local label declaration:\n\n```kio\n{declaration}\n```"
-            ),
-        });
-        return Some(Hover {
-            contents,
-            range: Some(span_to_lsp_range(binding.cursor_span, &line_index)),
-        });
-    }
-    if !typed_label_positions_are_current(canonical.as_path(), byte_offset, analysis, syntax) {
+    if !typed_positions_are_current(canonical.as_path(), analysis, syntax) {
         return None;
     }
 
@@ -264,7 +247,7 @@ fn nominal_type_hover(
             ("type", module_path, name)
         }
         crate::pass::typecheck_full::ResolvedBinder::Newtype { module_path, name } => {
-            ("newtype", module_path, name)
+            ("type", module_path, name)
         }
         crate::pass::typecheck_full::ResolvedBinder::HostType { module_path, name } => {
             ("host type", module_path, name)
@@ -329,10 +312,8 @@ mod tests {
         LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,
@@ -477,57 +458,5 @@ mod tests {
             .expect("source hover");
         assert!(source_hover.contains("types.Actual"), "{source_hover}");
         assert!(!source_hover.contains("real.Actual"), "{source_hover}");
-    }
-
-    #[test]
-    fn hover_on_label_reuse_shows_explicit_declaration() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let analysis = make_analysis("pkg/main", source, Span::new(0, 1));
-        let uri = test_file_uri("/tmp/test.kio");
-        let pos = Position {
-            line: 2,
-            character: 15,
-        };
-        let hover = handle_hover(&uri, &pos, &analysis, None).expect("reuse hover");
-        let HoverContents::Markup(contents) = hover.contents else {
-            panic!("expected markdown hover")
-        };
-        assert!(contents.value.contains("field: ."));
-        assert_eq!(hover.range.expect("marker range").start.line, 2);
-    }
-
-    #[test]
-    fn hover_rejects_shifted_expression_label_typed_span() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { {field=()} }\n";
-        let live_source = "module pkg/main;\nfn f() -> . { { field=()} }\n";
-        let stale_start = analyzed_source.find("field").expect("stale label") as u32;
-        let analysis = make_analysis(
-            "pkg/main",
-            analyzed_source,
-            Span::new(stale_start, stale_start + 5),
-        );
-        let parsed = crate::pass::parser::parse(live_source).expect("parse live overlay");
-        let overlay_index =
-            crate::lsp::label_reuse::LabelReuseIndex::from_module(&parsed, live_source);
-        let live_start = live_source.find("field").expect("live label") as u32;
-        let cursor = LineIndex::new(live_source).to_position(live_start);
-        let uri = test_file_uri("/tmp/test.kio");
-
-        assert!(
-            handle_hover(
-                &uri,
-                &Position {
-                    line: cursor.line,
-                    character: cursor.character,
-                },
-                &analysis,
-                Some(LabelReuseSnapshot {
-                    source: live_source,
-                    index: Some(&overlay_index),
-                }),
-            )
-            .is_none()
-        );
     }
 }

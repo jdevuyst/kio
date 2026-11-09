@@ -4,12 +4,13 @@ import defaults(default_host_adapter);
 import host_descriptor(Host_type, bool_role, host_id_eq, host_type_id);
 import host_descriptor(host_types_cons, mk_host_id, mk_role_host_type);
 import hostrec(make_lit_default, serve_default, test_bool_default);
+import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
 import loader(Diag, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
 import loader(host_adapter_functions, host_adapter_types, instantiate, mk_host_adapter);
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, lt_i32);
@@ -67,13 +68,13 @@ fn contains(text: String, fragment: String) -> Bool {
 }
 
 fn call_value[P](surface: Surface[P]) -> String {
-  match(surface.?{lookup}("value"[String])) {
+  match((surface.>select { Lookup.get[P] })("value"[String])) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
               }
             }

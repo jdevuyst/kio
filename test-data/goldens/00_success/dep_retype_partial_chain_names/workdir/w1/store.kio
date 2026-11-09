@@ -7,6 +7,6 @@ pub type A = _rehost_gdgphcgfcphdhegphcgf.A;
 
 pub type B = _rehost_hhdccphdhegphcgf.B;
 
-pub fn make_a() -> A { A.mk_a(()) }
+pub fn make_a() -> A { A.mk(()) }
 
-pub fn make_b() -> B { B.mk_b(()) }
+pub fn make_b() -> B { B.mk(()) }

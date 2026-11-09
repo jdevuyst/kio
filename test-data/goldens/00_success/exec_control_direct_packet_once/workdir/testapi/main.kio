@@ -1,0 +1,45 @@
+module testapi/main;
+
+import macros/control(macro if, macro scope);
+import macros/sequence(macro do);
+import testapi(Bool, I32);
+import testapi/io(print);
+
+fn condition(value: Bool) -> Bool { print("condition\n"); value }
+
+fn true_factory() -> . -> . {
+  print("true factory\n");
+  .() { print("true body\n") }
+}
+
+fn false_factory() -> . -> . {
+  print("false factory\n");
+  .() { print("false body\n") }
+}
+
+fn packet() -> Bool & (. -> .) & (. -> .) {
+  print("packet\n");
+  (condition(.f), true_factory(), false_factory())
+}
+
+fn number() -> I32 { print("receiver\n"); 42 }
+
+fn body_factory() -> I32 -> . {
+  print("body factory\n");
+  .(value: I32) { print("do body\n") }
+}
+
+fn one_factory(flag: Bool) {
+  if(flag, .() { print("sole true body\n") }, false_factory())
+}
+
+pub fn main() {
+  if(condition(.t)) { print("true body\n") } else { print("false body\n") };
+  if(condition(.f), .() { print("true body\n") }, .() { print("false body\n") });
+  if(condition(.t), true_factory(), false_factory());
+  if(packet());
+  do(number(), body_factory());
+  scope(.() { print("scope body\n") });
+  one_factory(.t);
+  one_factory(.f)
+}

@@ -2,10 +2,10 @@ module calendar_blackout_planner/model;
 
 import testapi(Bool, I32, String);
 
-pub labels Window = { name: String, support_load: I32, priority: I32, frozen: Bool };
+pub type Window = { Name: String; Support_load: I32; Priority: I32; Frozen: Bool };
 
-pub fn alpha() -> Window { {name = "alpha", support_load = 4, priority = 5, frozen = .f} }
+pub fn alpha() -> Window { (Name.mk("alpha"), Support_load.mk(4), Priority.mk(5), Frozen.mk(.f)) }
 
-pub fn beta() -> Window { {name = "beta", support_load = 2, priority = 8, frozen = .t} }
+pub fn beta() -> Window { (Name.mk("beta"), Support_load.mk(2), Priority.mk(8), Frozen.mk(.t)) }
 
-pub fn gamma() -> Window { {name = "gamma", support_load = 8, priority = 7, frozen = .f} }
+pub fn gamma() -> Window { (Name.mk("gamma"), Support_load.mk(8), Priority.mk(7), Frozen.mk(.f)) }

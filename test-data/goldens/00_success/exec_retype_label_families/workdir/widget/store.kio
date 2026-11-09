@@ -2,6 +2,7 @@ module widget/store;
 
 import core/store as _rehost_gdgphcgfcphdhegphcgf;
 import testapi as _rehost_hegfhdhegbhagj;
+import widget/macros/row_macros(macro select);
 
 pub type String = _rehost_hegfhdhegbhagj.String;
 
@@ -11,12 +12,12 @@ pub type Pack[A] = _rehost_gdgphcgfcphdhegphcgf.Pack[A];
 
 pub type Family[A] = Item[A] & Pack[A];
 
-pub type {item} = {_rehost_gdgphcgfcphdhegphcgf.item};
-
-pub type {pack} = {_rehost_gdgphcgfcphdhegphcgf.pack};
-
 pub type Later[A] = Item[A] & Pack[A];
 
-pub fn family_item[A](row: Family[A]) -> A { row.?{item} }
+pub fn family_item[A](row: Family[A]) -> A {
+  row.>select { Item.get[A] }
+}
 
-pub fn later_item[A](row: Later[A]) -> A { row.?{item} }
+pub fn later_item[A](row: Later[A]) -> A {
+  row.>select { Item.get[A] }
+}

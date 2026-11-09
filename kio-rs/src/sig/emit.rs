@@ -463,14 +463,6 @@ fn omit_type_trivia(ty: &mut crate::ast::Type<Surface>) {
             omit_type_trivia(ret);
         }
         Type::Forall { body, .. } => omit_type_trivia(body),
-        Type::LabelSugar { labels, .. } => {
-            for label in labels {
-                omit_meta_trivia(&mut label.meta);
-                if let Some(payload) = &mut label.payload {
-                    omit_type_trivia(payload);
-                }
-            }
-        }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
     }

@@ -1,4 +1,4 @@
 module m;
 
-pub labels { foo: I32, bar: String };
-pub labels Shared = { foo: _, extra: . };
+pub type { Foo: I32; Bar: String };
+pub type Shared = { Entry: I32; Extra: . };

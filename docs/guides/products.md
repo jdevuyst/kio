@@ -1,12 +1,28 @@
-# Structural products and row types
+# Row-typed records with ordinary products
 
-A product type `A & B` says a value carries both pieces. Label values build on that: a field such as `{name = "ada"}` has a generated nominal type `Name`, and a record-shaped value is just a product of those label types.
+A row-typed record is an ordinary product whose components represent fields.
+Nominal types distinguish those fields: a `Name` and a `Note` can both contain
+a string without becoming interchangeable. Library macros build, select and
+update the fields. Type parameters let a function accept additional fields.
 
-Products are Kio's tuple foundation. A tuple value is an element of a finite cartesian product, and Kio represents those products as right-associated binary trees: `(a, b, c)` has type `A & (B & C)`. Parentheses by themselves only group, so `(x)` is `x`, `()` is the zero-component product, and product types use `&`, not commas. This choice keeps tuple values, call arguments, function domains, UFCS insertion, and product macros on one structural rule.
+This guide puts those pieces together. It assumes ordinary functions and
+tuples from the [language tutorial](../tutorials/language.md#chapter-5--tuples-and-nominal-fields).
+The [declaration guide](declarations.md#nominal-types) covers nominal types and
+member visibility in more detail.
 
-Row-polymorphic records fall out of the same machinery. A function that needs a `Name` field and does not care what else is present writes `(Name & R)`, where `R` is an ordinary type variable.
+## Set up the macro library
 
-Assumed setup: a module whose host supplies `String` and `print`, plus the labels introduced below. Snippets thread together as one growing module.
+Add the macro package as `macros.dep.kio` using the complete
+[dependency example](using-libraries.md#the-minimal-dependency-workflow), then
+run `kio dep fetch` from your package root. The dependency's package path is
+`test-data/poc/macros/workdir/macros.pkg.kio`; its local name determines the
+`macros/` prefix in these imports.
+
+The following snippets build one module in order. Its host supplies the two
+types and three functions below. Include the module in the package's `bridge`
+when exposing it to the host, as described in
+[Package files and bridges](pkg.md). The row operations themselves require no
+ambient field declarations or runtime record service.
 
 <!--kio {harness=row placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -15,220 +31,234 @@ bridge {
 
 module kiodoc;
 
-import spine_macros(macro reorder_prod);
-
-host type String role(str);
-host fn print(value: String);
-
 __INSERT_CODE_HERE__
 -->
 
-## Labels and `&`
-
-`labels` generates one nominal type per field. Multiple labels in one value compose with `&`:
-
 ```kio {@row}
-labels Record = { name: String, note: String, ready: . };
-
-fn build_record() -> Name & Note & Ready { {name = "ada\n", note = "first\n", ready=} }
-```
-
-`()` is the no-payload case. `{ready=}` constructs the generated `Ready` label with unit payload.
-
-When a value already has the same name as its label, write the name once:
-
-```kio {@row}
-fn build_named(name: String, note: String) -> Name & Note { {name, note} }
-```
-
-Here `{name, note}` means `{name = name, note = note}`. `kio fmt` uses this
-short form whenever a label's value is the matching local name.
-
-A later named record can reuse one of those exact fields without redeclaring
-its payload:
-
-```kio {@row}
-labels Audit = { name: _, changed: . };
-```
-
-Here `name: _` means the `Name` generated above. The marker must point to an
-earlier explicit label in this module; repeating `name: String` would attempt a
-second declaration and is rejected.
-
-## Labels across modules
-
-A `pub labels` declaration exports both the generated uppercase types and the
-lowercase label syntax. The generated type name is the label spelling with the
-first letter capitalized: `name` -> `Name`, `error_code` -> `Error_code`.
-Import both when another module needs to name the type and construct or access
-the field.
-
-`people.kio` declares and exports the label:
-
-<!--kio {file}
-module host;
+import macros/row_macros(macro record, macro record_, macro select, macro with, macro with_);
+import macros/spine_macros(macro reorder_prod);
 
 host type String role(str);
--->
 
-```kio {file}
-module people;
+host type Int role(i32);
 
-import host(String);
+host fn print(value: String);
 
-pub labels Person = { name : String };
+host fn string_concat(left: String, right: String) -> String;
+
+host fn int_to_string(value: Int) -> String;
 ```
 
-`people/main.kio` imports the generated type and label and uses them:
+## Declare fields and build a person
 
-<!--kio {harness=people_main file placeholder="__SNIPPET__"}
-module people/main;
-
-__SNIPPET__
--->
-
-```kio {@people_main}
-import host(String);
-import people(Name, {name});
-
-fn build_name(value: String) -> Name { {name = value} }
-
-fn read_name(row: Name) -> String { row.?{name} }
-```
-
-The uppercase generated name (`Name`) is the type spelling and carries the
-generated members such as `Name.get`. The braced import item (`{name}`) selects
-the lowercase label syntax for construction, row access, and row update. A bare
-`name` import would select an ordinary value instead. A named label alias such
-as `Person` is an ordinary exported type alias; importing `Person` does not
-import every generated field type or label syntax it mentions. Import each
-generated type and label spelling your module uses.
-
-Write each braced label import once. Repeating it, importing one label spelling
-from two providers, or declaring it locally as well as importing it is a
-name-resolution error. A scoped `pub(path) labels` declaration follows the same
-subtree restriction through both selective imports and qualified forms such as
-`{people.name}`.
-
-### Giving an existing label another name
-
-Use a nonminting forwarding declaration when another module should expose a
-different spelling for the same field:
-
-```kio {file}
-module display;
-
-import people as original;
-
-pub type {display_name} = {original.name};
-```
-
-This adds the label spelling `display_name`, not a new `Display_name` type.
-Values built with it still have the original `Name` type. A consumer imports
-the label from `display` and the type from `people`:
-
-<!--kio {harness=display_main file placeholder="__SNIPPET__"}
-module display/main;
-
-__SNIPPET__
--->
-
-```kio {@display_main}
-import display({display_name});
-import host(String);
-import people(Name);
-
-fn build_name(value: String) -> Name { {display_name = value} }
-
-fn read_name(row: Name) -> String { row.?{display_name} }
-```
-
-A forward has its own documentation and can be private, public, or scoped,
-but cannot make its target accessible beyond the target's visibility. It
-forwards the whole label family, including the original generic and
-existential parameters, without declaring parameters of its own. The earlier
-`name: _` reuse marker still requires an explicit `labels` entry in the same
-module; it cannot use a forwarded label as its origin.
-
-## Row-polymorphic parameters
-
-A function that needs at least a `name` field writes `Name & R`:
+Each entry below declares one nominal type. `Person` is an alias for their
+product, `Name & Age`; it adds no wrapper around the whole record.
 
 ```kio {@row}
-fn greet[R](x: Name & R) { print(x.?{name}) }
+type Person = { Name: String; Age: Int };
 
-fn call_greet_full() { let full = {name = "ada\n", note = "first\n", ready=}; greet(full) }
-```
+type { Note: String; Ready: . }
 
-The type variable `R` means "the rest of the product." At the call site above, `R` is inferred as `Note & Ready`.
-
-## Field access with `.?{...}`
-
-`row.?{field}` projects a label payload by name:
-
-```kio {@row}
-fn read_name(row: Name & Note) -> String { row.?{name} }
-```
-
-Multiple fields are returned in the written order:
-
-```kio {@row}
-fn read_note_then_name(row: Name & Note) -> String & String { row.?{note, name} }
-```
-
-The result contains payloads, not label wrappers.
-
-Kio determines the receiver's type before selecting its fields. A result
-annotation does not supply missing type information inside that receiver.
-For a generic label, an explicit literal type can provide it:
-
-```kio {@row}
-labels { item[A]: A };
-
-fn read_literal() -> String { Item.mk("text"[String]).?{item} }
-```
-
-Here `[String]` determines `Item[String]` before the access is checked.
-
-## Row-let with `let .({...}) = value`
-
-Row-let destructures labels into local names:
-
-```kio {@row}
-fn read_with_row_let(row: Name & Note & Ready) -> String {
-  let .({note as body, name, ready}) = row;
-  body
+fn person(name: String, age: Int) -> Person {
+  record { Age.mk(age); Name.mk(name) }
 }
 ```
 
-Without `as`, the local name is the field name. With `as`, the field is projected into the chosen local name. Each row-let entry acts like an independent `.?{field}` access, so the entries can be written in the order that reads best for the local code; they do not have to follow the product's slot order. A row-let may name just the fields the continuation needs; it binds those payloads and leaves the original row value unchanged.
+`Name.mk` wraps a string as a `Name`; `Name.get` projects it. Both are ordinary
+functions. The block supplies constructed values, in this case an `Age` and a
+`Name`. The return type supplies `record` with the target `Person`, so it
+arranges those values as `Name & Age`. It evaluates the written expressions in
+their original order before arranging the result.
 
-## Field update with `.!{...}`
-
-`row.!{field = value}` evaluates the row once, removes the visible field if present, and prepends the replacement. If the field is absent, the same syntax adds it. With several fields, replacements are prepended in the written order.
-
-```kio {@row}
-fn replace_name(row: Name & Note) -> Name & Note { row.!{name = "grace\n"} }
-
-fn add_note(row: Name) -> Note & Name { row.!{note = "new\n"} }
-
-fn refresh_ready(row: Name & Note & Ready) -> Ready & Name & Note { row.!{ready=} }
-```
-
-An empty update is valid and returns the row unchanged. If a caller needs a different product order than the update naturally produces, either write an expected return type that names that order (enough when it is only a permutation of the updated row) or call `reorder_prod` explicitly.
-
-## Product order
-
-`Name & Note` and `Note & Name` are distinct product types. When a caller has one order and a callee wants the other, use `reorder_prod`:
+Use `record_` when the written order should determine the result:
 
 ```kio {@row}
-fn wants_note_first(_x: Note & Name) { () }
-
-fn call_it(x: Name & Note) { wants_note_first((x.>reorder_prod)[Note & Name]) }
+fn print_person(name: String, age: Int) {
+  let value = record_ { Name.mk(name); Age.mk(age) };
+  let .(name_text, years) = value.>select { Name.get; Age.get };
+  print(name_text);
+  print(int_to_string(years))
+}
 ```
 
-## Where this leads
+The local `value` has type `Name & Age` without a target annotation. The
+selected results are the payloads, `String & Int`, rather than the wrappers.
+The ordinary tuple `(Name.mk(name), Age.mk(age))` also builds that product.
 
-- [The optics library](../poc/optics.md) builds first-class get/set pairs on the same field-access shape.
-- [Using libraries](using-libraries.md) explains how to consume the macro
-  library that provides the structural product helpers used by these examples.
+| Operation | How its result is chosen |
+| --- | --- |
+| `record { fields }` | Requires a target from context or an explicit type argument; rearranges exactly those fields to it. |
+| `record_ { fields }` | Uses the written product order. |
+| `row.>with { updates }` | Updates the fields, then rearranges them to a required target. |
+| `row.>with_ { updates }` | Uses the natural update order described below. |
+| `row.>select { functions }` | Uses the functions' result types in selector order. |
+
+A natural call may carry an explicit result type when that type agrees with
+its result. For example, `record_((Name.mk(name), Age.mk(age)))[Person]` checks
+the natural `Name & Age` result. Requesting `Age & Name` there does not make
+`record_` reorder it. Use `record` when choosing a target order is the task.
+
+## Select, transform and bind fields
+
+A selector's input type identifies the field to use. Its result type determines
+what comes back. Nominal projectors are common selectors, but any ordinary
+function with the required determined input type can transform a field:
+
+```kio {@row}
+fn greeting(name: Name) -> String { string_concat("Hello, ", Name.get(name)) }
+
+fn greeting_and_age(value: Person) -> String & Int {
+  value.>select { greeting; Age.get }
+}
+
+fn age_then_name(value: Person) -> Int & String {
+  let .(years, name) = value.>select { Age.get; Name.get };
+  (years, name)
+}
+```
+
+Each selector uses the first receiver slot of its exact input type. Selectors
+may repeat, and the result follows selector order. The receiver is evaluated
+once, then all selector expressions are evaluated in order, then the selected
+functions are called in order. An expression that creates a selector is
+evaluated once too.
+
+## Update and add fields
+
+Updates are constructed field values. `with_` removes the first receiver slot
+of each exact update type, if present, then puts all updates first in written
+order. Untouched slots follow in their original order:
+
+```kio {@row}
+fn update_person(value: Person, age: Int, note: String) -> Age & Note & Name {
+  value.>with_ { Age.mk(age); Note.mk(note) }
+}
+
+fn update_in_person_order(value: Person, age: Int, note: String) -> Name & Age & Note {
+  value.>with { Age.mk(age); Note.mk(note) }
+}
+```
+
+Both calls replace `Age`, add `Note` and retain `Name`. The first produces
+`Age & Note & Name`. The second uses its return type to request `Name & Age &
+Note`. That target must be an exact product permutation: it cannot discard a
+field, invent a value or convert a payload.
+
+The receiver runs once before the update expressions, which run once in
+written order. Result permutation changes no effects. Neither operation
+mutates the original record; the returned product contains the updated values.
+
+## Use fields across modules
+
+To export a bundle from a module named `people`, declare
+`pub type Person = { Name: String; Age: Int; };` there. With no entry body, the
+field types and their `mk` and `get` members inherit that public visibility.
+A consumer writes `import people(Person, Name, Age);` to name the bundle and
+use the field members. Importing `Person` alone does not also introduce `Name`
+and `Age` as local names. A qualified import, `import people as p;`, provides
+`p.Person`, `p.Name.mk` and `p.Name.get` instead.
+
+Reuse an existing field identity by naming its type in another product; do not
+redeclare it. For example:
+
+```kio {@row}
+type Documented_person = Name & Age & Note;
+
+type Display_name = Name;
+
+fn display_name(name: String) -> Name { Display_name.mk(name) }
+```
+
+`Display_name` is an identity alias, so it uses `Name`'s members and creates a
+`Name`. A new nominal declaration would create a distinct field. A written
+member body controls construction and projection visibility independently;
+see [Visibility](declarations.md#visibility). A macro does not bypass a private
+projector or constructor.
+
+## Row polymorphism
+
+A function can require a leading `Name` while leaving the remaining product
+generic:
+
+```kio {@row}
+fn greet[R](value: Name & R) {
+  print(value.>select { Name.get })
+}
+
+fn greet_person(value: Person) { greet(value) }
+
+fn read_age[R](value: Age & R) -> Int {
+  value.>select { Age.get }
+}
+
+fn age_of_person(value: Person) -> Int { read_age((value.>reorder_prod)[Age & Name]) }
+```
+
+`greet_person` supplies `R = Age`. `read_age` requires the age first, so its
+caller explicitly rearranges `Person`. There is no implicit reordering at an
+ordinary function call.
+
+The tail `R` is an ordinary type parameter, not an unordered set of fields.
+Within `greet`, an opaque `R` cannot be searched for an `Age` merely because
+one particular caller supplies one. State a needed field in the parameter's
+known product shape, or arrange the product before calling the helper.
+
+## Generic fields match by their complete type
+
+A field owns its own parameters. `Field[Int]` and `Field[String]` below are
+different field types, even though they share the nominal declaration:
+
+```kio {@row}
+type { Field[T]: T }
+
+fn add_text(value: Field[Int], text: String) -> Field[String] & Field[Int] {
+  value.>with_ { Field.mk[String](text) }
+}
+
+fn generic_payload[T](value: Field[T] & Note) -> T {
+  value.>select { Field.get[T] }
+}
+```
+
+The update adds `Field[String]`; it does not replace `Field[Int]`. Replacement
+requires the same fully applied type. A bound generic `T` is enough to identify
+`Field[T]`; it need not be a concrete host type. `Field.get[T]` explicitly
+specializes the projector so the selector's input is determined. Do not rely
+on searching the receiver to choose an unresolved selector parameter.
+
+## Product order and grouping
+
+A product type `A & B` carries both pieces. Products associate to the right:
+`(a, b, c)` has type `A & (B & C)`. Parentheses group, so `(x)` is `x`;
+`()` has the Unit type `.`. `Name & Age` and `Age & Name` are different types.
+
+The row macros follow the product's right-hand chain, called its *spine*.
+`(Name & Age) & Note` has a compound first slot and a `Note` slot, whereas
+`Name & Age & Note` has three slots. A selector accepting `Name & Age` selects
+one exact compound slot; it does not collect adjacent `Name` and `Age` slots.
+A nominal wrapper keeps its entire payload in one slot regardless of its
+internal product structure. A block is ordinary product construction, not a
+separate container that remembers where its entries began.
+
+## Empty packets and repeated types
+
+| Case | Result |
+| --- | --- |
+| `record_ {}` | Unit `()`. |
+| `value.>with_ {}` | The evaluated receiver, unchanged. |
+| `value.>select {}` | Evaluates the receiver and returns `()`. |
+| Two source slots of the same exact type | Both are retained; a selector uses the first. |
+| One update matching repeated receiver slots | Replaces only the first match; later copies remain. |
+| Two updates of the same exact type in one block | Rejected. |
+| Repeating a selector | Returns a result for every occurrence. |
+| `Ready.mk(())` | One nominal field, despite its Unit payload. |
+
+A root Unit is an empty packet. Unit inside a nonempty product, such as
+`Name & .`, remains a slot. Transparent aliases preserve type identity and
+therefore match the same slots. For an existential nominal, the projector
+keeps its continuation interface; selecting it does not let the hidden type
+escape. See [existential nominal types](declarations.md#existential-nominal-types).
+
+The [macro case study](../poc/macros.md) gives the library's laws and structural
+operations. [Dependency injection](dependency-injection.md) applies this record
+pattern to capability bundles, and [sums](sums.md) explains nominal alternatives.

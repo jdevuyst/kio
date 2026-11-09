@@ -4,20 +4,21 @@ module sudoku/report;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import sudoku/geometry as geo;
 import sudoku/model(
+, Backtracks
+, Board
 , Exhausted
+, Max_depth
 , Outcome
+, Placements
 , Report
 , Solved
+, Steps
 , Unsolvable
+, Verdict
 , Work
-, {backtracks}
-, {board}
-, {max_depth}
-, {placements}
-, {steps}
-, {verdict}
 );
 import sudoku/num as num;
 import sudoku/verify as verify;
@@ -87,19 +88,25 @@ fn verdict_text(outcome: Outcome) -> String {
 
 fn print_solved(givens: Array[I32], work: Work) {
   print("  solved grid:\n");
-  print_grid(work.?{board});
-  field_bool("  every row, column, and box holds 1-9 once: ", verify.is_solved(work.?{board}));
-  field_bool("  keeps every given: ", verify.keeps_givens(givens, work.?{board}))
+  print_grid(work.>select { Board.get });
+  field_bool(
+  , "  every row, column, and box holds 1-9 once: "
+  , verify.is_solved(work.>select { Board.get })
+  );
+  field_bool("  keeps every given: ", verify.keeps_givens(givens, work.>select { Board.get }))
 }
 
 fn print_refuted(givens: Array[I32], work: Work) {
   print("  no completion exists\n");
-  field_bool("  board restored to the givens: ", verify.same_board(givens, work.?{board}))
+  field_bool(
+  , "  board restored to the givens: "
+  , verify.same_board(givens, work.>select { Board.get })
+  )
 }
 
 fn print_result(givens: Array[I32], work: Work, summary: Report) {
-  field("  outcome: ", verdict_text(summary.?{verdict}));
-  let verdict = summary.?{verdict};
+  field("  outcome: ", verdict_text(summary.>select { Verdict.get }));
+  let verdict = summary.>select { Verdict.get };
   match(verdict) {
     (
     , .(_ok: Solved) { print_solved(givens, work) }
@@ -110,10 +117,10 @@ fn print_result(givens: Array[I32], work: Work, summary: Report) {
 }
 
 fn print_stats(summary: Report) {
-  field_i32("  placements: ", summary.?{placements});
-  field_i32("  backtracks: ", summary.?{backtracks});
-  field_i32("  max depth: ", summary.?{max_depth});
-  field_i32("  steps: ", summary.?{steps})
+  field_i32("  placements: ", summary.>select { Placements.get });
+  field_i32("  backtracks: ", summary.>select { Backtracks.get });
+  field_i32("  max depth: ", summary.>select { Max_depth.get });
+  field_i32("  steps: ", summary.>select { Steps.get })
 }
 
 pub fn print_puzzle(index: I32, name: String, givens: Array[I32], work: Work, summary: Report) {

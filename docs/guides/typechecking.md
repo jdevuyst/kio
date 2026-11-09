@@ -433,7 +433,7 @@ precise input requirements and how library authors declare result relations.
 ## Type equality is not automatic conversion
 
 Knowing that a value could be rearranged is different from having the required
-type. `A & B` and `B & A` have different layouts; a newtype remains distinct
+type. `A & B` and `B & A` have different layouts; a nominal type remains distinct
 from its payload type. Transparent type aliases name an existing type without
 creating that distinction.
 

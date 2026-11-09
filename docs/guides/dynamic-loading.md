@@ -390,19 +390,19 @@ match(instantiate_default(im)) {
 }
 ```
 
-## Public newtype members are exports too
+## Public nominal members are exports too
 
-A guest may export a nominal newtype without exporting either member. Each
+A guest may export a nominal type without exporting either member. Each
 member becomes a callable export only when both the outer newtype and that
 member are plain `pub`. Given a bridged guest module declaring both members
 public:
 
 ```text
-pub newtype Tag[A] : A { pub constructor mk_tag; pub projector un_tag }
+pub type { Tag[A]: A; }
 ```
 
-the surface carries `guest.Tag.mk_tag` and `guest.Tag.un_tag` (bare:
-`Tag.mk_tag` / `Tag.un_tag`), looked up and applied exactly like fn
+the surface carries `guest.Tag.mk` and `guest.Tag.get` (bare:
+`Tag.mk` / `Tag.get`), looked up and applied exactly like fn
 exports, listed by `exports` with their canonical signatures, and
 statable in a contract. A payload spelled through the image's own `type`
 aliases renders structurally, so the listed and contract-matched
@@ -411,19 +411,18 @@ signature never names a type the host cannot see:
 ```kio {@contracts}
 let c =
   contract_cons(
-  , mk_expect("Tag.mk_tag"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
+  , mk_expect("Tag.mk"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
   , contract_cons(
-    , mk_expect("guest.Tag.un_tag"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
+    , mk_expect("guest.Tag.get"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
     , contract_nil()
     )
   );
 ```
 
 At the erased runtime a constructor and a non-existential projector are
-the identity — `un_tag` applied to `mk_tag`'s result rides the payload
-through unchanged. An existential newtype's projector follows Kio''s CPS
-elimination ([`specs/prime.md` § The `newtype`
-primitive](../../specs/prime.md#the-newtype-primitive)): apply it to the
+the identity — `get` applied to `mk`'s result rides the payload
+through unchanged. An existential nominal type's projector follows Kio' CPS
+elimination ([`specs/prime.md` § Existential introduction and elimination](../../specs/prime.md#existential-introduction-and-elimination)): apply it to the
 sealed value and then to a continuation, which receives the opened
 payload — two `apply` steps through the surface, the continuation minted
 with `hostfn_in` or taken from another loaded value.
@@ -443,19 +442,22 @@ everywhere:
 
 ```text
 fn run_greet[P](surf: Surface[P], who: String) -> String {
-  match(surf.?{lookup}("greet"[String])) {
-    .(g: P) {
-      match(surf.?{apply}((g, surf.?{str_in}(who)))) {
-        .(r: P) {
-          match(surf.?{str_out}(r)) {
-            .(s: String) { s };
-            .(d: Diag) { diag_message(d) }
-          }
-        };
-        .(d: Diag) { diag_message(d) }
+  match((surf.>select { Lookup.get[P] })("greet"[String])) {
+    (
+    , .(g: P) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { Str_in.get[P] })(who)))) {
+          (
+          , .(r: P) {
+              match((surf.>select { Str_out.get[P] })(r)) {
+                (.(s: String) { s }, .(d: Diag) { diag_message(d) })
+              }
+            }
+          , .(d: Diag) { diag_message(d) }
+          )
+        }
       }
-    };
-    .(d: Diag) { diag_message(d) }
+    , .(d: Diag) { diag_message(d) }
+    )
   }
 }
 ```

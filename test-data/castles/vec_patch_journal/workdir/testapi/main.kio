@@ -9,6 +9,7 @@ import testapi/text(string_concat);
 import vec/core(Tree, branch, descend_step, dir_left, dir_right, leaf, leaf_value);
 import vec/macros/control(macro if);
 import vec/macros/match(macro match);
+import vec/macros/row_macros(macro record, macro select);
 import vec/macros/spine_macros(macro widen_sum);
 
 fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
@@ -25,15 +26,15 @@ fn value_or[A](default: A, result: A | .) -> A {
   fold_result(default, .(value: A) { value }, result)
 }
 
-labels Patch_vec = { count: I32, root: Tree[I32] };
+type Patch_vec = { Count: I32; Root: Tree[I32] };
 
-labels Journal_state = {
-, data: Patch_vec
-, checkpoints: Patch_vec
-, reads: I32
-, misses: I32
-, checksum: I32
-, step: I32
+type Journal_state = {
+  Data: Patch_vec;
+  Checkpoints: Patch_vec;
+  Reads: I32;
+  Misses: I32;
+  Checksum: I32;
+  Step: I32
 };
 
 fn line(label: String, value: String) { print(value.>string_concat("\n").>>string_concat(label)) }
@@ -42,7 +43,9 @@ fn line_i32(label: String, value: I32) { line(label, int_to_string(value)) }
 
 fn line_bool(label: String, value: Bool) { line(label, bool_to_string(value)) }
 
-fn mk_vec(count: I32, root: Tree[I32]) -> Patch_vec { {count, root} }
+fn mk_vec(count: I32, root: Tree[I32]) -> Patch_vec {
+  record { Count.mk(count); Root.mk(root) }
+}
 
 fn empty_root() -> Tree[I32] {
   let empty_leaf = leaf(absent[I32](()));
@@ -74,7 +77,11 @@ fn in_bounds(index: I32, count: I32) -> Bool {
 }
 
 fn at_vec(v: Patch_vec, index: I32) -> I32 | . {
-  if(in_bounds(index, v.?{count})) { leaf_at(v.?{root}, index) } else { absent[I32](()) }
+  if(in_bounds(index, v.>select { Count.get })) {
+    leaf_at(v.>select { Root.get }, index)
+  } else {
+    absent[I32](())
+  }
 }
 
 fn set_leaf(root: Tree[I32], index: I32, value: I32) -> Tree[I32] {
@@ -95,15 +102,17 @@ fn set_leaf(root: Tree[I32], index: I32, value: I32) -> Tree[I32] {
 fn set_vec(v: Patch_vec, index: I32, value: I32) -> Patch_vec | . {
   fold_result(
   , absent[Patch_vec](())
-  , .(_old: I32) { present(mk_vec(v.?{count}, set_leaf(v.?{root}, index, value))) }
+  , .(_old: I32) {
+      present(mk_vec(v.>select { Count.get }, set_leaf(v.>select { Root.get }, index, value)))
+    }
   , at_vec(v, index)
   )
 }
 
 fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
-  let count = v.?{count};
+  let count = v.>select { Count.get };
   if(lt_i32(count, 4)) {
-    present(mk_vec(add_i32(count, 1), set_leaf(v.?{root}, count, value)))
+    present(mk_vec(add_i32(count, 1), set_leaf(v.>select { Root.get }, count, value)))
   } else {
     absent[Patch_vec](())
   }
@@ -116,7 +125,16 @@ fn mk_state(
 , misses: I32
 , checksum: I32
 , step: I32
-) -> Journal_state { {data, checkpoints, reads, misses, checksum, step} }
+) -> Journal_state {
+  record {
+    Data.mk(data);
+    Checkpoints.mk(checkpoints);
+    Reads.mk(reads);
+    Misses.mk(misses);
+    Checksum.mk(checksum);
+    Step.mk(step)
+  }
+}
 
 fn same_step(
 , st: Journal_state
@@ -125,15 +143,19 @@ fn same_step(
 , reads: I32
 , misses: I32
 , checksum: I32
-) -> Journal_state { mk_state(data, checkpoints, reads, misses, checksum, st.?{step}) }
+) -> Journal_state {
+  mk_state(data, checkpoints, reads, misses, checksum, st.>select { Step.get })
+}
 
 fn bump_miss(st: Journal_state, salt: I32) -> Journal_state {
-  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let .(data, checkpoints, reads, misses, checksum) =
+    st.>select { Data.get; Checkpoints.get; Reads.get; Misses.get; Checksum.get };
   same_step(st, data, checkpoints, reads, add_i32(misses, 1), add_i32(mul_i32(checksum, 29), salt))
 }
 
 fn hit_read(st: Journal_state, value: I32) -> Journal_state {
-  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let .(data, checkpoints, reads, misses, checksum) =
+    st.>select { Data.get; Checkpoints.get; Reads.get; Misses.get; Checksum.get };
   same_step(st, data, checkpoints, add_i32(reads, 1), misses, add_i32(mul_i32(checksum, 31), value))
 }
 
@@ -141,12 +163,13 @@ fn apply_read(st: Journal_state, index: I32) -> Journal_state {
   fold_result(
   , bump_miss(st, index)
   , .(value: I32) { hit_read(st, value) }
-  , at_vec(st.?{data}, index)
+  , at_vec(st.>select { Data.get }, index)
   )
 }
 
 fn hit_set(st: Journal_state, data: Patch_vec, value: I32) -> Journal_state {
-  let .({checkpoints, reads, misses, checksum}) = st;
+  let .(checkpoints, reads, misses, checksum) =
+    st.>select { Checkpoints.get; Reads.get; Misses.get; Checksum.get };
   same_step(st, data, checkpoints, reads, misses, add_i32(mul_i32(checksum, 37), value))
 }
 
@@ -154,14 +177,14 @@ fn apply_set(st: Journal_state, index: I32, value: I32) -> Journal_state {
   fold_result(
   , bump_miss(st, index)
   , .(data: Patch_vec) { hit_set(st, data, value) }
-  , set_vec(st.?{data}, index, value)
+  , set_vec(st.>select { Data.get }, index, value)
   )
 }
 
 fn fold_checksum(acc: I32, value: I32) -> I32 { add_i32(mul_i32(acc, 17), value) }
 
 rec(loop) fn fold_from(index: I32, acc: I32, v: Patch_vec) -> I32 {
-  if(lt_i32(index, v.?{count})) {
+  if(lt_i32(index, v.>select { Count.get })) {
     recur fold_from(
     , add_i32(index, 1)
     , fold_result(acc, .(value: I32) { fold_checksum(acc, value) }, at_vec(v, index))
@@ -175,19 +198,21 @@ rec(loop) fn fold_from(index: I32, acc: I32, v: Patch_vec) -> I32 {
 fn vector_checksum(data: Patch_vec) -> I32 { fold_from(0, 0, data) }
 
 fn checkpoint(st: Journal_state) -> Journal_state {
-  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let .(data, checkpoints, reads, misses, checksum) =
+    st.>select { Data.get; Checkpoints.get; Reads.get; Misses.get; Checksum.get };
   let mark = vector_checksum(data);
   let next_checkpoints = value_or(checkpoints, push_vec(checkpoints, mark));
   same_step(st, data, next_checkpoints, reads, misses, add_i32(mul_i32(checksum, 41), mark))
 }
 
 fn advance(st: Journal_state) -> Journal_state {
-  let .({data, checkpoints, reads, misses, checksum, step}) = st;
+  let .(data, checkpoints, reads, misses, checksum, step) =
+    st.>select { Data.get; Checkpoints.get; Reads.get; Misses.get; Checksum.get; Step.get };
   mk_state(data, checkpoints, reads, misses, checksum, add_i32(step, 1))
 }
 
 fn apply_step(st: Journal_state) -> Journal_state {
-  let step = st.?{step};
+  let step = st.>select { Step.get };
   if(eq_i32(step, 0)) {
     apply_set(st, 1, 7)
   } else if(eq_i32(step, 1)) {
@@ -216,7 +241,7 @@ fn apply_step(st: Journal_state) -> Journal_state {
 }
 
 rec(loop) fn replay(st: Journal_state) -> Journal_state {
-  if(lt_i32(st.?{step}, 12)) { recur replay(advance(apply_step(st))) } else { st }
+  if(lt_i32(st.>select { Step.get }, 12)) { recur replay(advance(apply_step(st))) } else { st }
 }
 
 fn seed_vector() -> Patch_vec {
@@ -240,11 +265,12 @@ fn ok_counts(reads: I32, misses: I32) -> Bool { eq_i32(add_i32(reads, misses), 5
 
 pub fn main() {
   let st = replay(initial_state());
-  let .({data, checkpoints, reads, misses, checksum}) = st;
+  let .(data, checkpoints, reads, misses, checksum) =
+    st.>select { Data.get; Checkpoints.get; Reads.get; Misses.get; Checksum.get };
   let final_checksum = vector_checksum(data);
   let checkpoint_checksum = vector_checksum(checkpoints);
   print("vec_patch_journal\n");
-  line_i32("length=", data.?{count});
+  line_i32("length=", data.>select { Count.get });
   line_i32("reads=", reads);
   line_i32("misses=", misses);
   line_i32("final_checksum=", final_checksum);

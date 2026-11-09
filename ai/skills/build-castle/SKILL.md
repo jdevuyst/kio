@@ -28,12 +28,12 @@ Castles should exercise ordinary surface Kio, not hand-written Kio'
 glue. Avoid `import __intrinsics__;` and raw calls such as `__left__`,
 `__right__`, `__either__`, `__pair__`, `__fst__`, and `__snd__` unless
 the castle is explicitly about Kio' / intrinsic behavior. Prefer
-`widen_sum`, `match`, labels/newtypes, tuple syntax, row access, and
+`widen_sum`, `match`, nominal types, tuple syntax, row access, and
 `rec(loop)`. If a candidate builder reaches for raw intrinsics during
 normal castle authoring, treat that as a guidance/brief problem:
 tighten the public surface-level docs or the supervisor brief instead of
 promoting the raw-intrinsic draft. For repeated same-typed sum branches,
-prefer labels/newtypes over direct left/right injection.
+prefer nominal types over direct left/right injection.
 
 Bulk castle work is candidate-driven. Before scaling a batch, run
 candidate-builder mode (§ Candidate-builder mode) on a representative

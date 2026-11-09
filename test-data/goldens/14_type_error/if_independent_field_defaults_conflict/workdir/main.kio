@@ -1,15 +1,20 @@
 module main;
 
 import macros/control(Bool, macro if);
+import macros/row_macros(macro with_);
 
 host type First_payload;
 
 host type Second_payload;
 
-labels State = { first: First_payload, second: Second_payload };
+type State = { First: First_payload; Second: Second_payload };
 
 fn ignore[A](_value: A) { () }
 
 fn run(condition: Bool, state: State, first: First_payload, second: Second_payload) {
-  ignore(if(condition) { state.!{second} } else { state.!{first} })
+  ignore(if(condition) {
+    state.>with_ { Second.mk(second) }
+  } else {
+    state.>with_ { First.mk(first) }
+  })
 }

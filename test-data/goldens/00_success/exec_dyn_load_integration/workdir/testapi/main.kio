@@ -2,12 +2,13 @@
 module testapi/main;
 
 import defaults(instantiate_default);
+import loader(Apply, I32_in, I32_out, Lookup, Str_in, Str_out);
 import loader(Diag, Loaded, Surface);
 import loader(Lr_diag, Lr_image, un_load_outcome);
-import loader({apply}, {i32_in}, {i32_out}, {lookup}, {str_in}, {str_out});
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/fmt(int_to_string);
@@ -47,13 +48,13 @@ fn guest_image() -> String {
 // surface, reading just the operations it needs by field name; `()` on
 // any failure.
 fn run_i32[P](surf: Surface[P], name: String, arg: I32) -> . | I32 {
-  match(surf.?{lookup}(name)) {
+  match((surf.>select { Lookup.get[P] })(name)) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{i32_in}(arg)))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { I32_in.get[P] })(arg)))) {
           (
           , .(r: P) {
-              match(surf.?{i32_out}(r)) {
+              match((surf.>select { I32_out.get[P] })(r)) {
                 (.(n: I32) { widen_sum(n)[. | I32] }, .(_d: Diag) { widen_sum(())[. | I32] })
               }
             }
@@ -69,13 +70,13 @@ fn run_i32[P](surf: Surface[P], name: String, arg: I32) -> . | I32 {
 // Apply a `String -> String` export named `name` to `arg` through the
 // record surface; `()` on any failure.
 fn run_str[P](surf: Surface[P], name: String, arg: String) -> . | String {
-  match(surf.?{lookup}(name)) {
+  match((surf.>select { Lookup.get[P] })(name)) {
     (
     , .(g: P) {
-        match(surf.?{apply}((g, surf.?{str_in}(arg)))) {
+        match((surf.>select { Apply.get[P] })((g, (surf.>select { Str_in.get[P] })(arg)))) {
           (
           , .(r: P) {
-              match(surf.?{str_out}(r)) {
+              match((surf.>select { Str_out.get[P] })(r)) {
                 (
                 , .(s: String) { widen_sum(s)[. | String] }
                 , .(_d: Diag) { widen_sum(())[. | String] }

@@ -13,11 +13,11 @@ import testapi/text(string_concat);
 // Cons-list of `A`. Same `()` / `(A & List(A))` shape as the other
 // host-loop goldens; used twice here — once as the node-stack of
 // pending `Frame`s, once as the value-stack of intermediate I32s.
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Tiny arithmetic expression AST. The literal arm carries an
 // `I32`; the binary arm carries `(op_code, left, right)` where
@@ -29,13 +29,13 @@ fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A &
 // type fits, so a second clause with identical parameter shape
 // is unreachable. Tagging inline keeps the dispatch a clean
 // single-arm payload match plus a single `leq_i32` on the op.
-rec newtype Expr : I32 | (I32 & Expr & Expr) { pub constructor mk_expr; pub projector un_expr }
+rec type { Expr: I32 | (I32 & Expr & Expr) { pub mk; pub get } }
 
-fn lit(n: I32) -> Expr { Expr.mk_expr(widen_sum(n)) }
+fn lit(n: I32) -> Expr { Expr.mk(widen_sum(n)) }
 
-fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((0[I32], l, r))) }
+fn add(l: Expr, r: Expr) -> Expr { Expr.mk(widen_sum((0[I32], l, r))) }
 
-fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1[I32], l, r))) }
+fn mul(l: Expr, r: Expr) -> Expr { Expr.mk(widen_sum((1[I32], l, r))) }
 
 // One worklist frame. `Expr` means "walk this node next"; `I32`
 // is a pending-combiner marker carrying the op code (the same
@@ -48,18 +48,18 @@ fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1[I32], l, r))) }
 // reference — `List(Frame)` reads cleaner than `List(Expr |
 // I32)`, and the wrapper makes the projector/constructor pair
 // available for the step body.
-newtype Frame : Expr | I32 { pub constructor mk_frame; pub projector un_frame }
+type { Frame: Expr | I32 { pub mk; pub get } }
 
-fn frame_expr(e: Expr) -> Frame { Frame.mk_frame(widen_sum(e)) }
+fn frame_expr(e: Expr) -> Frame { Frame.mk(widen_sum(e)) }
 
-fn frame_op(op: I32) -> Frame { Frame.mk_frame(widen_sum(op)) }
+fn frame_op(op: I32) -> Frame { Frame.mk(widen_sum(op)) }
 
 // `State` wraps `(node-stack, value-stack)` in a single newtype.
 // Naming it once lets every helper's match-arm-uniform return
 // type be a single nominal.
-newtype State : List[Frame] & List[I32] { pub constructor mk_state; pub projector un_state }
+type { State: List[Frame] & List[I32] { pub mk; pub get } }
 
-fn state(nodes: List[Frame], values: List[I32]) -> State { State.mk_state((nodes, values)) }
+fn state(nodes: List[Frame], values: List[I32]) -> State { State.mk((nodes, values)) }
 
 // Combiner sub-helper: `add` for op-code 0, `mul` for op-code 1.
 // One `if`/`else` over the `op` discriminant.
@@ -72,7 +72,7 @@ fn apply_op(op: I32, left: I32, right: I32) -> I32 {
 // pushes `apply_op(op, left, right)`. Split out so `combine`
 // itself carries a single one-level `match`.
 fn combine_with_right(op: I32, right: I32, rest1: List[I32]) -> List[I32] {
-  match(rest1.>List.un_list) {
+  match(rest1.>List.get) {
     (
     , .(left: I32, rest2: List[I32]) { push(apply_op(op, left, right), rest2) }
     , .(_empty: .) { push(0, nil[I32](())) }
@@ -84,7 +84,7 @@ fn combine_with_right(op: I32, right: I32, rest1: List[I32]) -> List[I32] {
 // stack. Single one-level `match` on the value stack; the
 // second-pop is in `combine_with_right`.
 fn combine(op: I32, values: List[I32]) -> List[I32] {
-  match(values.>List.un_list) {
+  match(values.>List.get) {
     (
     , .(right: I32, rest1: List[I32]) { combine_with_right(op, right, rest1) }
     , .(_empty: .) { push(0, nil[I32](())) }
@@ -97,7 +97,7 @@ fn combine(op: I32, values: List[I32]) -> List[I32] {
 // for the literal arm pushes the value onto the value stack.
 // Single one-level `match` on the `Expr` projector.
 fn handle_expr(e: Expr, rest_nodes: List[Frame], values: List[I32]) -> State {
-  match(e.>Expr.un_expr) {
+  match(e.>Expr.get) {
     (
     , .(op: I32, l: Expr, r: Expr) {
         let with_op = push(frame_op(op), rest_nodes);
@@ -114,7 +114,7 @@ fn handle_expr(e: Expr, rest_nodes: List[Frame], values: List[I32]) -> State {
 // Expr to walk or an op marker to fire. Single one-level
 // `match` on the `Frame` projector; returns the new state.
 fn handle_frame(top: Frame, rest_nodes: List[Frame], values: List[I32]) -> State {
-  match(top.>Frame.un_frame) {
+  match(top.>Frame.get) {
     (
     , .(e: Expr) { handle_expr(e, rest_nodes, values) }
     , .(op: I32) { state(rest_nodes, combine(op, values)) }
@@ -127,7 +127,7 @@ fn handle_frame(top: Frame, rest_nodes: List[Frame], values: List[I32]) -> State
 // stack has exactly one element at this point; the empty arm
 // returns a sentinel.
 fn exit_top(values: List[I32]) -> I32 {
-  match(values.>List.un_list) {
+  match(values.>List.get) {
     (.(top: I32, _rest: List[I32]) { top }, .(_empty: .) { 0 })
   }
 }
@@ -136,7 +136,7 @@ fn exit_top(values: List[I32]) -> I32 {
 // with the new state) or empty (exit with the value-stack top).
 // Single one-level `match` on the node-stack list cell.
 fn step_inner(nodes: List[Frame], values: List[I32]) -> State | I32 {
-  match(nodes.>List.un_list) {
+  match(nodes.>List.get) {
     (
     , .(top: Frame, rest_nodes: List[Frame]) {
         widen_sum(handle_frame(top, rest_nodes, values))[State | I32]
@@ -153,7 +153,7 @@ fn step_inner(nodes: List[Frame], values: List[I32]) -> State | I32 {
 // produced); the loop continues while the node stack is non-
 // empty.
 fn step(st: State) -> State | I32 {
-  match(st.>State.un_state) {
+  match(st.>State.get) {
     .(nodes: List[Frame], values: List[I32]) { step_inner(nodes, values) }
   }
 }

@@ -464,7 +464,7 @@ ABI arity, or another producer-side side channel.
   left-associative nesting is preserved end to end.
 - **Newtypes** (§ 3-step key fallback, § Higher-kinded types) — keyed by
   bare newtype name, then `<modulepath>.<F>`, then positional `_<n>`;
-  `labels { f : X }`-generated newtypes key by the generated type name.
+  nominal entries in unified type declarations key by their declared type name.
 - **Roles → host types** (§ 8 Role-binding layer + the per-backend
   atomic-type table) — `host type X role(r);` admits the corresponding Kio
   syntax at `X`. Prefer host-selectable bindings; where the target supports a
@@ -488,7 +488,7 @@ ABI arity, or another producer-side side channel.
   § Semantic slots and native parameter grouping; a host-specific arity-limit
   shell is a documented realization, not permission to change Kio typing.
 - **Polymorphic-newtype payloads** (§ Polymorphic newtype payloads) — a
-  `newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]` payload is
+  `type { Monad[*F]: [A][B](F[A] & (A -> F[B])) -> F[B] }` payload is
   the unary chain `Forall(A, Forall(B, Function(…)))`. Preserve its semantic
   binder/application order and keep constructor/projector identities around
   the complete payload. Determine each internal and boundary realization from

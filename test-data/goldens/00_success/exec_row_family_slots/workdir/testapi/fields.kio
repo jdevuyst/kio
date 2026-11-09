@@ -1,0 +1,9 @@
+module testapi/fields;
+
+import testapi(String);
+
+pub type { Hidden: String { mk; get } }
+
+pub fn create(value: String) -> Hidden { Hidden.mk(value) }
+
+pub fn selector() -> Hidden -> String { Hidden.get }

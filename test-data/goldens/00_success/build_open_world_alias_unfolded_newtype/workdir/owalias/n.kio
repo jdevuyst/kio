@@ -2,8 +2,8 @@ module owalias/n;
 
 import owalias(I32);
 
-pub newtype X : I32 { pub constructor mk_x; pub projector un_x }
+pub type { X: I32 { pub mk; pub get } }
 
 pub type A = X & X;
 
-pub fn make_n() -> X { X.mk_x(1[I32]) }
+pub fn make_n() -> X { X.mk(1[I32]) }

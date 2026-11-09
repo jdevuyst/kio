@@ -7,19 +7,15 @@ import testapi/arith(leq_i32);
 import testapi/io(print);
 import testapi/iter(loop);
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 rec(loop) fn go(n: I32) {
   if(leq_i32(n, 0)) {
     print("base\n")
   } else {
-    Box.unbox(do(bind) {
-      let next = recur(cont) go(0);
-      let printed = print("resume\n");
-      Box.box(next)
-    })
+    Box.get(do(bind) { let next = recur(cont) go(0); let printed = print("resume\n"); Box.mk(next) })
   }
 }
 

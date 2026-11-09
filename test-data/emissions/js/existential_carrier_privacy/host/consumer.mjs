@@ -19,17 +19,17 @@ const continuation = ({
     return null;
   }),
 });
-const result = pkg.api.KioType_Pack.open(packed);
+const result = pkg.api.KioType_Pack.get(packed);
 if (openings !== 0) throw new Error("projector entered its continuation early");
 result.advance()(continuation);
 if (openings !== 1) throw new Error("continuation must execute once");
-const exchanged = second.api.KioType_Pack.open(packed);
+const exchanged = second.api.KioType_Pack.get(packed);
 if (openings !== 1) throw new Error("cross-instance projector entered its continuation early");
 exchanged.advance()(continuation);
 if (openings !== 2) throw new Error("cross-instance continuation must execute once");
 let rejected = false;
 try {
-  separatelyLoaded.api.KioType_Pack.open(packed).advance()(continuation);
+  separatelyLoaded.api.KioType_Pack.get(packed).advance()(continuation);
 } catch (error) {
   if (!(error instanceof TypeError)) throw error;
   rejected = true;

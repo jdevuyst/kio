@@ -18,12 +18,13 @@ import desk/eval(evaluate);
 import desk/lex(classify);
 import desk/list(List, cons, for_each, is_empty, len, nil, reverse);
 import desk/outcome(Answer, Failed, Fault_kind, Value, all_kinds, count_kind);
-import desk/outcome(fault_of, kind_name, {failed}, {value});
+import desk/outcome(fault_of, kind_name);
 import desk/render(cat, show_fault, show_infix, show_int, show_rpn);
 import desk/token(Placed, place);
-import desk/yard(Rpn, Rpn_failed, to_rpn, {rpn_failed}, {rpn});
+import desk/yard(Rpn, Rpn_failed, to_rpn);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
@@ -34,16 +35,24 @@ import testapi/text(string_eq);
 /// Expressions seen, expressions that produced a value, and the kind of every
 /// fault raised — the summary counts kinds off that log rather than carrying
 /// one counter per arm.
-labels Tally = { seen: I32, ok_count: I32, faults: List[Fault_kind] };
+type Tally = { Seen: I32; Ok_count: I32; Faults: List[Fault_kind] };
 
-fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil[Fault_kind]} }
+fn start_tally() -> Tally { (Seen.mk(0), Ok_count.mk(0), Faults.mk(nil[Fault_kind])) }
 
 fn note_ok(t: Tally) -> Tally {
-  {seen = add_i32(t.?{seen}, 1), ok_count = add_i32(t.?{ok_count}, 1), faults = t.?{faults}}
+  (
+  , Seen.mk(add_i32(t.>select { Seen.get }, 1))
+  , Ok_count.mk(add_i32(t.>select { Ok_count.get }, 1))
+  , Faults.mk(t.>select { Faults.get })
+  )
 }
 
 fn note_fault(t: Tally, kind: Fault_kind) -> Tally {
-  {seen = add_i32(t.?{seen}, 1), ok_count = t.?{ok_count}, faults = cons(kind, t.?{faults})}
+  (
+  , Seen.mk(add_i32(t.>select { Seen.get }, 1))
+  , Ok_count.mk(t.>select { Ok_count.get })
+  , Faults.mk(cons(kind, t.>select { Faults.get }))
+  )
 }
 
 fn some_expr(toks: List[Placed]) -> List[Placed] | . { widen_sum(toks)[List[Placed] | .] }
@@ -79,9 +88,12 @@ fn say(text: String) { print(cat(text, "\n")) }
 fn report_answer(a: Answer, t: Tally) -> Tally {
   match(a) {
     (
-    , .(v: Value) { say(cat("  value: ", show_int(v.?{value}))); note_ok(t) }
+    , .(v: Value) {
+        say(cat("  value: ", show_int(v.>select { Value.get })));
+        note_ok(t)
+      }
     , .(f: Failed) {
-        let failure = f.?{failed};
+        let failure = f.>select { Failed.get };
         say(cat("  error: ", show_fault(failure)));
         note_fault(t, fault_of(failure))
       }
@@ -97,12 +109,12 @@ fn report_expr(index: I32, toks: List[Placed], t: Tally) -> Tally {
   match(to_rpn(toks)) {
     (
     , .(q: Rpn) {
-        let queue = q.?{rpn};
+        let queue = q.>select { Rpn.get };
         say(cat("  rpn: ", show_rpn(queue)));
         report_answer(evaluate(queue, len(toks)), t)
       }
     , .(f: Rpn_failed) {
-        let failure = f.?{rpn_failed};
+        let failure = f.>select { Rpn_failed.get };
         say(cat("  error: ", show_fault(failure)));
         note_fault(t, fault_of(failure))
       }
@@ -127,9 +139,9 @@ fn report_kind(log: List[Fault_kind], kind: Fault_kind) {
 }
 
 fn summarize(t: Tally) {
-  let seen = t.?{seen};
-  let ok = t.?{ok_count};
-  let log = t.?{faults};
+  let seen = t.>select { Seen.get };
+  let ok = t.>select { Ok_count.get };
+  let log = t.>select { Faults.get };
   let head = cat("summary: ", cat(show_int(seen), cat(" expressions, ", show_int(ok))));
   say(cat(head, cat(" ok, ", cat(show_int(sub_i32(seen, ok)), " failed"))));
   for_each(all_kinds(), .(kind: Fault_kind) { report_kind(log, kind) })

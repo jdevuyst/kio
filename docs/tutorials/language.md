@@ -36,7 +36,7 @@ pub fn body() {
 -->
 
 <!-- Top-level harness for module-body fragments — fn / type / literal /
-labels / `pub fn main` declarations. -->
+nominal / `pub fn main` declarations. -->
 <!--kio {harness=tutorial_module placeholder="__INSERT_CODE_HERE__"}
 bridge {
   kiodoc;
@@ -163,16 +163,15 @@ The `module hello/main;` line says "this file is the module at path `hello/main`
 
 `import` brings names into the module's scope. The common shape pulls items from another module in the same package:
 
-`import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A tagged `macro name` item selects a macro, for example `import match(macro match);`. A braced item selects label syntax, so a consumer that names a generated type and constructs its label writes `import people(Name, {name});`. Neither spelling imports the other. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
+`import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A tagged `macro name` item selects a macro, for example `import match(macro match);`. Importing an ordinary nominal type also makes its accessible members available: `import people(Name);` lets a consumer use `Name.mk` and `Name.get` when those members are public. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
 
-When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack[Item]` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library macros such as `match` and the structural palette for normal product and sum code.
+When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and nominal members: `m.Shape` names a type, `m.Stack[Item]` applies a type constructor, and `m.Stack.get` reaches a public nominal member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, nominal types, and imported library macros such as `match` and the structural palette for normal product and sum code.
 
 To choose a local spelling, use a selective alias:
 `import hello(String as Text, print as write);`. The destination keeps the
 source's type-shaped or value-shaped identifier class. This selects the same
 declaration, with the same type and visibility; it does not create a wrapper or
-re-export it. Multiple distinct local aliases are allowed. Braced label
-selections do not take aliases.
+re-export it. Multiple distinct local aliases are allowed.
 
 An operator is selected by its complete tagged grammar, for example
 `import arithmetic(op _ + __);` or `import list(varop [* *]);`.
@@ -194,25 +193,15 @@ two fixed builtin block imports are idempotent.
 
 For a named `fn` or `host fn`, leaving out the return annotation fixes its result to unit (`.`). An ordinary function's body must produce unit rather than determine a different result type.
 
-Same idea for `type`, `literal`, `newtype`, and `labels`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
+Same idea for `type` and `literal`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
 
 ### Definitions are read top-to-bottom
 
 A module's declarations are processed in order, and each one sees only the names declared *above* it (plus whatever `import` brought in). There is no forward reference within a file: a `fn` that calls a helper must come *after* that helper's definition, and a `fn` cannot call itself by name. Order helpers before their callers. Host declarations follow the same rule: declare a `host type` before any signature that mentions it, and a `host fn` before code or a declaration that names it.
 
-Recursive scope is explicit. `rec newtype` gives one nominal declaration its
-own head; `rec labels` gives one label declaration its generated nominal heads
-and, for a named form, its transparent alias head. A bare `rec { ... }` type
-group gives exactly one genuinely mutual component access to all of its member
-heads. None of these data forms sees an unrelated later declaration, and a
-redundant marker or over-broad group is an error. A separate `rec(loop)` group
-lets functions call each other through `recur name(...)`. Term recursion always
-goes through that loop-capability form — see [Recursion](../guides/recursion.md)
-and [Aliases, newtypes, visibility, and purity](../guides/declarations.md#recursive-newtypes).
-
-For existing code that relied on implicit recursive scope, the
-[declarations guide](../guides/declarations.md#migrating-implicit-recursive-declarations)
-shows the required edits and the editor's corresponding repairs.
+Recursive scope is explicit. `rec type { ... }` gives a nominal declaration
+its own head, and `rec { ... }` groups mutually recursive declarations. See
+[recursive nominal types](../guides/declarations.md#recursive-nominal-types).
 
 ### Module dependencies cannot cycle
 
@@ -496,9 +485,10 @@ stems ending in a letter, such as `.arg.`, work too; each nested placeholder
 lambda owns a fresh stem. Parameter types come from the surrounding expected
 function type, just as they do for an unannotated `.(x) { ... }` lambda.
 
-## Chapter 5 — Tuples and labels
+## Chapter 5 — Tuples and nominal fields
 
-Two ways Kio composes data: **tuples** (anonymous products) and **labeled values**.
+Tuples combine values in order. Nominal field types give their components
+distinct identities, so a product can serve as a row-typed record.
 
 ### Tuples
 
@@ -550,93 +540,60 @@ matching `let .part. <- action;` spelling for an action's payload. Each family
 must have a reference in the remaining block. Use an ordinary named binding
 when a descriptive name makes the code clearer.
 
-### Labels
+### Nominal fields
 
-<!-- Labels-aware harnesses: tutorial_labels_module declares Greeting at
-the top level; tutorial_labels_block makes the same labels scope
-available to expression-shaped fragments. -->
-
-<!--kio {harness=tutorial_labels_module placeholder="__INSERT_CODE_HERE__"}
+<!--kio {harness=tutorial_fields_block placeholder="__INSERT_CODE_HERE__"}
 bridge {
   kiodoc;
 }
 
 module kiodoc;
 
-import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
+import macros/row_macros(macro record_, macro select);
 
-host type Int role(i32);
 host type String role(str);
-host type Bool role(bool);
-host fn add(p0: Int, p1: Int) -> Int;
-host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);
 
-labels Greeting = { hello : String, goodbye : String };
-
-__INSERT_CODE_HERE__
--->
-
-<!--kio {harness=tutorial_labels_block placeholder="__INSERT_CODE_HERE__"}
-bridge {
-  kiodoc;
-}
-
-module kiodoc;
-
-import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
-
-host type Int role(i32);
-host type String role(str);
-host type Bool role(bool);
-host fn add(p0: Int, p1: Int) -> Int;
-host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String);
-
-labels Greeting = { hello : String, goodbye : String };
+type Greeting = { Hello: String; Goodbye: String; };
 
 pub fn body() {
   __INSERT_CODE_HERE__
 }
 -->
 
-A `labels` declaration introduces lowercase value labels and generated nominal types.
+A nominal entry introduces a distinct type around a payload. A named group
+can also name the product of its entries:
 
 ```kio {@tutorial_module}
-labels Greeting = { hello: String, goodbye: String };
+type Greeting = { Hello: String; Goodbye: String };
 ```
 
-This declares two labels, `hello` and `goodbye`, each carrying a `String`, and generated types `Hello` and `Goodbye`. A label value is built with `{label = expr}` sugar:
+`Hello` and `Goodbye` are different types even though both wrap `String`.
+Their `mk` members construct values and their `get` members project payloads:
 
-A later named `labels` declaration can include the same generated nominal with
-`hello: _`. The underscore is an explicit reference to the earlier local label,
-not an inferred payload; see [Structural products and row types](../guides/products.md#labels-and-).
-
-```kio {@tutorial_labels_block}
-let hi = {hello = "hi\n"};
-let bye = {goodbye = "bye\n"};
-print(hi.?{hello});
-print(bye.?{goodbye})
+```kio {@tutorial_fields_block}
+let hi = Hello.mk("hi\n");
+print(Hello.get(hi))
 ```
 
-The type of `{hello = "hi\n"}` is `Hello`. The payload (`String`) is fixed at the `labels` declaration site and read off from there. Multiple labels compose into one value with multi-label construction:
+The macro library's `record_` builds a product in written order, and `select`
+applies projectors to matching fields. Add the dependency as described in
+[Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow).
+With the dependency named `macros`, import them using
+`import macros/row_macros(macro record_, macro select);`:
 
-```kio {@tutorial_labels_block}
-let pair = {hello = "hi\n", goodbye = "bye\n"};
-// pair : Hello & Goodbye
-print(pair.?{hello});
-print(pair.?{goodbye})
+```kio {@tutorial_fields_block}
+let pair = record_ { Hello.mk("hi\n"); Goodbye.mk("bye\n") };
+let .(hello, goodbye) = pair.>select { Hello.get; Goodbye.get };
+print(hello);
+print(goodbye)
 ```
 
-The generated type is the type spelling; the lowercase label is value syntax only. Reaching back into a labeled value uses field access or the generated `get` member:
-
-```kio {@tutorial_labels_block}
-let s = Hello.get({hello = "hi\n"});
-// s : String, value "hi\n"
-print(s)
-```
-
-Labels are the workhorse of "records with named fields" in Kio. The full vocabulary — construction, access, update, defining your own nominal wrappers via `newtype`, and named `labels Greeting = {…}` aliases — is covered in [Structural products and row types](../guides/products.md).
+The inferred type of `pair` is `Hello & Goodbye`. Use `record` instead when
+a target type should choose the product order. These are ordinary products
+and nominal types. The complete workflow, including row-polymorphic functions
+and updates, is covered in
+[Row-typed records with ordinary products](../guides/products.md).
 
 ## Chapter 6 — Sums and pattern matching
 
@@ -866,7 +823,7 @@ finish, a later statement cannot complete its missing types.
 to pass a square-bracket collection as a value, put it inside the value list,
 for example `f([* a, b *])`.
 
-`newtype`, `labels`, and `type` declarations can carry the same `[A]`, `[B]` shape — that's how generic containers and dictionaries get expressed without typeclasses or traits.
+`type` aliases and nominal entries can carry the same `[A]`, `[B]` shape — that's how generic containers and dictionaries get expressed without typeclasses or traits.
 
 You rarely need to think about the full inference rules in a small program; when a call or local binding feels ambiguous, add the type where it helps the reader too.
 
@@ -980,7 +937,7 @@ That is enough for this tutorial. The full spine palette includes `reorder_*`, `
 
 ## Chapter 10 — Where to go from here
 
-This tutorial covered the bones: packages, modules, functions, atomic types, tuples and labels, sums, pattern matching, polymorphism, UFCS, and macro calls. Enough to read Kio code and write small programs.
+This tutorial covered the bones: packages, modules, functions, atomic types, tuples and nominal fields, sums, pattern matching, polymorphism, UFCS, and macro calls. Enough to read Kio code and write small programs.
 
 The next layer is in [docs/guides/](../guides/), in roughly dependency order:
 
@@ -989,7 +946,7 @@ The next layer is in [docs/guides/](../guides/), in roughly dependency order:
 - [Using libraries](../guides/using-libraries.md) — adopting imported libraries; [the macro case study](../poc/macros.md) supplies checked per-form examples of the structural helpers.
 - [Operators](../guides/operators.md) — fixed operator patterns and recursive / greedy slots.
 - [Variadic operators](../guides/variadic-operators.md) — four fold modes, element order, and collection literals.
-- [Structural products and row types](../guides/products.md) — how `&` plus type variables expresses row polymorphism and field update.
+- [Row-typed records with ordinary products](../guides/products.md) — how `&` plus type variables expresses row polymorphism and field update.
 - [Error handling](../guides/error-handling.md) — `(T | !)` sums and explicit failure flow.
 - [Open-world story](../guides/open-world.md) — what the open-world property looks like in practice.
 

@@ -33,19 +33,20 @@ pub fn leaf_count() -> I32 { 64 }
 
 pub fn op_count() -> I32 { 18 }
 
-pub labels Op =
-  { add_range: I32 & I32 & I32 }
-  | { sum_range: I32 & I32 }
-  | { min_range: I32 & I32 }
-  | { set_point: I32 & I32 };
+pub type Op =
+  | { Add_range: I32 & I32 & I32 }
+  | { Sum_range: I32 & I32 }
+  | { Min_range: I32 & I32 }
+  | { Set_point: I32 & I32 }
+  ;
 
-fn add_op(l: I32, r: I32, x: I32) -> Op { ({add_range = (l, r, x)}.>widen_sum)[Op] }
+fn add_op(l: I32, r: I32, x: I32) -> Op { (Add_range.mk((l, r, x)).>widen_sum)[Op] }
 
-fn sum_op(l: I32, r: I32) -> Op { ({sum_range = (l, r)}.>widen_sum)[Op] }
+fn sum_op(l: I32, r: I32) -> Op { (Sum_range.mk((l, r)).>widen_sum)[Op] }
 
-fn min_op(l: I32, r: I32) -> Op { ({min_range = (l, r)}.>widen_sum)[Op] }
+fn min_op(l: I32, r: I32) -> Op { (Min_range.mk((l, r)).>widen_sum)[Op] }
 
-fn set_op(i: I32, v: I32) -> Op { ({set_point = (i, v)}.>widen_sum)[Op] }
+fn set_op(i: I32, v: I32) -> Op { (Set_point.mk((i, v)).>widen_sum)[Op] }
 
 /// A sawtooth: step up by 9 and wrap back down by 37 whenever the value would
 /// leave the band. It spreads the minimum around the array instead of parking

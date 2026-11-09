@@ -838,7 +838,6 @@ fn lowered_type_node_count(ty: &Type<Lowered>) -> usize {
             1 + args.iter().map(lowered_type_node_count).sum::<usize>()
         }
         Type::Forall { body, .. } => 1 + lowered_type_node_count(body),
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -919,7 +918,6 @@ fn collect_expected_alpha_free_names(
                 collect_expected_alpha_free_names(arg, out, bound);
             }
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -1100,7 +1098,6 @@ impl ExpectedAlphaMaterializer {
                 meta: crate::ast::Meta::new(meta.span),
                 ext: *ext,
             },
-            Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 }
@@ -2575,6 +2572,17 @@ impl<'m> LambdaHeaderPlan<'m> {
         checked?;
 
         let publication_mark = tcx.save();
+        if self.value_slots.iter().any(|slot| {
+            slot.ty
+                .as_ref()
+                .is_some_and(|ty| crate::comptime::type_is_comptime_proof(ty.as_type()))
+        }) {
+            <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_proof_fn_body_type(
+                fn_site,
+                body_expected,
+                tcx,
+            );
+        }
         let mut slots = self.value_slots.into_iter();
         let mut retained = retained_binders.iter();
         let mut value_index = 0usize;
@@ -3233,7 +3241,7 @@ fn publish_annotation_binder_events<'m, P>(
     events: Vec<AnnotationBinderEvent>,
     tcx: &mut TypeCtx<'m, '_, P>,
 ) where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let mut marks = Vec::new();
     for event in events {

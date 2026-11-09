@@ -3,17 +3,17 @@ module testapi/opt;
 import macros/spine_macros(macro widen_sum);
 import testapi(I32);
 
-// A labels-shape optional. The `present` label mints a newtype `Present`;
-// the `pub type Option` names the sum of that label with unit. When a
+// An optional built from the nominal type `Present`;
+// the `pub type Option` names the sum of that type with unit. When a
 // consumer imports `Option` and widens it (without importing
 // `Present` directly), alias unfolding retains this module as the
 // exact owner of the generated nominal. The consumer module guards
 // that identity against an unrelated imported module's same-leaf
 // public newtype.
-pub labels { present: I32 };
+pub type { Present: I32 }
 
 pub type Option = Present | .;
 
-pub fn some(x: I32) -> Option { widen_sum({present = x}) }
+pub fn some(x: I32) -> Option { widen_sum(Present.mk(x)) }
 
 pub fn none() -> Option { widen_sum(()) }

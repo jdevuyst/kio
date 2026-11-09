@@ -2,7 +2,7 @@ module m;
 
 pub fn id[A][*F](x: F[A]) -> A { x }
 pub type Identity[A]=A;
-pub labels { item[A]: A };
+pub type { Item[A]: A };
 pub type Bottom_poly = [A]!;
 pub type Unit_poly = [A].;
-pub newtype Hidden[A] : A { pub constructor hide; pub projector reveal; };
+pub type { Hidden[A]: A { pub mk; pub get } };

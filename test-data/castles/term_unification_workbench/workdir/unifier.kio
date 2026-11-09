@@ -4,6 +4,7 @@ import list/core as lists;
 import list/list as traversal;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import substitutions as subst;
 import terms as term;
@@ -11,13 +12,11 @@ import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
-labels Equation = { left: term.Term, right: term.Term };
+type Equation = { Left: term.Term; Right: term.Term };
 
-pub labels Outcome =
-  { solved: subst.Substitution }
-  | { occurs: I32 }
-  | { clash: I32 & I32 }
-  | { arity: I32 & I32 };
+pub type Outcome =
+  { Solved: subst.Substitution } | { Occurs: I32 } | { Clash: I32 & I32 } | { Arity: I32 & I32 }
+  ;
 
 rec(loop) fn pair_arguments(
 , lefts: lists.List[term.Term]
@@ -32,18 +31,18 @@ rec(loop) fn pair_arguments(
           recur pair_arguments(
           , rest
           , others
-          , lists.cons({left = first, right = other}, paired)
+          , lists.cons((Left.mk(first), Right.mk(other)), paired)
           , pending
           )
         };
-        .(_empty: .) { {arity = (traversal.length(lefts), 0)}.>widen_sum }
+        .(_empty: .) { Arity.mk((traversal.length(lefts), 0)).>widen_sum }
       }
     };
     .(_empty: .) {
       if(traversal.null(rights)) {
         traversal.append(traversal.reverse(paired), pending).>widen_sum
       } else {
-        {arity = (0, traversal.length(rights))}.>widen_sum
+        Arity.mk((0, traversal.length(rights))).>widen_sum
       }
     }
   }
@@ -54,7 +53,7 @@ rec(loop) {
     if(term.equal(term.variable(id), value)) {
       recur solve_work(pending, bindings)
     } else if(term.occurs(id, value)) {
-      {occurs = id}.>widen_sum
+      Occurs.mk(id).>widen_sum
     } else {
       recur solve_work(pending, subst.extend(bindings, id, value))
     }
@@ -62,35 +61,35 @@ rec(loop) {
   fn solve_work(pending: lists.List[Equation], bindings: subst.Substitution) -> Outcome {
     match(lists.uncons(pending)) {
       .(equation: Equation, rest: lists.List[Equation]) {
-        let left = subst.apply(bindings, equation.?{left});
-        let right = subst.apply(bindings, equation.?{right});
-        match(left.>term.Term.unwrap) {
+        let left = subst.apply(bindings, equation.>select { Left.get });
+        let right = subst.apply(bindings, equation.>select { Right.get });
+        match(left.>term.Term.get) {
           .(v: term.Variable) { recur bind(v.>term.Variable.get, right, rest, bindings) };
           .(symbol: I32, arguments: lists.List[term.Term]) {
-            match(right.>term.Term.unwrap) {
+            match(right.>term.Term.get) {
               .(v: term.Variable) { recur bind(v.>term.Variable.get, left, rest, bindings) };
               .(other: I32, other_arguments: lists.List[term.Term]) {
                 if(arith.eq_i32(symbol, other)) {
                   match(pair_arguments(arguments, other_arguments, lists.nil[_], rest)) {
                     .(next: lists.List[Equation]) { recur solve_work(next, bindings) };
                     .(_mismatch: Arity) {
-                      {arity = (traversal.length(arguments), traversal.length(other_arguments))}
+                      Arity.mk((traversal.length(arguments), traversal.length(other_arguments)))
                         .>widen_sum
                     }
                   }
                 } else {
-                  {clash = (symbol, other)}.>widen_sum
+                  Clash.mk((symbol, other)).>widen_sum
                 }
               }
             }
           }
         }
       };
-      .(_empty: .) { {solved = bindings}.>widen_sum }
+      .(_empty: .) { Solved.mk(bindings).>widen_sum }
     }
   }
 }
 
 pub fn solve(left: term.Term, right: term.Term) -> Outcome {
-  solve_work(lists.singleton({left, right}), subst.empty())
+  solve_work(lists.singleton((Left.mk(left), Right.mk(right))), subst.empty())
 }

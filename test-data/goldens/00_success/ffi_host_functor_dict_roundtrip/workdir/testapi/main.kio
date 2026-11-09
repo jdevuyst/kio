@@ -10,15 +10,15 @@ import testapi/types(Box, Capture, Functor, Shadow);
 // The Box instance delegates through `Shadow`, whose payload keeps its
 // outer carrier separate from its nested polymorphic identity function.
 fn box_functor() -> Functor[Box] {
-  Functor.mk_functor[Box](.[A][B](step, m) {
-    let captured = Capture.mk_capture[Box[A]](.[T](_value: T) { m });
+  Functor.mk[Box](.[A][B](step, m) {
+    let captured = Capture.mk[Box[A]](.[T](_value: T) { m });
     let shadowed =
-      Shadow.mk_shadow[Box[A]](__pair__[Box[A]][([T] T -> T) & Capture[Box[A]]](
+      Shadow.mk[Box[A]](__pair__[Box[A]][([T] T -> T) & Capture[Box[A]]](
       , m
       , __pair__[[T] T -> T][Capture[Box[A]]](.[T](value: T) { value }, captured)
       ));
     let mapped = step(shadowed);
-    __fst__[Box[B]][([T] T -> T) & Capture[Box[B]]](Shadow.un_shadow[Box[B]](mapped))
+    __fst__[Box[B]][([T] T -> T) & Capture[Box[B]]](Shadow.get[Box[B]](mapped))
   })
 }
 
@@ -28,7 +28,7 @@ fn box_functor() -> Functor[Box] {
 // proves the round-tripped dictionary still functions as a dictionary.
 pub fn main() {
   let dict = round_functor(box_functor());
-  let branded = Box.mk_box[String](__pair__[String][.]("functor dict roundtrip ok\n"[String], ()));
-  let mapped = Functor.fmap[Box](dict)[String][String](.(s) { s }, branded);
-  print(__fst__[String][.](Box.un_box[String](mapped)))
+  let branded = Box.mk[String](__pair__[String][.]("functor dict roundtrip ok\n"[String], ()));
+  let mapped = Functor.get[Box](dict)[String][String](.(s) { s }, branded);
+  print(__fst__[String][.](Box.get[String](mapped)))
 }

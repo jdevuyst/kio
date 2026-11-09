@@ -1,30 +1,31 @@
 module interval_merge_planner/planner;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
-labels Window = { window_name: String, start_minute: I32, end_minute: I32 };
+type Window = { Window_name: String; Start_minute: I32; End_minute: I32 };
 
-labels Plan = {
-, current_start: I32
-, current_end: I32
-, current_windows: I32
-, closed_segments: I32
-, covered_minutes: I32
-, idle_gap_count: I32
-, idle_minutes: I32
-, merged_edges: I32
-, touching_edges: I32
-, conflict_count: I32
-, conflict_minutes: I32
+type Plan = {
+  Current_start: I32;
+  Current_end: I32;
+  Current_windows: I32;
+  Closed_segments: I32;
+  Covered_minutes: I32;
+  Idle_gap_count: I32;
+  Idle_minutes: I32;
+  Merged_edges: I32;
+  Touching_edges: I32;
+  Conflict_count: I32;
+  Conflict_minutes: I32
 };
 
 fn window(name: String, start: I32, end: I32) -> Window {
-  {window_name = name, start_minute = start, end_minute = end}
+  (Window_name.mk(name), Start_minute.mk(start), End_minute.mk(end))
 }
 
 fn backup_db() -> Window { window("backup-db", 30, 100) }
@@ -54,72 +55,78 @@ fn overlap_minutes(active_end: I32, next_start: I32) -> I32 {
 }
 
 fn initial_plan(first: Window) -> Plan {
-  {
-  , current_start = first.?{start_minute}
-  , current_end = first.?{end_minute}
-  , current_windows = 1
-  , closed_segments = 0
-  , covered_minutes = 0
-  , idle_gap_count = 0
-  , idle_minutes = 0
-  , merged_edges = 0
-  , touching_edges = 0
-  , conflict_count = 0
-  , conflict_minutes = 0
-  }
+  (
+  , Current_start.mk(first.>select { Start_minute.get })
+  , Current_end.mk(first.>select { End_minute.get })
+  , Current_windows.mk(1)
+  , Closed_segments.mk(0)
+  , Covered_minutes.mk(0)
+  , Idle_gap_count.mk(0)
+  , Idle_minutes.mk(0)
+  , Merged_edges.mk(0)
+  , Touching_edges.mk(0)
+  , Conflict_count.mk(0)
+  , Conflict_minutes.mk(0)
+  )
 }
 
 fn merge_plan(plan: Plan, next: Window) -> Plan {
-  let next_start = next.?{start_minute};
-  let next_end = next.?{end_minute};
-  let overlap = overlap_minutes(plan.?{current_end}, next_start);
-  let has_conflict = arith.lt_i32(next_start, plan.?{current_end});
-  let has_touch = arith.eq_i32(next_start, plan.?{current_end});
-  {
-  , current_start = plan.?{current_start}
-  , current_end = max_i32(plan.?{current_end}, next_end)
-  , current_windows = arith.add_i32(plan.?{current_windows}, 1)
-  , closed_segments = plan.?{closed_segments}
-  , covered_minutes = plan.?{covered_minutes}
-  , idle_gap_count = plan.?{idle_gap_count}
-  , idle_minutes = plan.?{idle_minutes}
-  , merged_edges = arith.add_i32(plan.?{merged_edges}, 1)
-  , touching_edges = add_if(has_touch, plan.?{touching_edges}, 1)
-  , conflict_count = add_if(has_conflict, plan.?{conflict_count}, 1)
-  , conflict_minutes = arith.add_i32(plan.?{conflict_minutes}, overlap)
-  }
+  let next_start = next.>select { Start_minute.get };
+  let next_end = next.>select { End_minute.get };
+  let overlap = overlap_minutes(plan.>select { Current_end.get }, next_start);
+  let has_conflict = arith.lt_i32(next_start, plan.>select { Current_end.get });
+  let has_touch = arith.eq_i32(next_start, plan.>select { Current_end.get });
+  (
+  , Current_start.mk(plan.>select { Current_start.get })
+  , Current_end.mk(max_i32(plan.>select { Current_end.get }, next_end))
+  , Current_windows.mk(arith.add_i32(plan.>select { Current_windows.get }, 1))
+  , Closed_segments.mk(plan.>select { Closed_segments.get })
+  , Covered_minutes.mk(plan.>select { Covered_minutes.get })
+  , Idle_gap_count.mk(plan.>select { Idle_gap_count.get })
+  , Idle_minutes.mk(plan.>select { Idle_minutes.get })
+  , Merged_edges.mk(arith.add_i32(plan.>select { Merged_edges.get }, 1))
+  , Touching_edges.mk(add_if(has_touch, plan.>select { Touching_edges.get }, 1))
+  , Conflict_count.mk(add_if(has_conflict, plan.>select { Conflict_count.get }, 1))
+  , Conflict_minutes.mk(arith.add_i32(plan.>select { Conflict_minutes.get }, overlap))
+  )
 }
 
 fn close_and_start(plan: Plan, next: Window) -> Plan {
-  let closed_duration = duration(plan.?{current_start}, plan.?{current_end});
-  let gap = arith.sub_i32(next.?{start_minute}, plan.?{current_end});
-  {
-  , current_start = next.?{start_minute}
-  , current_end = next.?{end_minute}
-  , current_windows = 1
-  , closed_segments = arith.add_i32(plan.?{closed_segments}, 1)
-  , covered_minutes = arith.add_i32(plan.?{covered_minutes}, closed_duration)
-  , idle_gap_count = arith.add_i32(plan.?{idle_gap_count}, 1)
-  , idle_minutes = arith.add_i32(plan.?{idle_minutes}, gap)
-  , merged_edges = plan.?{merged_edges}
-  , touching_edges = plan.?{touching_edges}
-  , conflict_count = plan.?{conflict_count}
-  , conflict_minutes = plan.?{conflict_minutes}
-  }
+  let closed_duration =
+    duration(plan.>select { Current_start.get }, plan.>select { Current_end.get });
+  let gap = arith.sub_i32(next.>select { Start_minute.get }, plan.>select { Current_end.get });
+  (
+  , Current_start.mk(next.>select { Start_minute.get })
+  , Current_end.mk(next.>select { End_minute.get })
+  , Current_windows.mk(1)
+  , Closed_segments.mk(arith.add_i32(plan.>select { Closed_segments.get }, 1))
+  , Covered_minutes.mk(arith.add_i32(plan.>select { Covered_minutes.get }, closed_duration))
+  , Idle_gap_count.mk(arith.add_i32(plan.>select { Idle_gap_count.get }, 1))
+  , Idle_minutes.mk(arith.add_i32(plan.>select { Idle_minutes.get }, gap))
+  , Merged_edges.mk(plan.>select { Merged_edges.get })
+  , Touching_edges.mk(plan.>select { Touching_edges.get })
+  , Conflict_count.mk(plan.>select { Conflict_count.get })
+  , Conflict_minutes.mk(plan.>select { Conflict_minutes.get })
+  )
 }
 
 fn consume(plan: Plan, next: Window) -> Plan {
-  if(arith.leq_i32(next.?{start_minute}, plan.?{current_end})) {
+  if(arith.leq_i32(next.>select { Start_minute.get }, plan.>select { Current_end.get })) {
     merge_plan(plan, next)
   } else {
     close_and_start(plan, next)
   }
 }
 
-fn final_segments(plan: Plan) -> I32 { arith.add_i32(plan.?{closed_segments}, 1) }
+fn final_segments(plan: Plan) -> I32 {
+  arith.add_i32(plan.>select { Closed_segments.get }, 1)
+}
 
 fn final_covered_minutes(plan: Plan) -> I32 {
-  arith.add_i32(plan.?{covered_minutes}, duration(plan.?{current_start}, plan.?{current_end}))
+  arith.add_i32(
+  , plan.>select { Covered_minutes.get }
+  , duration(plan.>select { Current_start.get }, plan.>select { Current_end.get })
+  )
 }
 
 fn cat2(left: String, right: String) -> String { text.string_concat(left, right) }
@@ -137,20 +144,34 @@ fn show_bool(value: Bool) -> String { fmt.bool_to_string(value) }
 fn line(label: String, value: I32) { io.print(cat3(label, show_i32(value), "\n")) }
 
 fn print_window(window_value: Window) {
-  io.print(cat5("- ", window_value.?{window_name}, " ", show_i32(window_value.?{start_minute}), "-"));
-  io.print(cat3(show_i32(window_value.?{end_minute}), "", "\n"))
+  io.print(cat5(
+  , "- "
+  , window_value.>select { Window_name.get }
+  , " "
+  , show_i32(window_value.>select { Start_minute.get })
+  , "-"
+  ));
+  io.print(cat3(show_i32(window_value.>select { End_minute.get }), "", "\n"))
 }
 
 fn print_segment(number: I32, plan: Plan) {
   io.print(cat3("- segment ", show_i32(number), " "));
-  io.print(cat3(show_i32(plan.?{current_start}), "-", show_i32(plan.?{current_end})));
-  io.print(cat3(" duration ", show_i32(duration(plan.?{current_start}, plan.?{current_end})), " "));
-  io.print(cat3("windows ", show_i32(plan.?{current_windows}), "\n"))
+  io.print(cat3(
+  , show_i32(plan.>select { Current_start.get })
+  , "-"
+  , show_i32(plan.>select { Current_end.get })
+  ));
+  io.print(cat3(
+  , " duration "
+  , show_i32(duration(plan.>select { Current_start.get }, plan.>select { Current_end.get }))
+  , " "
+  ));
+  io.print(cat3("windows ", show_i32(plan.>select { Current_windows.get }), "\n"))
 }
 
 fn print_gap(number: I32, left: Plan, right: Plan) {
-  let gap_start = left.?{current_end};
-  let gap_end = right.?{current_start};
+  let gap_start = left.>select { Current_end.get };
+  let gap_end = right.>select { Current_start.get };
   io.print(cat3("- gap ", show_i32(number), " "));
   io.print(cat3(show_i32(gap_start), "-", show_i32(gap_end)));
   io.print(cat3(" duration ", show_i32(duration(gap_start, gap_end)), "\n"))
@@ -191,20 +212,26 @@ pub fn run() {
   print_gap(1, p3, p5);
   print_gap(2, p5, p6);
   io.print("\nConflicts\n");
-  print_conflict("payroll-export", overlap_minutes(p2.?{current_end}, w3.?{start_minute}));
-  print_conflict("metrics-cleanup", overlap_minutes(p4.?{current_end}, w5.?{start_minute}));
+  print_conflict(
+  , "payroll-export"
+  , overlap_minutes(p2.>select { Current_end.get }, w3.>select { Start_minute.get })
+  );
+  print_conflict(
+  , "metrics-cleanup"
+  , overlap_minutes(p4.>select { Current_end.get }, w5.>select { Start_minute.get })
+  );
   io.print("\nSummary\n");
   line("covered_minutes=", final_covered_minutes(p6));
-  line("idle_gap_count=", p6.?{idle_gap_count});
-  line("idle_minutes=", p6.?{idle_minutes});
+  line("idle_gap_count=", p6.>select { Idle_gap_count.get });
+  line("idle_minutes=", p6.>select { Idle_minutes.get });
   line("merged_segments=", final_segments(p6));
-  line("merged_edges=", p6.?{merged_edges});
-  line("touching_edges=", p6.?{touching_edges});
+  line("merged_edges=", p6.>select { Merged_edges.get });
+  line("touching_edges=", p6.>select { Touching_edges.get });
   io.print(cat3(
   , "touch_backup_to_search="
-  , show_bool(arith.eq_i32(w1.?{end_minute}, w2.?{start_minute}))
+  , show_bool(arith.eq_i32(w1.>select { End_minute.get }, w2.>select { Start_minute.get }))
   , "\n"
   ));
-  line("conflicts=", p6.?{conflict_count});
-  line("conflict_minutes=", p6.?{conflict_minutes})
+  line("conflicts=", p6.>select { Conflict_count.get });
+  line("conflict_minutes=", p6.>select { Conflict_minutes.get })
 }

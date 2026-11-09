@@ -1,3 +1,3 @@
 module main;
 
-rec newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+rec type { Box[A]: A { pub mk; pub get } }

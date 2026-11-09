@@ -22,13 +22,12 @@ import vec/macros/macro_util(
 , term_nil
 , type_cons
 , type_nil
-, type_reverse
 );
 import vec/macros/testapi(I32, Int, String);
 
 type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -135,7 +134,7 @@ pure fn forall_view(ct: __Comptime__, typ: __Type__) -> Maybe_forall_view {
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 pure fn forall_var(ct: __Comptime__, view: Forall_view) -> __Type_var__ {
@@ -146,32 +145,29 @@ pure fn forall_body(ct: __Comptime__, view: Forall_view) -> __Type__ {
   __snd__[__Type_arity__][__Type__](__snd__[__Type_var__][__Type_arity__ & __Type__](view))
 }
 
-pure fn collect_type(ct: __Comptime__, acc: Type_list, typ: __Type__) -> Type_list {
-  type_cons(ct, typ, acc)
-}
-
 pure fn function_params(ct: __Comptime__, typ: __Type__) -> Type_list {
-  type_reverse(
-  , ct
-  , __type_function_params_fold__(ct)[Type_list](
-    , typ
-    , type_nil()
-    , .(acc: Type_list, item: __Type__) -> Type_list { collect_type(ct, acc, item) }
-    )
+  __either__[Function_view][.][Type_list](
+  , function_view(ct, typ)
+  , .(view: Function_view) -> Type_list {
+      let domain = __fst__[__Type__][__Type__](view);
+      __if_then_else__(
+      , __type_equal__(ct, domain, __type_unit__(ct))
+      , .() -> Type_list { type_nil() }
+      , .() -> Type_list { product_spine(ct, domain) }
+      )
+    }
+  , .() -> Type_list { type_nil() }
   )
 }
 
-rec newtype Type_var_list : . | (__Type_var__ & Type_var_list) {
-  constructor mk_type_var_list;
-  projector un_type_var_list
-  }
+rec type { Type_var_list: . | (__Type_var__ & Type_var_list) { mk; get } }
 
 pure fn type_var_nil() -> Type_var_list {
-  Type_var_list.mk_type_var_list(__left__[.][__Type_var__ & Type_var_list](()))
+  Type_var_list.mk(__left__[.][__Type_var__ & Type_var_list](()))
 }
 
 pure fn type_var_cons(ct: __Comptime__, head: __Type_var__, tail: Type_var_list) -> Type_var_list {
-  Type_var_list.mk_type_var_list(__right__[.][__Type_var__ & Type_var_list]((head, tail)))
+  Type_var_list.mk(__right__[.][__Type_var__ & Type_var_list]((head, tail)))
 }
 
 type Type_var_reverse_state = Type_var_list;
@@ -182,7 +178,7 @@ type Type_var_reverse_step = Type_var_list | Type_var_reverse_next;
 
 pure fn reverse_type_vars_step(ct: __Comptime__, fuel: Type_var_list, acc: Type_var_reverse_state) -> Type_var_reverse_step {
   __either__[.][__Type_var__ & Type_var_list][Type_var_reverse_step](
-  , Type_var_list.un_type_var_list(fuel)
+  , Type_var_list.get(fuel)
   , .(_done: .) -> Type_var_reverse_step { __left__[Type_var_list][Type_var_reverse_next](acc) }
   , .(cell: __Type_var__ & Type_var_list) -> Type_var_reverse_step {
       __right__[Type_var_list][Type_var_reverse_next]((
@@ -238,7 +234,7 @@ type Binder_lookup_step = Maybe_var | Binder_lookup_next;
 
 pure fn binder_lookup_step(ct: __Comptime__, fuel: Type_var_list, typ: Binder_lookup_state) -> Binder_lookup_step {
   __either__[.][__Type_var__ & Type_var_list][Binder_lookup_step](
-  , Type_var_list.un_type_var_list(fuel)
+  , Type_var_list.get(fuel)
   , .(_done: .) -> Binder_lookup_step { __left__[Maybe_var][Binder_lookup_next](no_var(ct)) }
   , .(cell: __Type_var__ & Type_var_list) -> Binder_lookup_step {
       let var = __fst__[__Type_var__][Type_var_list](cell);
@@ -386,12 +382,12 @@ type Rule_tail3 = __Type__ & Type_list & __Checked_term__;
 
 type Rule = Type_var_list & Rule_tail3;
 
-rec newtype Rule_list : . | (Rule & Rule_list) { constructor mk_rule_list; projector un_rule_list }
+rec type { Rule_list: . | (Rule & Rule_list) { mk; get } }
 
-pure fn rule_nil() -> Rule_list { Rule_list.mk_rule_list(__left__[.][Rule & Rule_list](())) }
+pure fn rule_nil() -> Rule_list { Rule_list.mk(__left__[.][Rule & Rule_list](())) }
 
 pure fn rule_cons(ct: __Comptime__, head: Rule, tail: Rule_list) -> Rule_list {
-  Rule_list.mk_rule_list(__right__[.][Rule & Rule_list]((head, tail)))
+  Rule_list.mk(__right__[.][Rule & Rule_list]((head, tail)))
 }
 
 pure fn rule_binders(ct: __Comptime__, rule: Rule) -> Type_var_list {
@@ -418,7 +414,7 @@ type Rule_reverse_step = Rule_list | Rule_reverse_next;
 
 pure fn reverse_rules_step(ct: __Comptime__, fuel: Rule_list, acc: Rule_reverse_state) -> Rule_reverse_step {
   __either__[.][Rule & Rule_list][Rule_reverse_step](
-  , Rule_list.un_rule_list(fuel)
+  , Rule_list.get(fuel)
   , .(_done: .) -> Rule_reverse_step { __left__[Rule_list][Rule_reverse_next](acc) }
   , .(cell: Rule & Rule_list) -> Rule_reverse_step {
       __right__[Rule_list][Rule_reverse_next]((
@@ -535,17 +531,7 @@ pure fn binder_used_in_type(ct: __Comptime__, typ: __Type__, var: __Type_var__) 
                   , .(view: Function_view) -> Comptime_bool {
                       comptime_bool_or(
                       , ct
-                      , __type_function_params_fold__(ct)(
-                        , loop_fuel
-                        , .f
-                        , .(found: Comptime_bool, param: __Type__) -> Comptime_bool {
-                            comptime_bool_or(
-                            , ct
-                            , found
-                            , .() -> Comptime_bool { loop_recur(param, loop_var) }
-                            )
-                          }
-                        )
+                      , loop_recur(__fst__[__Type__][__Type__](view), loop_var)
                       , .() -> Comptime_bool { loop_recur(function_result(ct, view), loop_var) }
                       )
                     }
@@ -601,7 +587,7 @@ pure fn binder_used_in_type_list(ct: __Comptime__, types: Type_list, var: __Type
     , _loop_state: .
     ) -> Comptime_bool {
       __either__[.][__Type__ & Type_list][Comptime_bool](
-      , Type_list.un_type_list(binder_list_types(ct, loop_fuel))
+      , Type_list.get(binder_list_types(ct, loop_fuel))
       , .(_done: .) -> Comptime_bool { .f }
       , .(cell: __Type__ & Type_list) -> Comptime_bool {
           __if_then_else__(
@@ -645,7 +631,7 @@ type Validation_step = Validation_result | No_fresh_next;
 
 pure fn no_fresh_step(ct: __Comptime__, fuel: Type_var_list, state: No_fresh_state) -> Validation_step {
   __either__[.][__Type_var__ & Type_var_list][Validation_step](
-  , Type_var_list.un_type_var_list(fuel)
+  , Type_var_list.get(fuel)
   , .(_done: .) -> Validation_step { __left__[Validation_result][No_fresh_next](validation_ok(ct)) }
   , .(cell: __Type_var__ & Type_var_list) -> Validation_step {
       let var = __fst__[__Type_var__][Type_var_list](cell);
@@ -718,7 +704,7 @@ type Decreasing_step = Validation_result | Decreasing_next;
 
 pure fn decreasing_step(ct: __Comptime__, fuel: Type_list, result: Decreasing_state) -> Decreasing_step {
   __either__[.][__Type__ & Type_list][Decreasing_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Decreasing_step {
       __left__[Validation_result][Decreasing_next](validation_ok(ct))
     }
@@ -802,30 +788,24 @@ pure fn rule_candidate_append(ct: __Comptime__, left: Rule_candidate, right: Rul
   rule_append(ct, left, right)
 }
 
-rec newtype Rule_bucket_list : . | (Rule_bucket & Rule_bucket_list) {
-  constructor mk_rule_bucket_list;
-  projector un_rule_bucket_list
-  }
+rec type { Rule_bucket_list: . | (Rule_bucket & Rule_bucket_list) { mk; get } }
 
 pure fn rule_bucket_nil() -> Rule_bucket_list {
-  Rule_bucket_list.mk_rule_bucket_list(__left__[.][Rule_bucket & Rule_bucket_list](()))
+  Rule_bucket_list.mk(__left__[.][Rule_bucket & Rule_bucket_list](()))
 }
 
 pure fn rule_bucket_cons(ct: __Comptime__, head: Rule_bucket, tail: Rule_bucket_list) -> Rule_bucket_list {
-  Rule_bucket_list.mk_rule_bucket_list(__right__[.][Rule_bucket & Rule_bucket_list]((head, tail)))
+  Rule_bucket_list.mk(__right__[.][Rule_bucket & Rule_bucket_list]((head, tail)))
 }
 
-rec newtype Type_name_list : . | (__Type_name__ & Type_name_list) {
-  constructor mk_type_name_list;
-  projector un_type_name_list
-  }
+rec type { Type_name_list: . | (__Type_name__ & Type_name_list) { mk; get } }
 
 pure fn type_name_nil() -> Type_name_list {
-  Type_name_list.mk_type_name_list(__left__[.][__Type_name__ & Type_name_list](()))
+  Type_name_list.mk(__left__[.][__Type_name__ & Type_name_list](()))
 }
 
 pure fn type_name_cons(ct: __Comptime__, head: __Type_name__, tail: Type_name_list) -> Type_name_list {
-  Type_name_list.mk_type_name_list(__right__[.][__Type_name__ & Type_name_list]((head, tail)))
+  Type_name_list.mk(__right__[.][__Type_name__ & Type_name_list]((head, tail)))
 }
 
 type Type_name_contains_state = __Type_name__;
@@ -840,7 +820,7 @@ pure fn type_name_contains_step(
 , needle: Type_name_contains_state
 ) -> Type_name_contains_step {
   __either__[.][__Type_name__ & Type_name_list][Type_name_contains_step](
-  , Type_name_list.un_type_name_list(fuel)
+  , Type_name_list.get(fuel)
   , .(_done: .) -> Type_name_contains_step { __left__[Comptime_bool][Type_name_contains_next](.f) }
   , .(cell: __Type_name__ & Type_name_list) -> Type_name_contains_step {
       __if_then_else__(
@@ -912,20 +892,14 @@ pure fn rule_arg_bucket_candidates(ct: __Comptime__, bucket: Rule_arg_bucket) ->
   __snd__[Rule_arg_key][Rule_candidate](bucket)
 }
 
-rec newtype Rule_arg_bucket_list : . | (Rule_arg_bucket & Rule_arg_bucket_list) {
-  constructor mk_rule_arg_bucket_list;
-  projector un_rule_arg_bucket_list
-  }
+rec type { Rule_arg_bucket_list: . | (Rule_arg_bucket & Rule_arg_bucket_list) { mk; get } }
 
 pure fn rule_arg_bucket_nil() -> Rule_arg_bucket_list {
-  Rule_arg_bucket_list.mk_rule_arg_bucket_list(__left__[.][Rule_arg_bucket & Rule_arg_bucket_list](()))
+  Rule_arg_bucket_list.mk(__left__[.][Rule_arg_bucket & Rule_arg_bucket_list](()))
 }
 
 pure fn rule_arg_bucket_cons(ct: __Comptime__, head: Rule_arg_bucket, tail: Rule_arg_bucket_list) -> Rule_arg_bucket_list {
-  Rule_arg_bucket_list.mk_rule_arg_bucket_list(__right__[.][Rule_arg_bucket & Rule_arg_bucket_list]((
-  , head
-  , tail
-  )))
+  Rule_arg_bucket_list.mk(__right__[.][Rule_arg_bucket & Rule_arg_bucket_list]((head, tail)))
 }
 
 type Rule_index_shape_tail = Rule_index_head & Rule_arg_bucket_list;
@@ -1002,13 +976,13 @@ type Insert_bucket_step = Insert_bucket_result | Insert_bucket_next;
 
 pure fn insert_bucket_step(ct: __Comptime__, fuel: Type_name_list, state: Insert_bucket_state) -> Insert_bucket_step {
   __either__[.][__Type_name__ & Type_name_list][Insert_bucket_step](
-  , Type_name_list.un_type_name_list(fuel)
+  , Type_name_list.get(fuel)
   , .(_done: .) -> Insert_bucket_step {
       __left__[Insert_bucket_result][Insert_bucket_next](__right__[Rule_bucket_list][.](()))
     }
   , .(name_cell: __Type_name__ & Type_name_list) -> Insert_bucket_step {
       __either__[.][Rule_bucket & Rule_bucket_list][Insert_bucket_step](
-      , Rule_bucket_list.un_rule_bucket_list(insert_bucket_buckets(ct, state))
+      , Rule_bucket_list.get(insert_bucket_buckets(ct, state))
       , .(_missing_bucket: .) -> Insert_bucket_step {
           __left__[Insert_bucket_result][Insert_bucket_next](__right__[Rule_bucket_list][.](()))
         }
@@ -1076,8 +1050,7 @@ pure fn insert_rule_bucket(
               , __snd__[Type_name_list][Insert_bucket_state](next)
               )
             , .(tail: Rule_bucket_list) -> Insert_bucket_result {
-                let cell =
-                  Rule_bucket_list.un_rule_bucket_list(insert_bucket_buckets(ct, loop_state));
+                let cell = Rule_bucket_list.get(insert_bucket_buckets(ct, loop_state));
                 __either__[.][Rule_bucket & Rule_bucket_list][Insert_bucket_result](
                 , cell
                 , .(_empty: .) -> Insert_bucket_result { __left__[Rule_bucket_list][.](tail) }
@@ -1129,7 +1102,7 @@ pure fn insert_arg_bucket_step(
 , state: Insert_arg_bucket_state
 ) -> Insert_arg_bucket_step {
   __either__[.][Rule_arg_bucket & Rule_arg_bucket_list][Insert_arg_bucket_step](
-  , Rule_arg_bucket_list.un_rule_arg_bucket_list(fuel)
+  , Rule_arg_bucket_list.get(fuel)
   , .(_done: .) -> Insert_arg_bucket_step {
       __left__[Insert_arg_bucket_result][Insert_arg_bucket_next](__right__[Rule_arg_bucket_list][.](()))
     }
@@ -1189,7 +1162,7 @@ pure fn insert_rule_arg_bucket(
               , __snd__[Rule_arg_bucket_list][Insert_arg_bucket_state](next)
               )
             , .(tail: Rule_arg_bucket_list) -> Insert_arg_bucket_result {
-                let cell = Rule_arg_bucket_list.un_rule_arg_bucket_list(loop_fuel);
+                let cell = Rule_arg_bucket_list.get(loop_fuel);
                 __either__[.][Rule_arg_bucket & Rule_arg_bucket_list][Insert_arg_bucket_result](
                 , cell
                 , .(_empty: .) -> Insert_arg_bucket_result {
@@ -1273,7 +1246,7 @@ pure fn rule_first_arg_exact_name(ct: __Comptime__, rule: Rule) -> Maybe_type_na
 
 pure fn index_rules_step(ct: __Comptime__, fuel: Rule_list, state: Index_rules_state) -> Index_rules_step {
   __either__[.][Rule & Rule_list][Index_rules_step](
-  , Rule_list.un_rule_list(fuel)
+  , Rule_list.get(fuel)
   , .(_done: .) -> Index_rules_step { __left__[Rule_index][Index_rules_next](state) }
   , .(cell: Rule & Rule_list) -> Index_rules_step {
       let rule = __fst__[Rule][Rule_list](cell);
@@ -1405,13 +1378,13 @@ type Lookup_bucket_step = Maybe_rule_candidate | Lookup_bucket_next;
 
 pure fn lookup_bucket_step(ct: __Comptime__, fuel: Type_name_list, state: Lookup_bucket_state) -> Lookup_bucket_step {
   __either__[.][__Type_name__ & Type_name_list][Lookup_bucket_step](
-  , Type_name_list.un_type_name_list(fuel)
+  , Type_name_list.get(fuel)
   , .(_done: .) -> Lookup_bucket_step {
       __left__[Maybe_rule_candidate][Lookup_bucket_next](no_candidate())
     }
   , .(name_cell: __Type_name__ & Type_name_list) -> Lookup_bucket_step {
       __either__[.][Rule_bucket & Rule_bucket_list][Lookup_bucket_step](
-      , Rule_bucket_list.un_rule_bucket_list(lookup_bucket_buckets(ct, state))
+      , Rule_bucket_list.get(lookup_bucket_buckets(ct, state))
       , .(_missing_bucket: .) -> Lookup_bucket_step {
           __left__[Maybe_rule_candidate][Lookup_bucket_next](no_candidate())
         }
@@ -1482,7 +1455,7 @@ pure fn lookup_arg_bucket_step(
 , state: Lookup_arg_bucket_state
 ) -> Lookup_arg_bucket_step {
   __either__[.][Rule_arg_bucket & Rule_arg_bucket_list][Lookup_arg_bucket_step](
-  , Rule_arg_bucket_list.un_rule_arg_bucket_list(fuel)
+  , Rule_arg_bucket_list.get(fuel)
   , .(_done: .) -> Lookup_arg_bucket_step {
       __left__[Maybe_rule_candidate][Lookup_arg_bucket_next](no_candidate())
     }
@@ -1537,7 +1510,7 @@ pure fn rules_for_arg_name(
 
 pure fn rule_list_empty(ct: __Comptime__, rules: Rule_list) -> Comptime_bool {
   __either__[.][Rule & Rule_list][Comptime_bool](
-  , Rule_list.un_rule_list(rules)
+  , Rule_list.get(rules)
   , .(_done: .) -> Comptime_bool { .t }
   , .(_cell: Rule & Rule_list) -> Comptime_bool { .f }
   )
@@ -1599,8 +1572,6 @@ pure fn candidate_rules(ct: __Comptime__, index: Rule_index, goal: __Type__) -> 
   )
 }
 
-type Peel_state = Type_var_list;
-
 type Rule_error = __Diagnostic_text__ | .;
 
 pure fn rule_error_message(ct: __Comptime__, message: __Diagnostic_text__) -> Rule_error {
@@ -1628,54 +1599,25 @@ pure fn finish_rule_error(ct: __Comptime__, error: Rule_error) -> __Checked_term
 
 type Peel_result = Rule | Rule_error;
 
-type Peel_next = __Type__ & Peel_state;
-
-type Peel_step = Peel_result | Peel_next;
-
-pure fn peel_step(ct: __Comptime__, fuel: __Type__, state: Peel_state, term: __Checked_term__) -> Peel_step {
-  __either__[Forall_view][.][Peel_step](
-  , forall_view(ct, fuel)
-  , .(view: Forall_view) -> Peel_step {
-      __right__[Peel_result][Peel_next]((
-      , forall_body(ct, view)
-      , type_var_cons(ct, forall_var(ct, view), state)
+pure fn rule_from_slot(ct: __Comptime__, slot: Slot) -> Peel_result {
+  let prefix =
+    __type_forall_prefix_fold__(ct)[Type_var_list](
+    , slot_type(ct, slot)
+    , type_var_nil()
+    , .(reversed: Type_var_list, binder: __Type_var__) -> Type_var_list {
+        type_var_cons(ct, binder, reversed)
+      }
+    );
+  let body = __snd__[Type_var_list][__Type__](prefix);
+  __either__[Function_view][.][Peel_result](
+  , function_view(ct, body)
+  , .(view: Function_view) -> Peel_result {
+      __left__[Rule][Rule_error]((
+      , type_var_reverse(ct, __fst__[Type_var_list][__Type__](prefix))
+      , (function_result(ct, view), (function_params(ct, body), slot_term(ct, slot)))
       ))
     }
-  , .() -> Peel_step {
-      __either__[Function_view][.][Peel_step](
-      , function_view(ct, fuel)
-      , .(view: Function_view) -> Peel_step {
-          __left__[Peel_result][Peel_next](__left__[Rule][Rule_error]((
-          , type_var_reverse(ct, state)
-          , (function_result(ct, view), (function_params(ct, fuel), term))
-          )))
-        }
-      , .() -> Peel_step {
-          __left__[Peel_result][Peel_next](__right__[Rule][Rule_error](rule_error_non_function(ct)))
-        }
-      )
-    }
-  )
-}
-
-pure fn rule_from_slot(ct: __Comptime__, slot: Slot) -> Peel_result {
-  let typ = slot_type(ct, slot);
-  __structural_recur__(ct)[__Type__][Peel_state][Peel_result](
-  , typ
-  , type_var_nil()
-  , .(
-    , loop_recur: (__Type__ & Peel_state) -> Peel_result
-    , loop_fuel: __Type__
-    , loop_state: Peel_state
-    ) -> Peel_result {
-      __either__[Peel_result][__Type__ & Peel_state][Peel_result](
-      , peel_step(ct, loop_fuel, loop_state, slot_term(ct, slot))
-      , .(done: Peel_result) -> Peel_result { done }
-      , .(next: __Type__ & Peel_state) -> Peel_result {
-          loop_recur(__fst__[__Type__][Peel_state](next), __snd__[__Type__][Peel_state](next))
-        }
-      )
-    }
+  , .() -> Peel_result { __right__[Rule][Rule_error](rule_error_non_function(ct)) }
   )
 }
 
@@ -1697,13 +1639,13 @@ type Build_rules_step = Build_rules_result | Build_rules_next;
 
 pure fn build_rules_step(ct: __Comptime__, fuel: Type_list, state: Build_rules_state) -> Build_rules_step {
   __either__[.][__Type__ & Type_list][Build_rules_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Build_rules_step {
       __left__[Build_rules_result][Build_rules_next](__left__[Rule_list][Rule_error](build_rules_rules(state)))
     }
   , .(type_cell: __Type__ & Type_list) -> Build_rules_step {
       __either__[.][Slot & Slot_list][Build_rules_step](
-      , Slot_list.un_slot_list(build_rules_slots(state))
+      , Slot_list.get(build_rules_slots(state))
       , .(_missing_slot: .) -> Build_rules_step {
           __left__[Build_rules_result][Build_rules_next](__left__[Rule_list][Rule_error](build_rules_rules(state)))
         }
@@ -1890,7 +1832,7 @@ pure fn solve_params_step(
 , state: Solve_params_state
 ) -> Solve_params_step {
   __either__[.][__Type__ & Type_list][Solve_params_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Solve_params_step {
       __left__[Solve_params_result][Solve_params_next](solve_params_ok(ct, state))
     }
@@ -1981,7 +1923,7 @@ pure fn solve_params_exist_step(
 , fuel: Type_list
 ) -> Solve_params_exist_step {
   __either__[.][__Type__ & Type_list][Solve_params_exist_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Solve_params_exist_step {
       __left__[Exists_result][Solve_params_exist_next](exists_result(ct, .t))
     }
@@ -2206,17 +2148,12 @@ pure fn attempt_rule_exists(
   )
 }
 
-rec newtype Search_count : . | Search_count {
-  constructor mk_search_count;
-  projector un_search_count
-  }
+rec type { Search_count: . | Search_count { mk; get } }
 
-pure fn search_count_zero() -> Search_count {
-  Search_count.mk_search_count(__left__[.][Search_count](()))
-}
+pure fn search_count_zero() -> Search_count { Search_count.mk(__left__[.][Search_count](())) }
 
 pure fn search_count_succ(count: Search_count) -> Search_count {
-  Search_count.mk_search_count(__right__[.][Search_count](count))
+  Search_count.mk(__right__[.][Search_count](count))
 }
 
 type Search_payload = Maybe_term & Search_count;
@@ -2259,7 +2196,7 @@ pure fn search_exists_step(
 , goal: __Type__
 ) -> Search_exists_step {
   __either__[.][Rule & Rule_list][Search_exists_step](
-  , Rule_list.un_rule_list(fuel)
+  , Rule_list.get(fuel)
   , .(_done: .) -> Search_exists_step {
       __left__[Exists_result][Search_exists_next](exists_result(ct, .f))
     }
@@ -2370,7 +2307,7 @@ pure fn ambiguity_help(ct: __Comptime__) -> __Diagnostic_text__ {
 
 pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diagnostic_text__ {
   __either__[.][Search_count][__Diagnostic_text__](
-  , Search_count.un_search_count(count)
+  , Search_count.get(count)
   , .(_zero: .) -> __Diagnostic_text__ {
       __diagnostic_concat__(
       , ct
@@ -2380,7 +2317,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
     }
   , .(one_less: Search_count) -> __Diagnostic_text__ {
       __either__[.][Search_count][__Diagnostic_text__](
-      , Search_count.un_search_count(one_less)
+      , Search_count.get(one_less)
       , .(_one: .) -> __Diagnostic_text__ {
           __diagnostic_concat__(
           , ct
@@ -2390,7 +2327,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
         }
       , .(two_less: Search_count) -> __Diagnostic_text__ {
           __either__[.][Search_count][__Diagnostic_text__](
-          , Search_count.un_search_count(two_less)
+          , Search_count.get(two_less)
           , .(_two: .) -> __Diagnostic_text__ {
               __diagnostic_concat__(
               , ct
@@ -2400,7 +2337,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
             }
           , .(three_less: Search_count) -> __Diagnostic_text__ {
               __either__[.][Search_count][__Diagnostic_text__](
-              , Search_count.un_search_count(three_less)
+              , Search_count.get(three_less)
               , .(_three: .) -> __Diagnostic_text__ {
                   __diagnostic_concat__(
                   , ct
@@ -2410,7 +2347,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
                 }
               , .(four_less: Search_count) -> __Diagnostic_text__ {
                   __either__[.][Search_count][__Diagnostic_text__](
-                  , Search_count.un_search_count(four_less)
+                  , Search_count.get(four_less)
                   , .(_four: .) -> __Diagnostic_text__ {
                       __diagnostic_concat__(
                       , ct
@@ -2438,11 +2375,11 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
 
 pure fn search_done_result(ct: __Comptime__, state: Search_state, goal: __Type__) -> Macro_result {
   __either__[.][Search_count][Macro_result](
-  , Search_count.un_search_count(search_count(ct, state))
+  , Search_count.get(search_count(ct, state))
   , .(_zero: .) -> Macro_result { err(ct, no_rule_message(ct, goal)) }
   , .(one_less: Search_count) -> Macro_result {
       __either__[.][Search_count][Macro_result](
-      , Search_count.un_search_count(one_less)
+      , Search_count.get(one_less)
       , .(_one: .) -> Macro_result {
           __either__[__Checked_term__][.][Macro_result](
           , search_found(ct, state)
@@ -2489,7 +2426,7 @@ pure fn search_step(
 , goal: __Type__
 ) -> Search_step {
   __either__[.][Rule & Rule_list][Search_step](
-  , Rule_list.un_rule_list(fuel)
+  , Rule_list.get(fuel)
   , .(_done: .) -> Search_step { search_done(ct, state, goal) }
   , .(rule_cell: Rule & Rule_list) -> Search_step {
       __either__[__Checked_term__][.][Search_step](
@@ -2635,7 +2572,7 @@ pure fn derive_checked_impl(
 }
 
 /// Evaluates the corresponding fills macro and returns its checked core result and context.
-pub pure fn derive_checked(
+pure fn derive_checked(
 , ct: __Comptime__
 , fills: __Fill_ctx__
 , candidates_type: __Type__

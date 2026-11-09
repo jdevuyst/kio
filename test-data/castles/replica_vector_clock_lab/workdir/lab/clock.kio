@@ -2,39 +2,66 @@ module lab/clock;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/text(string_concat);
 
-pub labels Clock = { a: I32, b: I32, c: I32 };
+pub type Clock = { A: I32; B: I32; C: I32 };
 
-pub labels Node = { alpha: . } | { beta: . } | { gamma: . };
+pub type Node = { Alpha: . } | { Beta: . } | { Gamma: . };
 
-pub labels Relation = { same: . } | { before: . } | { after: . } | { concurrent: . };
+pub type Relation = { Same: . } | { Before: . } | { After: . } | { Concurrent: . };
 
-pub fn zero() -> Clock { {a = 0, b = 0, c = 0} }
+pub fn zero() -> Clock { (A.mk(0), B.mk(0), C.mk(0)) }
 
 fn maximum(x: I32, y: I32) -> I32 {
   if(arith.lt_i32(x, y)) { y } else { x }
 }
 
 pub fn join(x: Clock, y: Clock) -> Clock {
-  {a = maximum(x.?{a}, y.?{a}), b = maximum(x.?{b}, y.?{b}), c = maximum(x.?{c}, y.?{c})}
+  (
+  , A.mk(maximum(x.>select { A.get }, y.>select { A.get }))
+  , B.mk(maximum(x.>select { B.get }, y.>select { B.get }))
+  , C.mk(maximum(x.>select { C.get }, y.>select { C.get }))
+  )
 }
 
 pub fn tick(node: Node, clock: Clock) -> Clock {
   match(node) {
-    .(_a: Alpha) { clock.!{a = arith.add_i32(clock.?{a}, 1)} };
-    .(_b: Beta) { clock.!{b = arith.add_i32(clock.?{b}, 1)} };
-    .(_c: Gamma) { clock.!{c = arith.add_i32(clock.?{c}, 1)} }
+    .(_a: Alpha) {
+      (
+      , A.mk(arith.add_i32(clock.>select { A.get }, 1))
+      , B.mk(clock.>select { B.get })
+      , C.mk(clock.>select { C.get })
+      )
+    };
+    .(_b: Beta) {
+      (
+      , A.mk(clock.>select { A.get })
+      , B.mk(arith.add_i32(clock.>select { B.get }, 1))
+      , C.mk(clock.>select { C.get })
+      )
+    };
+    .(_c: Gamma) {
+      (
+      , A.mk(clock.>select { A.get })
+      , B.mk(clock.>select { B.get })
+      , C.mk(arith.add_i32(clock.>select { C.get }, 1))
+      )
+    }
   }
 }
 
 pub fn leq(x: Clock, y: Clock) -> Bool {
-  if(arith.leq_i32(x.?{a}, y.?{a})) {
-    if(arith.leq_i32(x.?{b}, y.?{b})) { arith.leq_i32(x.?{c}, y.?{c}) } else { .f }
+  if(arith.leq_i32(x.>select { A.get }, y.>select { A.get })) {
+    if(arith.leq_i32(x.>select { B.get }, y.>select { B.get })) {
+      arith.leq_i32(x.>select { C.get }, y.>select { C.get })
+    } else {
+      .f
+    }
   } else {
     .f
   }
@@ -42,11 +69,11 @@ pub fn leq(x: Clock, y: Clock) -> Bool {
 
 pub fn compare(x: Clock, y: Clock) -> Relation {
   if(leq(x, y)) {
-    if(leq(y, x)) { {same=}.>widen_sum } else { {before=}.>widen_sum }
+    if(leq(y, x)) { Same.mk(()).>widen_sum } else { Before.mk(()).>widen_sum }
   } else if(leq(y, x)) {
-    {after=}.>widen_sum
+    After.mk(()).>widen_sum
   } else {
-    {concurrent=}.>widen_sum
+    Concurrent.mk(()).>widen_sum
   }
 }
 
@@ -55,24 +82,24 @@ pub fn equal(x: Clock, y: Clock) -> Bool {
 }
 
 pub fn lexical_before(x: Clock, y: Clock) -> Bool {
-  if(arith.eq_i32(x.?{a}, y.?{a})) {
-    if(arith.eq_i32(x.?{b}, y.?{b})) {
-      arith.lt_i32(x.?{c}, y.?{c})
+  if(arith.eq_i32(x.>select { A.get }, y.>select { A.get })) {
+    if(arith.eq_i32(x.>select { B.get }, y.>select { B.get })) {
+      arith.lt_i32(x.>select { C.get }, y.>select { C.get })
     } else {
-      arith.lt_i32(x.?{b}, y.?{b})
+      arith.lt_i32(x.>select { B.get }, y.>select { B.get })
     }
   } else {
-    arith.lt_i32(x.?{a}, y.?{a})
+    arith.lt_i32(x.>select { A.get }, y.>select { A.get })
   }
 }
 
 pub fn show(clock: Clock) -> String {
   "["
-    .>string_concat(fmt.int_to_string(clock.?{a}))
+    .>string_concat(fmt.int_to_string(clock.>select { A.get }))
     .>string_concat(",")
-    .>string_concat(fmt.int_to_string(clock.?{b}))
+    .>string_concat(fmt.int_to_string(clock.>select { B.get }))
     .>string_concat(",")
-    .>string_concat(fmt.int_to_string(clock.?{c}))
+    .>string_concat(fmt.int_to_string(clock.>select { C.get }))
     .>string_concat("]")
 }
 

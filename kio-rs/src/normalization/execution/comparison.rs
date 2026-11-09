@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) enum ProbeArgs {
+    Type(ReflectedType),
     Packet(Value),
     Flattened(Vec<Value>),
 }
@@ -9,6 +10,7 @@ pub(super) enum ProbeArgs {
 impl ProbeArgs {
     pub fn into_eval(self) -> EvalArgs {
         match self {
+            Self::Type(_) => unreachable!("type probes use the type-stage continuation"),
             Self::Packet(value) => EvalArgs::One([value]),
             Self::Flattened(values) => EvalArgs::Many(values),
         }
@@ -288,6 +290,40 @@ impl Engine {
     }
 
     fn probe(&mut self, left: Value, right: Value, mut scope: Scope) -> Control {
+        let type_stage = |value: &Value| {
+            if let Value::EvalClosure { function, .. } = value {
+                function
+                    .value_groups
+                    .first()
+                    .and_then(|group| group.type_arity)
+            } else {
+                None
+            }
+        };
+        let a_type = type_stage(&left);
+        let b_type = type_stage(&right);
+        if a_type.is_some() || b_type.is_some() {
+            if (matches!(left, Value::EvalClosure { .. }) && a_type.is_none())
+                || (matches!(right, Value::EvalClosure { .. }) && b_type.is_none())
+                || matches!((a_type, b_type), (Some(a), Some(b)) if a != b)
+            {
+                return Control::Bool(false);
+            }
+            let arity = a_type.or(b_type).expect("typed probe has a type stage");
+            let fresh = &mut self.names[scope.index].fresh;
+            let variable = reflection_bindings::ReflectedVariable::neutral(
+                format!("__alpha_type__{fresh}"),
+                arity,
+            );
+            *fresh += 1;
+            let args = ProbeArgs::Type(variable.as_type());
+            self.frames.push(Frame::ProbeLeft {
+                other: right,
+                args: args.clone(),
+                scope,
+            });
+            return Control::Apply(left, args);
+        }
         let a_width = closure_partition_width(&left);
         let b_width = closure_partition_width(&right);
         let (left, right, args) = if let (Some(a), Some(b)) = (a_width, b_width) {
@@ -342,18 +378,18 @@ impl Engine {
             (Value::StrAtom(a), Value::StrAtom(b))
             | (Value::DiagnosticText(a), Value::DiagnosticText(b)) => a == b,
             (a @ Value::ReflType(_), b @ Value::ReflType(_)) => {
-                let (Some(a), Some(b)) =
-                    (canonical_refl_type(&a, ctx), canonical_refl_type(&b, ctx))
-                else {
-                    return Control::Bool(false);
-                };
-                canonical_refl_type_equiv(&a, &b, ctx)
+                matches!(
+                    reflection_type_equal_value(&a, &b, ctx),
+                    Some(Value::Bool(true))
+                )
             }
             (Value::ReflTypeArity(a), Value::ReflTypeArity(b)) => a == b,
-            (
-                Value::ReflTypeVar { name: a, arity: aa },
-                Value::ReflTypeVar { name: b, arity: ba },
-            ) => a == b && aa == ba,
+            (a @ Value::ReflTypeVar(_), b @ Value::ReflTypeVar(_)) => {
+                matches!(
+                    reflection_type_var_equal_value(&a, &b, ctx),
+                    Some(Value::Bool(true))
+                )
+            }
             (
                 Value::ReflTypeName {
                     segments: a,
@@ -364,7 +400,19 @@ impl Engine {
                     param_arities: ba,
                 },
             ) => a == b && aa == ba,
-            (Value::CheckedTerm(a), Value::CheckedTerm(b)) => a == b,
+            (Value::CheckedTerm(a), Value::CheckedTerm(b)) => {
+                match checked_bindings::semantic_comparison(&a, &b) {
+                    Ok(reflection_bindings::TypeComparison::Equal) => true,
+                    Ok(
+                        reflection_bindings::TypeComparison::Different
+                        | reflection_bindings::TypeComparison::Undetermined,
+                    ) => false,
+                    Err(reflection_bindings::IncompleteOwner) => {
+                        incomplete_observation_fault(ComptimeBuiltin::TypeEqual, ctx);
+                        false
+                    }
+                }
+            }
             #[cfg(feature = "surface")]
             (Value::Projected(a), Value::Projected(b)) => a.same_snapshot(&b),
             (Value::Primitive(a), Value::Primitive(b)) => a == b,
@@ -385,6 +433,15 @@ impl Engine {
                     },
                     scope,
                 );
+            }
+            (Value::StuckType(left, a), Value::StuckType(right, b)) => {
+                if !matches!(
+                    reflection_type_equal_value(&Value::ReflType(a), &Value::ReflType(b), ctx),
+                    Some(Value::Bool(true))
+                ) {
+                    return Control::Bool(false);
+                }
+                return Control::Equal(left.unwrap_or_clone(), right.unwrap_or_clone(), scope);
             }
             (Value::Stuck(left, a), Value::Stuck(right, b)) => {
                 self.frames.push(Frame::StuckArgs {
@@ -575,5 +632,481 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         while self.frames.pop().is_some() {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::normalization::tests::test_eval_function;
+    use reflection_bindings::{ReflectedVariable, TypeChild, semantic_type_equal};
+
+    fn type_closure(arity: usize, body: EvalExpr) -> Value {
+        let mut function = test_eval_function(&["T"], body).unwrap_or_clone();
+        function.value_groups = vec![EvalParamGroup {
+            type_arity: Some(arity),
+            param_start: 0,
+            param_count: 1,
+            abi_arity: 0,
+        }]
+        .into();
+        function.abi_arity = 0;
+        Value::EvalClosure {
+            function: EvalRef::new(function),
+            captured: Vec::new().into(),
+        }
+    }
+
+    fn type_apply(value: Value, argument: ReflectedType, ctx: &EvalCtx<'_>) -> Value {
+        let operation = ctx.enter_eval_operation();
+        let mut slots = EvalSlots::root(Vec::new());
+        let mut machine = Machine::new(&mut slots, ctx, ());
+        let control = machine.task(Task::TypeApplication {
+            value,
+            argument: Value::ReflType(argument),
+        });
+        operation.finish(machine.run(control))
+    }
+
+    fn unit() -> ReflectedType {
+        ReflectedType::new_trusted(Type::Unit { meta: zero_meta() })
+    }
+
+    #[test]
+    fn kinded_type_probes_keep_generic_observation_symbolic() {
+        let ctx = EvalCtx::new();
+        let observer = || {
+            type_closure(
+                0,
+                EvalExpr::ReflTypeRootPredicate {
+                    name: "__type_is_product_root__",
+                    typ: EvalRef::new(EvalExpr::Local(0)),
+                },
+            )
+        };
+        let false_fn = || type_closure(0, EvalExpr::Bool(false));
+        assert!(!nf_eq(&observer(), &false_fn(), &ctx));
+        assert!(nf_eq(&observer(), &observer(), &ctx));
+        assert!(nf_eq(&false_fn(), &false_fn(), &ctx));
+        assert!(!nf_eq(
+            &false_fn(),
+            &type_closure(1, EvalExpr::Bool(false)),
+            &ctx
+        ));
+        let product = ReflectedType::new_trusted(Type::Product {
+            left: Box::new(Type::Unit { meta: zero_meta() }),
+            right: Box::new(Type::Unit { meta: zero_meta() }),
+            meta: zero_meta(),
+        });
+        assert!(matches!(
+            type_apply(observer(), unit(), &ctx),
+            Value::Bool(false)
+        ));
+        assert!(matches!(
+            type_apply(observer(), product, &ctx),
+            Value::Bool(true)
+        ));
+        let mut value_function = test_eval_function(&[], EvalExpr::Bool(false)).unwrap_or_clone();
+        value_function.value_groups = vec![EvalParamGroup {
+            type_arity: None,
+            param_start: 0,
+            param_count: 0,
+            abi_arity: 0,
+        }]
+        .into();
+        let value_function = Value::EvalClosure {
+            function: EvalRef::new(value_function),
+            captured: Vec::new().into(),
+        };
+        assert!(
+            !nf_eq(&false_fn(), &value_function, &ctx),
+            "empty value stage is not a type stage"
+        );
+    }
+
+    #[test]
+    fn generic_alpha_eta_and_body_reduction_use_actual_type_slots() {
+        use crate::normalization::artifact::tests::lowered_package;
+        let artifact = lowered_package(&[(
+            "x.kio",
+            "module x; pure fn identity[A](x: A) -> A { x } pure fn forward[B](y: B) -> B { identity[B](y) } pure fn eta[A](f: [B] . -> (. | .)) -> [B] . -> (. | .) { .[B](x: .) -> (. | .) { f[B](x) } }",
+        )]);
+        let ctx = AuthenticatedEvalCtx::for_module(artifact.prepare_module("x").expect("module"));
+        let identity = eval_authenticated(&path_expr("identity"), &Env::new(), &ctx);
+        let forward = eval_authenticated(&path_expr("forward"), &Env::new(), &ctx);
+        assert!(nf_eq(&identity, &forward, &ctx));
+        let eta = eval_authenticated(&path_expr("eta"), &Env::new(), &ctx);
+        let eta = type_apply(eta, unit(), &ctx);
+        let opaque = Value::Atom("arbitrary".into());
+        let expanded = crate::normalization::apply(eta, vec![opaque.clone()], &ctx);
+        assert!(nf_eq(&expanded, &opaque, &ctx));
+    }
+
+    #[test]
+    fn opaque_type_stages_retain_arguments_and_distribute_over_residuals() {
+        let ctx = EvalCtx::new();
+        let opaque = Value::Atom("f".into());
+        let left = type_apply(opaque.clone(), unit(), &ctx);
+        let right = type_apply(
+            opaque.clone(),
+            ReflectedType::new_trusted(Type::Bottom { meta: zero_meta() }),
+            &ctx,
+        );
+        assert!(matches!(&left, Value::StuckType(callee, argument)
+            if matches!(callee.as_ref(), Value::Atom(name) if name == "f") && matches!(argument.as_type(), Type::Unit { .. })));
+        assert!(!nf_eq(&left, &right, &ctx));
+        assert!(nf_eq(&left, &left, &ctx));
+        assert!(!nf_eq(
+            &left,
+            &Value::Stuck(
+                EvalRef::new(opaque.clone()),
+                vec![Value::ReflType(unit())].into()
+            ),
+            &ctx
+        ));
+        assert_eq!(value_to_string(&left), "f[.]");
+        assert!(!exact_call_memo_result_shareable(&left));
+        let mut budget = EXACT_CALL_MEMO_KEY_BUDGET;
+        assert!(value_memo_key(&left, &mut budget).is_none());
+        let sequence = Value::Seq {
+            value: EvalRef::new(Value::Atom("effect".into())),
+            body: EvalRef::new(opaque.clone()),
+        };
+        let sequence = type_apply(sequence, unit(), &ctx);
+        assert!(matches!(sequence, Value::Seq { value, body }
+            if matches!(value.as_ref(), Value::Atom(name) if name == "effect") && nf_eq(&body, &left, &ctx)));
+        let split = Value::CaseSplit {
+            scrutinee: EvalRef::new(Value::Atom("sum".into())),
+            left_payload: "l".into(),
+            left: EvalRef::new(opaque.clone()),
+            right_payload: "r".into(),
+            right: EvalRef::new(opaque),
+        };
+        let split = type_apply(split, unit(), &ctx);
+        assert!(matches!(split, Value::CaseSplit { left: a, right: b, .. }
+            if nf_eq(&a, &left, &ctx) && nf_eq(&b, &left, &ctx)));
+        let primitive = Value::Stuck(
+            EvalRef::new(Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold)),
+            vec![Value::Primitive(ComptimeBuiltin::ComptimeProof)].into(),
+        );
+        let specialized = type_apply(primitive.clone(), unit(), &ctx);
+        assert!(
+            nf_eq(&primitive, &specialized, &ctx),
+            "partial primitive keeps erased result-type stage"
+        );
+        let structural = Value::Data(structural_recur_primitive_data(
+            StructuralRecurPrimitiveStage::AwaitingRuntime,
+        ));
+        assert!(
+            matches!(type_apply(structural, unit(), &ctx), Value::Data(data)
+            if matches!(data.structural_recur_identity(), Some(StructuralRecurDataIdentity::Primitive { .. })))
+        );
+    }
+
+    #[test]
+    fn explicit_root_type_bindings_share_neutrals_across_claim_arms() {
+        let ctx = EvalCtx::new();
+        let param = |name: &str, arity| TypeParam {
+            name: name.into(),
+            presentation: Default::default(),
+            kind: Some(Box::new(crate::ast::Kind::arrow_chain(arity))),
+            span: zero_span(),
+        };
+        let bindings = [
+            EvalTypeBinding::neutral(&param("A", 0)),
+            EvalTypeBinding::neutral(&param("B", 0)),
+        ];
+        let call = |name| {
+            Expr::synth_call(
+                path_expr("f"),
+                vec![CallArg::Type(type_path(name))],
+                zero_span(),
+            )
+        };
+        let evaluate = |expr, env: &Env| {
+            eval_with_compile_scope(
+                &expr,
+                env,
+                &bindings,
+                &ctx,
+                EvalSourceGeneration::fresh(),
+                false,
+            )
+        };
+        let empty = Env::new();
+        let mut local = Env::new();
+        local.insert("f".into(), Value::Atom("f".into()));
+        for env in [&empty, &local] {
+            let a = evaluate(call("A"), env);
+            let same = evaluate(call("A"), env);
+            let b = evaluate(call("B"), env);
+            assert!(nf_eq(&a, &same, &ctx));
+            assert!(!nf_eq(&a, &b, &ctx));
+            let Value::StuckType(_, actual) = a else {
+                panic!("root type operand")
+            };
+            let Value::ReflType(expected) = &bindings[0].value else {
+                unreachable!()
+            };
+            assert!(semantic_type_equal(&actual, expected).unwrap());
+        }
+    }
+
+    #[test]
+    fn neutral_observers_require_only_their_semantic_region() {
+        let ctx = EvalCtx::new();
+        let neutral = ReflectedVariable::neutral("A".into(), 0).as_type();
+        let left = reflection_binary_type_value(
+            ComptimeBuiltin::TypeProduct,
+            &Value::ReflType(neutral.clone()),
+            &Value::ReflType(unit()),
+        )
+        .unwrap();
+        let right = reflection_binary_type_value(
+            ComptimeBuiltin::TypeProduct,
+            &Value::ReflType(unit()),
+            &Value::ReflType(neutral.clone()),
+        )
+        .unwrap();
+        let Value::ReflType(left_type) = &left else {
+            unreachable!()
+        };
+        let Value::ReflType(right_type) = &right else {
+            unreachable!()
+        };
+        assert!(neutral_type_observation_is_known(
+            ComptimeBuiltin::TypeView,
+            left_type,
+            &ctx
+        ));
+        assert!(neutral_type_observation_is_known(
+            ComptimeBuiltin::TypeProductSpineFold,
+            left_type,
+            &ctx
+        ));
+        assert!(!neutral_type_observation_is_known(
+            ComptimeBuiltin::TypeProductSpineFold,
+            right_type,
+            &ctx
+        ));
+        assert!(!neutral_type_observation_is_known(
+            ComptimeBuiltin::TypeDisplay,
+            left_type,
+            &ctx
+        ));
+        assert!(semantic_type_equal(&left_type.child(TypeChild::Left), &neutral).unwrap());
+        for value in [Value::ReflType(neutral.clone()), left] {
+            let direct = EvalExpr::ReflTypeRootPredicate {
+                name: "__type_is_product_root__",
+                typ: EvalRef::new(EvalExpr::Const(value.clone())),
+            };
+            let direct = eval_compiled_expr(&direct, &mut EvalSlots::root(Vec::new()), &ctx);
+            let generic = crate::normalization::apply(
+                Value::Primitive(ComptimeBuiltin::TypeIsProductRoot),
+                vec![
+                    Value::Primitive(ComptimeBuiltin::ComptimeProof),
+                    value.clone(),
+                ],
+                &ctx,
+            );
+            if matches!(value, Value::ReflType(ref typ) if matches!(typ.as_type(), Type::Product { .. }))
+            {
+                assert!(matches!(direct, Value::Bool(true)));
+                assert!(matches!(generic, Value::Bool(true)));
+            } else {
+                assert!(matches!(direct, Value::Stuck(..)));
+                assert!(matches!(generic, Value::Stuck(..)));
+                assert!(
+                    nf_eq(&direct, &generic, &ctx),
+                    "direct and authenticated generic residuals agree"
+                );
+                let unauthenticated = crate::normalization::apply(
+                    Value::Primitive(ComptimeBuiltin::TypeIsProductRoot),
+                    vec![Value::Atom("unknown_proof".into()), value],
+                    &ctx,
+                );
+                assert!(
+                    !nf_eq(&direct, &unauthenticated, &ctx),
+                    "an arbitrary first operand is not a consumed proof"
+                );
+                assert!(comptime_fault_message(&direct, &ctx).is_none());
+                assert!(comptime_fault_message(&generic, &ctx).is_none());
+            }
+        }
+    }
+    #[test]
+    fn saturated_pending_fold_result_keeps_its_own_type_stage() {
+        let ctx = EvalCtx::new();
+        let neutral = ReflectedVariable::neutral("A".into(), 0).as_type();
+        let init = type_closure(0, EvalExpr::Local(0));
+        let step = Value::EvalClosure {
+            function: test_eval_function(&["acc", "item"], EvalExpr::Local(0)),
+            captured: Vec::new().into(),
+        };
+        let pending = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeProductSpineFold),
+            vec![
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+                Value::ReflType(neutral),
+                init,
+                step,
+            ],
+            &ctx,
+        );
+        assert!(matches!(&pending, Value::Stuck(_, args) if args.len() == 3));
+        let selected = type_apply(pending.clone(), unit(), &ctx);
+        assert!(matches!(&selected, Value::StuckType(callee, _) if nf_eq(callee, &pending, &ctx)));
+        let other = type_apply(
+            pending,
+            ReflectedType::new_trusted(Type::Bottom { meta: zero_meta() }),
+            &ctx,
+        );
+        assert!(!nf_eq(&selected, &other, &ctx));
+    }
+
+    #[test]
+    fn first_class_reflect_type_consumes_actual_operand_after_one_proof_stage() {
+        let ctx = EvalCtx::new();
+        let argument = ReflectedVariable::neutral("A".into(), 0).as_type();
+        for proof in [
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+            Value::Atom("ct".into()),
+        ] {
+            let partial = crate::normalization::apply(
+                Value::Primitive(ComptimeBuiltin::ReflectType),
+                vec![proof],
+                &ctx,
+            );
+            let reflected = type_apply(partial, argument.clone(), &ctx);
+            let Value::ReflType(reflected) = reflected else {
+                panic!("first-class actual type operand")
+            };
+            assert!(semantic_type_equal(&reflected, &argument).unwrap());
+        }
+        let ordinary = type_apply(Value::Atom("__reflect_type__".into()), argument, &ctx);
+        assert!(
+            matches!(ordinary, Value::StuckType(_, _)),
+            "spelling carries no primitive authority"
+        );
+    }
+
+    #[test]
+    fn actual_spine_fold_preserves_neutral_child_carrier() {
+        let ctx = EvalCtx::new();
+        let neutral = ReflectedVariable::neutral("A".into(), 0).as_type();
+        let source = reflection_binary_type_value(
+            ComptimeBuiltin::TypeProduct,
+            &Value::ReflType(neutral.clone()),
+            &Value::ReflType(unit()),
+        )
+        .unwrap();
+        let step = Value::EvalClosure {
+            function: test_eval_function(
+                &["acc", "item"],
+                EvalExpr::ReflTypeProduct {
+                    left: EvalRef::new(EvalExpr::Local(0)),
+                    right: EvalRef::new(EvalExpr::Local(1)),
+                },
+            ),
+            captured: Vec::new().into(),
+        };
+        let folded = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeProductSpineFold),
+            vec![
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+                source,
+                Value::ReflType(unit()),
+                step,
+            ],
+            &ctx,
+        );
+        let Value::ReflType(folded) = folded else {
+            panic!("fold returns a reflected product")
+        };
+        let selected = folded.child(TypeChild::Left).child(TypeChild::Right);
+        assert!(
+            semantic_type_equal(&selected, &neutral).unwrap(),
+            "fold item retains the actual lexical carrier"
+        );
+    }
+    #[test]
+    fn saturated_reflection_residuals_consume_only_authenticated_proof_stages() {
+        let ctx = EvalCtx::new();
+        let neutral = Value::ReflType(ReflectedVariable::neutral("A".into(), 0).as_type());
+        let direct = EvalExpr::ReflTypeEqual {
+            left: EvalRef::new(EvalExpr::Const(neutral.clone())),
+            right: EvalRef::new(EvalExpr::Const(Value::ReflType(unit()))),
+        };
+        let direct = eval_compiled_expr(&direct, &mut EvalSlots::root(Vec::new()), &ctx);
+        let generic = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeEqual),
+            vec![
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+                neutral,
+                Value::ReflType(unit()),
+            ],
+            &ctx,
+        );
+        assert!(matches!(direct, Value::Stuck(_, _)));
+        assert!(nf_eq(&direct, &generic, &ctx));
+        let pending = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeArityFold),
+            vec![
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+                Value::Atom("arity".into()),
+                type_closure(0, EvalExpr::Local(0)),
+                Value::EvalClosure {
+                    function: test_eval_function(&["acc"], EvalExpr::Local(0)),
+                    captured: Vec::new().into(),
+                },
+            ],
+            &ctx,
+        );
+        assert!(matches!(&pending, Value::Stuck(_, args) if args.len() == 3));
+        let typed = type_apply(pending.clone(), unit(), &ctx);
+        assert!(matches!(typed, Value::StuckType(_, _)));
+        let applied = crate::normalization::apply(pending.clone(), vec![Value::Unit], &ctx);
+        assert!(
+            matches!(applied, Value::Stuck(callee, args) if args.len() == 1 && nf_eq(&callee, &pending, &ctx)),
+            "applying the pending result must not retry the saturated fold"
+        );
+        let prefix = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeForallPrefixFold),
+            vec![Value::Primitive(ComptimeBuiltin::ComptimeProof)],
+            &ctx,
+        );
+        assert!(
+            matches!(&prefix, Value::Stuck(_, args) if args.len() == 1 && is_reflection_proof(&args[0]))
+        );
+        let prefix = type_apply(prefix, unit(), &ctx);
+        let result = crate::normalization::apply(
+            prefix,
+            vec![
+                Value::ReflType(unit()),
+                Value::Unit,
+                Value::Atom("unreached_step".into()),
+            ],
+            &ctx,
+        );
+        assert!(
+            matches!(result, Value::Data(data) if matches!(data.args(), [Value::Unit, Value::ReflType(typ)] if matches!(typ.as_type(), Type::Unit { .. })))
+        );
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn projected_refusal_retains_its_capability_prefix() {
+        use crate::pass::typecheck_core::apply::fills::unresolved_type_reflections_for_test;
+        let (_, _, goal, _, _) = unresolved_type_reflections_for_test();
+        let (foreign, _, _, _, _) = unresolved_type_reflections_for_test();
+        let proof = Value::Data(EvalRef::new(DataValue::new_marked_comptime_proof(foreign)));
+        let result = crate::normalization::apply(
+            Value::Primitive(ComptimeBuiltin::TypeView),
+            vec![proof, projected_value(goal)],
+            &EvalCtx::new(),
+        );
+        assert!(
+            matches!(result, Value::Stuck(_, args) if matches!(args.as_slice(), [proof, Value::Projected(_)] if is_reflection_proof(proof)))
+        );
     }
 }

@@ -15,7 +15,7 @@ module main;
 
 import bdep/meters(Float, dep_len);
 
-pub newtype Meters : Float { pub constructor mk; pub projector un }
+pub type { Meters: Float { pub mk; pub get } }
 
 pub fn local_meters(f: Float) -> Meters { Meters.mk(f) }
 

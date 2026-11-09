@@ -7,27 +7,29 @@
 module query/schema;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import query/list as list;
 import query/value as value;
 import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
 
-pub labels Col =
-  { c_ship_id: . }
-  | { c_ship_name: . }
-  | { c_ship_flag: . }
-  | { c_ship_draft: . }
-  | { c_ship_berth: . }
-  | { c_berth_id: . }
-  | { c_berth_depth: . }
-  | { c_berth_zone: . }
-  | { c_berth_zone_id: . }
-  | { c_mf_ship: . }
-  | { c_mf_cargo: . }
-  | { c_mf_tons: . }
-  | { c_total: . }
-  | { c_count: . };
+pub type Col =
+  | { C_ship_id: . }
+  | { C_ship_name: . }
+  | { C_ship_flag: . }
+  | { C_ship_draft: . }
+  | { C_ship_berth: . }
+  | { C_berth_id: . }
+  | { C_berth_depth: . }
+  | { C_berth_zone: . }
+  | { C_berth_zone_id: . }
+  | { C_mf_ship: . }
+  | { C_mf_cargo: . }
+  | { C_mf_tons: . }
+  | { C_total: . }
+  | { C_count: . }
+  ;
 
 pub type Col_list = list.List[Col];
 
@@ -35,56 +37,51 @@ pub type Col_list = list.List[Col];
 /// prints, the width it prints in, and whether it holds numbers - which
 /// is what tells the report writer to set the heading over the right-hand
 /// edge of the column, where the digits will land.
-pub labels Col_meta = {
-, meta_code: I32
-, meta_title: value.Value
-, meta_width: I32
-, meta_numeric: Bool
-};
+pub type Col_meta = { Meta_code: I32; Meta_title: value.Value; Meta_width: I32; Meta_numeric: Bool };
 
-pub labels Table_id = { t_ships: . } | { t_berths: . } | { t_manifests: . };
+pub type Table_id = { T_ships: . } | { T_berths: . } | { T_manifests: . };
 
-pub fn ship_id() -> Col { ({c_ship_id=}.>widen_sum)[Col] }
+pub fn ship_id() -> Col { (C_ship_id.mk(()).>widen_sum)[Col] }
 
-pub fn ship_name() -> Col { ({c_ship_name=}.>widen_sum)[Col] }
+pub fn ship_name() -> Col { (C_ship_name.mk(()).>widen_sum)[Col] }
 
-pub fn ship_flag() -> Col { ({c_ship_flag=}.>widen_sum)[Col] }
+pub fn ship_flag() -> Col { (C_ship_flag.mk(()).>widen_sum)[Col] }
 
-pub fn ship_draft() -> Col { ({c_ship_draft=}.>widen_sum)[Col] }
+pub fn ship_draft() -> Col { (C_ship_draft.mk(()).>widen_sum)[Col] }
 
-pub fn ship_berth() -> Col { ({c_ship_berth=}.>widen_sum)[Col] }
+pub fn ship_berth() -> Col { (C_ship_berth.mk(()).>widen_sum)[Col] }
 
-pub fn berth_id() -> Col { ({c_berth_id=}.>widen_sum)[Col] }
+pub fn berth_id() -> Col { (C_berth_id.mk(()).>widen_sum)[Col] }
 
-pub fn berth_depth() -> Col { ({c_berth_depth=}.>widen_sum)[Col] }
+pub fn berth_depth() -> Col { (C_berth_depth.mk(()).>widen_sum)[Col] }
 
-pub fn berth_zone() -> Col { ({c_berth_zone=}.>widen_sum)[Col] }
+pub fn berth_zone() -> Col { (C_berth_zone.mk(()).>widen_sum)[Col] }
 
-pub fn berth_zone_id() -> Col { ({c_berth_zone_id=}.>widen_sum)[Col] }
+pub fn berth_zone_id() -> Col { (C_berth_zone_id.mk(()).>widen_sum)[Col] }
 
-pub fn mf_ship() -> Col { ({c_mf_ship=}.>widen_sum)[Col] }
+pub fn mf_ship() -> Col { (C_mf_ship.mk(()).>widen_sum)[Col] }
 
-pub fn mf_cargo() -> Col { ({c_mf_cargo=}.>widen_sum)[Col] }
+pub fn mf_cargo() -> Col { (C_mf_cargo.mk(()).>widen_sum)[Col] }
 
-pub fn mf_tons() -> Col { ({c_mf_tons=}.>widen_sum)[Col] }
+pub fn mf_tons() -> Col { (C_mf_tons.mk(()).>widen_sum)[Col] }
 
-pub fn total() -> Col { ({c_total=}.>widen_sum)[Col] }
+pub fn total() -> Col { (C_total.mk(()).>widen_sum)[Col] }
 
-pub fn count() -> Col { ({c_count=}.>widen_sum)[Col] }
+pub fn count() -> Col { (C_count.mk(()).>widen_sum)[Col] }
 
-pub fn ships_table() -> Table_id { ({t_ships=}.>widen_sum)[Table_id] }
+pub fn ships_table() -> Table_id { (T_ships.mk(()).>widen_sum)[Table_id] }
 
-pub fn berths_table() -> Table_id { ({t_berths=}.>widen_sum)[Table_id] }
+pub fn berths_table() -> Table_id { (T_berths.mk(()).>widen_sum)[Table_id] }
 
-pub fn manifests_table() -> Table_id { ({t_manifests=}.>widen_sum)[Table_id] }
+pub fn manifests_table() -> Table_id { (T_manifests.mk(()).>widen_sum)[Table_id] }
 
 fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -> Col_meta {
-  {
-  , meta_code = code
-  , meta_title = value.text_val(title, title_width)
-  , meta_width = width
-  , meta_numeric = numeric
-  }
+  (
+  , Meta_code.mk(code)
+  , Meta_title.mk(value.text_val(title, title_width))
+  , Meta_width.mk(width)
+  , Meta_numeric.mk(numeric)
+  )
 }
 
 /// The catalog itself. The declared width of a column is at least its
@@ -111,13 +108,21 @@ pub fn col_meta(c: Col) -> Col_meta {
   }
 }
 
-pub fn col_code(c: Col) -> I32 { col_meta(c).?{meta_code} }
+pub fn col_code(c: Col) -> I32 {
+  col_meta(c).>select { Meta_code.get }
+}
 
-pub fn col_title(c: Col) -> value.Value { col_meta(c).?{meta_title} }
+pub fn col_title(c: Col) -> value.Value {
+  col_meta(c).>select { Meta_title.get }
+}
 
-pub fn col_width(c: Col) -> I32 { col_meta(c).?{meta_width} }
+pub fn col_width(c: Col) -> I32 {
+  col_meta(c).>select { Meta_width.get }
+}
 
-pub fn col_numeric(c: Col) -> Bool { col_meta(c).?{meta_numeric} }
+pub fn col_numeric(c: Col) -> Bool {
+  col_meta(c).>select { Meta_numeric.get }
+}
 
 pub fn col_name(c: Col) -> String { value.value_text(col_title(c)) }
 

@@ -2,11 +2,11 @@ module main;
 
 import macros/algebraic_macros(macro onto);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
-newtype C : . { pub constructor mk_c; pub projector un_c }
+type { C: . { pub mk; pub get } }
 
 // R-Project-Prod: `A & B → A`. Drop the `B` slot. `__fst__`
 // chains realize the projection. Every `a : A` is in the image

@@ -1,5 +1,5 @@
 module main;
 
-pub newtype Box : . { constructor mk; pub projector get }
+pub type { Box: . { mk; pub get } }
 
 pub op + _ { impl Box.mk }

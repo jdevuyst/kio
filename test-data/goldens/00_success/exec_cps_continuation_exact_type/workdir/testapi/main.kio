@@ -3,9 +3,9 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-labels { pack <U> : U };
+type { Pack <U>: U { mk; get } }
 
-labels { boxed[A] <U> : A & U };
+type { Boxed[A] <U>: A & U { mk; get } }
 
 fn pack() -> Pack { Pack.mk(()) }
 

@@ -1,5 +1,11 @@
 //! Compile-time builtin names, classifications, and runtime-erasure vocabulary.
 
+pub(crate) fn type_is_comptime_proof<P: crate::ast::Phase>(ty: &crate::ast::Type<P>) -> bool {
+    matches!(ty, crate::ast::Type::Path { segments, args, .. }
+        if args.is_empty() && segments.len() == 1
+            && segments[0].as_str() == "__Comptime__")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ComptimeBuiltin {
     ComptimeProof,
@@ -38,7 +44,6 @@ pub enum ComptimeBuiltin {
     TypeProductSpineFold,
     TypeSumSpineFold,
     TypeArgsFold,
-    TypeFunctionParamsFold,
     TypeArityFold,
     TypeNameParamAritiesFold,
     TypeDisplay,
@@ -69,6 +74,8 @@ pub enum ComptimeBuiltin {
     FillCtx,
     Fill,
     TermSpecialize,
+    FillResult,
+    TypeForallPrefixFold,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -116,7 +123,7 @@ impl ComptimeBuiltin {
             "__type_product_spine_fold__" => Self::TypeProductSpineFold,
             "__type_sum_spine_fold__" => Self::TypeSumSpineFold,
             "__type_args_fold__" => Self::TypeArgsFold,
-            "__type_function_params_fold__" => Self::TypeFunctionParamsFold,
+            "__type_forall_prefix_fold__" => Self::TypeForallPrefixFold,
             "__type_arity_fold__" => Self::TypeArityFold,
             "__type_name_param_arities_fold__" => Self::TypeNameParamAritiesFold,
             "__type_display__" => Self::TypeDisplay,
@@ -146,6 +153,7 @@ impl ComptimeBuiltin {
             "__intrinsic_if_then_else__" => Self::IntrinsicIfThenElse,
             "__Fill_ctx__" => Self::FillCtx,
             "__fill__" => Self::Fill,
+            "__fill_result__" => Self::FillResult,
             "__term_specialize__" => Self::TermSpecialize,
             _ => return None,
         })
@@ -189,7 +197,7 @@ impl ComptimeBuiltin {
             Self::TypeProductSpineFold => "__type_product_spine_fold__",
             Self::TypeSumSpineFold => "__type_sum_spine_fold__",
             Self::TypeArgsFold => "__type_args_fold__",
-            Self::TypeFunctionParamsFold => "__type_function_params_fold__",
+            Self::TypeForallPrefixFold => "__type_forall_prefix_fold__",
             Self::TypeArityFold => "__type_arity_fold__",
             Self::TypeNameParamAritiesFold => "__type_name_param_arities_fold__",
             Self::TypeDisplay => "__type_display__",
@@ -219,6 +227,7 @@ impl ComptimeBuiltin {
             Self::IntrinsicIfThenElse => "__intrinsic_if_then_else__",
             Self::FillCtx => "__Fill_ctx__",
             Self::Fill => "__fill__",
+            Self::FillResult => "__fill_result__",
             Self::TermSpecialize => "__term_specialize__",
         }
     }
@@ -281,7 +290,7 @@ impl ComptimeBuiltin {
             | Self::TypeProductSpineFold
             | Self::TypeSumSpineFold
             | Self::TypeArgsFold
-            | Self::TypeFunctionParamsFold
+            | Self::TypeForallPrefixFold
             | Self::TypeArityFold
             | Self::TypeNameParamAritiesFold
             | Self::TypeDisplay
@@ -310,6 +319,7 @@ impl ComptimeBuiltin {
             | Self::IntrinsicAbsurd
             | Self::IntrinsicIfThenElse
             | Self::Fill
+            | Self::FillResult
             | Self::TermSpecialize => None,
         }
     }
@@ -320,7 +330,7 @@ impl ComptimeBuiltin {
             Self::TypeProductSpineFold
                 | Self::TypeSumSpineFold
                 | Self::TypeArgsFold
-                | Self::TypeFunctionParamsFold
+                | Self::TypeForallPrefixFold
                 | Self::TypeArityFold
                 | Self::TypeNameParamAritiesFold
         )
@@ -388,7 +398,7 @@ pub const PUBLIC_COMPTIME_NAMES: &[&str] = &[
     "__type_product_spine_fold__",
     "__type_sum_spine_fold__",
     "__type_args_fold__",
-    "__type_function_params_fold__",
+    "__type_forall_prefix_fold__",
     "__type_arity_fold__",
     "__type_name_param_arities_fold__",
     "__type_display__",
@@ -418,6 +428,7 @@ pub const PUBLIC_COMPTIME_NAMES: &[&str] = &[
     "__intrinsic_absurd__",
     "__intrinsic_if_then_else__",
     "__fill__",
+    "__fill_result__",
 ];
 
 #[cfg(test)]
@@ -425,7 +436,7 @@ mod tests {
     use super::{ComptimeBuiltin, PUBLIC_COMPTIME_NAMES};
 
     #[test]
-    fn comptime_builtin_ordinals_and_serialized_discriminants_are_append_only() {
+    fn comptime_builtin_ordinals_and_serialized_discriminants_match_current_layout() {
         use ComptimeBuiltin::*;
         let ordered = [
             ComptimeProof,
@@ -464,7 +475,6 @@ mod tests {
             TypeProductSpineFold,
             TypeSumSpineFold,
             TypeArgsFold,
-            TypeFunctionParamsFold,
             TypeArityFold,
             TypeNameParamAritiesFold,
             TypeDisplay,
@@ -495,12 +505,20 @@ mod tests {
             FillCtx,
             Fill,
             TermSpecialize,
+            FillResult,
+            TypeForallPrefixFold,
         ];
+        // Compiler-source identity retires caches when the builtin wire layout changes.
         for (ordinal, builtin) in ordered.into_iter().enumerate() {
             assert_eq!(builtin as usize, ordinal);
             assert_eq!(
                 postcard::to_allocvec(&builtin).expect("serialize builtin discriminant"),
                 vec![u8::try_from(ordinal).expect("builtin ordinal fits one byte")]
+            );
+            assert_eq!(
+                postcard::from_bytes::<ComptimeBuiltin>(&postcard::to_allocvec(&builtin).unwrap())
+                    .expect("deserialize builtin discriminant"),
+                builtin
             );
             assert_eq!(
                 ComptimeBuiltin::from_public_name(builtin.public_name()),

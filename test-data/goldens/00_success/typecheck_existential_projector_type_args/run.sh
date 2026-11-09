@@ -8,7 +8,7 @@
 # projector application so later phase consumers retain the selected
 # receiver-frame universals rather than declaration-local binders.
 #
-# A two-universals newtype `Pair[A][B] <U> : A & B & U`
+# A two-universals nominal type `Pair[A][B] <U> : A & B & U`
 # exercises the multi-binder case: each apply carries both `A` and
 # `B`, in order, on its IR variant. Companion exec golden:
 # exec_existential_cps_projector_apply (single universal,

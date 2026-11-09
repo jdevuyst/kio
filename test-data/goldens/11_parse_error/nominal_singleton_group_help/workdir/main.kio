@@ -1,0 +1,5 @@
+module main;
+
+rec {
+  type { Node: . | Node { mk; get } }
+}

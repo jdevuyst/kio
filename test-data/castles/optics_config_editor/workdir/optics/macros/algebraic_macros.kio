@@ -8,7 +8,6 @@ import optics/macros/macro_util(
 , Dnf_branch
 , Dnf_branch_list
 , Macro_result
-, Optional_type
 , Slot_list
 , Term_mapper
 , Type_list
@@ -29,11 +28,10 @@ import optics/macros/macro_util(
 , type_multiset_contains_all
 , type_multiset_equal
 );
-import optics/macros/testapi(String);
 
 type Branch_build_flags = Comptime_bool & Comptime_bool;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -55,17 +53,12 @@ type Maybe_function_view = Function_view | .;
 
 type Ease_adapter_result = Term_mapper | __Diagnostic_text__;
 
-rec newtype Spine_list : . | (Type_list & Spine_list) {
-  constructor mk_spine_list;
-  projector un_spine_list
-  }
+rec type { Spine_list: . | (Type_list & Spine_list) { mk; get } }
 
-pure fn spine_nil() -> Spine_list {
-  Spine_list.mk_spine_list(__left__[.][Type_list & Spine_list](()))
-}
+pure fn spine_nil() -> Spine_list { Spine_list.mk(__left__[.][Type_list & Spine_list](())) }
 
 pure fn spine_cons(head: Type_list, tail: Spine_list) -> Spine_list {
-  Spine_list.mk_spine_list(__right__[.][Type_list & Spine_list]((head, tail)))
+  Spine_list.mk(__right__[.][Type_list & Spine_list]((head, tail)))
 }
 
 type Spine_reverse_state = Spine_list;
@@ -76,7 +69,7 @@ type Spine_reverse_step = Spine_list | Spine_reverse_next;
 
 pure fn spine_reverse_step(fuel: Spine_list, acc: Spine_reverse_state) -> Spine_reverse_step {
   __either__[.][Type_list & Spine_list][Spine_reverse_step](
-  , Spine_list.un_spine_list(fuel)
+  , Spine_list.get(fuel)
   , .(_done: .) -> Spine_reverse_step { __left__[Spine_list][Spine_reverse_next](acc) }
   , .(cell: Type_list & Spine_list) -> Spine_reverse_step {
       __right__[Spine_list][Spine_reverse_next]((
@@ -129,7 +122,7 @@ pure fn branch_spines(ct: __Comptime__, branches: Dnf_branch_list) -> Spine_list
       let loop_step_fn =
         .(fuel: Dnf_branch_list, state: Branch_spine_state) -> Branch_spine_step {
           __either__[.][Dnf_branch & Dnf_branch_list][Branch_spine_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Branch_spine_step { __left__[Spine_list][Branch_spine_next](state) }
           , .(cell: Dnf_branch & Dnf_branch_list) -> Branch_spine_step {
               let branch_type = dnf_branch_type(ct, __fst__[Dnf_branch][Dnf_branch_list](cell));
@@ -211,11 +204,11 @@ pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
 }
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__[__Type__][__Type_arity__ & __Type__](view)
+  __fst__[__Type__][__Type__](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 pure fn identity_mapper(ct: __Comptime__, _source: __Type__) -> Term_mapper {
@@ -302,7 +295,7 @@ pure fn take_first_target_for_source(
       let loop_step_fn =
         .(fuel: Spine_list, prefix_rev: Spine_take_state) -> Spine_take_step {
           __either__[.][Type_list & Spine_list][Spine_take_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> Spine_take_step {
               __left__[Maybe_spine_take][Spine_take_next](spine_take_none())
             }
@@ -368,7 +361,7 @@ pure fn sources_fit_targets_consuming(
       let loop_step_fn =
         .(fuel: Spine_list, available_targets: Consume_state) -> Consume_step {
           __either__[.][Type_list & Spine_list][Consume_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> Consume_step { __left__[Comptime_bool][Consume_next](.t) }
           , .(cell: Type_list & Spine_list) -> Consume_step {
               __either__[Spine_list][.][Consume_step](
@@ -465,7 +458,7 @@ pure fn source_factors_have_target(
       let loop_step_fn =
         .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
           __either__[.][Type_list & Spine_list][Any_target_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](.f) }
           , .(cell: Type_list & Spine_list) -> Any_target_step {
               __if_then_else__(
@@ -517,7 +510,7 @@ pure fn target_factors_have_source(
       let loop_step_fn =
         .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
           __either__[.][Type_list & Spine_list][Any_target_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](.f) }
           , .(cell: Type_list & Spine_list) -> Any_target_step {
               __if_then_else__(
@@ -575,7 +568,7 @@ pure fn all_sources_have_targets(
       let loop_step_fn =
         .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
           __either__[.][Type_list & Spine_list][All_branch_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](.t) }
           , .(cell: Type_list & Spine_list) -> All_branch_step {
               __if_then_else__(
@@ -622,7 +615,7 @@ pure fn all_targets_have_sources(
       let loop_step_fn =
         .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
           __either__[.][Type_list & Spine_list][All_branch_step](
-          , Spine_list.un_spine_list(fuel)
+          , Spine_list.get(fuel)
           , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](.t) }
           , .(cell: Type_list & Spine_list) -> All_branch_step {
               __if_then_else__(
@@ -679,7 +672,7 @@ pure fn choose_target_branch(
       let loop_step_fn =
         .(fuel: Dnf_branch_list, state: Search_state) -> Search_step {
           __either__[.][Dnf_branch & Dnf_branch_list][Search_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Search_step { __left__[Macro_result][Search_next](state) }
           , .(cell: Dnf_branch & Dnf_branch_list) -> Search_step {
               let target_branch = __fst__[Dnf_branch][Dnf_branch_list](cell);
@@ -894,7 +887,7 @@ pure fn algebraic_impl(
   )
 }
 
-type Ease_recur = (Type_pair & Type_pair) -> Ease_adapter_result;
+type Ease_recur = (__Type__ & Type_pair) -> Ease_adapter_result;
 
 pure fn ease_leaf_mapper(
 , ct: __Comptime__
@@ -943,10 +936,10 @@ pure fn ease_function_mapper(
   let target_param = function_param(ct, target_view);
   let target_ret = function_result(ct, target_view);
   __either__[Term_mapper][__Diagnostic_text__][Ease_adapter_result](
-  , recur((target_param, source_param), (target_param, source_param))
+  , recur(__type_product__(ct, target_param, source_param), (target_param, source_param))
   , .(param_mapper: Term_mapper) -> Ease_adapter_result {
       __either__[Term_mapper][__Diagnostic_text__][Ease_adapter_result](
-      , recur((source_ret, target_ret), (source_ret, target_ret))
+      , recur(__type_product__(ct, source_ret, target_ret), (source_ret, target_ret))
       , .(ret_mapper: Term_mapper) -> Ease_adapter_result {
           ease_adapter_ok(
           , ct
@@ -975,7 +968,7 @@ pure fn ease_function_mapper(
   )
 }
 
-pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, _fuel: Type_pair, pair: Type_pair) -> Ease_adapter_result {
+pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, pair: Type_pair) -> Ease_adapter_result {
   let source = __fst__[__Type__][__Type__](pair);
   let target = __snd__[__Type__][__Type__](pair);
   __if_then_else__(
@@ -1017,11 +1010,11 @@ pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, _fuel: Type_pair, p
 }
 
 pure fn ease_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__) -> Ease_adapter_result {
-  __structural_recur__(ct)[Type_pair][Type_pair][Ease_adapter_result](
+  __structural_recur__(ct)[__Type__][Type_pair][Ease_adapter_result](
+  , __type_product__(ct, source, target)
   , (source, target)
-  , (source, target)
-  , .(recur: Ease_recur, fuel: Type_pair, state: Type_pair) -> Ease_adapter_result {
-      ease_recur_step(ct, recur, fuel, state)
+  , .(recur: Ease_recur, _fuel: __Type__, state: Type_pair) -> Ease_adapter_result {
+      ease_recur_step(ct, recur, state)
     }
   )
 }
@@ -1044,28 +1037,10 @@ pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, ta
   )
 }
 
-pure fn iso_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { iso_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn iso_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, iso_macro(ct, source, value, target)) }
+pure fn iso_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, iso_impl(ct, source, value, target))
+}
 
 /// Rearranges products and sums when the source and target have a DNF bijection.
 pub macro iso : [Source] Source -> [Target] Target { impl iso_checked }
@@ -1088,28 +1063,10 @@ pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   )
 }
 
-pure fn into_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { into_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn into_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, into_macro(ct, source, value, target)) }
+pure fn into_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, into_impl(ct, source, value, target))
+}
 
 /// Injects a source shape into a larger compatible DNF target.
 pub macro into : [Source] Source -> [Target] Target { impl into_checked }
@@ -1126,28 +1083,10 @@ pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   )
 }
 
-pure fn onto_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { onto_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn onto_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, onto_macro(ct, source, value, target)) }
+pure fn onto_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, onto_impl(ct, source, value, target))
+}
 
 /// Projects a source shape onto a smaller compatible DNF target.
 pub macro onto : [Source] Source -> [Target] Target { impl onto_checked }
@@ -1164,28 +1103,10 @@ pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
   )
 }
 
-pure fn align_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { align_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn align_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, align_macro(ct, source, value, target)) }
+pure fn align_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, align_impl(ct, source, value, target))
+}
 
 /// Reorders compatible DNF branches without allowing injection or projection.
 pub macro align : [Source] Source -> [Target] Target { impl align_checked }
@@ -1200,28 +1121,10 @@ pure fn ease_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   )
 }
 
-pure fn ease_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { ease_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn ease_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, ease_macro(ct, source, value, target)) }
+pure fn ease_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, ease_impl(ct, source, value, target))
+}
 
 /// Performs recursive structural adaptation across products, sums, and functions.
 pub macro ease : [Source] Source -> [Target] Target { impl ease_checked }
@@ -1244,28 +1147,10 @@ pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   )
 }
 
-pure fn atom_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { atom_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn atom_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, atom_macro(ct, source, value, target)) }
+pure fn atom_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, atom_impl(ct, source, value, target))
+}
 
 /// Extracts a single target atom or product branch from a larger source shape.
 pub macro atom : [Source] Source -> [Target] Target { impl atom_checked }

@@ -27,6 +27,7 @@ pub fn value_to_string(v: &Value) -> String {
     ValueRenderer {
         newtype_type_heads: None,
         render_closure_origins: false,
+        remaining_capture_depth: None,
     }
     .render(v)
 }
@@ -84,6 +85,7 @@ where
     let expression = ValueRenderer {
         newtype_type_heads: Some(&newtype_type_heads),
         render_closure_origins: true,
+        remaining_capture_depth: None,
     }
     .render(v);
     let imports = requalifier.take_imports();
@@ -175,6 +177,7 @@ fn scan_repl_value(v: &Value, enclosing_bound: &[String], scan: &mut ReplReferen
             scan_repl_value(value, enclosing_bound, scan);
             scan_repl_value(body, enclosing_bound, scan);
         }
+        Value::StuckType(callee, _) => scan_repl_value(callee, enclosing_bound, scan),
         Value::Stuck(callee, args) => {
             scan_repl_value(callee, enclosing_bound, scan);
             for arg in args.iter() {
@@ -192,7 +195,7 @@ fn scan_repl_value(v: &Value, enclosing_bound: &[String], scan: &mut ReplReferen
         | Value::ReflType(_)
         | Value::CheckedTerm(_)
         | Value::ReflTypeArity(_)
-        | Value::ReflTypeVar { .. }
+        | Value::ReflTypeVar(_)
         | Value::ReflTypeName { .. }
         | Value::DiagnosticText(_)
         | Value::Primitive(_)
@@ -204,10 +207,24 @@ fn scan_repl_value(v: &Value, enclosing_bound: &[String], scan: &mut ReplReferen
 struct ValueRenderer<'a> {
     newtype_type_heads: Option<&'a BTreeMap<(String, String), String>>,
     render_closure_origins: bool,
+    remaining_capture_depth: Option<usize>,
 }
 
 impl ValueRenderer<'_> {
     fn render(&self, v: &Value) -> String {
+        match self.remaining_capture_depth {
+            None => self.render_inner(v),
+            Some(0) => "<captured value omitted: depth limit>".to_owned(),
+            Some(remaining) => Self {
+                newtype_type_heads: self.newtype_type_heads,
+                render_closure_origins: self.render_closure_origins,
+                remaining_capture_depth: Some(remaining - 1),
+            }
+            .render_inner(v),
+        }
+    }
+
+    fn render_inner(&self, v: &Value) -> String {
         match v {
             Value::Unit => "()".to_string(),
             Value::Bool(true) => ".t".to_string(),
@@ -231,7 +248,9 @@ impl ValueRenderer<'_> {
             }
             .to_string(),
             Value::ReflTypeArity(n) => format!("<arity {n}>"),
-            Value::ReflTypeVar { name, arity } => format!("<type-var {name}/{arity}>"),
+            Value::ReflTypeVar(variable) => {
+                format!("<type-var {}/{}>", variable.name, variable.arity)
+            }
             Value::ReflTypeName {
                 segments,
                 param_arities,
@@ -271,6 +290,9 @@ impl ValueRenderer<'_> {
                     }
                     #[cfg(feature = "surface")]
                     DataConstructorIdentity::FillContext(_) => "<fill-context>".to_owned(),
+                    DataConstructorIdentity::IncompleteObservation(builtin) => {
+                        format!("<unresolved-type-observation:{}>", builtin.public_name())
+                    }
                 };
                 let arg_strs: Vec<String> =
                     data.args().iter().map(|arg| self.render(arg)).collect();
@@ -291,16 +313,37 @@ impl ValueRenderer<'_> {
             Value::Seq { value, body } => {
                 format!("{}; {}", self.render(value), self.render(body))
             }
+            Value::StuckType(callee, argument) => format!(
+                "{}[{}]",
+                self.render(callee),
+                crate::pass::typecheck_core::display_reflected_type(argument.as_type())
+            ),
             Value::Stuck(c, args) => {
                 let arg_strs: Vec<String> = args.iter().map(|arg| self.render(arg)).collect();
                 format!("{}({})", self.render(c), arg_strs.join(", "))
             }
-            Value::EvalClosure { function, .. } => {
+            Value::EvalClosure { function, captured } => {
                 if self.render_closure_origins {
-                    render_closure_origin(function)
-                } else {
-                    render_closure_source(function)
+                    return render_closure_origin(function);
                 }
+                let source = render_closure_source(function);
+                if captured.is_empty() {
+                    return source;
+                }
+                // Captures are already evaluated values. Limit every Value
+                // descent within their display without forcing a closure or
+                // changing ordinary residual rendering outside captures.
+                let captures = Self {
+                    newtype_type_heads: self.newtype_type_heads,
+                    render_closure_origins: false,
+                    remaining_capture_depth: self.remaining_capture_depth.or(Some(8)),
+                };
+                let values = captured
+                    .iter()
+                    .map(|value| captures.render(value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{source} [captured values: {values}]")
             }
         }
     }
@@ -312,15 +355,28 @@ impl ValueRenderer<'_> {
     }
 }
 
-fn render_closure_source(function: &EvalFunction) -> String {
-    let params = function
-        .params
+fn render_closure_stages(function: &EvalFunction) -> String {
+    function
+        .value_groups
         .iter()
-        .map(|param| param.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
+        .map(|group| {
+            let names = function.params[group.param_start..group.param_start + group.param_count]
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            match group.type_arity {
+                Some(arity) => format!("[{}{names}]", "*".repeat(arity)),
+                None => format!("({names})"),
+            }
+        })
+        .collect()
+}
+
+fn render_closure_source(function: &EvalFunction) -> String {
     format!(
-        ".({params}) {{ {} }}",
+        ".{} {{ {} }}",
+        render_closure_stages(function),
         render_eval_expr(&function.diagnostic_body)
     )
 }
@@ -359,13 +415,10 @@ fn render_eval_expr(expr: &EvalAstExpr) -> String {
             let params = collect_value_param_names(&sig.params).join(", ");
             format!(".({params}) {{ {} }}", render_eval_expr(body))
         }
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
+        Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
         | Expr::Tuple { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::RecCall { ext, .. }
@@ -408,17 +461,6 @@ fn render_closure_origin(function: &EvalFunction) -> String {
             format!("{owner}{enclosing}<fn@{}-{}>", span.start, span.end)
         }
     };
-    let params = function
-        .value_groups
-        .iter()
-        .map(|group| {
-            let names = function.params[group.param_start..group.param_start + group.param_count]
-                .iter()
-                .map(|param| param.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("({names})")
-        })
-        .collect::<String>();
+    let params = render_closure_stages(function);
     format!("<closure {identity}{params}>")
 }

@@ -1341,10 +1341,10 @@ mod prepared_tests {
     const LIVE_SOURCE: &str = "module api; \
          host type I32 role(i32); \
          host type Str role(str); \
-         pub newtype Id[A] : A { \
-             pub constructor make_id; \
-             pub projector read_id; \
-         }; \
+         pub type { Id[A]: A { \
+             pub mk; \
+             pub get; \
+         }; }; \
          host fn abi0() -> I32; \
          host fn unitful(value: .) -> I32; \
          host fn regroup(first: I32, rest: Str & I32) -> I32; \

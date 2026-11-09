@@ -106,11 +106,9 @@ build {
 }
 ";
 
-// The base host is now declared as module-level `host type`
-// items in the root module `prog.kio` (post host/bridge redesign — the
-// package-level `env {}` block and the identity `bridge prog { … }`
-// adaptation block are both retired). The package file selects the
-// bridged modules with a `bridge` glob list instead.
+// The base host is declared as module-level `host type` items in
+// `prog.kio`. The package's `bridge` glob list selects the modules
+// whose public declarations cross the host boundary.
 const HOST_ENV_KIO: &str = "\
 host type I8     role(i8);
 host type I16    role(i16);
@@ -177,6 +175,10 @@ const MACRO_SUPPORT_FILES: &[(&str, &str)] = &[
         include_str!("../../../../test-data/poc/macros/workdir/match.kio"),
     ),
     (
+        "workdir/row_macros.kio",
+        include_str!("../../../../test-data/poc/macros/workdir/row_macros.kio"),
+    ),
+    (
         "workdir/control.kio",
         include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
     ),
@@ -230,37 +232,34 @@ pub pure fn id[A](x: A) -> A { x }
 pub pure fn const1[A][B](x: A, y: B) -> A { x }
 pub pure fn const2[A][B](x: A, y: B) -> B { y }
 
-pub newtype I32_box  : I32    { pub constructor mk_i32_box;  pub projector un_i32_box  }
-pub newtype _I32_box : I32    { pub constructor mk_marked_i32_box; pub projector un_marked_i32_box }
-pub newtype Strbox  : String { pub constructor mk_strbox;  pub projector un_strbox  }
-pub newtype Boolbox : Bool   { pub constructor mk_boolbox; pub projector un_boolbox }
+pub type { I32_box: I32 { pub mk; pub get; }; }
+pub type { _I32_box: I32 { pub mk; pub get; }; }
+pub type { Strbox: String { pub mk; pub get; }; }
+pub type { Boolbox: Bool { pub mk; pub get; }; }
 
-pub pure fn box_i32(x: I32) -> I32_box { I32_box.mk_i32_box(x) }
-pub pure fn unbox_i32(b: I32_box) -> I32 { I32_box.un_i32_box(b) }
-pub pure fn box_marked_i32(x: I32) -> _I32_box { _I32_box.mk_marked_i32_box(x) }
-pub pure fn unbox_marked_i32(b: _I32_box) -> I32 { _I32_box.un_marked_i32_box(b) }
-pub pure fn box_str(x: String) -> Strbox { Strbox.mk_strbox(x) }
-pub pure fn unbox_str(b: Strbox) -> String { Strbox.un_strbox(b) }
-pub pure fn box_bool(x: Bool) -> Boolbox { Boolbox.mk_boolbox(x) }
-pub pure fn unbox_bool(b: Boolbox) -> Bool { Boolbox.un_boolbox(b) }
+pub pure fn box_i32(x: I32) -> I32_box { I32_box.mk(x) }
+pub pure fn unbox_i32(b: I32_box) -> I32 { I32_box.get(b) }
+pub pure fn box_marked_i32(x: I32) -> _I32_box { _I32_box.mk(x) }
+pub pure fn unbox_marked_i32(b: _I32_box) -> I32 { _I32_box.get(b) }
+pub pure fn box_str(x: String) -> Strbox { Strbox.mk(x) }
+pub pure fn unbox_str(b: Strbox) -> String { Strbox.get(b) }
+pub pure fn box_bool(x: Bool) -> Boolbox { Boolbox.mk(x) }
+pub pure fn unbox_bool(b: Boolbox) -> Bool { Boolbox.get(b) }
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
-pub pure fn box_any[A](x: A) -> Box[A] { Box.mk_box[A](x) }
-pub pure fn unbox_any[A](x: Box[A]) -> A { Box.un_box[A](x) }
+pub type { Box[A]: A { pub mk; pub get; }; }
+pub pure fn box_any[A](x: A) -> Box[A] { Box.mk[A](x) }
+pub pure fn unbox_any[A](x: Box[A]) -> A { Box.get[A](x) }
 
-// Recursive newtypes that exercise strict-positivity and the
+// Recursive nominal types that exercise strict-positivity and the
 // iso-recursive wrap/unwrap boundary in the typechecker. The
 // fixed declarations provide declaration/positivity coverage; the
 // generated terms do not construct values of these types.
-pub rec newtype Strlist : (. | (String & Strlist))
-  { pub constructor mk_strlist; pub projector un_strlist }
-pub rec newtype Inttree : (. | (I32 & (Inttree & Inttree)))
-  { pub constructor mk_inttree; pub projector un_inttree }
+pub rec type { Strlist: (. | (String & Strlist)) { pub mk; pub get; }; }
+pub rec type { Inttree: (. | (I32 & (Inttree & Inttree))) { pub mk; pub get; }; }
 
 rec {
   pub type Kio_gen_cycle = Kio_gen_node;
-  pub newtype Kio_gen_node : Kio_gen_cycle
-    { pub constructor mk_kio_gen_node; pub projector un_kio_gen_node }
+  pub type { Kio_gen_node: Kio_gen_cycle { pub mk; pub get; }; }
 }
 
 pub type Intpair = (I32 & I32);
@@ -274,24 +273,13 @@ pub type Optint  = (. | I32);
 pub pure fn kio_gen_op_pick(x: I32, y: I32) -> I32 { x }
 ";
 
-// Labels block appended to the generated root module for surface-using cases.
-// `labels` is a surface form (not Kio'), so this fragment must NOT
-// appear in cases marked `IS_KIO_PRIME`. label_elab synthesises one
-// generated newtype per explicit declaration, each exposing `mk` and `get`
-// members; `_` entries reuse those declarations. The forwarding binding names
-// the existing count label without minting a nominal or uppercase name.
-const UTIL_KIO_TAGS: &str = "
-pub labels { greet : String, count : I32 };
-pub labels Kio_gen_labels = { greet : _ } | { count : _ };
-pub type {kio_gen_count_forward} = {count};
-";
-
 // Literal aliases appended to the generated root module for surface-using cases.
 // Each `literal name = <literal>;` stores an untyped literal token;
 // use sites render as `name[Type]` when the generated expression
 // needs the same explicit annotation as the raw literal. Surface
 // form only: `IS_KIO_PRIME` cases must not see these.
 const UTIL_KIO_LITERAL_ALIASES: &str = "
+pub type Kio_gen_choice = { Kio_gen_text: String; } | I32;
 pub literal zero_i32 = 0;
 pub literal hello_str = \"hello\";
 ";
@@ -318,18 +306,8 @@ pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
 ";
 
 fn util_kio(prog: &Program) -> String {
-    // The labels block is gated on `surface_mode` rather than
-    // `uses_surface`: the generator might pick `Type::Label` types in
-    // the signature (and even invoke generated label members in the body)
-    // without rendering any visible surface form, in which case
-    // `uses_surface` ends up false but the program still references
-    // the generated label types. Including / excluding the labels has to
-    // track the wrapper-usage decision, which is what `surface_mode`
-    // records.
     let mut source = if prog.surface_mode {
-        format!(
-            "{UTIL_KIO_BASE}{UTIL_KIO_TAGS}{UTIL_KIO_LITERAL_ALIASES}{UTIL_KIO_OP}{UTIL_KIO_VARIADIC}"
-        )
+        format!("{UTIL_KIO_BASE}{UTIL_KIO_LITERAL_ALIASES}{UTIL_KIO_OP}{UTIL_KIO_VARIADIC}")
     } else {
         UTIL_KIO_BASE.to_string()
     };
@@ -379,8 +357,6 @@ import __comptime__;
 pub type Kio_gen_capture = .;
 
 pub fn kio_gen_capture_value() -> . { () }
-
-type Target_request = __Type__ | .;
 ",
     );
     for spec in &prog.user_macros {
@@ -448,7 +424,12 @@ fn render_generated_macro_impl(spec: &UserMacroSpec) -> String {
     params.extend([
         "source: __Type__",
         "value: __Checked_term__",
-        "target: Target_request",
+        match template {
+            UserMacroTemplate::RequiredTarget
+            | UserMacroTemplate::SourceTargetGuard
+            | UserMacroTemplate::TermTypeGuard => "target: __Type__",
+            _ => "target: .",
+        },
     ]);
 
     let mut lines = Vec::new();
@@ -490,38 +471,19 @@ fn generated_fills_witness(prog: &Program) -> String {
 
 fn render_generated_macro_body(template: UserMacroTemplate) -> String {
     match template {
-        UserMacroTemplate::Direct => "value".to_string(),
-        UserMacroTemplate::TargetBranch => "\
-__either__[__Type__][.][__Checked_term__](
-  , target
-  , .(_target: __Type__) -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { value }
-  )"
-        .to_string(),
+        UserMacroTemplate::Direct | UserMacroTemplate::RequiredTarget => "value".to_string(),
         UserMacroTemplate::SourceTargetGuard => "\
-__either__[__Type__][.][__Checked_term__](
-    , target
-    , .(target_type: __Type__) -> __Checked_term__ {
-    __if_then_else__(
-      , __type_equal__(ct, source, target_type)
-      , .() -> __Checked_term__ { value }
-      , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen source/target mismatch\") }
-      )
-  }
+__if_then_else__(
+  , __type_equal__(ct, source, target)
   , .() -> __Checked_term__ { value }
+  , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen source/target mismatch\") }
   )"
         .to_string(),
         UserMacroTemplate::TermTypeGuard => "\
-__either__[__Type__][.][__Checked_term__](
-    , target
-    , .(target_type: __Type__) -> __Checked_term__ {
-    __if_then_else__(
-      , __type_equal__(ct, __term_type__(ct, value), target_type)
-      , .() -> __Checked_term__ { value }
-      , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen term/target mismatch\") }
-      )
-  }
+__if_then_else__(
+  , __type_equal__(ct, __term_type__(ct, value), target)
   , .() -> __Checked_term__ { value }
+  , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen term/target mismatch\") }
   )"
         .to_string(),
         UserMacroTemplate::LetIdentity => "\
@@ -574,7 +536,7 @@ pub fn render_package_files(prog: &Program) -> Vec<(String, String)> {
     // nothing to the build artifact but exercise the equiv parser
     // and typechecker. The standard run.args path runs `kio test`
     // before build/run for generated surface cases, so the claims check
-    // Unit identity, seeded folds and the forwarded label's original identity.
+    // Unit identity and seeded folds.
     let equiv_block = if prog.surface_mode {
         "\nequiv kio_gen_unit_equiv { (); id[.](()) }\n\
 equiv kio_gen_seeded_fold_singleton { [* 2[I32] *]; 2[I32] }\n\
@@ -584,8 +546,7 @@ equiv kio_gen_bare_fold_step { [1[I32], 2[I32]]; 0[I32] }\n\
 equiv kio_gen_prefix_chain { !? !? 2[I32]; 2[I32] }\n\
 equiv kio_gen_closed_result_suffix { 2[I32] ?! ?!.>id; 2[I32] }\n\
 equiv kio_gen_bounded_chain_slots { @ 1[I32] <+> 2[I32] # !? 3[I32] $; 1[I32] }\n\
-equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7[I32]}; Count.mk(7[I32]) }\n\
-equiv kio_gen_label_forward_payload { Count.mk(11[I32]).?{kio_gen_count_forward}; 11[I32] }\n"
+"
     } else {
         ""
     };
@@ -884,14 +845,12 @@ build {
 
     #[test]
     fn generated_braced_declarations_omit_final_semicolons() {
+        assert!(UTIL_KIO_BASE.contains("pub type { I32_box: I32 { pub mk; pub get; }; }\n"));
         assert!(UTIL_KIO_BASE.contains(
-            "pub newtype I32_box  : I32    { pub constructor mk_i32_box;  pub projector un_i32_box  }\n"
+            "pub rec type { Strlist: (. | (String & Strlist)) { pub mk; pub get; }; }\n"
         ));
         assert!(UTIL_KIO_BASE.contains(
-            "pub rec newtype Strlist : (. | (String & Strlist))\n  { pub constructor mk_strlist; pub projector un_strlist }\n"
-        ));
-        assert!(UTIL_KIO_BASE.contains(
-            "rec {\n  pub type Kio_gen_cycle = Kio_gen_node;\n  pub newtype Kio_gen_node : Kio_gen_cycle\n    { pub constructor mk_kio_gen_node; pub projector un_kio_gen_node }\n}\n"
+            "rec {\n  pub type Kio_gen_cycle = Kio_gen_node;\n  pub type { Kio_gen_node: Kio_gen_cycle { pub mk; pub get; }; }\n}\n"
         ));
         assert_eq!(
             UTIL_KIO_OP,
@@ -1040,21 +999,34 @@ build {
     }
 
     #[test]
-    fn generated_macro_templates_use_unit_as_a_type_only_via_dot() {
-        for template in [
-            UserMacroTemplate::TargetBranch,
-            UserMacroTemplate::SourceTargetGuard,
-            UserMacroTemplate::TermTypeGuard,
-        ] {
-            let generated = render_generated_macro_body(template);
+    fn generated_macro_templates_select_natural_or_required_results() {
+        for template in UserMacroTemplate::all() {
+            let mut spec = macro_spec(Vec::new());
+            spec.implementation = UserMacroImplementation::Late(*template);
+            let generated = module_with(spec);
+            let target = match template {
+                UserMacroTemplate::RequiredTarget
+                | UserMacroTemplate::SourceTargetGuard
+                | UserMacroTemplate::TermTypeGuard => "__Type__",
+                _ => ".",
+            };
             assert!(
-                generated.contains("__either__[__Type__][.][__Checked_term__]("),
-                "generated template must spell the Unit type as `.`: {generated}"
+                generated.contains(&format!(
+                    "source: __Type__, value: __Checked_term__, target: {target}) -> __Checked_term__"
+                )),
+                "wrong result-slot mode for {template:?}: {generated}"
             );
-            assert!(
-                !generated.contains("__either__[__Type__][()][__Checked_term__]("),
-                "generated template used the Unit value in a type slot: {generated}"
-            );
+            assert!(!generated.contains("__Type__ | ."));
         }
+    }
+
+    #[test]
+    fn generated_required_target_guards_keep_their_failure_branches() {
+        let source_guard = render_generated_macro_body(UserMacroTemplate::SourceTargetGuard);
+        assert!(source_guard.contains("__type_equal__(ct, source, target)"));
+        assert!(source_guard.contains("__type_error__(ct, \"kio-gen source/target mismatch\")"));
+        let term_guard = render_generated_macro_body(UserMacroTemplate::TermTypeGuard);
+        assert!(term_guard.contains("__type_equal__(ct, __term_type__(ct, value), target)"));
+        assert!(term_guard.contains("__type_error__(ct, \"kio-gen term/target mismatch\")"));
     }
 }

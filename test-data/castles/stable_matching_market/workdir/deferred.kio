@@ -1,26 +1,27 @@
 module deferred;
 
 import macros/control(macro if);
+import macros/row_macros(macro select, macro with);
 import market as market;
 import testapi(Array, Bool, I32);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);
 
-pub labels Outcome = {
-, partner: Array[I32]
-, holder: Array[I32]
-, proposals: I32
-, switches: I32
-, rejections: I32
+pub type Outcome = {
+  Partner: Array[I32];
+  Holder: Array[I32];
+  Proposals: I32;
+  Switches: I32;
+  Rejections: I32
 };
 
-labels Work = {
-, preferences: market.Preferences
-, ranks: Array[I32]
-, queue: Array[I32]
-, next_choice: Array[I32]
-, size: I32
+type Work = {
+  Preferences: market.Preferences;
+  Ranks: Array[I32];
+  Queue: Array[I32];
+  Next_choice: Array[I32];
+  Size: I32
 };
 
 fn index(size: I32, recipient: I32, proposer: I32) -> I32 {
@@ -46,26 +47,36 @@ rec(loop) fn rank_all(preferences: market.Preferences, ranks: Array[I32], size: 
 }
 
 fn engage(outcome: Outcome, proposer: I32, recipient: I32) {
-  array.array_set(outcome.?{partner}, proposer, recipient);
-  array.array_set(outcome.?{holder}, recipient, proposer)
+  array.array_set(outcome.>select { Partner.get }, proposer, recipient);
+  array.array_set(outcome.>select { Holder.get }, recipient, proposer)
 }
 
 fn offer(work: Work, outcome: Outcome, proposer: I32, recipient: I32) -> Outcome {
-  let incumbent = array.array_get(outcome.?{holder}, recipient);
+  let incumbent = array.array_get(outcome.>select { Holder.get }, recipient);
   if(market.less(incumbent, 0)) {
     engage(outcome, proposer, recipient);
     outcome
   } else {
-    let incoming_rank = array.array_get(work.?{ranks}, index(work.?{size}, recipient, proposer));
-    let held_rank = array.array_get(work.?{ranks}, index(work.?{size}, recipient, incumbent));
+    let incoming_rank = array.array_get(
+    , work.>select { Ranks.get }
+    , index(work.>select { Size.get }, recipient, proposer)
+    );
+    let held_rank = array.array_get(
+    , work.>select { Ranks.get }
+    , index(work.>select { Size.get }, recipient, incumbent)
+    );
     if(market.less(incoming_rank, held_rank)) {
-      array.array_set(outcome.?{partner}, incumbent, -1);
+      array.array_set(outcome.>select { Partner.get }, incumbent, -1);
       engage(outcome, proposer, recipient);
-      array.array_push(work.?{queue}, incumbent);
-      outcome.!{switches = arith.add_i32(outcome.?{switches}, 1)}
+      array.array_push(work.>select { Queue.get }, incumbent);
+      outcome.>with {
+        Switches.mk(arith.add_i32(outcome.>select { Switches.get }, 1))
+      }
     } else {
-      array.array_push(work.?{queue}, proposer);
-      outcome.!{rejections = arith.add_i32(outcome.?{rejections}, 1)}
+      array.array_push(work.>select { Queue.get }, proposer);
+      outcome.>with {
+        Rejections.mk(arith.add_i32(outcome.>select { Rejections.get }, 1))
+      }
     }
   }
 }
@@ -73,16 +84,21 @@ fn offer(work: Work, outcome: Outcome, proposer: I32, recipient: I32) -> Outcome
 // The queue contains precisely the proposers whose next proposal is pending.
 // Every rejection and displacement appends one newly free proposer.
 rec(loop) fn process(work: Work, head: I32, outcome: Outcome) -> Outcome {
-  if(market.less(head, array.array_len(work.?{queue}))) {
-    let proposer = array.array_get(work.?{queue}, head);
-    let position = array.array_get(work.?{next_choice}, proposer);
-    let recipient = array.array_get(array.array_get(work.?{preferences}, proposer), position);
-    array.array_set(work.?{next_choice}, proposer, arith.add_i32(position, 1));
+  if(market.less(head, array.array_len(work.>select { Queue.get }))) {
+    let proposer = array.array_get(work.>select { Queue.get }, head);
+    let position = array.array_get(work.>select { Next_choice.get }, proposer);
+    let recipient = array.array_get(
+    , array.array_get(work.>select { Preferences.get }, proposer)
+    , position
+    );
+    array.array_set(work.>select { Next_choice.get }, proposer, arith.add_i32(position, 1));
     let updated = offer(work, outcome, proposer, recipient);
     recur process(
     , work
     , arith.add_i32(head, 1)
-    , updated.!{proposals = arith.add_i32(updated.?{proposals}, 1)}
+    , updated.>with {
+        Proposals.mk(arith.add_i32(updated.>select { Proposals.get }, 1))
+      }
     )
   } else {
     outcome
@@ -93,20 +109,20 @@ pub fn solve(proposing: market.Preferences, receiving: market.Preferences, order
   let size = array.array_len(proposing);
   let ranks = rank_all(receiving, array.array_make_filled(arith.mul_i32(size, size), 0), size, 0);
   let work =
-    {
-    , preferences = proposing
-    , ranks
-    , queue = array.array_clone(order)
-    , next_choice = array.array_make_filled(size, 0)
-    , size
-    };
+    (
+    , Preferences.mk(proposing)
+    , Ranks.mk(ranks)
+    , Queue.mk(array.array_clone(order))
+    , Next_choice.mk(array.array_make_filled(size, 0))
+    , Size.mk(size)
+    );
   let outcome =
-    {
-    , partner = array.array_make_filled(size, -1)
-    , holder = array.array_make_filled(size, -1)
-    , proposals = 0
-    , switches = 0
-    , rejections = 0
-    };
+    (
+    , Partner.mk(array.array_make_filled(size, -1))
+    , Holder.mk(array.array_make_filled(size, -1))
+    , Proposals.mk(0)
+    , Switches.mk(0)
+    , Rejections.mk(0)
+    );
   process(work, 0, outcome)
 }

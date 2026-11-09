@@ -7,7 +7,7 @@ pure fn keep_impl(
 , fills: __Fill_ctx__
 , source: __Type__
 , value: __Checked_term__
-, target: __Type__
-) -> __Checked_term__ & __Fill_ctx__ { (value, __fill__(ct, fills, target, source)) }
+, _target: .
+) -> __Checked_term__ & __Fill_ctx__ { (value, __fill_result__(ct, fills, source)) }
 
 pub macro keep : [Source] Source -> [Target] Target { impl(fills) keep_impl }

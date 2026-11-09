@@ -1,0 +1,2 @@
+user macro returned a checked term of type `lar\.I32 & lar\.String`
+declared result type was `String & I32`

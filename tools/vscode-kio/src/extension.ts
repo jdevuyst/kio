@@ -51,7 +51,6 @@ const SEMANTIC_KINDS = [
   "parameter", // variable.parameter — fn binders
   "namespace", // entity.name.module — module-path segments
   "function", // entity.name.function — fn / equiv definition names
-  "property", // entity.name.label — label entry names inside `labels { … }`
 ] as const;
 type SemanticKind = (typeof SEMANTIC_KINDS)[number];
 
@@ -107,29 +106,20 @@ const NODE_KIND: Record<string, SemanticKind> = {
   keyword_add: "keyword",
   keyword_modify: "keyword",
   keyword_remove: "keyword",
-  keyword_newtype: "keyword",
-  keyword_labels: "keyword",
   keyword_equiv: "keyword",
-  keyword_constructor: "keyword",
-  keyword_projector: "keyword",
   block_label: "keyword",
   // Module-path segments inside `module a/b;` and import provider paths
   // — surfaced by the structural `module_decl` / `import_decl`
   // productions. Maps to `namespace`, which most themes color
   // distinctly from plain identifiers.
   entity_name_module: "namespace",
-  // Type definition names — surfaced by `newtype_decl_head` and
-  // the named form of `labels_decl_head`. Maps to `type`, which is
+  // Type definition names — nominal entries and named type aliases. Maps to `type`, which is
   // the standard VS Code semantic-token type for type names.
   entity_name_type: "type",
   // Function definition names and structurally recognized direct/UFCS
   // callees. Maps to `function`, the standard VS Code semantic-token
   // type for function names.
   entity_name_function: "function",
-  // Label entry names inside `labels { foo: T, bar: U };` — surfaced
-  // by `label_entry`. Maps to `property`, VS Code's standard
-  // semantic-token kind for struct-field-shaped names.
-  entity_name_label: "property",
   // Parameter binders inside signatures (`fn foo[A](x: T)`) —
   // surfaced by `type_param_binder` and `value_param_binder`.
   // Parameter *uses* inside the body stay at `variable` until
@@ -141,7 +131,6 @@ const NODE_KIND: Record<string, SemanticKind> = {
   operator_builtin: "operator",
   operator_arrow_type: "operator",
   operator_arrow_ufcs: "operator",
-  operator_row_suffix: "operator",
   operator_run: "operator",
   unowned_symbol_run: "operator",
   star_open_prefix: "punctuation",
@@ -273,6 +262,11 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
     emitToken(node, "comment", builder, body);
     return;
   }
+  // Recovery can expose an anonymous keyword literal without its named owner.
+  if (node.parent?.type === "ERROR" && !node.isNamed && /^[A-Za-z_][A-Za-z0-9_]*$/.test(node.type)) {
+    emitToken(node, "variable", builder, body);
+    return;
+  }
   if (["ERROR", "unowned_function_head"].includes(node.parent?.type ?? "") && /^(keyword_|entity_name_|variable_parameter$)/.test(node.type)) {
     emitToken(node, "variable", builder, body);
     return;
@@ -288,15 +282,14 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
       "recursive_function_group",
     ].includes(parent?.type ?? "") ||
       (parent?.type === "type_rec_group" && parent.firstNamedChild?.id === node.id) ||
-      (parent?.type === "newtype_decl_head" && next?.type === "keyword_newtype") ||
-      (parent?.type === "labels_decl_head" && next?.type === "keyword_labels");
+      (["nominal_decl_head", "type_alias_decl_head"].includes(parent?.type ?? "") && next?.type === "keyword_type");
     emitToken(node, declaration ? "keyword" : "variable", builder, body);
     return;
   }
   // Special case: a `call_callee` node's prefix identifiers are
   // the qualifying path leading to the function name. Per Kio's
   // spelling convention, exact type names (`Box`, `_Box`) identify type
-  // qualifiers (`Box.mk_box`, `_Box.mk_box`) and value-shaped names identify
+  // qualifiers (`Box.mk`, `_Box.mk`) and value-shaped names identify
   // namespace qualifiers (`a.b.c.foo`). The tree-sitter grammar leaves the
   // prefix as plain `identifier` so the parser's literal-keyword
   // preference stays intact at top-level positions; this overlay

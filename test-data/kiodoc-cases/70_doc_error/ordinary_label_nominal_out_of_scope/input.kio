@@ -1,4 +1,4 @@
 /// See [`Foo`].
 module pkg;
 
-import pkg/provider({foo});
+import pkg/provider as provider;

@@ -9,12 +9,12 @@ import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);
 
-pub labels Audit = {
-, legal: Bool
-, symmetric: Bool
-, noncrossing: Bool
-, brackets: Bool
-, score_matches: Bool
+pub type Audit = {
+  Legal: Bool;
+  Symmetric: Bool;
+  Noncrossing: Bool;
+  Brackets: Bool;
+  Score_matches: Bool
 };
 
 fn in_range(partner: I32, n: I32) -> Bool {
@@ -122,11 +122,11 @@ rec(loop) fn count_pairs(partners: Array[I32], i: I32, total: I32) -> I32 {
 
 pub fn audit(sequence: Array[String], partners: Array[I32], min_loop: I32, score: I32) -> Audit {
   let lengths_match = numbers.equal(array.array_len(sequence), array.array_len(partners));
-  {
-  , legal = if(lengths_match) { legal_from(sequence, partners, min_loop, 0) } else { .f }
-  , symmetric = symmetric_from(partners, 0)
-  , noncrossing = noncrossing_from(partners, 0)
-  , brackets = brackets_from(partners, array.array_make_empty[I32](()), 0)
-  , score_matches = numbers.equal(count_pairs(partners, 0, 0), score)
-  }
+  (
+  , Legal.mk(if(lengths_match) { legal_from(sequence, partners, min_loop, 0) } else { .f })
+  , Symmetric.mk(symmetric_from(partners, 0))
+  , Noncrossing.mk(noncrossing_from(partners, 0))
+  , Brackets.mk(brackets_from(partners, array.array_make_empty[I32](()), 0))
+  , Score_matches.mk(numbers.equal(count_pairs(partners, 0, 0), score))
+  )
 }

@@ -15,19 +15,17 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 
-pub rec newtype List[A] : . | (A & List[A]) { constructor mk_list; projector un_list }
+pub rec type { List[A]: . | (A & List[A]) { mk; get } }
 
 /// The empty list.
-pub fn nil[A] -> List[A] { List.mk_list[A](widen_sum(())[. | (A & List[A])]) }
+pub fn nil[A] -> List[A] { List.mk[A](widen_sum(())[. | (A & List[A])]) }
 
 /// Prepend `x`.
-pub fn cons[A](x: A, xs: List[A]) -> List[A] {
-  List.mk_list[A](widen_sum((x, xs))[. | (A & List[A])])
-}
+pub fn cons[A](x: A, xs: List[A]) -> List[A] { List.mk[A](widen_sum((x, xs))[. | (A & List[A])]) }
 
 /// Open one layer: either the list is empty, or it is a head and a tail.
 /// Every walk below starts here, and so does the VM's instruction fetch.
-pub fn un_cons[A](xs: List[A]) -> . | (A & List[A]) { List.un_list[A](xs) }
+pub fn un_cons[A](xs: List[A]) -> . | (A & List[A]) { List.get[A](xs) }
 
 /// Push every element of `xs` onto `acc`, reversing `xs` on the way. This
 /// is the module's one traversal primitive.

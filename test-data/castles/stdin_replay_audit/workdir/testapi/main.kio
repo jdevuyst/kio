@@ -2,6 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro record, macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
 import testapi/fmt(i32_to_string);
@@ -9,99 +10,195 @@ import testapi/io(print, read_ascii_line);
 import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
-labels Audit_fields = {
-, phase: I32
-, balance: I32
-, credit: I32
-, debit: I32
-, checks: I32
-, errors: I32
-, lines: I32
+type Audit_fields = {
+  Phase: I32;
+  Balance: I32;
+  Credit: I32;
+  Debit: I32;
+  Checks: I32;
+  Errors: I32;
+  Lines: I32
 };
 
-newtype Audit_state : Phase & Balance & Credit & Debit & Checks & Errors & Lines {
-  constructor pack;
-  projector unpack
-  }
+type { Audit_state: Phase & Balance & Credit & Debit & Checks & Errors & Lines { mk; get } }
 
 fn int_eq(left: I32, right: I32) -> Bool {
   if(leq_i32(left, right)) { leq_i32(right, left) } else { .f }
 }
 
 fn initial() -> Audit_state {
-  Audit_state.pack({
-  , phase = 0
-  , balance = 0
-  , credit = 0
-  , debit = 0
-  , checks = 0
-  , errors = 0
-  , lines = 0
+  Audit_state.mk(record {
+    Phase.mk(0);
+    Balance.mk(0);
+    Credit.mk(0);
+    Debit.mk(0);
+    Checks.mk(0);
+    Errors.mk(0);
+    Lines.mk(0)
   })
 }
 
 fn add_line(st: Audit_state) -> Audit_state {
-  let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
-  Audit_state.pack({phase, balance, credit, debit, checks, errors, lines = add_i32(lines, 1)})
+  let .(phase, balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Phase.get;
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
+  Audit_state.mk(record {
+    Phase.mk(phase);
+    Balance.mk(balance);
+    Credit.mk(credit);
+    Debit.mk(debit);
+    Checks.mk(checks);
+    Errors.mk(errors);
+    Lines.mk(add_i32(lines, 1))
+  })
 }
 
 fn add_error(st: Audit_state) -> Audit_state {
-  let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
-  Audit_state.pack({phase, balance, credit, debit, checks, errors = add_i32(errors, 1), lines})
+  let .(phase, balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Phase.get;
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
+  Audit_state.mk(record {
+    Phase.mk(phase);
+    Balance.mk(balance);
+    Credit.mk(credit);
+    Debit.mk(debit);
+    Checks.mk(checks);
+    Errors.mk(add_i32(errors, 1));
+    Lines.mk(lines)
+  })
 }
 
 fn is_phase(st: Audit_state, expected: I32) -> Bool {
-  int_eq(Audit_state.unpack(st).?{phase}, expected)
+  int_eq(Audit_state.get(st).>select { Phase.get }, expected)
 }
 
-fn is_clean(st: Audit_state) -> Bool { int_eq(Audit_state.unpack(st).?{errors}, 0) }
+fn is_clean(st: Audit_state) -> Bool {
+  int_eq(Audit_state.get(st).>select { Errors.get }, 0)
+}
 
-fn balance_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{balance} }
+fn balance_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Balance.get }
+}
 
-fn credit_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{credit} }
+fn credit_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Credit.get }
+}
 
-fn debit_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{debit} }
+fn debit_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Debit.get }
+}
 
-fn checks_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{checks} }
+fn checks_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Checks.get }
+}
 
-fn errors_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{errors} }
+fn errors_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Errors.get }
+}
 
-fn lines_value(st: Audit_state) -> I32 { Audit_state.unpack(st).?{lines} }
+fn lines_value(st: Audit_state) -> I32 {
+  Audit_state.get(st).>select { Lines.get }
+}
 
 fn set_phase(st: Audit_state, next_phase: I32) -> Audit_state {
-  let .({balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
-  Audit_state.pack({phase = next_phase, balance, credit, debit, checks, errors, lines})
+  let .(balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
+  Audit_state.mk(record {
+    Phase.mk(next_phase);
+    Balance.mk(balance);
+    Credit.mk(credit);
+    Debit.mk(debit);
+    Checks.mk(checks);
+    Errors.mk(errors);
+    Lines.mk(lines)
+  })
 }
 
 fn add_check(st: Audit_state) -> Audit_state {
-  let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
-  Audit_state.pack({phase, balance, credit, debit, checks = add_i32(checks, 1), errors, lines})
+  let .(phase, balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Phase.get;
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
+  Audit_state.mk(record {
+    Phase.mk(phase);
+    Balance.mk(balance);
+    Credit.mk(credit);
+    Debit.mk(debit);
+    Checks.mk(add_i32(checks, 1));
+    Errors.mk(errors);
+    Lines.mk(lines)
+  })
 }
 
 fn add_credit(st: Audit_state, amount: I32) -> Audit_state {
-  let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
-  Audit_state.pack({
-  , phase
-  , balance = add_i32(balance, amount)
-  , credit = add_i32(credit, amount)
-  , debit
-  , checks
-  , errors
-  , lines
+  let .(phase, balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Phase.get;
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
+  Audit_state.mk(record {
+    Phase.mk(phase);
+    Balance.mk(add_i32(balance, amount));
+    Credit.mk(add_i32(credit, amount));
+    Debit.mk(debit);
+    Checks.mk(checks);
+    Errors.mk(errors);
+    Lines.mk(lines)
   })
 }
 
 fn add_debit(st: Audit_state, amount: I32) -> Audit_state {
-  let .({phase, balance, credit, debit, checks, errors, lines}) = Audit_state.unpack(st);
+  let .(phase, balance, credit, debit, checks, errors, lines) =
+    Audit_state.get(st).>select {
+      Phase.get;
+      Balance.get;
+      Credit.get;
+      Debit.get;
+      Checks.get;
+      Errors.get;
+      Lines.get
+    };
   let magnitude = sub_i32(0, amount);
-  Audit_state.pack({
-  , phase
-  , balance = add_i32(balance, amount)
-  , credit
-  , debit = add_i32(debit, magnitude)
-  , checks
-  , errors
-  , lines
+  Audit_state.mk(record {
+    Phase.mk(phase);
+    Balance.mk(add_i32(balance, amount));
+    Credit.mk(credit);
+    Debit.mk(add_i32(debit, magnitude));
+    Checks.mk(checks);
+    Errors.mk(errors);
+    Lines.mk(lines)
   })
 }
 
@@ -154,8 +251,8 @@ rec(loop) fn replay(fields: Phase & Balance & Credit & Debit & Checks & Errors &
   match(read_ascii_line()) {
     (
     , .(line: String) {
-        let next = apply_line(line, Audit_state.pack(fields));
-        recur replay(Audit_state.unpack(next))
+        let next = apply_line(line, Audit_state.mk(fields));
+        recur replay(Audit_state.get(next))
       }
     , .(_eof: .) { fields }
     )
@@ -182,6 +279,6 @@ fn print_report(st: Audit_state) {
 }
 
 pub fn main() {
-  let final_state = finish_state(Audit_state.pack(replay(Audit_state.unpack(initial()))));
+  let final_state = finish_state(Audit_state.mk(replay(Audit_state.get(initial()))));
   print_report(final_state)
 }

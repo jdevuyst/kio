@@ -5,28 +5,26 @@ import list/list as walk;
 import list_host as number;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub rec labels Ty =
-  { variable: I32 }
-  | { integer: . }
-  | { boolean: . }
-  | { arrow: Ty & Ty }
-  | { pair: Ty & Ty };
+pub rec type Ty =
+  { Variable: I32 } | { Integer: . } | { Boolean: . } | { Arrow: Ty & Ty } | { Pair: Ty & Ty }
+  ;
 
-pub fn variable_type(id: I32) -> Ty { {variable = id}.>widen_sum }
+pub fn variable_type(id: I32) -> Ty { Variable.mk(id).>widen_sum }
 
-pub fn integer_type() -> Ty { {integer=}.>widen_sum }
+pub fn integer_type() -> Ty { Integer.mk(()).>widen_sum }
 
-pub fn boolean_type() -> Ty { {boolean=}.>widen_sum }
+pub fn boolean_type() -> Ty { Boolean.mk(()).>widen_sum }
 
-pub fn arrow_type(a: Ty, b: Ty) -> Ty { {arrow = (a, b)}.>widen_sum }
+pub fn arrow_type(a: Ty, b: Ty) -> Ty { Arrow.mk((a, b)).>widen_sum }
 
-pub fn pair_type(a: Ty, b: Ty) -> Ty { {pair = (a, b)}.>widen_sum }
+pub fn pair_type(a: Ty, b: Ty) -> Ty { Pair.mk((a, b)).>widen_sum }
 
 pub type Substitution = lists.List[I32 & Ty];
 
@@ -42,17 +40,17 @@ pub rec(loop) fn lookup(id: I32, substitutions: Substitution) -> . | Ty {
 pub rec(loop) fn apply(substitutions: Substitution, ty: Ty) -> Ty {
   match(ty) {
     .(v: Variable) {
-      match(lookup(v.?{variable}, substitutions)) {
+      match(lookup(v.>select { Variable.get }, substitutions)) {
         .(found: Ty) { recur apply(substitutions, found) };
         .() { ty }
       }
     };
     .(f: Arrow) {
-      let .(a: Ty, b: Ty) = f.?{arrow};
+      let .(a: Ty, b: Ty) = f.>select { Arrow.get };
       arrow_type(recur(cont) apply(substitutions, a), recur(cont) apply(substitutions, b))
     };
     .(p: Pair) {
-      let .(a: Ty, b: Ty) = p.?{pair};
+      let .(a: Ty, b: Ty) = p.>select { Pair.get };
       pair_type(recur(cont) apply(substitutions, a), recur(cont) apply(substitutions, b))
     };
     .() { ty }
@@ -61,13 +59,15 @@ pub rec(loop) fn apply(substitutions: Substitution, ty: Ty) -> Ty {
 
 pub rec(loop) fn variables(ty: Ty) -> lists.List[I32] {
   match(ty) {
-    .(v: Variable) { lists.singleton(v.?{variable}) };
+    .(v: Variable) {
+      lists.singleton(v.>select { Variable.get })
+    };
     .(f: Arrow) {
-      let .(a: Ty, b: Ty) = f.?{arrow};
+      let .(a: Ty, b: Ty) = f.>select { Arrow.get };
       walk.append(recur(cont) variables(a), recur(cont) variables(b))
     };
     .(p: Pair) {
-      let .(a: Ty, b: Ty) = p.?{pair};
+      let .(a: Ty, b: Ty) = p.>select { Pair.get };
       walk.append(recur(cont) variables(a), recur(cont) variables(b))
     };
     .() { lists.nil[_] }
@@ -96,7 +96,7 @@ fn combine(a: String, separator: String, b: String) -> String {
 rec(loop) fn render(ty: Ty, names: lists.List[I32]) -> String {
   match(ty) {
     .(v: Variable) {
-      match(walk.index_of(number.eq_i32, v.?{variable}, names)) {
+      match(walk.index_of(number.eq_i32, v.>select { Variable.get }, names)) {
         .(index: I32) { text.string_concat("a", fmt.int_to_string(index)) };
         .() { "?" }
       }
@@ -104,11 +104,11 @@ rec(loop) fn render(ty: Ty, names: lists.List[I32]) -> String {
     .(_i: Integer) { "Int" };
     .(_b: Boolean) { "Bool" };
     .(f: Arrow) {
-      let .(a: Ty, b: Ty) = f.?{arrow};
+      let .(a: Ty, b: Ty) = f.>select { Arrow.get };
       combine(recur(cont) render(a, names), " -> ", recur(cont) render(b, names))
     };
     .(p: Pair) {
-      let .(a: Ty, b: Ty) = p.?{pair};
+      let .(a: Ty, b: Ty) = p.>select { Pair.get };
       combine(recur(cont) render(a, names), " * ", recur(cont) render(b, names))
     }
   }

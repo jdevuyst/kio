@@ -13,7 +13,7 @@ import testapi/io(print);
 // propagation:
 //
 //   1. A polymorphic-newtype payload with an existential type-param
-//      (`boxed`), reached through the CPS-projector apply path — the
+//      (`Boxed`), reached through the CPS-projector apply path — the
 //      sealed value flows through the package as an
 //      `Arc<dyn Any + Send + Sync>`.
 //   2. A rank-N value parameter (`Nat`, the Church-numeral encoding),
@@ -23,7 +23,7 @@ import testapi/io(print);
 //
 // Both reach a host function callback (`print` / `int_to_string` /
 // `add_i32`), so the bound propagation is meaningfully end-to-end.
-labels { boxed[A] <U> : A & U };
+type { Boxed[A] <U>: A & U }
 
 fn box_value[A](v: A) -> Boxed[A] { Boxed.mk((v, v)) }
 

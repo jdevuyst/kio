@@ -1,0 +1,2 @@
+`retype` cannot map `widget/store`.*`nominal type Foo`.*`core/store`.*payloads are not structurally congruent
+retype widget/store\.Foo to core/store\.Foo;

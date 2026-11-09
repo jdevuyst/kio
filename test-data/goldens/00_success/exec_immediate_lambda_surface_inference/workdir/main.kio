@@ -4,11 +4,11 @@ type A = . & .;
 
 fn identity_hkt[*G](value: G[.]) -> G[.] { value }
 
-newtype N : . { pub constructor mk_n; pub projector un_n }
+type { N: . { pub mk; pub get } }
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
-newtype Wrap[A] : A { constructor mk_wrap; projector un_wrap }
+type { Wrap[A]: A { mk; get } }
 
 fn make_pair() -> . & . { ((), ()) }
 
@@ -21,7 +21,7 @@ fn later_binder_does_not_shadow(value: N) {
 }
 
 fn repeated_binders_keep_their_layers() -> N {
-  .[T](first: T)[T](second: T) { second }[.](())[N](N.mk_n(()))
+  .[T](first: T)[T](second: T) { second }[.](())[N](N.mk(()))
 }
 
 fn main() {
@@ -37,10 +37,10 @@ fn main() {
   let earlier_product_is_one_slot = .(first, second, third)(tail) { tail }(make_pair(), (), ())(());
   let later_group_reuses_binder = .[A](first: A)(second: A, tail) { tail }[.](())((), ());
   let binder_shadow_partition = shadowed_partition[.](());
-  let later_binder_scope = later_binder_does_not_shadow(N.mk_n(()));
+  let later_binder_scope = later_binder_does_not_shadow(N.mk(()));
   let repeated_binder_layers = repeated_binders_keep_their_layers();
-  let box = Box.mk_box[.](());
-  let wrap = Wrap.mk_wrap[.](());
+  let box = Box.mk[.](());
+  let wrap = Wrap.mk[.](());
   let repeated_hkt =
     .[*F](function, first: F[.])[*F](second: F[.]) -> F[.] { second }(identity_hkt, box)[Wrap](wrap);
   ()

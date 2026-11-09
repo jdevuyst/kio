@@ -9,8 +9,8 @@
 /// state must not.
 module testapi/main;
 
+import cpu/machine(Forwarding, Mem, Prog, Regs);
 import cpu/machine(initial, new_memory, new_registers, same_words);
-import cpu/machine({forwarding}, {mem}, {prog}, {regs});
 import cpu/num(and);
 import cpu/pipeline(run);
 import cpu/program(build);
@@ -45,7 +45,8 @@ pub fn main() {
   let regs_off = new_registers();
   let mem_off = new_memory();
   pipeline_header();
-  let off = run({prog, regs = regs_off, mem = mem_off, forwarding = .f}, initial(prog));
+  let off =
+    run((Prog.mk(prog), Regs.mk(regs_off), Mem.mk(mem_off), Forwarding.mk(.f)), initial(prog));
   blank();
   counters(off);
   blank();
@@ -53,7 +54,7 @@ pub fn main() {
   let regs_on = new_registers();
   let mem_on = new_memory();
   pipeline_header();
-  let on = run({prog, regs = regs_on, mem = mem_on, forwarding = .t}, initial(prog));
+  let on = run((Prog.mk(prog), Regs.mk(regs_on), Mem.mk(mem_on), Forwarding.mk(.t)), initial(prog));
   blank();
   counters(on);
   blank();

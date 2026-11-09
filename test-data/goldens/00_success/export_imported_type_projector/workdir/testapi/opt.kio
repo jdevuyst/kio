@@ -8,17 +8,17 @@ import testapi/text(string_concat);
 
 // `Option(String)` as `String | .`: the `String` arm carries a
 // present value, the `()` arm is absence. Exposed with a public
-// constructor `mk_opt` and projector `un_opt` so another module can
+// constructor `mk` and projector `get` so another module can
 // import the type and destructure it through the type name.
-pub newtype Opt : String | . { pub constructor mk_opt; pub projector un_opt }
+pub type { Opt: String | . { pub mk; pub get } }
 
-pub fn some(v: String) -> Opt { Opt.mk_opt(widen_sum(v)) }
+pub fn some(v: String) -> Opt { Opt.mk(widen_sum(v)) }
 
-pub fn none() -> Opt { Opt.mk_opt(widen_sum(())) }
+pub fn none() -> Opt { Opt.mk(widen_sum(())) }
 
 // Render an already-projected `Opt` payload (`String | .`). The
 // caller does the projection through the imported type
-// (`value.>Opt.un_opt`); this helper renders the resulting sum.
+// (`value.>Opt.get`); this helper renders the resulting sum.
 pub fn show(payload: String | .) {
   print(string_concat(
   , match(payload) {

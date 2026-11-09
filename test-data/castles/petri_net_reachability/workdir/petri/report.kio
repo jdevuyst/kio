@@ -2,6 +2,7 @@ module petri/report;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import petri/fixture as fixture;
 import petri/model as model;
 import petri/search as search;
@@ -22,21 +23,21 @@ fn number(label: String, value: I32) { line(label, fmt.int_to_string(value)) }
 fn flag(label: String, value: Bool) { line(label, fmt.bool_to_string(value)) }
 
 fn rejected(net: model.Net, transition: model.Transition) -> Bool {
-  if(model.enabled(net, transition, net.?{model.initial})) { .f } else { .t }
+  if(model.enabled(net, transition, net.>select { model.Initial.get })) { .f } else { .t }
 }
 
 fn print_witness(net: model.Net, result: search.Search) {
-  match(result.?{search.first_deadlock}) {
+  match(result.>select { search.First_deadlock.get }) {
     .(node: search.Node) {
-      number("shortest deadlock depth: ", node.?{search.depth});
-      match(witness.reconstruct(result.?{search.visited}, node, lists.nil[_])) {
+      number("shortest deadlock depth: ", node.>select { search.Depth.get });
+      match(witness.reconstruct(result.>select { search.Visited.get }, node, lists.nil[_])) {
         .(path: witness.Path) {
           number("witness transitions: ", traversal.length(path));
-          line("  0: initial -> ", witness.show_marking(net.?{model.initial}));
-          let replayed = witness.replay(net, path, net.?{model.initial}, 1);
+          line("  0: initial -> ", witness.show_marking(net.>select { model.Initial.get }));
+          let replayed = witness.replay(net, path, net.>select { model.Initial.get }, 1);
           flag(
           , "replay reaches unfinished deadlock: "
-          , witness.agrees(net, replayed, node.?{search.marking})
+          , witness.agrees(net, replayed, node.>select { search.Marking.get })
           )
         };
         .() { line("witness: ", "broken predecessor chain") }
@@ -52,14 +53,14 @@ pub fn run() {
   io.print("Opposite-lock Petri net (capacity 1)\n");
   io.print("places: left-wait left-hold left-done right-wait right-hold right-done "
            "lock-a lock-b\n");
-  number("reachable markings: ", traversal.length(result.?{search.visited}));
-  number("enabled edges: ", result.?{search.edges});
-  number("duplicate discoveries: ", result.?{search.duplicates});
-  number("peak FIFO frontier: ", result.?{search.peak});
-  number("completed terminals: ", result.?{search.terminals});
-  number("unfinished deadlocks: ", result.?{search.deadlocks});
+  number("reachable markings: ", traversal.length(result.>select { search.Visited.get }));
+  number("enabled edges: ", result.>select { search.Edges.get });
+  number("duplicate discoveries: ", result.>select { search.Duplicates.get });
+  number("peak FIFO frontier: ", result.>select { search.Peak.get });
+  number("completed terminals: ", result.>select { search.Terminals.get });
+  number("unfinished deadlocks: ", result.>select { search.Deadlocks.get });
   print_witness(net, result);
-  match(traversal.at(2, net.?{model.transitions})) {
+  match(traversal.at(2, net.>select { model.Transitions.get })) {
     .(finish: model.Transition) {
       flag("finish before acquisition rejected: ", rejected(net, finish))
     };
@@ -67,11 +68,11 @@ pub fn run() {
   };
   flag("capacity overflow rejected: ", rejected(net, fixture.overflowing()));
   let complete = search.run(fixture.already_completed());
-  number("initially completed: terminals=", complete.?{search.terminals});
-  number("initially completed: deadlocks=", complete.?{search.deadlocks});
+  number("initially completed: terminals=", complete.>select { search.Terminals.get });
+  number("initially completed: deadlocks=", complete.>select { search.Deadlocks.get });
   let stuck_net = fixture.already_stuck();
   let stuck = search.run(stuck_net);
-  number("initially stuck: terminals=", stuck.?{search.terminals});
-  number("initially stuck: deadlocks=", stuck.?{search.deadlocks});
+  number("initially stuck: terminals=", stuck.>select { search.Terminals.get });
+  number("initially stuck: deadlocks=", stuck.>select { search.Deadlocks.get });
   print_witness(stuck_net, stuck)
 }

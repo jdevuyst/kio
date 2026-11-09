@@ -1,29 +1,30 @@
 module symbolic_units/model;
 
 import macros/match(macro match);
+import macros/row_macros(macro record);
 import macros/spine_macros(macro widen_sum);
 import testapi(I32);
 
-pub labels Unit = { meter: . } | { second: . } | { kilogram: . };
+pub type Unit = { Meter: . } | { Second: . } | { Kilogram: . };
 
 rec {
-  pub labels { expr: Meter | Second | Kilogram | Product | Quotient | Pow };
-  pub labels { product: Expr & Expr };
-  pub labels { quotient: Expr & Expr };
-  pub labels { pow: Expr & I32 }
+  pub type { Expr: Meter | Second | Kilogram | Product | Quotient | Pow };
+  pub type { Product: Expr & Expr };
+  pub type { Quotient: Expr & Expr };
+  pub type { Pow: Expr & I32 }
 }
 
-pub labels Summary = { meter_exp: I32, second_exp: I32, kilogram_exp: I32 };
+pub type Summary = { Meter_exp: I32; Second_exp: I32; Kilogram_exp: I32 };
 
-pub newtype Score : I32 { pub constructor mk_score; pub projector un_score }
+pub type { Score: I32 { pub mk; pub get } }
 
-pub fn unit_meter() -> Unit { ({meter=}.>widen_sum)[Unit] }
+pub fn unit_meter() -> Unit { (Meter.mk(()).>widen_sum)[Unit] }
 
-pub fn unit_second() -> Unit { ({second=}.>widen_sum)[Unit] }
+pub fn unit_second() -> Unit { (Second.mk(()).>widen_sum)[Unit] }
 
-pub fn unit_kilogram() -> Unit { ({kilogram=}.>widen_sum)[Unit] }
+pub fn unit_kilogram() -> Unit { (Kilogram.mk(()).>widen_sum)[Unit] }
 
-fn wrap(node: Meter | Second | Kilogram | Product | Quotient | Pow) -> Expr { {expr = node} }
+fn wrap(node: Meter | Second | Kilogram | Product | Quotient | Pow) -> Expr { Expr.mk(node) }
 
 pub fn unit_expr(unit_value: Unit) -> Expr {
   match(unit_value) {
@@ -36,17 +37,17 @@ pub fn unit_expr(unit_value: Unit) -> Expr {
 }
 
 pub fn product(left: Expr, right: Expr) -> Expr {
-  wrap(({product = (left, right)}.>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
+  wrap((Product.mk(left, right).>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
 }
 
 pub fn quotient(left: Expr, right: Expr) -> Expr {
-  wrap(({quotient = (left, right)}.>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
+  wrap((Quotient.mk(left, right).>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
 }
 
 pub fn power(base: Expr, exp: I32) -> Expr {
-  wrap(({pow = (base, exp)}.>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
+  wrap((Pow.mk(base, exp).>widen_sum)[Meter | Second | Kilogram | Product | Quotient | Pow])
 }
 
 pub fn summary(meter: I32, second: I32, kilogram: I32) -> Summary {
-  {meter_exp = meter, second_exp = second, kilogram_exp = kilogram}
+  record { Meter_exp.mk(meter); Second_exp.mk(second); Kilogram_exp.mk(kilogram) }
 }

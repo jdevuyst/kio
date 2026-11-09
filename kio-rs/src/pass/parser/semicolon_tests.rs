@@ -17,9 +17,11 @@ fn module(source: &str) -> crate::ast::Module {
 fn outer_braced_entries_accept_one_redundant_suffix() {
     for item in [
         "fn f() { () }",
-        "newtype Box : . { constructor make; projector get }",
-        "rec newtype List : . { constructor make; projector get }",
-        "rec { type A = B; newtype B : . { constructor make; projector get } }",
+        "type { Box : . { mk; get } }",
+        "type { Flag: . }",
+        "type { Left: .; Right: . }",
+        "rec type { List : . { mk; get } }",
+        "rec { type A = B; type { B : . { mk; get } } }",
         "rec(loop) fn f() { () }",
         "rec(loop) { fn f() { () }; fn g() { () } }",
         "equiv same { (); () }",
@@ -35,6 +37,22 @@ fn outer_braced_entries_accept_one_redundant_suffix() {
                 "module sample; ".len() + item.len(),
                 "{source}"
             );
+            let editable = match &parsed.items[0] {
+                crate::ast::Item::Newtype(declaration) => Some(
+                    declaration
+                        .editable_span
+                        .expect("explicit nominal editable span"),
+                ),
+                crate::ast::Item::Labels(declaration, _) => Some(
+                    declaration
+                        .editable_span
+                        .expect("compact nominal editable span"),
+                ),
+                _ => None,
+            };
+            if let Some(editable) = editable {
+                assert_eq!(editable.end as usize, source.len(), "{source}");
+            }
             let printed = crate::pretty::pretty_module(&parsed);
             assert!(!printed.trim_end().ends_with(';'), "{printed}");
             module(&printed);
@@ -53,7 +71,7 @@ fn strict_nested_edges_preserve_repeat_and_empty_policy() {
         "varop [* *] { ; foldr1 step seed; finalize finish; }",
         "macro apply : . -> . { ; captures (helper); impl run; }",
         "rec(loop) { ; fn f() { () }; fn g() { () }; }",
-        "rec { ; type A = B; newtype B : . { constructor make; projector get }; }",
+        "rec { ; type A = B; type { B : . { mk; get } }; }",
     ] {
         module(&format!("module sample; {body}"));
     }
@@ -79,7 +97,7 @@ fn strict_nested_edges_preserve_repeat_and_empty_policy() {
 
 #[test]
 fn run_tolerant_fields_allow_edges_and_require_peer_separators() {
-    module("module sample; newtype Box : . { ;; constructor make;; projector get;; }");
+    module("module sample; type { Box : . { ;; mk;; get;; } }");
     assert!(
         parse_build_block_body(
             ";; cache ();; docs {;; md \"docs\";;}; target js {;; out \"out\";;};;"
@@ -114,10 +132,11 @@ fn nonbraced_outer_entries_keep_terminators_and_commas() {
         "host type A",
         "host type A { owned }",
         "host fn f() -> .",
-        "labels {flag: .}",
+        "type Row = { Flag: . }",
         "literal one = 1",
     ] {
         assert!(parse(&format!("module sample; {body}")).is_err(), "{body}");
+        assert!(parse(&format!("module sample; {body};")).is_ok(), "{body}");
     }
     assert!(
         parse("module sample; varop [* *] {foldr1 step seed} fn f() { [* (); () *] }").is_err()
@@ -127,7 +146,7 @@ fn nonbraced_outer_entries_keep_terminators_and_commas() {
 
 #[test]
 fn signature_nested_sections_and_mixed_entries_own_separators() {
-    let source = "signature sample v(1); v(1) {; with {; module names {; import other as o; type A = .; newtype Box : A {constructor make; projector get}; };}; nonbreaking {; add {; names.A; module api {; pub fn get() -> .;};};};};";
+    let source = "signature sample v(1); v(1) {; with {; module names {; import other as o; type A = .; type { Box : A {mk; get} }; };}; nonbreaking {; add {; names.A; module api {; pub fn get() -> .;};};};};";
     let parsed = parse_signature_file(source, None).unwrap();
     let printed = crate::sig::emit_signature_file(&parsed);
     let reparsed =

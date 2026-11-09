@@ -5,7 +5,7 @@ import build_match_imported_recursive_continuation/list as list;
 import macros/match(macro match);
 
 pub rec(loop) fn copy[A](items: list.List[A]) -> list.Copied[A] {
-  match(items.>list.List.un_list) {
+  match(items.>list.List.get) {
     (
     , .(head: A, tail: list.List[A]) { list.cons(head, recur(cont) copy(tail)) }
     , .(_empty: .) { list.nil[A](()) }

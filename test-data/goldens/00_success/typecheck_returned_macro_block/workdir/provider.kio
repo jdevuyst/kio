@@ -1,0 +1,9 @@
+module provider;
+
+import __comptime__;
+
+pure fn identity_checked(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub macro identity : [A] A -> A { trailing thunk; impl identity_checked }

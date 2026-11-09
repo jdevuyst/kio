@@ -23,18 +23,13 @@
 //! just to write `(a, b)`.
 //!
 //! Surface forms whose lowering depends on a package-wide label table
-//! ([`Type::LabelSugar`], [`Item::Labels`], [`Expr::LabelValue`]) are
+//! ([`Item::Labels`]) are
 //! handled by `pass/label_elab` and stripped at the [`Desugared`] →
 //! [`Lowered`] boundary.
 //!
-//! Surface forms that survive every pre-typer pass and live on into
-//! [`Lowered`]: user-macro calls ([`Expr::UserMacro`]), field syntax
-//! ([`Expr::Elaborator`] for `x.?{foo}` access and
-//! `x.!{foo = y}` update). Both need
-//! synthesized type information the typer produces, so the typer records each
-//! elaboration in the [`crate::pass::typecheck_full::Elaborations`] side
-//! table and the substitute pass swaps the recorded form into the
-//! AST at the [`Lowered`] → [`Prime`] boundary.
+//! User-macro calls survive into [`Lowered`]. The typer records each
+//! expansion in [`crate::pass::typecheck_full::Elaborations`], and substitution
+//! installs it at the [`Lowered`] → [`Prime`] boundary.
 //!
 //! UFCS is normalized to written ordinary application stages before this boundary.
 //!
@@ -59,13 +54,12 @@ use escape::{RecEscapeContext, RecEscapePlan};
 pub mod walk;
 
 use crate::ast::{
-    CallArg, CallStage, Desugared, ElaboratorCall, ElaboratorKind, Equiv, Expr, FieldAccessLabel,
-    FieldUpdateLabel, FnDef, Import, ImportKind, Item, LabelValueLabel, LiteralAlias,
+    CallArg, CallStage, Desugared, Equiv, Expr, FnDef, Import, ImportKind, Item, LiteralAlias,
     LiteralAliasValue, Meta, Module, ModulePath, Newtype, NodeId, Op, PackageFile, Param,
     ParamPattern, ParamPatternElem, PathSegment, PlaceholderState, RecCallMode, RecCallSyntax,
     RecGroup, RecOrderDisposition, RecOrderPlan, RecOrderTailRequirement, RecOrderTypeFlow,
-    RowLetEntry, Signature, SignatureParam, Surface, Type, TypeMember, TypeParam, TypeRecGroup,
-    TypeRecMember, VariadicOperator,
+    Signature, SignatureParam, Surface, Type, TypeMember, TypeParam, TypeRecGroup, TypeRecMember,
+    VariadicOperator,
 };
 use crate::error::Error;
 use crate::pass::desugar::walk::SurfaceToDesugared;
@@ -342,7 +336,6 @@ pub fn desugar_module_with_imports(
                     record_surface_value_name(&mut local_names, &h.name, h.meta.span, false)?;
                 }
                 Item::TypeAlias(_)
-                | Item::LabelForward(_, _)
                 | Item::Newtype(_)
                 | Item::Equiv(_, _)
                 | Item::Macro(_, _)
@@ -563,8 +556,6 @@ struct RecMemberPlan {
     state_existential_indices: Vec<usize>,
     state_arm_ty: Type<Desugared>,
     wrapper_type_name: String,
-    wrapper_ctor_name: String,
-    wrapper_projector_name: String,
 }
 
 #[derive(Clone)]
@@ -1054,67 +1045,6 @@ fn generated_projection_intrinsic(name: &str) -> bool {
     matches!(name, "__fst__" | "__snd__")
 }
 
-fn expand_row_let(
-    entries: Vec<RowLetEntry<Surface>>,
-    value: Box<Expr<Surface>>,
-    body: Box<Expr<Surface>>,
-    temp_name: String,
-    meta: Meta<Surface>,
-) -> Expr<Surface> {
-    let span = meta.span;
-    let mut body = *body;
-    for entry in entries.into_iter().rev() {
-        let RowLetEntry {
-            label,
-            label_span,
-            local,
-            local_span,
-            access_ext,
-            meta: Meta {
-                span: entry_span, ..
-            },
-            ..
-        } = entry;
-        let access = Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind: ElaboratorKind::Access,
-            call: ElaboratorCall::FieldAccess {
-                receiver: Box::new(surface_path_expr(temp_name.clone(), entry_span)),
-                labels: vec![FieldAccessLabel {
-                    label,
-                    label_span,
-                    label_type: None,
-                    meta: Meta::new(entry_span),
-                }],
-            },
-            meta: Meta::new(entry_span),
-            ext: access_ext,
-        };
-        let let_span = Span::new(entry_span.start, body.span().end);
-        body = Expr::Let {
-            occurrence: Default::default(),
-            name: local,
-            name_span: local_span,
-            ty: None,
-            pattern: None,
-            value: Box::new(access),
-            body: Box::new(body),
-            meta: Meta::new(let_span),
-        };
-    }
-    Expr::Let {
-        occurrence: Default::default(),
-        name: temp_name,
-        name_span: span,
-        ty: None,
-        pattern: None,
-        value,
-        body: Box::new(body),
-        meta: Meta::new(span),
-    }
-}
-
 fn deferred_tail_tree_has_required(expr: &Expr<Surface>) -> bool {
     match expr {
         Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => {
@@ -1208,17 +1138,10 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
         Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
             expr_uses_rec_mode(value, mode) || expr_uses_rec_mode(body, mode)
         }
-        Expr::RowLet { value, body, .. } => {
-            expr_uses_rec_mode(value, mode) || expr_uses_rec_mode(body, mode)
-        }
-        Expr::Elaborator { call, .. } => elaborator_call_uses_rec_mode(call, mode),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { stages, .. } => {
             stage_args(stages).any(|arg| call_arg_uses_rec_mode(arg, mode))
         }
-        Expr::LabelValue { labels, .. } => labels
-            .iter()
-            .any(|label| expr_uses_rec_mode(&label.value, mode)),
         Expr::Tuple { items, .. } => items.iter().any(|item| expr_uses_rec_mode(item, mode)),
         crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
@@ -1262,19 +1185,6 @@ fn call_arg_uses_rec_mode(arg: &CallArg<Surface>, mode: RecCallMode) -> bool {
     match arg {
         CallArg::Type(_) => false,
         CallArg::Value(value) => expr_uses_rec_mode(value, mode),
-    }
-}
-
-fn elaborator_call_uses_rec_mode(call: &ElaboratorCall<Surface>, mode: RecCallMode) -> bool {
-    match call {
-        ElaboratorCall::FieldAccess { receiver, .. } => expr_uses_rec_mode(receiver, mode),
-        ElaboratorCall::FieldUpdate { base, updates } => {
-            base.receiver()
-                .is_some_and(|receiver| expr_uses_rec_mode(receiver, mode))
-                || updates
-                    .iter()
-                    .any(|update| expr_uses_rec_mode(&update.value, mode))
-        }
     }
 }
 
@@ -1385,16 +1295,6 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
             collect_surface_expr_names(value, names);
             collect_surface_expr_names(body, names);
         }
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            ..
-        } => {
-            names.extend(entries.iter().map(|entry| entry.local.clone()));
-            collect_surface_expr_names(value, names);
-            collect_surface_expr_names(body, names);
-        }
         Expr::Seq { value, body, .. } => {
             collect_surface_expr_names(value, names);
             collect_surface_expr_names(body, names);
@@ -1412,24 +1312,6 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
                 collect_surface_expr_names(item, names);
             }
         }
-        Expr::LabelValue { labels, .. } => {
-            for label in labels {
-                collect_surface_expr_names(&label.value, names);
-            }
-        }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => {
-                collect_surface_expr_names(receiver, names);
-            }
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver() {
-                    collect_surface_expr_names(receiver, names);
-                }
-                for update in updates {
-                    collect_surface_expr_names(&update.value, names);
-                }
-            }
-        },
         crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { slots, .. } => {
@@ -1522,7 +1404,6 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
                             labels
                                 .entries
                                 .iter()
-                                .filter(|entry| !entry.is_reuse_marker())
                                 .map(|entry| crate::ast::mint_label_newtype_name(&entry.name)),
                         );
                         names.extend(
@@ -1531,6 +1412,9 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
                                 .iter()
                                 .map(|param| param.name.clone()),
                         );
+                        if let Some(rhs) = &labels.type_alias_rhs {
+                            rhs.visit_types(&mut |ty| collect_all_type_names(ty, names));
+                        }
                         if let Some(arms) = &labels.type_alias_arms {
                             for arm in arms {
                                 for entry in &arm.entries {
@@ -1553,7 +1437,7 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
         Item::LiteralAlias(alias, _) => {
             names.insert(alias.name.clone());
         }
-        Item::LabelForward(_, _) => {}
+
         Item::Newtype(newtype) => {
             names.insert(newtype.name.clone());
             names.insert(newtype.constructor.name.clone());
@@ -1573,7 +1457,6 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
                 labels
                     .entries
                     .iter()
-                    .filter(|entry| !entry.is_reuse_marker())
                     .map(|entry| crate::ast::mint_label_newtype_name(&entry.name)),
             );
             names.extend(
@@ -1582,6 +1465,9 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
                     .iter()
                     .map(|param| param.name.clone()),
             );
+            if let Some(rhs) = &labels.type_alias_rhs {
+                rhs.visit_types(&mut |ty| collect_all_type_names(ty, names));
+            }
             if let Some(arms) = &labels.type_alias_arms {
                 for arm in arms {
                     for entry in &arm.entries {
@@ -2093,9 +1979,6 @@ impl DesugarVisitor {
                 let state_payload_ty =
                     crate::ast::build_product_right_fold(state_tys, member.meta.span);
                 let wrapper_type_name = wrapper_type_names[index].clone();
-                let wrapper_ctor_name = rec_wrapper_ctor_name(group.meta.span, &member.name);
-                let wrapper_projector_name =
-                    rec_wrapper_projector_name(group.meta.span, &member.name);
                 let state_arm_ty = Type::synth_path(
                     vec![wrapper_type_name.clone()],
                     state_type_args.clone(),
@@ -2123,8 +2006,6 @@ impl DesugarVisitor {
                     state_existential_indices: state_existential_indices.clone(),
                     state_arm_ty,
                     wrapper_type_name,
-                    wrapper_ctor_name,
-                    wrapper_projector_name,
                 })
             })
             .collect()
@@ -2144,13 +2025,13 @@ impl DesugarVisitor {
                 payload: member.state_payload_decl_ty.clone(),
                 constructor: TypeMember {
                     vis: crate::ast::Visibility::Private,
-                    name: member.wrapper_ctor_name.clone(),
+                    name: "mk".into(),
                     span: member.meta.span,
                     leading_trivia: (),
                 },
                 projector: TypeMember {
                     vis: crate::ast::Visibility::Private,
-                    name: member.wrapper_projector_name.clone(),
+                    name: "get".into(),
                     span: member.meta.span,
                     leading_trivia: (),
                 },
@@ -2174,13 +2055,13 @@ impl DesugarVisitor {
             payload: Type::synth_function(Vec::new(), ctx.step_result_ty.clone(), ctx.span),
             constructor: TypeMember {
                 vis: crate::ast::Visibility::Private,
-                name: "mk_resume".into(),
+                name: "mk".into(),
                 span: ctx.span,
                 leading_trivia: (),
             },
             projector: TypeMember {
                 vis: crate::ast::Visibility::Private,
-                name: "un_resume".into(),
+                name: "get".into(),
                 span: ctx.span,
                 leading_trivia: (),
             },
@@ -2334,7 +2215,7 @@ impl DesugarVisitor {
             let thunk = call_path(
                 vec![
                     PathSegment::new(resume.name.clone(), ctx.span),
-                    PathSegment::new("un_resume", ctx.span),
+                    PathSegment::new("get", ctx.span),
                 ],
                 args,
                 ctx.span,
@@ -2415,7 +2296,7 @@ impl DesugarVisitor {
         let outer = call_path(
             vec![
                 PathSegment::new(member.wrapper_type_name.clone(), outer_span),
-                PathSegment::new(member.wrapper_projector_name.clone(), outer_span),
+                PathSegment::new("get", outer_span),
             ],
             outer_args,
             outer_span,
@@ -2714,7 +2595,7 @@ impl DesugarVisitor {
         call_path(
             vec![
                 PathSegment::new(member.wrapper_type_name.clone(), member.meta.span),
-                PathSegment::new(member.wrapper_ctor_name.clone(), member.meta.span),
+                PathSegment::new("mk", member.meta.span),
             ],
             args,
             member.meta.span,
@@ -2737,21 +2618,6 @@ impl DesugarVisitor {
                 ..
             } => {
                 self.transform_rec_call(modes, callee, stages, meta.span, ext, current_member, ctx)
-            }
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                temp_name,
-                meta,
-                ..
-            } => {
-                self.state.needs_intrinsics = true;
-                self.transform_rec_tail_expr(
-                    expand_row_let(entries, value, body, temp_name, meta),
-                    current_member,
-                    ctx,
-                )
             }
             Expr::Let {
                 occurrence: _,
@@ -3183,24 +3049,6 @@ impl DesugarVisitor {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(self.fold_desugared_tuple(items))
             }
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                temp_name,
-                meta,
-                ..
-            } => {
-                self.state.needs_intrinsics = true;
-                self.transform_deferred_tail_tree(
-                    expand_row_let(entries, value, body, temp_name, meta),
-                    current_member,
-                    continuation,
-                    position,
-                    defer_callbacks,
-                    ctx,
-                )
-            }
             Expr::Let {
                 name,
                 name_span,
@@ -3293,106 +3141,6 @@ impl DesugarVisitor {
                     value: Box::new(value),
                     body: Box::new(body),
                     meta: Meta::new(meta.span),
-                })
-            }
-            Expr::LabelValue {
-                labels, meta, ext, ..
-            } => {
-                self.state.needs_intrinsics |= labels.len() >= 2;
-                let labels = labels
-                    .into_iter()
-                    .map(|label| {
-                        Ok(LabelValueLabel {
-                            label: label.label,
-                            label_span: label.label_span,
-                            value: self.transform_deferred_tail_tree(
-                                label.value,
-                                current_member,
-                                continuation,
-                                RecCallPosition::NonTail,
-                                defer_callbacks,
-                                ctx,
-                            )?,
-                            meta: Meta::new(label.meta.span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?;
-                Ok(Expr::LabelValue {
-                    occurrence: Default::default(),
-                    labels,
-                    meta: Meta::new(meta.span),
-                    ext: self.state.cloned_elaboration_id(ext),
-                })
-            }
-            Expr::Elaborator {
-                kind,
-                call,
-                meta,
-                ext,
-                ..
-            } => {
-                self.state.needs_intrinsics = true;
-                let call = match call {
-                    ElaboratorCall::FieldAccess { receiver, labels } => {
-                        ElaboratorCall::FieldAccess {
-                            receiver: Box::new(self.transform_deferred_tail_tree(
-                                *receiver,
-                                current_member,
-                                continuation,
-                                RecCallPosition::NonTail,
-                                defer_callbacks,
-                                ctx,
-                            )?),
-                            labels: labels
-                                .into_iter()
-                                .map(|label| FieldAccessLabel {
-                                    label: label.label,
-                                    label_span: label.label_span,
-                                    label_type: label.label_type,
-                                    meta: Meta::new(label.meta.span),
-                                })
-                                .collect(),
-                        }
-                    }
-                    ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
-                        base: base.map_receiver(|receiver| {
-                            self.transform_deferred_tail_tree(
-                                receiver,
-                                current_member,
-                                continuation,
-                                RecCallPosition::NonTail,
-                                defer_callbacks,
-                                ctx,
-                            )
-                        })?,
-                        updates: updates
-                            .into_iter()
-                            .map(|update| {
-                                Ok(FieldUpdateLabel {
-                                    label: update.label,
-                                    label_span: update.label_span,
-                                    label_type: update.label_type,
-                                    value: self.transform_deferred_tail_tree(
-                                        update.value,
-                                        current_member,
-                                        continuation,
-                                        RecCallPosition::NonTail,
-                                        defer_callbacks,
-                                        ctx,
-                                    )?,
-                                    meta: Meta::new(update.meta.span),
-                                })
-                            })
-                            .collect::<Result<_, Error>>()?,
-                    },
-                };
-                Ok(Expr::Elaborator {
-                    source_trivia: Default::default(),
-                    occurrence: Default::default(),
-                    kind,
-                    call,
-                    meta: Meta::new(meta.span),
-                    ext: self.state.cloned_elaboration_id(ext),
                 })
             }
             crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
@@ -4115,23 +3863,6 @@ impl DesugarVisitor {
                 position,
                 ctx,
             ),
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                temp_name,
-                meta,
-                ..
-            } => {
-                self.state.needs_intrinsics = true;
-                self.transform_rec_cps_expr(
-                    expand_row_let(entries, value, body, temp_name, meta),
-                    current_member,
-                    cont,
-                    position,
-                    ctx,
-                )
-            }
             Expr::Let {
                 occurrence: _,
                 name,
@@ -4295,40 +4026,6 @@ impl DesugarVisitor {
                 cont,
                 ctx,
             ),
-            Expr::LabelValue {
-                occurrence: _,
-                labels,
-                meta,
-                ext,
-            } => self.transform_rec_cps_label_values(
-                labels,
-                Vec::new(),
-                meta,
-                ext,
-                current_member,
-                cont,
-                ctx,
-            ),
-            Expr::Elaborator {
-                occurrence: _,
-                source_trivia: _,
-                kind,
-                call,
-                meta,
-                ext,
-            } => {
-                let expr = Expr::Elaborator {
-                    source_trivia: Default::default(),
-                    occurrence: Default::default(),
-                    kind,
-                    call,
-                    meta,
-                    ext,
-                };
-                self.validate_no_bad_rec(&expr, ctx)?;
-                let value = self.walk_expr(expr)?;
-                Ok(self.apply_rec_cont(cont, value, ctx.span))
-            }
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
             // The carried continuation already includes work after this call;
             // the checked recipe, not the call's source position, decides
@@ -4816,105 +4513,6 @@ impl DesugarVisitor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn transform_rec_cps_label_values(
-        &mut self,
-        mut labels: Vec<LabelValueLabel<Surface>>,
-        mut out: Vec<LabelValueLabel<Desugared>>,
-        meta: Meta<Surface>,
-        ext: NodeId,
-        current_member: &RecMemberPlan,
-        cont: RecCpsContinuation,
-        ctx: &RecLoweringCtx,
-    ) -> Result<Expr<Desugared>, Error> {
-        let tag_span = meta.span;
-        if labels.is_empty() {
-            let value = Expr::LabelValue {
-                occurrence: Default::default(),
-                labels: out,
-                meta: Meta::new(tag_span),
-                ext: self.state.cloned_elaboration_id(ext),
-            };
-            return Ok(self.apply_rec_cont(cont, value, tag_span));
-        }
-        let label = labels.remove(0);
-        if expr_contains_rec_call(&label.value) {
-            let name = rec_tmp_name("label", label.value.span(), out.len());
-            out.push(LabelValueLabel {
-                label: label.label,
-                label_span: label.label_span,
-                value: path_expr(name.clone(), label.value.span()),
-                meta: Meta::new(label.meta.span),
-            });
-            let body = self.transform_rec_cps_label_values(
-                labels,
-                out,
-                meta,
-                ext,
-                current_member,
-                cont,
-                ctx,
-            )?;
-            let k = rec_cps_lambda(
-                name,
-                None,
-                body,
-                ctx,
-                tag_span,
-                RecCpsApplication::ExpectedFromBody,
-            );
-            self.transform_rec_cps_expr(
-                label.value,
-                current_member,
-                k,
-                RecCallPosition::NonTail,
-                ctx,
-            )
-        } else {
-            let bind_before_rest = labels
-                .iter()
-                .any(|remaining| expr_contains_rec_call(&remaining.value))
-                && !rec_cps_operand_is_inert(&label.value);
-            let value_span = label.value.span();
-            self.validate_no_bad_rec(&label.value, ctx)?;
-            let value = self.walk_expr(label.value)?;
-            let type_span = value.span();
-            if bind_before_rest {
-                let name = rec_tmp_name("label", value_span, out.len());
-                out.push(LabelValueLabel {
-                    label: label.label,
-                    label_span: label.label_span,
-                    value: path_expr(name.clone(), value_span),
-                    meta: Meta::new(label.meta.span),
-                });
-                let body = self.transform_rec_cps_label_values(
-                    labels,
-                    out,
-                    meta,
-                    ext,
-                    current_member,
-                    cont,
-                    ctx,
-                )?;
-                return Ok(self.rec_cps_pending_let(
-                    name,
-                    type_span,
-                    RecOrderTypeFlow::ExpectedFromBody,
-                    value,
-                    body,
-                    ctx,
-                ));
-            }
-            out.push(LabelValueLabel {
-                label: label.label,
-                label_span: label.label_span,
-                value,
-                meta: Meta::new(label.meta.span),
-            });
-            self.transform_rec_cps_label_values(labels, out, meta, ext, current_member, cont, ctx)
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
     fn transform_rec_call_cps(
         &mut self,
         modes: Vec<RecCallMode>,
@@ -5141,7 +4739,7 @@ impl DesugarVisitor {
         let state = call_path(
             vec![
                 PathSegment::new(resume.name.clone(), span),
-                PathSegment::new("mk_resume", span),
+                PathSegment::new("mk", span),
             ],
             args,
             span,
@@ -5300,51 +4898,16 @@ impl DesugarVisitor {
                 self.state.restore_bound(mark);
                 result
             }
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                ..
-            } => {
-                self.validate_no_bad_rec_names(value, ctx)?;
-                let mark = self.state.save_bound();
-                for entry in entries {
-                    self.state.bound.push(entry.local.clone());
-                }
-                let result = self.validate_no_bad_rec_names(body, ctx);
-                self.state.restore_bound(mark);
-                result
-            }
             Expr::Seq { value, body, .. } => {
                 self.validate_no_bad_rec_names(value, ctx)?;
                 self.validate_no_bad_rec_names(body, ctx)
             }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => {
-                    self.validate_no_bad_rec_names(receiver, ctx)
-                }
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    if let Some(receiver) = base.receiver() {
-                        self.validate_no_bad_rec_names(receiver, ctx)?;
-                    }
-                    for update in updates {
-                        self.validate_no_bad_rec_names(&update.value, ctx)?;
-                    }
-                    Ok(())
-                }
-            },
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
             Expr::UserMacro { stages, .. } => {
                 for arg in stage_args(stages) {
                     if let CallArg::Value(value) = arg {
                         self.validate_no_bad_rec_names(value, ctx)?;
                     }
-                }
-                Ok(())
-            }
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    self.validate_no_bad_rec_names(&label.value, ctx)?;
                 }
                 Ok(())
             }
@@ -5851,135 +5414,6 @@ impl SurfaceToDesugared for DesugarVisitor {
         })
     }
 
-    fn rewrite_expr_row_let(
-        &mut self,
-        entries: Vec<RowLetEntry<Surface>>,
-        value: Box<Expr<Surface>>,
-        body: Box<Expr<Surface>>,
-        temp_name: String,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Desugared>, Error> {
-        self.state.needs_intrinsics = true;
-        self.walk_expr(expand_row_let(entries, value, body, temp_name, meta))
-    }
-
-    fn visit_expr_label_value(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::LabelValue {
-            occurrence: _,
-            labels,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        // Multi-label values lower to `__pair__` chains
-        // during label_elab, so flag the intrinsic import here.
-        if labels.len() >= 2 {
-            self.state.needs_intrinsics = true;
-        }
-        let ext = self.state.cloned_elaboration_id(ext);
-        let labels: Vec<LabelValueLabel<Desugared>> = labels
-            .into_iter()
-            .map(|l| {
-                let LabelValueLabel {
-                    label,
-                    label_span,
-                    value,
-                    meta: Meta { span: lspan, .. },
-                } = l;
-                Ok(LabelValueLabel {
-                    label,
-                    label_span,
-                    value: self.walk_expr(value)?,
-                    meta: Meta::new(lspan),
-                })
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Expr::LabelValue {
-            occurrence: Default::default(),
-            labels,
-            meta: Meta::new(span),
-            ext,
-        })
-    }
-
-    // Elaborator / `if`/`else` survive into Lowered but their
-    // typer-time elaboration emits intrinsic call sites. Flag the
-    // intrinsic import conservatively so the post-substitute Kio'
-    // source carries `import __intrinsics__;` and round-trips through
-    // re-parse. The overrides duplicate the trait's default
-    // clone-and-recurse body to preserve the variant's fields;
-    // calling `super::trait::visit_*` from an override isn't
-    // expressible in Rust without specialization, so inline.
-
-    fn visit_expr_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        self.state.needs_intrinsics = true;
-        let Expr::Elaborator {
-            occurrence: _,
-            source_trivia: _,
-            kind,
-            call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        let call = match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => ElaboratorCall::FieldAccess {
-                receiver: Box::new(self.walk_expr(*receiver)?),
-                labels: labels
-                    .into_iter()
-                    .map(|label| {
-                        let FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta { span, .. },
-                        } = label;
-                        Ok(FieldAccessLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
-                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
-                updates: updates
-                    .into_iter()
-                    .map(|update| {
-                        let FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value,
-                            meta: Meta { span, .. },
-                        } = update;
-                        Ok(FieldUpdateLabel {
-                            label,
-                            label_span,
-                            label_type,
-                            value: self.walk_expr(value)?,
-                            meta: Meta::new(span),
-                        })
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-        };
-        Ok(Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind,
-            call,
-            meta: Meta::new(span),
-            ext: self.state.cloned_elaboration_id(ext),
-        })
-    }
-
     fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::UserMacro {
             name,
@@ -6226,13 +5660,6 @@ where
             names.insert(param.name.clone());
             collect_all_type_names(body, names);
         }
-        Type::LabelSugar { labels, .. } => {
-            for label in labels {
-                if let Some(payload) = &label.payload {
-                    collect_all_type_names(payload, names);
-                }
-            }
-        }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -6264,13 +5691,6 @@ fn collect_free_rec_type_names(
         Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
             collect_free_rec_type_names(left, names);
             collect_free_rec_type_names(right, names);
-        }
-        Type::LabelSugar { labels, .. } => {
-            for label in labels {
-                if let Some(payload) = &label.payload {
-                    collect_free_rec_type_names(payload, names);
-                }
-            }
         }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
@@ -6366,21 +5786,6 @@ fn subst_rec_type(
                 meta: meta.clone(),
             }
         }
-        Type::LabelSugar { labels, meta, ext } => Type::LabelSugar {
-            labels: labels
-                .iter()
-                .map(|label| {
-                    let mut label = label.clone();
-                    label.payload = label
-                        .payload
-                        .as_ref()
-                        .map(|payload| subst_rec_type(payload, subst));
-                    label
-                })
-                .collect(),
-            meta: meta.clone(),
-            ext: *ext,
-        },
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => ty.clone(),
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -6509,12 +5914,6 @@ fn rec_type_mentions_param(ty: &Type<Desugared>, name: &str) -> bool {
         }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => false,
         Type::Goal { ext, .. } => match *ext {},
-        Type::LabelSugar { labels, .. } => labels.iter().any(|label| {
-            label
-                .payload
-                .as_ref()
-                .is_some_and(|payload| rec_type_mentions_param(payload, name))
-        }),
     }
 }
 
@@ -6934,22 +6333,6 @@ fn rec_wrapper_type_name(group_span: Span, member: &str) -> String {
     )
 }
 
-fn rec_wrapper_ctor_name(group_span: Span, member: &str) -> String {
-    format!(
-        "mk_rec_state{}_m{}",
-        group_span.start,
-        crate::naming::encode_name_component(member)
-    )
-}
-
-fn rec_wrapper_projector_name(group_span: Span, member: &str) -> String {
-    format!(
-        "un_rec_state{}_m{}",
-        group_span.start,
-        crate::naming::encode_name_component(member)
-    )
-}
-
 /// Emit a call to a Kio'-intrinsic by name, with `n_type_args`
 /// leading `Type::Infer` placeholders followed by the value
 /// arguments. The placeholders signal "infer these from value-arg
@@ -6957,8 +6340,7 @@ fn rec_wrapper_projector_name(group_span: Span, member: &str) -> String {
 /// to value-args only — `apply_polymorphic_function`'s inference
 /// path can't disambiguate adjacent type binders from value-arg
 /// types alone. Surface forms that desugar here — tuple literals,
-/// multi-label values, the `if`/`else` elaboration trees, the
-/// `__either__` chains in match-clause dispatch, etc. — produce
+/// and `__either__` chains in match-clause dispatch, for example — produce
 /// calls that go through the explicit path by being honest about
 /// which type-args the desugar layer is leaving for the typer to
 /// fill in.
@@ -7031,15 +6413,8 @@ fn expr_contains_rec_call(expr: &Expr<Surface>) -> bool {
         Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
             expr_contains_rec_call(value) || expr_contains_rec_call(body)
         }
-        Expr::RowLet { value, body, .. } => {
-            expr_contains_rec_call(value) || expr_contains_rec_call(body)
-        }
-        Expr::Elaborator { call, .. } => elaborator_call_contains_rec(call),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { stages, .. } => stage_args(stages).any(call_arg_contains_rec),
-        Expr::LabelValue { labels, .. } => labels
-            .iter()
-            .any(|label| expr_contains_rec_call(&label.value)),
         Expr::Tuple { items, .. } => items.iter().any(expr_contains_rec_call),
         crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
@@ -7178,22 +6553,7 @@ fn rec_cps_operand_is_inert(expr: &Expr<Surface>) -> bool {
         | Expr::FloatLit { .. }
         | Expr::BoolLit { .. } => true,
         Expr::Tuple { items, .. } => items.iter().all(rec_cps_operand_is_inert),
-        Expr::LabelValue { labels, .. } => labels
-            .iter()
-            .all(|label| rec_cps_operand_is_inert(&label.value)),
         _ => false,
-    }
-}
-
-fn elaborator_call_contains_rec(call: &ElaboratorCall<Surface>) -> bool {
-    match call {
-        ElaboratorCall::FieldAccess { receiver, .. } => expr_contains_rec_call(receiver),
-        ElaboratorCall::FieldUpdate { base, updates } => {
-            base.receiver().is_some_and(expr_contains_rec_call)
-                || updates
-                    .iter()
-                    .any(|update| expr_contains_rec_call(&update.value))
-        }
     }
 }
 
@@ -7277,16 +6637,6 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
                 }))
             }
             crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
-            Expr::LabelValue { labels, .. } => {
-                pending.extend(labels.iter().map(|label| &label.value))
-            }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    pending.extend(base.receiver());
-                    pending.extend(updates.iter().map(|update| &update.value));
-                }
-            },
             Expr::Path { .. }
             | Expr::Unit { .. }
             | Expr::StrLit { .. }
@@ -7296,7 +6646,6 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
             Expr::BlockCall { ext, .. }
             | Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::RowLet { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::RecCall { ext, .. }
             | Expr::EnrichedTuple { ext, .. }
@@ -7362,17 +6711,6 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
             collect_identifiers(value, out);
             collect_identifiers(body, out);
         }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => collect_identifiers(receiver, out),
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver() {
-                    collect_identifiers(receiver, out);
-                }
-                for update in updates {
-                    collect_identifiers(&update.value, out);
-                }
-            }
-        },
         Expr::RecQuote { plan, .. } => {
             for expression in plan.expressions() {
                 collect_identifiers(expression, out);
@@ -7394,12 +6732,6 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
                 }
             }
         }
-        Expr::LabelValue { labels, .. } => {
-            for l in labels {
-                collect_identifiers(&l.value, out);
-            }
-        }
-        Expr::RowLet { ext, .. } => match *ext {},
         crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::Unit { .. }
         | Expr::StrLit { .. }
@@ -7533,21 +6865,6 @@ fn rename_paths(
             body: Box::new(rename_paths(*body, renames)),
             meta,
         },
-        Expr::Elaborator {
-            occurrence: _,
-            source_trivia: _,
-            kind,
-            call,
-            meta,
-            ext,
-        } => Expr::Elaborator {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            kind,
-            call: rename_elaborator_call(call, renames),
-            meta,
-            ext,
-        },
         Expr::RecOrder {
             occurrence: _,
             mut plan,
@@ -7629,25 +6946,6 @@ fn rename_paths(
             meta,
             ext,
         },
-        Expr::LabelValue {
-            occurrence: _,
-            labels,
-            meta,
-            ext,
-        } => Expr::LabelValue {
-            occurrence: Default::default(),
-            labels: labels
-                .into_iter()
-                .map(|l| crate::ast::LabelValueLabel {
-                    label: l.label,
-                    label_span: l.label_span,
-                    value: rename_paths(l.value, renames),
-                    meta: l.meta,
-                })
-                .collect(),
-            meta,
-            ext,
-        },
         crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::Unit {
             source_trivia: _,
@@ -7711,35 +7009,6 @@ fn rename_paths(
     }
 }
 
-fn rename_elaborator_call(
-    call: ElaboratorCall<Desugared>,
-    renames: &std::collections::HashMap<String, String>,
-) -> ElaboratorCall<Desugared> {
-    match call {
-        ElaboratorCall::FieldAccess { receiver, labels } => ElaboratorCall::FieldAccess {
-            receiver: Box::new(rename_paths(*receiver, renames)),
-            labels,
-        },
-        ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
-            base: match base {
-                crate::ast::FieldUpdateBase::Construction => {
-                    crate::ast::FieldUpdateBase::Construction
-                }
-                crate::ast::FieldUpdateBase::Update(receiver) => {
-                    crate::ast::FieldUpdateBase::Update(Box::new(rename_paths(*receiver, renames)))
-                }
-            },
-            updates: updates
-                .into_iter()
-                .map(|mut update| {
-                    update.value = rename_paths(update.value, renames);
-                    update
-                })
-                .collect(),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7776,19 +7045,6 @@ mod tests {
                 visit_desugared_expr(value, visit);
                 visit_desugared_expr(body, visit);
             }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => {
-                    visit_desugared_expr(receiver, visit);
-                }
-                ElaboratorCall::FieldUpdate { base, updates } => {
-                    if let Some(receiver) = base.receiver() {
-                        visit_desugared_expr(receiver, visit);
-                    }
-                    for update in updates {
-                        visit_desugared_expr(&update.value, visit);
-                    }
-                }
-            },
             Expr::RecOrder { plan, .. } => {
                 visit_desugared_expr(&plan.value, visit);
                 visit_desugared_expr(&plan.body, visit);
@@ -7803,11 +7059,6 @@ mod tests {
                     visit_desugared_call_args(&stage.args, visit);
                 }
             }
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    visit_desugared_expr(&label.value, visit);
-                }
-            }
             Expr::Ufcs { ext, .. } => match *ext {},
             Expr::Path { .. }
             | Expr::Unit { .. }
@@ -7815,8 +7066,7 @@ mod tests {
             | Expr::IntLit { .. }
             | Expr::FloatLit { .. }
             | Expr::BoolLit { .. } => {}
-            Expr::RowLet { ext, .. }
-            | Expr::Tuple { ext, .. }
+            Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::RecCall { ext, .. }
@@ -8862,7 +8112,8 @@ mod tests {
             visit_desugared_expr(&helper.body, &mut |expr| {
                 if matches!(expr, Expr::Call { callee, .. }
                     if matches!(callee.as_ref(), Expr::Path { segments, .. }
-                        if segments.last().is_some_and(|segment| segment.as_str() == "mk_resume")))
+                        if segments.len() == 2 && segments[0].as_str().starts_with("Rec_resume")
+                            && segments[1].as_str() == "mk"))
                 {
                     schedules += 1;
                     let Expr::Call { args, .. } = expr else {
@@ -8916,12 +8167,12 @@ mod tests {
     fn assert_rec_wrapper_avoids_outside_source(outside: impl FnOnce(&str, &str) -> String) {
         let group_start = rec_group_start();
         let wrapper = format!("Rec_state{group_start}_mghgp");
-        let constructor = format!("mk_rec_state{group_start}_mghgp");
+        let constructor = "mk";
         let module = d(&format!(
             "module x;\n\
              rec(loop) fn go[A](value: A) -> A {{ value }}\n\
              {}\n",
-            outside(&wrapper, &constructor)
+            outside(&wrapper, constructor)
         ));
         let generated = generated_rec_state_newtype(&module);
 
@@ -9005,8 +8256,8 @@ mod tests {
             })
             .expect("recursive group span");
         let wrapper = format!("Rec_state{group_start}_mghgp");
-        let constructor = format!("mk_rec_state{group_start}_mghgp");
-        let projector = format!("un_rec_state{group_start}_mghgp");
+        let constructor = "mk";
+        let projector = "get";
         let step = format!("_rec_step{group_start}");
         let source = format!(
             "{prefix}\
@@ -9035,13 +8286,10 @@ mod tests {
             .expect("resolve recursive source bodies");
         let prime = FullPipeline::typecheck(&package).expect("typecheck recursive source");
         let emitted = emit_module(prime.module("x").expect("module x"));
+        let reparsed = parse(&emitted).expect("emitted recursive Kio' re-parses");
         assert!(
             emitted.contains(&format!("fn {step}_n3")),
             "the shared dispatcher is an ordinary collision-free function: {emitted}"
-        );
-        assert!(
-            emitted.contains(&format!("newtype {wrapper}_n3")),
-            "emitted Kio' must retain the allocated recursive wrapper: {emitted}"
         );
         assert!(
             emitted.contains(&format!("{wrapper}_n3.{constructor}"))
@@ -9049,7 +8297,16 @@ mod tests {
             "every generated wrapper use must name the allocated owner: {emitted}"
         );
 
-        let reparsed = parse(&emitted).expect("emitted recursive Kio' re-parses");
+        assert!(
+            reparsed
+                .items
+                .iter()
+                .any(|item| matches!(item, Item::Newtype(nominal)
+            if nominal.name == format!("{wrapper}_n3")
+                && nominal.constructor.name == "mk"
+                && nominal.projector.name == "get")),
+            "emitted Kio' retains its ordinary nominal owner and fixed members: {emitted}"
+        );
         let (fresh_prime, _) =
             PrimePipeline::lower_package(vec![(PathBuf::from("x.kio"), reparsed)], None)
                 .expect("emitted recursive source remains Kio'-shaped");
@@ -9192,7 +8449,12 @@ mod tests {
         let Expr::UserMacro { stages, form, .. } = desugared_fn_body(&module, "f") else {
             panic!("ordinary user call")
         };
-        assert_eq!(*form, crate::ast::UserMacroCallForm::TrailingBlocks);
+        assert_eq!(
+            *form,
+            crate::ast::UserMacroCallForm::TrailingBlocks {
+                has_final_prefix: false,
+            }
+        );
         let [stage] = stages.as_slice() else {
             panic!("one projected block stage")
         };
@@ -9359,15 +8621,15 @@ mod tests {
     #[test]
     fn monadic_do_receiver_closures_cannot_capture_recursive_calls() {
         for body in [
-            "let ignored = recur(cont) go(value); next(Box.unbox(input))",
-            "(.x.{ let ignored = recur(cont) go(value); next(x1) })(Box.unbox(input))",
+            "let ignored = recur(cont) go(value); next(Box.get(input))",
+            "(.x.{ let ignored = recur(cont) go(value); next(x1) })(Box.get(input))",
         ] {
             let source = format!(
                 "module main; import sequence(macro do);
-                newtype Box[A] : A {{ constructor box; projector unbox; }};
+                type {{ Box[A] : A {{ mk; get; }}; }};
                 rec(loop) fn go(value: .) -> Box[.] {{
                     let receiver = .[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ {body} }};
-                    do (receiver) {{ Box.box(()) }}
+                    do (receiver) {{ Box.mk(()) }}
                 }}"
             );
             let error = projected_sequence_desugar(&source).expect_err(body);
@@ -9418,10 +8680,9 @@ mod tests {
             rec(loop) { \
               fn first(value: .) -> . { recur second(value) }; \
               fn second(value: .) -> . { \
-                choose(.(local: .) { choose(value.?{field}.>identity) }) \
+                choose(.(local: .) { choose(value.>identity) }) \
               } \
             }");
-        let mut field_ids = Vec::new();
         let mut user_ids = Vec::new();
         let mut projected_identity_calls = 0;
         for item in &module.items {
@@ -9429,15 +8690,14 @@ mod tests {
                 continue;
             };
             visit_desugared_expr(&def.body, &mut |expr| match expr {
-                Expr::Elaborator { ext, .. } => field_ids.push(*ext),
                 Expr::UserMacro { ext, .. } => user_ids.push(*ext),
                 call if is_call_to(call, "identity") => {
                     let Expr::Call { args, .. } = call else {
                         unreachable!()
                     };
                     assert!(
-                        matches!(args.as_slice(), [CallArg::Value(Expr::Elaborator { .. })]),
-                        "the projected UFCS receiver remains the field access"
+                        matches!(args.as_slice(), [CallArg::Value(Expr::Path { segments, .. })] if segments.len() == 1 && segments[0].as_str() == "value"),
+                        "the projected UFCS receiver remains the value path"
                     );
                     projected_identity_calls += 1;
                 }
@@ -9448,29 +8708,29 @@ mod tests {
             projected_identity_calls, 1,
             "the UFCS call is projected once"
         );
-        for (kind, ids, count) in [("field", field_ids, 1), ("user macro", user_ids, 2)] {
-            assert_eq!(
-                ids.len(),
-                count,
-                "each {kind} source occurrence is lowered once"
-            );
-            assert!(
-                ids.iter()
-                    .all(|id| id.0 >= crate::ast::SYNTHESIZED_NODE_ID_START),
-                "moved {kind} nodes must have fresh replacement identities"
-            );
-            assert_eq!(
-                ids.iter()
-                    .copied()
-                    .collect::<std::collections::HashSet<_>>()
-                    .len(),
-                ids.len(),
-                "each cloned {kind} node needs its own replacement identity"
-            );
-        }
+        assert_eq!(
+            user_ids.len(),
+            2,
+            "each user macro source occurrence is lowered once"
+        );
+        assert!(
+            user_ids
+                .iter()
+                .all(|id| id.0 >= crate::ast::SYNTHESIZED_NODE_ID_START),
+            "moved user macro nodes must have fresh replacement identities"
+        );
+        assert_eq!(
+            user_ids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            user_ids.len(),
+            "each cloned user macro node needs its own replacement identity"
+        );
     }
 
-    fn assert_rec_group_clones_refresh_label_value_node_ids(source: &str) {
+    fn assert_rec_group_clones_refresh_user_macro_node_ids(source: &str) {
         let module = d(source);
         let mut ids = Vec::new();
         for item in &module.items {
@@ -9478,15 +8738,15 @@ mod tests {
                 continue;
             };
             visit_desugared_expr(&def.body, &mut |expr| {
-                if let Expr::LabelValue { ext, .. } = expr {
+                if let Expr::UserMacro { ext, .. } = expr {
                     ids.push(*ext);
                 }
             });
         }
-        assert_eq!(ids.len(), 1, "the source label value is lowered once");
+        assert_eq!(ids.len(), 1, "the source user macro is lowered once");
         assert!(
             ids[0].0 >= crate::ast::SYNTHESIZED_NODE_ID_START,
-            "the moved label value must have a fresh replacement identity"
+            "the moved user macro must have a fresh replacement identity"
         );
         assert_eq!(
             ids.iter()
@@ -9494,35 +8754,35 @@ mod tests {
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
             ids.len(),
-            "each cloned label value needs its own replacement identity"
+            "each cloned user macro needs its own replacement identity"
         );
     }
 
     #[test]
-    fn tail_rec_group_clones_refresh_label_value_node_ids() {
-        assert_rec_group_clones_refresh_label_value_node_ids(
-            "module x; \
+    fn tail_rec_group_clones_refresh_user_macro_node_ids() {
+        assert_rec_group_clones_refresh_user_macro_node_ids(
+            "module x; import fixture(macro choose); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                fn first(value: .) -> . { recur second(value) }; \
                fn second(value: .) -> . { \
-                 let wrapped = {field = value}; \
-                 recur first(wrapped.?{field}) \
+                 let wrapped = choose(value); \
+                 recur first(wrapped) \
                } \
              }",
         );
     }
 
     #[test]
-    fn continuation_rec_group_clones_refresh_label_value_node_ids() {
-        assert_rec_group_clones_refresh_label_value_node_ids(
-            "module x; \
+    fn continuation_rec_group_clones_refresh_user_macro_node_ids() {
+        assert_rec_group_clones_refresh_user_macro_node_ids(
+            "module x; import fixture(macro choose); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              rec(loop) { \
                fn first(value: .) -> . { recur second(value) }; \
                fn second(value: .) -> . { \
-                 let wrapped = {field = recur(cont) first(value)}; \
-                 wrapped.?{field} \
+                 let wrapped = choose(recur(cont) first(value)); \
+                 wrapped \
                } \
              }",
         );
@@ -9917,11 +9177,6 @@ mod tests {
                 false,
             ),
             (
-                "label operand",
-                "take({first = supply(), second = recur(cont) go(value)})",
-                false,
-            ),
-            (
                 "deferred branches",
                 "take(hold((.() { recur(cont) go(value) }, .() { supply() })))",
                 true,
@@ -10264,7 +9519,7 @@ mod tests {
         let source = "module x;
             host type I32;
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
-            newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
+            type { Box[A] : A { pub mk; pub get; }; };
             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value }
             rec(loop) fn value(n: I32) -> Box[I32] {
               let .(box: Box[_]) = choose_box(0, recur(cont) value(0));
@@ -10430,11 +9685,9 @@ mod tests {
     }
 
     #[test]
-    fn multi_label_value_triggers_intrinsics_injection() {
-        // Multi-label `{f = e, g = e'}` lowers to `__pair__(...)`
-        // during label_elab; flag the import here in desugar, where the
-        // surface form is still visible.
-        let m = d("module x; fn f() -> . { {f = (), g = ()} }");
+    fn tuple_value_triggers_intrinsics_injection() {
+        // Tuple lowering emits the intrinsic pair constructor.
+        let m = d("module x; fn f() -> . & . { ((), ()) }");
         assert!(
             m.imports
                 .iter()
@@ -10443,10 +9696,9 @@ mod tests {
     }
 
     #[test]
-    fn single_label_value_does_not_trigger_intrinsics_injection() {
-        // Single-label `{f = e}` lowers to a newtype constructor call;
-        // which is not an intrinsic — no injection.
-        let m = d("module x; fn f() -> . { {f = ()} }");
+    fn nominal_constructor_does_not_trigger_intrinsics_injection() {
+        // An ordinary nominal constructor call is not an intrinsic.
+        let m = d("module x; type { Foo: . { mk; get; }; }; fn f() -> Foo { Foo.mk(()) }");
         assert!(
             !m.imports
                 .iter()

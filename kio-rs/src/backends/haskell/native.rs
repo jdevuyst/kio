@@ -113,7 +113,7 @@ struct ExistentialCarrier {
     host_surface: Option<HaskellNewtypeHostSurface>,
     /// The universal type params (`[A]`) — the GADT head's tyvars. Empty
     /// for a no-universals existential (`Box <A>` desugared from a
-    /// `labels { box <U> : … }`-style header).
+    /// `type { Box<U>: … }`-style header).
     type_params: Vec<TypeParam>,
     /// The existential binders (`<U> <V>`) — the constructor's
     /// `forall`-bound, never appearing in the GADT head.
@@ -422,7 +422,6 @@ impl<'p> NativeTypes<'p> {
                     paren_ty(&body)
                 )
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -974,7 +973,6 @@ impl<'a> NativeCtx<'a> {
                 self.collect_public_carriers(body, module, &nested, expanding, names);
             }
             Type::Unit { .. } | Type::Bottom { .. } => {}
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -1435,7 +1433,6 @@ impl<'a> NativeCtx<'a> {
                     || self.native_type_contains_forall(ret, scope, module)
             }
             Type::Unit { .. } | Type::Bottom { .. } => false,
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -3913,7 +3910,6 @@ impl NativeExprEmitter<'_> {
             Type::Sum { .. } => self.convert_host_sum(ty, boundary, expr, context),
             Type::Function { .. } => self.convert_host_function(ty, boundary, expr, context),
             Type::Bottom { .. } => Ok(expr.to_owned()),
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -4593,7 +4589,6 @@ impl NativeExprEmitter<'_> {
                 }),
             Type::Bottom { .. } => true,
             Type::Unit { .. } => true,
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }

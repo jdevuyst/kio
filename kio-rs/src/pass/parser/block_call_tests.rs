@@ -579,10 +579,7 @@ fn block_prefix_layout_preserves_expression_boundaries() {
         ("outer { b() }", "outer {"),
         ("outer(left, right) { b() }", "outer(left, right) {"),
         ("outer((left, right)) { b() }", "outer((left, right)) {"),
-        (
-            "outer({ field = value }) { b() }",
-            "outer({field = value}) {",
-        ),
+        ("outer({}) { b() }", "outer(()) {"),
     ] {
         roundtrip(body, "");
         let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
@@ -739,7 +736,7 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
             "outer (left + value) { b() }",
             "outer (left + (inner (value) { a() })) { b() }",
             "outer (left + <| inner (value) { a() } |>) { b() }",
-            "outer(left + value) { b() } + { field = later }",
+            "outer(left + value) { b() } + {}",
         ] {
             let expr = roundtrip(body, &operators);
             if body.ends_with("{ b() }") {
@@ -777,7 +774,7 @@ fn neutral_items_and_comments_roundtrip_without_descriptors() {
         "outer(value // prefix-tail\n) // before-body\n{ b() }",
         "outer { ;; let .(x: T) <- // rhs\n source; ; x; // tail\n ; }",
         "outer { let .(x: T, _: U) = pair; x }",
-        "outer { let .({field as local}) = source; local }",
+        "outer { let local = source; local }",
         "outer { let .(<T> value) = source; value }",
         "outer { ; // empty\n; }",
     ] {
@@ -899,7 +896,8 @@ fn placeholder_ownership_includes_direct_heads_but_excludes_labels() {
 
 #[test]
 fn neutral_binder_completion_is_source_ordered_and_block_local() {
-    let source = "module consumer; fn subject() { outer { let .({field as local}) = source; local } next { other } }";
+    let source =
+        "module consumer; fn subject() { outer { let local = source; local } next { other } }";
     let parsed = parse(source).unwrap();
     let after = source.find("; local").unwrap() as u32 + 3;
     let rhs = source.find("= source").unwrap() as u32 + 3;
@@ -933,20 +931,25 @@ fn neutral_binding_and_prefix_errors_keep_source_spans() {
                 .contains("expected a value operand, found a type path")
         );
     }
-    let source =
-        "module consumer; fn subject() { outer { let .({field as local}) = source; local } }";
+    let source = "module consumer; fn subject() { outer { let local = source; local } }";
     let parsed = parse(source).unwrap();
     let Expr::BlockCall { head, blocks, .. } = function(&parsed) else {
         panic!("block call");
     };
-    let NeutralItem::RowBinding { entries, value, .. } = &blocks[0].items[0] else {
-        panic!("row binding");
+    let NeutralItem::Binding {
+        name,
+        name_span,
+        value,
+        ..
+    } = &blocks[0].items[0]
+    else {
+        panic!("ordinary binding");
     };
     let slice = |span: crate::span::Span| &source[span.start as usize..span.end as usize];
     assert_eq!(slice(head.span), "outer");
     assert_eq!(slice(blocks[0].open), "{");
     assert_eq!(slice(blocks[0].close), "}");
-    assert_eq!(slice(entries[0].label_span), "field");
-    assert_eq!(slice(entries[0].local_span), "local");
+    assert_eq!(name, "local");
+    assert_eq!(slice(*name_span), "local");
     assert_eq!(slice(value.span()), "source");
 }

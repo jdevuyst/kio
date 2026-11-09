@@ -6,4 +6,4 @@ host type Str role(str);
 
 host fn pong(p0: Str) -> Ping;
 
-pub newtype Pong : Str { pub constructor mk_pong; pub projector un_pong }
+pub type { Pong: Str { pub mk; pub get } }

@@ -33,6 +33,22 @@ an abandoned branch, a cache hit, or evaluation order change the typechecking
 result. Making that write idempotent does not repair conflicts, partial failure,
 or rollback; it only makes one repeated successful write harmless.
 
+## Semantic function reflection
+
+Function reflection observes the logical domain and result. A declaration with
+parameters `a: A, b: B` and one with `pair: A & B` expose the same function type;
+reflection cannot recover which parameter list was written. Type constructors
+likewise do not offer a value-parameter-layout selector. This is separate from
+type-constructor kinds and their arities.
+
+Retain private layout metadata only where body binding, generated functions or
+host-interface adaptation need it. Validate its layout without letting it alter
+semantic type observations or duplicate evaluation of an argument packet.
+Removing a reflection operation includes tracing its fields, dispatch and
+helpers to actual remaining consumers; neither an internal field nor an unused
+public operation is dead merely because current library code does not read it.
+The public boundary is specified in [the macro contract](../../specs/language.md#macros-are-imported-not-ambient).
+
 ## Fill state is explicit persistent data
 
 `impl(fills)` receives an authenticated call-local fill context. `__fill__`
@@ -60,6 +76,42 @@ observer may inspect only the structure present in the supplied snapshot; it
 cannot advance a retained producer or make newly solved structure visible by
 consulting ambient state during the same evaluation.
 
+Distinguish a rigid generic variable from unresolved inference information.
+Each observer requires the information needed for its specified answer: a
+determined outer constructor may expose opaque children, while comparing whole
+types needs their complete structure. Transporting an opaque handle or adding
+a type constraint is not itself an observation of the missing structure.
+Follow the operation's contract rather than imposing whole-type completeness
+on every observer.
+
+Opened binders of equivalent complete generic types correspond structurally,
+including exact free environments and binder positions. Sharing, repeated
+views and pure reconstruction produce the same comparison result. The same
+rule holds after `__type_var__` conversion. Comparing an opened binder can need
+its containing scheme; unresolved structure there fails instead of producing a
+boolean. Do not impose that requirement on transport or on observers needing
+only a known outer head.
+
+`__type_forall__` and `__term_type_fn__` check their fixed Type or checked-term
+result for free references opened from other schemes. Inspect actual occurrences,
+including type-bearing checked nodes; unused retained context is not an
+occurrence. A whole nested scheme binds its own variables. New and live
+enclosing constructor variables and genuine caller-free variables are allowed;
+ordinary generic helper substitution preserves the substituted references and
+cannot launder an opened variable. A missing region must be proved safe by its
+explicit environment or fail for missing information. Opened fragments may
+otherwise be inspected, stored and transported; do not enforce this rule over
+arbitrary accumulator or closure results. Instantiating the original scheme
+with a chosen local variable is the explicit rebinding route.
+
+An evaluated observation that needs missing information fails the macro
+expansion. It must not return a recoverable diagnostic or a normal mismatch
+that library code can branch on. Discarding the operation's result cannot erase
+a failure that already occurred, and memoization cannot hide it. An unevaluated
+branch makes no observation; a mismatch between sufficiently determined types
+remains an ordinary result. These rules do not authorize an observer to resume
+inference or a retained producer.
+
 Source preparation and completion therefore remain typer operations. Any
 boundary that lets an implementation request additional compiler work must
 represent that request explicitly in the implementation's input or result;
@@ -70,11 +122,12 @@ The macro API has no such request value. Every computed input must have a
 determined type before the implementation may observe it, including inputs
 with no retained producer work. Explicit product components are checked
 recursively; direct lambdas retain only the open final-result exception admitted
-by the marked-source preflight. An ordinary `let` completes ordinary body
-checking but does not choose unconstrained generic arguments. A complete binding
-annotation, explicit type argument, or concrete callback result annotation can
-supply missing information where appropriate. The evaluator does not turn an
-incomplete inline source into a demand implicitly.
+by the marked-source preflight. Before freezing inputs, the typer completes an
+open computed source through its existing ordinary derivation using available
+public type information. An independently typable inner call or macro therefore
+need not be extracted into a `let`. Information produced only by the outer action
+still requires an annotation or a different composition. This finite source
+completion does not turn a reflected observation into a request for typer work.
 
 For an ordinary producer call, a fully written callback signature may complete
 its result through the already-selected public argument equation. The same
@@ -111,6 +164,11 @@ When changing macro evaluation, retained sources, reflection, fills, or
 their caches, verify all of the following:
 
 - the evaluator receives immutable explicit inputs and no typer callback;
+- missing information cannot escape as a recoverable observer answer;
+- corresponding opened binders of equivalent complete schemes compare equally
+  through views, substitution and caches, independent of allocation history;
+- quantified constructor results reject actual free opened-scheme references,
+  while intact nested schemes and live lexical variables remain usable;
 - dropping or duplicating a pure subexpression cannot change solver state;
 - every fill relation is present only in the returned descendant context;
 - producer execution and goal mutation stay outside evaluator callbacks;

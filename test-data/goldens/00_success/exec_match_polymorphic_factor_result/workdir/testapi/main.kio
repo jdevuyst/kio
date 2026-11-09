@@ -4,14 +4,14 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io as io;
 
-newtype Box[A] : A { pub constructor make; pub projector unpack }
+type { Box[A]: A { pub mk; pub get } }
 
-labels { tag: . };
+type { Tag: . }
 
 fn project(input: Box[String] & Tag) -> String {
   match(input) {
-    .[A](slot: Box[A]) -> A { slot.>Box.unpack }
+    .[A](slot: Box[A]) -> A { slot.>Box.get }
   }
 }
 
-pub fn main() { io.print(project((Box.make("factor-result\n"), {tag=}))) }
+pub fn main() { io.print(project((Box.mk("factor-result\n"), Tag.mk(())))) }

@@ -1,0 +1,12 @@
+package nominal_missing_rec_help;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

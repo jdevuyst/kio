@@ -1024,12 +1024,8 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
             .to_owned();
     }
     if contract.execution == ProtocolExecution::Invoke(ExportDriver::HostExistentialRoundtrip) {
-        let continuation = export_newtype_member_alias(
-            "testapi/types",
-            "Packed",
-            "read_packed",
-            "ret_typeRet_cbarg0",
-        );
+        let continuation =
+            export_newtype_member_alias("testapi/types", "Packed", "get", "ret_typeRet_cbarg0");
         let payload = env_alias("testapi/arith", "observe", "arg0");
         return format!(
             "final class KioRunnerExistentialState {{\n  var observe: (({payload}) -> Int32)?\n  var observations = 0\n  var openings = 0\n}}\nstruct KioRunnerOpenPacked: {continuation}Implementation {{\n  typealias H = StubHost\n  typealias Outer0 = Int32\n  typealias Outer1 = Int32\n  let state: KioRunnerExistentialState\n  func specialize<U>(_: U.Type) -> {continuation}_typeRet<StubHost, Int32, U> {{\n    return {{ payload in state.openings += 1; return payload._1(payload._0) }}\n  }}\n}}\n"
@@ -1062,37 +1058,33 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
     let unit = export_newtype_member_alias(
         "testapi/types",
         "Existential_unit",
-        "read_existential_unit",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let empty = export_newtype_member_alias(
         "testapi/types",
         "Existential_empty",
-        "read_existential_empty",
+        "get",
         "ret_typeRet_cbarg0",
     );
-    let constructor = export_newtype_member_alias(
-        "testapi/types",
-        "Constructor_spread",
-        "make_constructor_spread",
-        "arg0",
-    );
+    let constructor =
+        export_newtype_member_alias("testapi/types", "Constructor_spread", "mk", "arg0");
     let spread = export_newtype_member_alias(
         "testapi/types",
         "Existential_spread",
-        "read_existential_spread",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let recursive = export_newtype_member_alias(
         "testapi/types",
         "Recursive_existential_function",
-        "read_recursive_existential_function",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let recursive_value = export_newtype_member_alias(
         "testapi/types",
         "Recursive_existential_function",
-        "read_recursive_existential_function",
+        "get",
         "arg0",
     );
     format!(
@@ -1316,22 +1308,18 @@ fn render_export_driver(
     let projector_spread = facade_type_selector("Projector_spread");
     let existential_spread = facade_type_selector("Existential_spread");
     let recursive_existential_function = facade_type_selector("Recursive_existential_function");
-    let constructor_spread_arg = export_newtype_member_alias(
-        "testapi/types",
-        "Constructor_spread",
-        "make_constructor_spread",
-        "arg0",
-    );
+    let constructor_spread_arg =
+        export_newtype_member_alias("testapi/types", "Constructor_spread", "mk", "arg0");
     let existential_spread_continuation = export_newtype_member_alias(
         "testapi/types",
         "Existential_spread",
-        "read_existential_spread",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let recursive_existential_continuation = export_newtype_member_alias(
         "testapi/types",
         "Recursive_existential_function",
-        "read_recursive_existential_function",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let pair = facade_type_selector("Pair");
@@ -1339,23 +1327,19 @@ fn render_export_driver(
     let wrap = facade_type_selector("Wrap");
     let a = facade_type_selector("A");
     let b = facade_type_selector("B");
-    let constructor_pair_arg = export_newtype_member_alias(
-        "testapi/types",
-        "Constructor_pair",
-        "make_constructor_pair",
-        "arg0",
-    );
-    let pair_arg = export_newtype_member_alias("testapi/types", "Pair", "mk_pair", "arg0");
+    let constructor_pair_arg =
+        export_newtype_member_alias("testapi/types", "Constructor_pair", "mk", "arg0");
+    let pair_arg = export_newtype_member_alias("testapi/types", "Pair", "mk", "arg0");
     let existential_unit_continuation = export_newtype_member_alias(
         "testapi/types",
         "Existential_unit",
-        "read_existential_unit",
+        "get",
         "ret_typeRet_cbarg0",
     );
     let existential_empty_continuation = export_newtype_member_alias(
         "testapi/types",
         "Existential_empty",
-        "read_existential_empty",
+        "get",
         "ret_typeRet_cbarg0",
     );
 
@@ -1405,11 +1389,11 @@ fn render_export_driver(
             let continuation = export_newtype_member_alias(
                 "testapi/types",
                 "Packed",
-                "read_packed",
+                "get",
                 "ret_typeRet_cbarg0",
             );
             format!(
-                "state.observe = {{ value in {types_ns}.{packed}.readPacked(value).specialize(asKioType: Int32.self)({continuation}<StubHost, Int32>(KioRunnerOpenPacked(state: state))) }}\nlet result = {main_ns}.exercise()\nprecondition(result._0 == 37 && result._1 == 83 && state.observations == 2 && state.openings == 2)\nprint(\"existential host opening ok\")\n"
+                "state.observe = {{ value in {types_ns}.{packed}.get(value).specialize(asKioType: Int32.self)({continuation}<StubHost, Int32>(KioRunnerOpenPacked(state: state))) }}\nlet result = {main_ns}.exercise()\nprecondition(result._0 == 37 && result._1 == 83 && state.observations == 2 && state.openings == 2)\nprint(\"existential host opening ok\")\n"
             )
         }
         ExportDriver::FunctorDictRoundtrip => {
@@ -1421,19 +1405,19 @@ var texts: [String] = []
 let toText: (Int32) -> String = {{ value in integers.append(value); return "v:\(value)" }}
 let toInteger: (String) -> Int32 = {{ value in texts.append(value); return Int32(value.count) }}
 let dict = {main_ns}.echoFunctor({main_ns}.boxFunctor())
-let first = {main_ns}.applyFunctor(dict, toText, {box_type}.mkBox(Product(_0: Int32(42), _1: KioUnit())))
-precondition({box_type}.unBox(first)._0 == "v:42")
-let second = {main_ns}.applyFunctor(dict, toInteger, {box_type}.mkBox(Product(_0: "apple", _1: KioUnit())))
-precondition({box_type}.unBox(second)._0 == 5)
-let mapping = {functor}.fmap(dict)
-let integerInput = {box_type}.mkBox(Product(_0: Int32(7), _1: KioUnit()))
+let first = {main_ns}.applyFunctor(dict, toText, {box_type}.mk(Product(_0: Int32(42), _1: KioUnit())))
+precondition({box_type}.get(first)._0 == "v:42")
+let second = {main_ns}.applyFunctor(dict, toInteger, {box_type}.mk(Product(_0: "apple", _1: KioUnit())))
+precondition({box_type}.get(second)._0 == 5)
+let mapping = {functor}.get(dict)
+let integerInput = {box_type}.mk(Product(_0: Int32(7), _1: KioUnit()))
 let third = mapping.specialize(asKioType: Int32.self).specialize(asKioType: String.self)(Product(_0: toText, _1: integerInput))
 let thirdBox = third
-precondition({box_type}.unBox(thirdBox)._0 == "v:7")
-let textInput = {box_type}.mkBox(Product(_0: "pear", _1: KioUnit()))
+precondition({box_type}.get(thirdBox)._0 == "v:7")
+let textInput = {box_type}.mk(Product(_0: "pear", _1: KioUnit()))
 let fourth = mapping.specialize(asKioType: String.self).specialize(asKioType: Int32.self)(Product(_0: toInteger, _1: textInput))
 let fourthBox = fourth
-precondition({box_type}.unBox(fourthBox)._0 == 4)
+precondition({box_type}.get(fourthBox)._0 == 4)
 precondition(integers == [42, 7] && texts == ["apple", "pear"])
 print("functor dictionary ok")
 "#
@@ -1549,7 +1533,7 @@ for value in [{main_ns}.direct(kio), {main_ns}.relayed(kio)] {{ print(value._0, 
             let wrapped = facade_type_selector("Wrapped");
             format!(
                 r#"
-let nominal = {main_ns}.{wrapped}.mkWrapped(KioRunnerSelectedI32(37))
+let nominal = {main_ns}.{wrapped}.mk(KioRunnerSelectedI32(37))
 print({main_ns}.read(KioHostType_testapi__Box(nominal)).value)
 let kio = {main_ns}.make(KioRunnerSelectedI32(61))
 print({main_ns}.read(kio).value)
@@ -1576,7 +1560,7 @@ print({main_ns}.call(host, Number(31)).value)
 print({main_ns}.call(host, Number(43)).value)
 precondition(calls == 2)
 print({main_ns}.call({main_ns}.makeCallable(), Number(47)).value)
-let nominal = {main_ns}.{wrapped}.mkWrapped(Product(_0: Number(41), _1: Number(43)))
+let nominal = {main_ns}.{wrapped}.mk(Product(_0: Number(41), _1: Number(43)))
 for value in [{main_ns}.readNominal(KioHostType_testapi__Box(nominal)), {main_ns}.readNominal({main_ns}.makeNominal())] {{ print(value._0.value, value._1.value) }}
 "#
             )
@@ -1629,9 +1613,9 @@ for value in [{main_ns}.readNominal(KioHostType_testapi__Box(nominal)), {main_ns
         // the public constructor/projector around the exported roundtrip.
         ExportDriver::NewtypeScalarRoundtrip => {
             format!(
-                "let wrapped = {main_ns}.{wrap}.mkWrap(7)\n\
+                "let wrapped = {main_ns}.{wrap}.mk(7)\n\
                  let bumped = {main_ns}.bump(wrapped)\n\
-                 print({main_ns}.{wrap}.unWrap(bumped))\n"
+                 print({main_ns}.{wrap}.get(bumped))\n"
             )
         }
         ExportDriver::NewtypeIgnoredArgumentRoundtrip => {
@@ -1639,9 +1623,9 @@ for value in [{main_ns}.readNominal(KioHostType_testapi__Box(nominal)), {main_ns
         }
         ExportDriver::RecursiveNewtypeBoundary => format!(
             "let payload = {main_ns}.basePayload()\n\
-             let root = {main_ns}.{root}.makeRoot(payload)\n\
+             let root = {main_ns}.{root}.mk(payload)\n\
              let kept = {main_ns}.keep(root)\n\
-             let projected = {main_ns}.{root}.readRoot(kept)\n\
+             let projected = {main_ns}.{root}.get(kept)\n\
              print({main_ns}.acceptPayload(projected))\n"
         ),
         ExportDriver::NewtypeVisibilityFacade => format!(
@@ -1654,65 +1638,65 @@ for value in [{main_ns}.readNominal(KioHostType_testapi__Box(nominal)), {main_ns
              let outB: KioRunnerSelectedI32 = {types_ns}.readB(b)\n\
              print(outB.value)\n\
              let inputC = KioRunnerSelectedI32(33)\n\
-             let c = {types_ns}.{constructor_only}.makeConstructorOnly(inputC)\n\
+             let c = {types_ns}.{constructor_only}.mk(inputC)\n\
              let outC: KioRunnerSelectedI32 = {types_ns}.readConstructorOnlyValue(c)\n\
              print(outC.value)\n\
              let inputP = KioRunnerSelectedI32(44)\n\
              let p = {types_ns}.makeProjectorOnlyValue(inputP)\n\
-             let outP: KioRunnerSelectedI32 = {types_ns}.{projector_only}.readProjectorOnly(p)\n\
+             let outP: KioRunnerSelectedI32 = {types_ns}.{projector_only}.get(p)\n\
              print(outP.value)\n\
-             let both = {types_ns}.{both_public}.makeBothPublic(KioRunnerSelectedI32(55))\n\
-             let outBoth: KioRunnerSelectedI32 = {types_ns}.{both_public}.readBothPublic(both)\n\
+             let both = {types_ns}.{both_public}.mk(KioRunnerSelectedI32(55))\n\
+             let outBoth: KioRunnerSelectedI32 = {types_ns}.{both_public}.get(both)\n\
              print(outBoth.value)\n\
              let left = {left_ns}.make(KioRunnerSelectedI32(66))\n\
-             let outLeft: KioRunnerSelectedI32 = {left_ns}.{shared}.readShared({left_ns}.{shared}.makeShared({left_ns}.read(left)))\n\
+             let outLeft: KioRunnerSelectedI32 = {left_ns}.{shared}.get({left_ns}.{shared}.mk({left_ns}.read(left)))\n\
              print(outLeft.value)\n\
              let right = {right_ns}.make(KioRunnerSelectedI32(77))\n\
-             let outRight: KioRunnerSelectedI32 = {right_ns}.{shared}.readShared({right_ns}.{shared}.makeShared({right_ns}.read(right)))\n\
+             let outRight: KioRunnerSelectedI32 = {right_ns}.{shared}.get({right_ns}.{shared}.mk({right_ns}.read(right)))\n\
              print(outRight.value)\n\
              let constructorPairPayload = {constructor_pair_arg}<StubHost>(_0: KioRunnerSelectedI32(81), _1: KioRunnerSelectedI32(82))\n\
-             let constructorPair = {types_ns}.{constructor_pair}.makeConstructorPair(constructorPairPayload)\n\
+             let constructorPair = {types_ns}.{constructor_pair}.mk(constructorPairPayload)\n\
              let constructorPairOut = {types_ns}.readConstructorPairValue(constructorPair)\n\
              print(constructorPairOut._0.value, constructorPairOut._1.value)\n\
              let projectorPair = {types_ns}.makeProjectorPairValue(constructorPairOut)\n\
-             let projectorPairOut = {types_ns}.{projector_pair}.readProjectorPair(projectorPair)\n\
+             let projectorPairOut = {types_ns}.{projector_pair}.get(projectorPair)\n\
              print(projectorPairOut._0.value, projectorPairOut._1.value)\n\
-             let constructorGeneric = {types_ns}.{constructor_generic}.makeConstructorGeneric(KioRunnerSelectedI32(85))\n\
+             let constructorGeneric = {types_ns}.{constructor_generic}.mk(KioRunnerSelectedI32(85))\n\
              let constructorGenericOut = {types_ns}.readConstructorGenericValue(constructorGeneric)\n\
              print(constructorGenericOut.value)\n\
              let projectorGeneric = {types_ns}.makeProjectorGenericValue(KioRunnerSelectedI32(86))\n\
-             let projectorGenericOut = {types_ns}.{projector_generic}.readProjectorGeneric(projectorGeneric)\n\
+             let projectorGenericOut = {types_ns}.{projector_generic}.get(projectorGeneric)\n\
              print(projectorGenericOut.value)\n\
-             let packed = {types_ns}.{packed_function}.makePackedFunction({{ value in KioRunnerSelectedI32(value._0.value + value._1.value) }})\n\
-             let unpacked = {types_ns}.{packed_function}.readPackedFunction(packed)\n\
+             let packed = {types_ns}.{packed_function}.mk({{ value in KioRunnerSelectedI32(value._0.value + value._1.value) }})\n\
+             let unpacked = {types_ns}.{packed_function}.get(packed)\n\
              print(unpacked(constructorPairOut).value)\n\
              let existential = {types_ns}.makeExistentialUnitValue()\n\
              let existentialUnitContinuation = {existential_unit_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerExistentialUnitContinuation())\n\
-             let existentialOut = {types_ns}.{existential_unit}.readExistentialUnit(existential).specialize(asKioType: KioRunnerSelectedI32.self)(existentialUnitContinuation)\n\
+             let existentialOut = {types_ns}.{existential_unit}.get(existential).specialize(asKioType: KioRunnerSelectedI32.self)(existentialUnitContinuation)\n\
              print(existentialOut.value)\n\
              let existentialEmpty = {types_ns}.makeExistentialEmptyValue()\n\
              let existentialEmptyContinuation = {existential_empty_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerExistentialEmptyContinuation())\n\
-             let existentialEmptyOut = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty).specialize(asKioType: KioRunnerSelectedI32.self)(existentialEmptyContinuation)\n\
+             let existentialEmptyOut = {types_ns}.{existential_empty}.get(existentialEmpty).specialize(asKioType: KioRunnerSelectedI32.self)(existentialEmptyContinuation)\n\
              print(existentialEmptyOut.value)\n\
-             let recursiveBoth = {types_ns}.{recursive_both}.makeRecursiveBoth({types_ns}.recursiveBothBasePayload())\n\
-             print({types_ns}.recursiveBothPayloadIsBase({types_ns}.{recursive_both}.readRecursiveBoth(recursiveBoth)).value)\n\
-             let recursiveConstructor = {types_ns}.{recursive_constructor}.makeRecursiveConstructor({types_ns}.recursiveConstructorBasePayload())\n\
+             let recursiveBoth = {types_ns}.{recursive_both}.mk({types_ns}.recursiveBothBasePayload())\n\
+             print({types_ns}.recursiveBothPayloadIsBase({types_ns}.{recursive_both}.get(recursiveBoth)).value)\n\
+             let recursiveConstructor = {types_ns}.{recursive_constructor}.mk({types_ns}.recursiveConstructorBasePayload())\n\
              print({types_ns}.recursiveConstructorPayloadIsBase({types_ns}.readRecursiveConstructorValue(recursiveConstructor)).value)\n\
              let recursiveProjector = {types_ns}.makeRecursiveProjectorBase()\n\
-             print({types_ns}.recursiveProjectorPayloadIsBase({types_ns}.{recursive_projector}.readRecursiveProjector(recursiveProjector)).value)\n\
+             print({types_ns}.recursiveProjectorPayloadIsBase({types_ns}.{recursive_projector}.get(recursiveProjector)).value)\n\
              let counts = KioRunnerVisibilityCounts()\n\
              let spread = {constructor_spread_arg}<StubHost>(KioRunnerConstructorSpread(counts: counts))\n\
-             let constructed = {types_ns}.{constructor_spread}.makeConstructorSpread(spread)\n\
+             let constructed = {types_ns}.{constructor_spread}.mk(spread)\n\
              precondition({types_ns}.invokeConstructorSpreadI32(constructed, KioRunnerSelectedI32(101)).value == 104)\n\
              precondition({types_ns}.invokeConstructorSpreadUnit(constructed, KioRunnerSelectedI32(102)).value == 105)\n\
              precondition(counts.inputs == [101, 102])\n\
-             let projected = {types_ns}.{projector_spread}.readProjectorSpread({types_ns}.makeProjectorSpreadValue())\n\
+             let projected = {types_ns}.{projector_spread}.get({types_ns}.makeProjectorSpreadValue())\n\
              precondition(projected.specialize(asKioType: KioRunnerSelectedI32.self)(Product(_0: KioRunnerSelectedI32(111), _1: KioRunnerSelectedI32(1))).value == 111)\n\
              precondition(projected.specialize(asKioType: KioUnit.self)(Product(_0: KioRunnerSelectedI32(112), _1: KioUnit())).value == 112)\n\
              let openSpread = {existential_spread_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerOpenSpread(counts: counts))\n\
              let openRecursive = {recursive_existential_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerOpenRecursive(counts: counts))\n\
-             precondition({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openSpread).value == 91)\n\
-             precondition({types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openRecursive).value == 92)\n\
+             precondition({types_ns}.{existential_spread}.get({types_ns}.makeExistentialSpreadValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openSpread).value == 91)\n\
+             precondition({types_ns}.{recursive_existential_function}.get({types_ns}.makeRecursiveExistentialFunctionValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openRecursive).value == 92)\n\
              precondition(counts.spreadOpens == 1 && counts.recursiveOpens == 1)\n"
         ),
         // `make(String, I32, I32) -> Outer` retains exact `Outer` and `Inner`
@@ -1728,22 +1712,22 @@ let callback = {main_ns}.callback({{ (_: KioUnit) in
 }})
 print(callback._0)
 print(callback._1)
-let outer = {main_ns}.KioType_Outer.unOuter({main_ns}.echoOuter({main_ns}.makeOuter("nest", 11, 13)))
-let inner = {main_ns}.KioType_Inner.unInner(outer._1)
+let outer = {main_ns}.KioType_Outer.get({main_ns}.echoOuter({main_ns}.makeOuter("nest", 11, 13)))
+let inner = {main_ns}.KioType_Inner.get(outer._1)
 print(outer._0)
 print(inner._0)
 print(inner._1)
 for choice in [{main_ns}.first(17), {main_ns}.middle(19, 23), {main_ns}.last("choice", 29, 31)] {{
-    switch {main_ns}.KioType_Choice.unChoice({main_ns}.echoChoice(choice)) {{
+    switch {main_ns}.KioType_Choice.get({main_ns}.echoChoice(choice)) {{
     case ._0(let value):
         print(value)
     case ._1(._0(let value)):
-        let inner = {main_ns}.KioType_Inner.unInner(value)
+        let inner = {main_ns}.KioType_Inner.get(value)
         print(inner._0)
         print(inner._1)
     case ._1(._1(let value)):
-        let outer = {main_ns}.KioType_Outer.unOuter(value)
-        let inner = {main_ns}.KioType_Inner.unInner(outer._1)
+        let outer = {main_ns}.KioType_Outer.get(value)
+        let inner = {main_ns}.KioType_Inner.get(outer._1)
         print(outer._0)
         print(inner._0)
         print(inner._1)
@@ -1811,13 +1795,13 @@ print(poly.specialize(asKioType: Int32.self)(Int32(73)))
              print(wordApi.KioItem__ureadWord_u())\n\
              print(wordApi.KioItem_readWord_u_u())\n\
              let wordNodes = wordApi.KioModule_wordNodes\n\
-             let boxed = wordNodes.KioType__uWordBox_u_u.wrapWord(55)\n\
-             print(wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed))\n\
+             let boxed = wordNodes.KioType__uWordBox_u_u.mk(55)\n\
+             print(wordNodes.KioType__uWordBox_u_u.get(boxed))\n\
              print(wordNodes.keepWord(66))\n\
              let otherNodes = wordApi.KioModule_otherNodes\n\
-             let pair = wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(_0: wordNodes.KioType__uWordBox_u_u.wrapWord(Int32(77)), _1: otherNodes.KioType__uWordBox_u_u.wrapWord(Int32(88))))\n\
-             print(wordNodes.KioType__uWordBox_u_u.unwrapWord(pair._0))\n\
-             print(otherNodes.KioType__uWordBox_u_u.unwrapWord(pair._1))\n"
+             let pair = wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(_0: wordNodes.KioType__uWordBox_u_u.mk(Int32(77)), _1: otherNodes.KioType__uWordBox_u_u.mk(Int32(88))))\n\
+             print(wordNodes.KioType__uWordBox_u_u.get(pair._0))\n\
+             print(otherNodes.KioType__uWordBox_u_u.get(pair._1))\n"
         ),
         ExportDriver::FacadeSelectorCollisions => {
             let api = module("api");
@@ -1841,8 +1825,8 @@ print(poly.specialize(asKioType: Int32.self)(Int32(73)))
                  print(\"api.child function\")\n\
                  {api}.{child_module}.value()\n\
                  print(\"api/child module\")\n\
-                 let child = {api}.{child_type}.makeChild(30)\n\
-                 _ = {api}.{child_type}.readChild(child)\n\
+                 let child = {api}.{child_type}.mk(30)\n\
+                 _ = {api}.{child_type}.get(child)\n\
                  print(\"api.Child type\")\n"
             )
         }
@@ -1877,8 +1861,8 @@ print(poly.specialize(asKioType: Int32.self)(Int32(73)))
         ),
         ExportDriver::TypeRoundtrip => format!(
             "let payload = {pair_arg}(_0: \"export-type-left\", _1: \"export-type-right\")\n\
-             let boxed = {types_ns}.{pair}.mkPair(payload)\n\
-             let out = {types_ns}.{pair}.unPair(boxed)\n\
+             let boxed = {types_ns}.{pair}.mk(payload)\n\
+             let out = {types_ns}.{pair}.get(boxed)\n\
              print(out._0)\n\
              print(out._1)\n"
         ),
@@ -2550,11 +2534,7 @@ mod tests {
         let body = render_export_driver(ExportDriver::NewtypeVisibilityFacade, "pkg.testapi", true)
             .expect("driver");
         assert!(body.contains("pkg.testapi.KioModule_types.makeA"));
-        assert!(
-            body.contains(
-                "pkg.testapi.KioModule_types.KioType_ConstructorOnly.makeConstructorOnly"
-            )
-        );
+        assert!(body.contains("pkg.testapi.KioModule_types.KioType_ConstructorOnly.mk"));
 
         let body = render_export_driver(ExportDriver::MultilabelRoundtrip, "pkg.testapi", true)
             .expect("driver");
@@ -2572,12 +2552,12 @@ mod tests {
             "wordApi.KioItem_readWord_u()",
             "wordApi.KioItem__ureadWord_u()",
             "wordApi.KioItem_readWord_u_u()",
-            "wordNodes.KioType__uWordBox_u_u.wrapWord(55)",
-            "wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
+            "wordNodes.KioType__uWordBox_u_u.mk(55)",
+            "wordNodes.KioType__uWordBox_u_u.get(boxed)",
             "wordNodes.keepWord(66)",
             "wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(",
-            "unwrapWord(pair._0)",
-            "unwrapWord(pair._1)",
+            "get(pair._0)",
+            "get(pair._1)",
         ] {
             assert!(body.contains(literal), "{body}");
         }
@@ -2756,13 +2736,13 @@ mod tests {
         let unit = export_newtype_member_alias(
             "testapi/types",
             "Existential_unit",
-            "read_existential_unit",
+            "get",
             "ret_typeRet_cbarg0",
         );
         let empty = export_newtype_member_alias(
             "testapi/types",
             "Existential_empty",
-            "read_existential_empty",
+            "get",
             "ret_typeRet_cbarg0",
         );
 
@@ -2778,10 +2758,10 @@ mod tests {
             )),
             "{driver}"
         );
-        assert!(driver.contains("readExistentialUnit(existential).specialize("));
-        assert!(driver.contains("readExistentialEmpty(existentialEmpty).specialize("));
-        assert!(!driver.contains("readExistentialUnit(existential, "));
-        assert!(driver.contains("typealias Outer0 = Exp_testapi_types____KioType_RecursiveExistentialFunction__KioItem_readRecursiveExistentialFunction_arg0<StubHost>"));
+        assert!(driver.contains("get(existential).specialize("));
+        assert!(driver.contains("get(existentialEmpty).specialize("));
+        assert!(!driver.contains("get(existential, "));
+        assert!(driver.contains("typealias Outer0 = Exp_testapi_types____KioType_RecursiveExistentialFunction__KioItem_get_arg0<StubHost>"));
     }
 
     #[test]
@@ -2923,7 +2903,7 @@ mod tests {
 
         let type_roundtrip = render_export_driver(ExportDriver::TypeRoundtrip, "pkg.testapi", true)
             .expect("type-roundtrip export driver");
-        let pair_arg = export_newtype_member_alias("testapi/types", "Pair", "mk_pair", "arg0");
+        let pair_arg = export_newtype_member_alias("testapi/types", "Pair", "mk", "arg0");
         assert!(type_roundtrip.contains(&format!("{pair_arg}(")));
         assert!(!type_roundtrip.contains(&format!("{pair_arg}<StubHost>")));
     }

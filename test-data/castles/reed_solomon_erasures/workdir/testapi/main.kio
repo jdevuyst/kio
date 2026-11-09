@@ -2,6 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import rs/input as input;
 import rs/report as report;
 import testapi(Bool, I32, String);
@@ -14,14 +15,14 @@ import testapi/text as text;
 rec(loop) fn frames(recovered: I32, rejected: I32) {
   match(input.next()) {
     .(item: input.Loaded) {
-      if(report.run(item.?{input.loaded})) {
+      if(report.run(item.>select { input.Loaded.get })) {
         recur frames(a.add_i32(recovered, 1), rejected)
       } else {
         recur frames(recovered, a.add_i32(rejected, 1))
       }
     };
     .(error: input.Error) {
-      io.print(error.?{input.error}
+      io.print(error.>select { input.Error.get }
         .>text.string_concat("\n")
         .>>text.string_concat("framing error: "))
     };

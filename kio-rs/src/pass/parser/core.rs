@@ -18,17 +18,17 @@
 // off the sequential arm needs no import and rayon is absent.
 use crate::ast::{
     BlockFieldValue, BridgeBlock, BridgeGlob, BridgeGlobSegment, BuildBlock, BuildBlockCache,
-    CallArg, CallStage, CallableSpec, DependencyFile, DocComment, ElaboratorCall, ElaboratorKind,
-    Expr, FieldAccessLabel, FieldUpdateLabel, FnDef, GitManifestPath, GitSource, HostFn,
-    HostFnParamGroup, HostFnValueParam, HostType, Import, ImportItem, ImportKind, Item, LabelEntry,
-    LabelForward, LabelValueLabel, Labels, LabelsArm, LiteralAlias, LiteralAliasValue, LockFile,
-    Meta, Module, ModulePath, Newtype, Op, OpBody, OpChainKind, OpPart, OperatorDispatchKey,
-    PackageFile, Param, ParamPattern, ParamPatternElem, PathSegment, Purity, RecCallAnnotation,
-    RecCallMode, RecCallSyntax, RecGroup, RehostDecl, RetypeDecl, Role, RoleAnnotation,
-    RowLetEntry, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection, SigRemoveModule,
-    SigRemoveName, SigVersion, Signature, SignatureFile, SignatureGroup, SignatureParam,
-    SourceBlock, SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias, TypeMember,
-    TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserMacroDef, VariadicOperator, Visibility,
+    CallArg, CallStage, CallableSpec, DependencyFile, DocComment, Expr, FnDef, GitManifestPath,
+    GitSource, HostFn, HostFnParamGroup, HostFnValueParam, HostType, Import, ImportItem,
+    ImportKind, Item, LabelEntry, Labels, LabelsArm, LiteralAlias, LiteralAliasValue, LockFile,
+    Meta, Module, ModulePath, Newtype, NominalMembers, NominalRhs, Op, OpBody, OpChainKind, OpPart,
+    OperatorDispatchKey, PackageFile, Param, ParamPattern, ParamPatternElem, PathSegment, Purity,
+    RecCallAnnotation, RecCallMode, RecCallSyntax, RecGroup, RehostDecl, RetypeDecl, Role,
+    RoleAnnotation, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection,
+    SigRemoveModule, SigRemoveName, SigVersion, Signature, SignatureFile, SignatureGroup,
+    SignatureParam, SourceBlock, SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias,
+    TypeMember, TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserMacroDef, VariadicOperator,
+    Visibility,
 };
 use crate::ast::{
     DelimitedTrivia, SignatureTrivia, SignatureTriviaPosition, append_relocated_trivia,
@@ -44,7 +44,6 @@ use rayon::prelude::*;
 
 type SigBlockEntries<T> = (Vec<T>, Vec<SigItemRef>, Vec<Trivia>);
 type ParsedCallArgs = (Vec<CallArg>, u32, Option<Box<DelimitedTrivia>>);
-type ParsedLabelList<T> = (Vec<T>, u32, Option<Box<DelimitedTrivia>>);
 type ParsedLeftSplice = (Expr, Span, Vec<CallArg>, Option<Box<DelimitedTrivia>>);
 
 /// Prepend `trivia` to the expression's `meta.leading_trivia` —
@@ -176,14 +175,6 @@ fn type_has_boundary_comments(ty: &Type, include_leading: bool) -> bool {
             type_has_boundary_comments(left, true) || type_has_boundary_comments(right, true)
         }
         Type::Forall { body, .. } => type_has_boundary_comments(body, true),
-        Type::LabelSugar { labels, .. } => labels.iter().any(|label| {
-            has(&label.meta.leading_trivia)
-                || has(&label.meta.trailing_trivia)
-                || label
-                    .payload
-                    .as_ref()
-                    .is_some_and(|payload| type_has_boundary_comments(payload, true))
-        }),
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => false,
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -207,14 +198,6 @@ fn remove_type_comments(ty: &mut Type, moved: &std::collections::HashSet<Span>) 
         Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
             remove_type_comments(left, moved);
             remove_type_comments(right, moved);
-        }
-        Type::LabelSugar { labels, .. } => {
-            for label in labels {
-                remove_meta_comments(&mut label.meta, moved);
-                if let Some(payload) = &mut label.payload {
-                    remove_type_comments(payload, moved);
-                }
-            }
         }
         Type::Forall { body, .. } => remove_type_comments(body, moved),
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
@@ -617,7 +600,6 @@ fn set_item_doc(item: &mut Item, doc: Option<DocComment>, leading: &[Trivia]) {
         Item::LiteralAlias(l, _) => l.doc = doc,
         Item::Newtype(n) => n.doc = doc,
         Item::Labels(d, _) => d.doc = doc,
-        Item::LabelForward(d, _) => d.doc = doc,
         Item::Op(b, _) => b.doc = doc,
         Item::VariadicOperator(b, _) => b.doc = doc,
         Item::Macro(s, _) => s.doc = doc,
@@ -640,7 +622,6 @@ fn set_item_doc(item: &mut Item, doc: Option<DocComment>, leading: &[Trivia]) {
             Item::TypeAlias(alias) => alias.editable_span = None,
             Item::Newtype(newtype) => newtype.editable_span = None,
             Item::Labels(labels, _) => labels.editable_span = None,
-            Item::LabelForward(forward, _) => forward.editable_span = None,
             _ => {}
         }
     } else if let Some(doc_span) = doc_span {
@@ -656,9 +637,6 @@ fn set_item_doc(item: &mut Item, doc: Option<DocComment>, leading: &[Trivia]) {
             }
             Item::Labels(labels, _) => {
                 labels.editable_span = Some(Span::new(doc_span.start, labels.meta.span.end));
-            }
-            Item::LabelForward(forward, _) => {
-                forward.editable_span = Some(Span::new(doc_span.start, forward.meta.span.end));
             }
             _ => {}
         }
@@ -685,14 +663,6 @@ fn sig_item_meta_mut(item: &mut SigItem) -> &mut crate::ast::Meta<crate::ast::Su
         SigItem::Newtype(n) => &mut n.meta,
         SigItem::TypeRecGroup(group) => &mut group.meta,
     }
-}
-
-struct LabelPathParts {
-    full: String,
-    full_span: Span,
-    last: String,
-    last_span: Span,
-    interstitial: Vec<Trivia>,
 }
 
 /// Opaque consumer-declared operator grammar for parsing a standalone expression in a
@@ -732,9 +702,6 @@ pub(crate) enum SourceNameRole {
     Function,
     FunctionReference,
     Type,
-    Label,
-    LabelReference,
-    QualifiedLabelReference,
     Parameter,
 }
 
@@ -893,7 +860,6 @@ pub(crate) enum ImportSelectionKind {
     Any,
     Name,
     Macro,
-    Label,
     FixedOperator,
     VariadicOperator,
 }
@@ -948,7 +914,6 @@ pub(crate) enum ScopeSyntax {
         pattern: Option<ParamPattern>,
         type_params: Vec<TypeParam>,
     },
-    RowLet(Vec<crate::ast::RowLetEntry>),
     Placeholder {
         stem: PathSegment,
         slot_count: usize,
@@ -1066,11 +1031,8 @@ pub(super) struct Parser<'a> {
     eof: u32,
     syntax_end: u32,
     /// Counter for [`crate::ast::NodeId`] issuance. Bumped on every
-    /// elaboration-bearing variant (`Expr::BlockCall` / `Expr::Elaborator`)
-    /// and on every `Expr::Ufcs` (whose `NodeId`
-    /// carries through to the `Expr::Elaborator` the desugar pass
-    /// produces for macro UFCS) so the typer's `Elaborations`
-    /// table has a clone-stable key. Per-parser-invocation; different
+    /// syntax node that needs a clone-stable identity. Per-parser-invocation;
+    /// different
     /// `parse_*` calls don't share IDs, which is fine because each
     /// invocation produces an independent compilation unit with its
     /// own `Elaborations` table.
@@ -1222,14 +1184,6 @@ struct FunctionHeader {
     body_open: Span,
 }
 
-struct NewtypeHeader {
-    start: u32,
-    name: String,
-    name_span: Span,
-    type_params: Vec<TypeParam>,
-    existential_params: Vec<TypeParam>,
-}
-
 struct LabelsHeader {
     start: u32,
     type_alias_name: Option<String>,
@@ -1242,7 +1196,6 @@ struct LabelEntryHeader {
     name_span: Span,
     type_params: Vec<TypeParam>,
     existential_params: Vec<TypeParam>,
-    payload_start: u32,
 }
 
 impl ItemModifiers {
@@ -2466,16 +2419,6 @@ impl<'a> Parser<'a> {
         crate::naming::validate_source_name(name, crate::naming::NameRole::Value, span)
     }
 
-    /// Validate a label name: like `validate_value_name` but reject
-    /// the leading underscore. A label's surface spelling is
-    /// capitalized to produce the generated newtype name
-    /// (`foo` → `Foo`), which is well-defined only when the first
-    /// character is a letter. See `specs/language.md` § Naming
-    /// conventions.
-    fn validate_label_name(name: &str, span: Span) -> Result<(), Error> {
-        crate::naming::validate_source_name(name, crate::naming::NameRole::Label, span)
-    }
-
     // =====================================================================
     // Top level
     // =====================================================================
@@ -3006,12 +2949,18 @@ impl<'a> Parser<'a> {
                 | Item::Macro(_, _)
                 | Item::Op(_, _)
                 | Item::VariadicOperator(_, _)
-        ) {
+        ) || matches!(&parsed.item, Item::Labels(declaration, _) if declaration.type_alias_name.is_none())
+        {
             let separator =
                 matches!(self.peek(), Some(TokenKind::Semicolon)).then(|| self.peek_span());
             parsed.outer_trivia = self.optional_outer_semicolon();
             if let (Item::Newtype(newtype), Some(separator)) = (&mut parsed.item, separator)
                 && let Some(editable) = &mut newtype.editable_span
+            {
+                editable.end = separator.end;
+            }
+            if let (Item::Labels(declaration, _), Some(separator)) = (&mut parsed.item, separator)
+                && let Some(editable) = &mut declaration.editable_span
             {
                 editable.end = separator.end;
             }
@@ -5046,9 +4995,9 @@ impl<'a> Parser<'a> {
                 items.push(item);
             }
             let heads: &[&str] = if items.is_empty() {
-                &["import", "pub", "pure", "host", "type", "newtype", "rec"]
+                &["import", "pub", "pure", "host", "type", "rec"]
             } else {
-                &["pub", "pure", "host", "type", "newtype", "rec"]
+                &["pub", "pure", "host", "type", "rec"]
             };
             pending = self.block_separator(false, false, heads)?;
             self.declaration_keywords(context, &ItemModifiers::impure_private(), items.is_empty());
@@ -5067,13 +5016,9 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// One signature-only declaration: `host type` / `host fn`, `type`,
-    /// `newtype`, or the body-less `pub fn f(p0: T) -> R;` export
-    /// production. A version-leading `with` section additionally admits
-    /// the shared-Kio′ `rec newtype` and complete `rec { ... }` forms;
-    /// operation sections name those declarations by exact references.
-    /// Surface-only forms (`macro` / `op` / `labels` / `equiv` / `varop` /
-    /// `literal`) are rejected with a sig-context diagnostic.
+    /// One signature declaration: host requirements, aliases, explicit singleton
+    /// nominals, or bodyless public functions. The version-leading `with` block
+    /// also admits ordinary recursive nominal declarations and complete groups.
     fn sig_item(&mut self, allow_type_rec_groups: bool) -> Result<SigItem, Error> {
         let modifiers = self.item_modifiers_in(DeclarationContext::Signature {
             recursive: allow_type_rec_groups,
@@ -5088,15 +5033,22 @@ impl<'a> Parser<'a> {
                 return Err(self.err_here("`pure` cannot modify a recursive type declaration"));
             }
             let rec_span = self.expect_ident_named("rec")?;
-            if self.peek_ident_named("newtype") {
-                let mut newtype =
-                    self.with_recursive_type_scope(rec_span, |parser| parser.newtype(modifiers))?;
-                newtype.rec_span = Some(rec_span);
-                return Ok(SigItem::Newtype(newtype));
+            if self.peek_ident_named("type") {
+                let item = self.with_recursive_type_scope(rec_span, |parser| {
+                    parser.sig_type_item(modifiers)
+                })?;
+                let SigItem::Newtype(mut nominal) = item else {
+                    return Err(self.err(
+                        rec_span,
+                        "a recursive type declaration must introduce a nominal boundary",
+                    ));
+                };
+                nominal.rec_span = Some(rec_span);
+                return Ok(SigItem::Newtype(nominal));
             }
             if !matches!(self.peek(), Some(TokenKind::LBrace)) {
                 return Err(self.err_here(
-                    "a signature-file recursive declaration must be `rec newtype` or a complete `rec { ... }` group",
+                    "a signature-file recursive declaration must be `rec type { ... }` or a complete `rec { ... }` group",
                 ));
             }
             let item = self.type_rec_group_after_rec(
@@ -5115,7 +5067,7 @@ impl<'a> Parser<'a> {
             }) {
                 return Err(self.err(
                     group.meta.span,
-                    "a signature-file `rec { ... }` group contains only ordinary Kio' `type` and `newtype` members",
+                    "a signature-file `rec { ... }` group contains only aliases and explicit singleton nominal `type` declarations",
                 ));
             }
             return Ok(SigItem::TypeRecGroup(group));
@@ -5161,20 +5113,24 @@ impl<'a> Parser<'a> {
             if modifiers.purity.is_pure() {
                 return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
             }
-            self.type_alias_in(modifiers, DeclarationEnd::BlockEntry)
-                .map(SigItem::TypeAlias)
-        } else if self.peek_ident_named("newtype") {
-            if modifiers.purity.is_pure() {
-                return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
-            }
-            self.newtype(modifiers).map(SigItem::Newtype)
+            self.sig_type_item(modifiers)
         } else {
             if modifiers.purity.is_pure() {
                 return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
             }
             Err(self.err_here(
-                "a signature-file declaration must be `host type` / `host fn`, `type`, `newtype`, or a body-less `pub fn` export signature",
+                "a signature-file declaration must be `host type` / `host fn`, `type`, or a body-less `pub fn` export signature",
             ))
+        }
+    }
+
+    fn sig_type_item(&mut self, modifiers: ItemModifiers) -> Result<SigItem, Error> {
+        match self.nominal_type_declaration_in(modifiers, DeclarationEnd::BlockEntry)? {
+            Item::TypeAlias(alias) => Ok(SigItem::TypeAlias(alias)),
+            Item::Newtype(nominal) => Ok(SigItem::Newtype(nominal)),
+            Item::Labels(nominals, _) => Err(self.err(nominals.meta.span,
+                "a signature nominal declaration contains one entry with an explicit `mk` / `get` body")),
+            _ => unreachable!("type declaration parser returns only type declarations"),
         }
     }
 
@@ -5895,6 +5851,7 @@ impl<'a> Parser<'a> {
                     &mut pending_item_trivia,
                 );
                 let mut items = Vec::new();
+                let mut ends_with_item = false;
                 while !matches!(self.peek(), Some(TokenKind::RParen)) {
                     self.cursor_choices(CursorSlot::ImportSelection, &[]);
                     let selection_start = self.peek_span().start;
@@ -5967,6 +5924,7 @@ impl<'a> Parser<'a> {
                     append_relocated_trivia(trivia, std::mem::take(&mut pending_item_trivia));
                     Self::collect_import_comments(&mut comments, self.peek_span().start, trivia);
                     if matches!(self.peek(), Some(TokenKind::RParen)) {
+                        ends_with_item = item.is_some();
                         items.extend(item);
                         break;
                     }
@@ -5980,15 +5938,18 @@ impl<'a> Parser<'a> {
                     );
                     items.extend(item);
                 }
-                self.cursor_choices(CursorSlot::ImportSelection, &[]);
-                self.import_cursor(
-                    &from,
-                    &items,
-                    ImportSelectionKind::Any,
-                    self.peek_span().start,
-                    None,
-                    None,
-                );
+                // A completed selector owns its optional alias even at a recovered close.
+                if !ends_with_item {
+                    self.cursor_choices(CursorSlot::ImportSelection, &[]);
+                    self.import_cursor(
+                        &from,
+                        &items,
+                        ImportSelectionKind::Any,
+                        self.peek_span().start,
+                        None,
+                        None,
+                    );
+                }
                 if items.is_empty() && self.recover_import_errors.is_none() {
                     return Err(self.err_here("expected at least one imported item"));
                 }
@@ -6019,8 +5980,8 @@ impl<'a> Parser<'a> {
         insert_consumer_grammars(&mut self.operator_scope, u)
     }
 
-    /// Selection tags distinguish ordinary names, label namespaces and complete
-    /// operator grammars without consulting the provider.
+    /// Selection tags distinguish ordinary names and complete operator grammars
+    /// without consulting the provider.
     fn parse_import_item(
         &mut self,
         allow_alias: bool,
@@ -6036,17 +5997,6 @@ impl<'a> Parser<'a> {
         } else {
             self.import_selection_kind()
         };
-        if selection == ImportSelectionKind::Label {
-            self.expect_kind(TokenKind::LBrace, "`{`")?;
-            let (name, name_span) = self.expect_ident()?;
-            Self::validate_label_name(&name, name_span)?;
-            self.expect_kind(TokenKind::RBrace, "`}`")?;
-            return Ok(ImportItem::Label {
-                name,
-                span: name_span,
-                leading_trivia: Vec::new(),
-            });
-        }
         if matches!(
             selection,
             ImportSelectionKind::FixedOperator | ImportSelectionKind::VariadicOperator
@@ -6173,8 +6123,6 @@ impl<'a> Parser<'a> {
             || (self.peek_ident_named("macro") && missing_selection_target)
         {
             ImportSelectionKind::Macro
-        } else if matches!(self.peek(), Some(TokenKind::LBrace)) {
-            ImportSelectionKind::Label
         } else if !matches!(
             self.peek_at(1),
             None | Some(TokenKind::Comma | TokenKind::RParen)
@@ -6219,13 +6167,11 @@ impl<'a> Parser<'a> {
         {
             return;
         }
-        let failed_token_end = if matches!(
-            kind,
-            ImportSelectionKind::VariadicOperator | ImportSelectionKind::Label
-        ) && matches!(
-            self.peek(),
-            Some(TokenKind::SymbolRun(_) | TokenKind::Ident(_) | TokenKind::Slot1)
-        ) {
+        let failed_token_end = if matches!(kind, ImportSelectionKind::VariadicOperator)
+            && matches!(
+                self.peek(),
+                Some(TokenKind::SymbolRun(_) | TokenKind::Ident(_) | TokenKind::Slot1)
+            ) {
             self.peek_span().end
         } else {
             start
@@ -6420,8 +6366,6 @@ impl<'a> Parser<'a> {
             ("rec", ordinary && recursive && !type_group),
             ("type", !modifiers.purity.is_pure()),
             ("literal", ordinary && module),
-            ("newtype", ordinary),
-            ("labels", ordinary && surface),
             ("equiv", ordinary && module && !modifiers.vis.is_pub()),
             ("macro", ordinary && module),
             ("op", ordinary && module),
@@ -6489,21 +6433,12 @@ impl<'a> Parser<'a> {
                 modifiers.header_trivia,
             )
         } else if self.peek_ident_named("type") {
-            if self.peek_kind_at(1, &TokenKind::LBrace) {
-                self.label_forward(modifiers)
-                    .map(|forward| Item::LabelForward(forward, ()))
-            } else {
-                self.type_alias(modifiers).map(Item::TypeAlias)
-            }
+            self.nominal_type_declaration_in(modifiers, DeclarationEnd::Outer)
         } else if self.peek_ident_named("literal") {
             self.literal_alias(modifiers)
                 .map(|literal| Item::LiteralAlias(literal, ()))
-        } else if self.peek_ident_named("newtype") {
-            self.newtype(modifiers).map(Item::Newtype)
-        } else if self.peek_ident_named("labels") {
-            self.labels(modifiers).map(|d| Item::Labels(d, ()))
         } else if self.peek_ident_named("tags") {
-            Err(self.err_here("`tags` is no longer a keyword — use `labels`"))
+            Err(self.err_here("compact nominal declarations use `type { Name: Payload; }`"))
         } else if self.peek_ident_named("equiv") {
             // `equiv` decls have no visibility (they're a test-runner
             // concern, not a public API surface); reject `pub equiv`.
@@ -6533,7 +6468,7 @@ impl<'a> Parser<'a> {
             // suggestion rather than the generic "expected …" error.
             let suggestion = match old {
                 "defn" => "fn",
-                "deftype" => "newtype",
+                "deftype" => "type",
                 "defop" => "op",
                 _ => {
                     unreachable!("peek_renamed_item_keyword only returns renamed keywords")
@@ -6545,9 +6480,7 @@ impl<'a> Parser<'a> {
         } else if let Some(error) = self.foreign_file_header_error(true) {
             Err(error)
         } else {
-            Err(self.err_here(
-                "expected `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `macro`, or `op`",
-            ))
+            Err(self.err_here("expected `fn`, `rec`, `type`, `literal`, `equiv`, `macro`, or `op`"))
         }
     }
 
@@ -6797,43 +6730,34 @@ impl<'a> Parser<'a> {
     ) -> Result<Item, Error> {
         let start = self.peek_span().start;
         let rec_span = self.expect_ident_named("rec")?;
-        self.cursor_choices(CursorSlot::Grammar, &["newtype", "labels"]);
-        if self.peek_ident_named("newtype") {
-            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
-            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
-                parser.newtype(ItemModifiers {
-                    start: None,
-                    vis: leading_vis,
-                    vis_span: leading_vis_span,
-                    purity: Purity::Impure,
-                    host: false,
-                    header_trivia,
-                })
-            })?;
-            declaration.rec_span = Some(rec_span);
-            return Ok(Item::Newtype(declaration));
-        }
-        if self.peek_ident_named("labels") {
-            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
-            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
-                parser.labels(ItemModifiers {
-                    start: None,
-                    vis: leading_vis,
-                    vis_span: leading_vis_span,
-                    purity: Purity::Impure,
-                    host: false,
-                    header_trivia,
-                })
-            })?;
-            declaration.rec_span = Some(rec_span);
-            return Ok(Item::Labels(declaration, ()));
-        }
+        self.cursor_choices(CursorSlot::Grammar, &["type"]);
         if self.peek_ident_named("type") {
-            return Err(self
-                .err_here("`rec type` is not a declaration form")
-                .with_help(
-                    "transparent aliases may participate only in a nominally grounded mutual `rec { ... }` group",
-                ));
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
+            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
+                parser.nominal_type_declaration_in(
+                    ItemModifiers {
+                        start: None,
+                        vis: leading_vis,
+                        vis_span: leading_vis_span,
+                        purity: Purity::Impure,
+                        host: false,
+                        header_trivia,
+                    },
+                    DeclarationEnd::Outer,
+                )
+            })?;
+            match &mut declaration {
+                Item::Newtype(nominal) => nominal.rec_span = Some(rec_span),
+                Item::Labels(nominals, _) => nominals.rec_span = Some(rec_span),
+                Item::TypeAlias(_) => {
+                    return Err(self.err(
+                        rec_span,
+                        "a recursive type declaration must introduce a nominal boundary",
+                    ));
+                }
+                _ => unreachable!("type declaration parser returns only type declarations"),
+            }
+            return Ok(declaration);
         }
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             return self.type_rec_group_after_rec(start, leading_vis, leading_vis_span, true);
@@ -7027,42 +6951,33 @@ impl<'a> Parser<'a> {
         mut header_trivia: Vec<Trivia>,
     ) -> Result<Item, Error> {
         let rec_span = self.expect_ident_named("rec")?;
-        if self.peek_ident_named("newtype") {
-            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
-            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
-                parser.newtype(ItemModifiers {
-                    start: None,
-                    vis: leading_vis,
-                    vis_span: leading_vis_span,
-                    purity: Purity::Impure,
-                    host: false,
-                    header_trivia,
-                })
-            })?;
-            declaration.rec_span = Some(rec_span);
-            return Ok(Item::Newtype(declaration));
-        }
-        if self.peek_ident_named("labels") {
-            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
-            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
-                parser.labels(ItemModifiers {
-                    start: None,
-                    vis: leading_vis,
-                    vis_span: leading_vis_span,
-                    purity: Purity::Impure,
-                    host: false,
-                    header_trivia,
-                })
-            })?;
-            declaration.rec_span = Some(rec_span);
-            return Ok(Item::Labels(declaration, ()));
-        }
         if self.peek_ident_named("type") {
-            return Err(self
-                .err_here("`rec type` is not a declaration form")
-                .with_help(
-                    "transparent aliases may participate only in a nominally grounded mutual `rec { ... }` group",
-                ));
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
+            let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
+                parser.nominal_type_declaration_in(
+                    ItemModifiers {
+                        start: None,
+                        vis: leading_vis,
+                        vis_span: leading_vis_span,
+                        purity: Purity::Impure,
+                        host: false,
+                        header_trivia,
+                    },
+                    DeclarationEnd::Outer,
+                )
+            })?;
+            match &mut declaration {
+                Item::Newtype(nominal) => nominal.rec_span = Some(rec_span),
+                Item::Labels(nominals, _) => nominals.rec_span = Some(rec_span),
+                Item::TypeAlias(_) => {
+                    return Err(self.err(
+                        rec_span,
+                        "a recursive type declaration must introduce a nominal boundary",
+                    ));
+                }
+                _ => unreachable!("type declaration parser returns only type declarations"),
+            }
+            return Ok(declaration);
         }
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             return self.type_rec_group_after_rec(start, leading_vis, leading_vis_span, true);
@@ -7247,49 +7162,41 @@ impl<'a> Parser<'a> {
                 let marker_offset = self.peek_span().start;
                 if modifiers.purity.is_pure() || modifiers.host {
                     return Err(self.err_here(
-                    "a bare `rec { ... }` type group admits only `type`, `newtype`, and `labels` declarations",
-                ));
+                        "a bare `rec { ... }` type group admits only type declarations",
+                    ));
                 }
                 let member = if self.peek_ident_named("type") {
-                    TypeRecMember::TypeAlias(
-                        self.type_alias_in(modifiers, DeclarationEnd::BlockEntry)?,
-                    )
-                } else if self.peek_ident_named("newtype") {
-                    TypeRecMember::Newtype(self.newtype(modifiers)?)
-                } else if self.peek_ident_named("labels") {
-                    TypeRecMember::Labels(
-                        self.labels_in(modifiers, DeclarationEnd::BlockEntry)?,
-                        (),
-                    )
+                    match self.nominal_type_declaration_in(modifiers, DeclarationEnd::BlockEntry)? {
+                        Item::TypeAlias(alias) => TypeRecMember::TypeAlias(alias),
+                        Item::Newtype(nominal) => TypeRecMember::Newtype(nominal),
+                        Item::Labels(nominals, _) => TypeRecMember::Labels(nominals, ()),
+                        _ => unreachable!("type declaration parser returns only type declarations"),
+                    }
                 } else if self.peek_ident_named("rec") {
                     let nested_rec_span = self.expect_ident_named("rec")?;
-                    if self.peek_ident_named("newtype") {
-                        let mut newtype = self.newtype(modifiers)?;
-                        newtype.rec_span = Some(nested_rec_span);
-                        TypeRecMember::Newtype(newtype)
-                    } else if self.peek_ident_named("labels") {
-                        let mut labels = self.labels_in(modifiers, DeclarationEnd::BlockEntry)?;
-                        labels.rec_span = Some(nested_rec_span);
-                        TypeRecMember::Labels(labels, ())
-                    } else if self.peek_ident_named("type") {
-                        return Err(self
-                        .err_here("`rec type` is not a declaration form")
-                        .with_help(
-                            "transparent aliases participate directly in the enclosing nominally grounded group",
-                        ));
-                    } else {
-                        return Err(self.err_here(
-                            "expected `newtype` or `labels` after a nested `rec` marker",
-                        ));
+                    match self.nominal_type_declaration_in(modifiers, DeclarationEnd::BlockEntry)? {
+                        Item::Newtype(mut nominal) => {
+                            nominal.rec_span = Some(nested_rec_span);
+                            TypeRecMember::Newtype(nominal)
+                        }
+                        Item::Labels(mut nominals, _) => {
+                            nominals.rec_span = Some(nested_rec_span);
+                            TypeRecMember::Labels(nominals, ())
+                        }
+                        Item::TypeAlias(_) => {
+                            return Err(self.err(
+                                nested_rec_span,
+                                "a recursive type declaration must introduce a nominal boundary",
+                            ));
+                        }
+                        _ => unreachable!("type declaration parser returns only type declarations"),
                     }
                 } else if self.peek_ident_named("fn") {
                     return Err(self
                         .err_here("a bare `rec { ... }` type group admits only type declarations")
                         .with_help("recursive functions use `rec(loop)`"));
                 } else {
-                    return Err(self.err_here(
-                        "expected `type`, `newtype`, or `labels` in bare `rec { ... }` type group",
-                    ));
+                    return Err(self.err_here("expected `type` in bare `rec { ... }` type group"));
                 };
                 Ok((member, member_start, marker_offset))
             })();
@@ -7319,8 +7226,7 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Some(TokenKind::Semicolon)) {
                 separator_spans.push(self.peek_span());
             }
-            pending =
-                self.block_separator(false, false, &["pub", "type", "newtype", "labels", "rec"])?;
+            pending = self.block_separator(false, false, &["pub", "type", "rec"])?;
             self.declaration_keywords(
                 DeclarationContext::TypeGroup { surface },
                 &ItemModifiers::impure_private(),
@@ -8141,57 +8047,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn label_forward(&mut self, modifiers: ItemModifiers) -> Result<LabelForward, Error> {
-        let start = self.expect_ident_named("type")?.start;
-        let mut content_cursor = self.cursor.clone();
-        self.expect_kind(TokenKind::LBrace, "`{` before the forwarded label name")?;
-        let (name, name_span) = self.expect_binder()?;
-        Self::validate_value_name(&name, name_span)?;
-        if name.starts_with('_') {
-            return Err(self.err(
-                name_span,
-                "a forwarded label name must start with a lowercase letter",
-            ));
-        }
-        self.expect_kind(TokenKind::RBrace, "`}` after the forwarded label name")?;
-        self.expect_sym("=", "`=` before the forwarded label target")?;
-        self.expect_kind(TokenKind::LBrace, "`{` before the forwarded label target")?;
-        let target = self.label_path_parts()?;
-        self.expect_kind(TokenKind::RBrace, "`}` after the forwarded label target")?;
-        let end = self
-            .expect_kind(
-                TokenKind::Semicolon,
-                "`;` after the label forwarding declaration",
-            )?
-            .end;
-        let mut body_trivia = modifiers.header_trivia;
-        while let Some(token) = content_cursor.advance() {
-            Self::collect_comments_into(token.leading_trivia, &mut body_trivia);
-            if token.span.end == end {
-                break;
-            }
-        }
-        let editable_start = modifiers.vis_span.map_or(start, |span| span.start);
-        Ok(LabelForward {
-            vis: modifiers.vis,
-            name,
-            name_span,
-            target: target.full,
-            target_span: target.full_span,
-            body_trivia,
-            meta: Meta::new(Span::new(start, end)),
-            editable_span: Some(Span::new(editable_start, end)),
-            doc: None,
-        })
-    }
-
-    /// Parse a `type` declaration:
-    ///
-    ///   `pub? type Name TypeParams? = Type ;`
-    fn type_alias(&mut self, modifiers: ItemModifiers) -> Result<TypeAlias, Error> {
-        self.type_alias_in(modifiers, DeclarationEnd::Outer)
-    }
-
     fn type_alias_in(
         &mut self,
         modifiers: ItemModifiers,
@@ -8280,201 +8135,190 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn newtype(&mut self, modifiers: ItemModifiers) -> Result<Newtype, Error> {
-        let owner = self.peek_span();
-        let mut header_cursor = self.cursor.clone();
-        header_cursor.advance();
-        let mut payload_leading = modifiers.header_trivia.clone();
-        let header = self.newtype_header()?;
-        Self::collect_line_comments(
-            &mut header_cursor,
-            self.peek_span().start,
-            &mut payload_leading,
-        );
-        append_relocated_trivia(&mut payload_leading, self.peek_leading_trivia());
-        let NewtypeHeader {
-            start,
-            name,
-            name_span,
-            type_params,
-            existential_params,
-        } = header;
-        let mut payload = self.with_type_parameters(
-            owner,
-            ScopeOwnerKind::Declaration,
-            type_params.iter().chain(&existential_params),
-            Self::type_expr,
-        )?;
-        inject_meta_trivia(payload.meta_mut(), payload_leading);
-        append_relocated_trivia(
-            &mut payload.meta_mut().trailing_trivia,
-            self.peek_leading_trivia(),
-        );
-        self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut constructor: Option<TypeMember> = None;
-        let mut projector: Option<TypeMember> = None;
-        let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
-        let mut members_trailing: Vec<Trivia> = Vec::new();
-        self.newtype_member_choices(false, false, true);
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let mut member_trivia = std::mem::take(&mut pending_separator_trivia);
-            append_relocated_trivia(&mut member_trivia, self.skip_semicolon_separators());
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                // Comment dangling between a trailing `;` run and `}`.
-                members_trailing = member_trivia;
+    fn nominal_type_declaration_in(
+        &mut self,
+        modifiers: ItemModifiers,
+        end: DeclarationEnd,
+    ) -> Result<Item, Error> {
+        let nodes = self.cursor.remaining_current_frame();
+        let next_item = find_next_item_start(nodes, 1);
+        let compact = nodes[..next_item]
+            .iter()
+            .take_while(|node| {
+                !matches!(
+                    node,
+                    SkeletonNode::Leaf(Token {
+                        kind: TokenKind::Semicolon,
+                        ..
+                    })
+                )
+            })
+            .any(contains_nominal_group);
+        if !compact {
+            return self.type_alias_in(modifiers, end).map(Item::TypeAlias);
+        }
+        let mut declaration = self.labels_in(modifiers, end)?;
+        if declaration.type_alias_name.is_none()
+            && declaration.entries.len() == 1
+            && declaration.entries[0].members.is_some()
+        {
+            let entry = declaration.entries.pop().expect("one nominal entry");
+            let members = entry.members.expect("written member body");
+            let mut meta = declaration.meta;
+            let mut payload = entry.payload;
+            inject_meta_trivia(payload.meta_mut(), entry.meta.leading_trivia);
+            append_relocated_trivia(&mut meta.trailing_trivia, members.trailing_trivia);
+            append_relocated_trivia(&mut meta.trailing_trivia, entry.meta.trailing_trivia);
+            return Ok(Item::Newtype(Newtype {
+                vis: declaration.vis,
+                rec_span: declaration.rec_span,
+                name: entry.name,
+                name_span: entry.name_span,
+                type_params: entry.type_params,
+                existential_params: entry.existential_params,
+                payload,
+                constructor: members.constructor,
+                projector: members.projector,
+                meta,
+                editable_span: declaration.editable_span,
+                doc: declaration.doc,
+            }));
+        }
+        Ok(Item::Labels(declaration, ()))
+    }
+
+    fn nominal_rhs(
+        &mut self,
+        arms: &mut Vec<LabelsArm>,
+        visible_until: u32,
+        owner: Span,
+        owner_params: &[TypeParam],
+    ) -> Result<NominalRhs, Error> {
+        let start = self.peek_span().start;
+        let leading_kind = if self.peek().is_some_and(is_amp_chain_sep) {
+            Some(ChainKind::Amp)
+        } else if self.peek().is_some_and(is_pipe_chain_sep) {
+            Some(ChainKind::Pipe)
+        } else {
+            None
+        };
+        let leading = leading_kind
+            .map(|kind| self.type_chain_separator_trivia(kind).0)
+            .unwrap_or_default();
+        let mut first = self.nominal_rhs_atom(arms, visible_until, owner, owner_params)?;
+        attach_nominal_rhs_trivia(&mut first, arms, leading, false);
+        let kind = leading_kind.or_else(|| {
+            if self.peek().is_some_and(is_amp_chain_sep) {
+                Some(ChainKind::Amp)
+            } else if self.peek().is_some_and(is_pipe_chain_sep) {
+                Some(ChainKind::Pipe)
+            } else {
+                None
+            }
+        });
+        let Some(kind) = kind else {
+            return Ok(first);
+        };
+        let mut operands = vec![first];
+        loop {
+            let same = self.peek().is_some_and(|token| match kind {
+                ChainKind::Amp => is_amp_chain_sep(token),
+                ChainKind::Pipe => is_pipe_chain_sep(token),
+            });
+            let other = self.peek().is_some_and(|token| match kind {
+                ChainKind::Amp => is_pipe_chain_sep(token),
+                ChainKind::Pipe => is_amp_chain_sep(token),
+            });
+            if other {
+                return Err(self.err_here("mixing `&` and `|` requires explicit parentheses"));
+            }
+            if !same {
                 break;
             }
-            append_relocated_trivia(&mut member_trivia, self.peek_leading_trivia());
-            let mut member_cursor = self.cursor.clone();
-            member_cursor.advance();
-            self.newtype_member_choices(constructor.is_some(), projector.is_some(), true);
-            let (member_vis, vis_span) = self.parse_visibility_prefix()?;
-            self.newtype_member_choices(constructor.is_some(), projector.is_some(), false);
-            let (kw, kw_span) = self.expect_ident()?;
-            if matches!(kw.as_str(), "constructor" | "projector") {
-                self.record_keyword(kw_span, KeywordRole::Declaration);
+            let (separator, _) = self.type_chain_separator_trivia(kind);
+            if !self.peek_starts_type_atom() {
+                attach_nominal_rhs_trivia(
+                    operands.last_mut().expect("first RHS operand"),
+                    arms,
+                    separator,
+                    true,
+                );
+                break;
             }
-            if self.peek_ident_named("pub") {
-                return Err(self.err_here(
-                    "visibility precedes a newtype member keyword — write `pub constructor mk`, \
-                     not `constructor pub mk`",
-                ));
-            }
-            let (member_name, member_span) = self.expect_binder()?;
-            Self::validate_value_name(&member_name, member_span)?;
-            if matches!(kw.as_str(), "constructor" | "projector") {
-                self.record_source_name(member_span, SourceNameRole::Function);
-            }
-            Self::collect_line_comments(&mut member_cursor, member_span.end, &mut member_trivia);
-            let member = TypeMember {
-                vis: member_vis,
-                name: member_name,
-                span: Span::new(
-                    vis_span.map(|s| s.start).unwrap_or(kw_span.start),
-                    member_span.end,
-                ),
-                leading_trivia: member_trivia,
+            let mut operand = self.nominal_rhs_atom(arms, visible_until, owner, owner_params)?;
+            attach_nominal_rhs_trivia(&mut operand, arms, separator, false);
+            operands.push(operand);
+        }
+        let end = self.syntax_end;
+        let mut rhs = operands.pop().expect("first RHS operand");
+        for left in operands.into_iter().rev() {
+            let meta = Meta::new(Span::new(start, end));
+            rhs = match kind {
+                ChainKind::Amp => NominalRhs::Product(Box::new(left), Box::new(rhs), meta),
+                ChainKind::Pipe => NominalRhs::Sum(Box::new(left), Box::new(rhs), meta),
             };
-            match kw.as_str() {
-                "constructor" => {
-                    if constructor.is_some() {
-                        return Err(self.err(kw_span, "duplicate `constructor` item in newtype"));
-                    }
-                    constructor = Some(member);
-                }
-                "projector" => {
-                    if projector.is_some() {
-                        return Err(self.err(kw_span, "duplicate `projector` item in newtype"));
-                    }
-                    projector = Some(member);
-                }
-                other => {
-                    return Err(self.err(
-                        kw_span,
-                        format!(
-                            "expected `constructor` or `projector` in newtype body, got `{other}`"
-                        ),
-                    ));
-                }
-            }
-            pending_separator_trivia =
-                self.block_separator(true, false, &["pub", "constructor", "projector"])?;
-            self.newtype_member_choices(constructor.is_some(), projector.is_some(), true);
         }
-        // The `}`'s own leading run holds a comment trailing the last
-        // member (or dangling before `}`); fold it onto whatever the
-        // loop already gathered so neither is lost. (The loop only
-        // captures `members_trailing` when it iterates once more after
-        // the last member; when the last member's `;` is directly
-        // followed by the comment + `}`, the loop exits on the `while`
-        // guard and this is the sole capture point.)
-        append_relocated_trivia(
-            &mut members_trailing,
-            std::mem::take(&mut pending_separator_trivia),
-        );
-        append_relocated_trivia(&mut members_trailing, self.peek_leading_trivia());
-        self.expect_kind(TokenKind::RBrace, "`}`")?;
-        let semi_end = self.syntax_end;
-
-        let constructor = constructor
-            .ok_or_else(|| self.err(name_span, "newtype is missing a `constructor` item"))?;
-        let projector = projector
-            .ok_or_else(|| self.err(name_span, "newtype is missing a `projector` item"))?;
-
-        let mut meta = Meta::new(Span::new(start, semi_end));
-        // A comment dangling after the last member, before `}`, rides
-        // the newtype's trailing slot — the formatter emits it before
-        // the closing `}` so it survives.
-        set_trailing_trivia(&mut meta, members_trailing);
-        let editable_start = modifiers.vis_span.map_or(start, |span| span.start);
-        Ok(Newtype {
-            vis: modifiers.vis.clone(),
-            rec_span: None,
-            name,
-            name_span,
-            type_params,
-            existential_params,
-            payload,
-            constructor,
-            projector,
-            meta,
-            editable_span: Some(Span::new(editable_start, semi_end)),
-            // Attached by `set_item_doc` from any preceding `///` block.
-            doc: None,
-        })
+        Ok(rhs)
     }
 
-    fn newtype_header(&mut self) -> Result<NewtypeHeader, Error> {
-        let start = self.peek_span().start;
-        self.expect_ident_named("newtype")?;
-        let (name, name_span) = self.expect_binder()?;
-        Self::validate_type_name(&name, name_span)?;
-        self.record_source_name(name_span, SourceNameRole::Type);
-        let type_params = if self.peek_starts_type_param_list() {
-            self.type_param_list()?
-        } else {
-            Vec::new()
-        };
-        // Trailing existential binders: `newtype Foo[A] <U> <V> : body`.
-        // Zero or more `<X>` atoms, whitespace-separated (no commas), parsed
-        // before the `:`. The names are in scope inside the payload.
-        let mut existential_params: Vec<TypeParam> = Vec::new();
-        while self.at_sym("<") {
-            existential_params.push(self.angle_binder()?);
+    fn nominal_rhs_atom(
+        &mut self,
+        arms: &mut Vec<LabelsArm>,
+        visible_until: u32,
+        owner: Span,
+        owner_params: &[TypeParam],
+    ) -> Result<NominalRhs, Error> {
+        if matches!(self.peek(), Some(TokenKind::LBrace)) {
+            let index = arms.len();
+            arms.push(self.labels_arm(visible_until)?);
+            return Ok(NominalRhs::Group(index));
         }
-        self.expect_sym(":", "`:` before the newtype payload type")?;
-        self.record_recursive_type_header(&name, name_span, &type_params);
-        Ok(NewtypeHeader {
-            start,
-            name,
-            name_span,
-            type_params,
-            existential_params,
-        })
-    }
-
-    fn newtype_member_choices(&mut self, constructor: bool, projector: bool, visibility: bool) {
-        let choices = match (constructor, projector, visibility) {
-            (false, false, true) => &["pub", "constructor", "projector"][..],
-            (false, false, false) => &["constructor", "projector"],
-            (false, true, true) => &["pub", "constructor"],
-            (false, true, false) => &["constructor"],
-            (true, false, true) => &["pub", "projector"],
-            (true, false, false) => &["projector"],
-            (true, true, _) => &[],
+        if matches!(self.peek(), Some(TokenKind::LParen))
+            && self
+                .cursor
+                .remaining_current_frame()
+                .first()
+                .is_some_and(contains_nominal_group)
+        {
+            let leading = self.peek_leading_trivia();
+            let start = self.expect_kind(TokenKind::LParen, "`(`")?.start;
+            let rhs = self.nominal_rhs(arms, visible_until, owner, owner_params)?;
+            let trailing = self.peek_leading_trivia();
+            let end = self
+                .expect_kind(TokenKind::RParen, "`)` closing the declaration RHS group")?
+                .end;
+            let mut meta = Meta::new(Span::new(start, end));
+            meta.leading_trivia = leading;
+            meta.trailing_trivia = trailing;
+            return Ok(NominalRhs::Grouped(Box::new(rhs), meta));
+        }
+        let leading = self.peek_leading_trivia();
+        if self.peek_starts_type_param() {
+            return Err(self
+                .err_here("parenthesize a polymorphic type operand in a compact declaration RHS"));
+        }
+        let group_end = match self.cursor.remaining_current_frame().first() {
+            Some(SkeletonNode::Group {
+                kind: crate::pass::tree_skeleton::GroupKind::Paren,
+                close: Some(close),
+                ..
+            }) => Some(close.span.end),
+            _ => None,
         };
-        self.cursor_choices(CursorSlot::NewtypeMember, choices);
-    }
-
-    /// `labels { f: X, g[A]: Y };` (anonymous) or
-    /// `labels T[A] = { ... } | { ... };` (named, also introduces a
-    /// structural `type T` over the written arms). Each entry's
-    /// payload type follows ordinary source-ordered declaration scope.
-    /// A `rec labels` declaration supplies its own explicit atomic
-    /// recursive scope; a surrounding bare `rec { ... }` supplies the
-    /// complete written mutual scope.
-    fn labels(&mut self, modifiers: ItemModifiers) -> Result<Labels, Error> {
-        self.labels_in(modifiers, DeclarationEnd::Outer)
+        let mut ty = self.with_type_parameters(
+            owner,
+            ScopeOwnerKind::Declaration,
+            owner_params,
+            Self::type_atom,
+        )?;
+        if group_end.is_some_and(|end| ty.span().end > end) {
+            return Err(self.err(
+                ty.span(),
+                "parenthesize the complete function type operand in a compact declaration RHS",
+            ));
+        }
+        inject_meta_trivia(ty.meta_mut(), leading);
+        Ok(NominalRhs::Type(ty))
     }
 
     fn labels_in(
@@ -8499,40 +8343,33 @@ impl<'a> Parser<'a> {
             type_alias_span,
             type_alias_params,
         } = header;
-        let mut arms = vec![self.with_type_parameters(
-            owner,
-            ScopeOwnerKind::Declaration,
-            &type_alias_params,
-            |parser| parser.labels_arm(visible_until),
-        )?];
-        if type_alias_name.is_none() && self.at_sym("|") {
+        let mut arms = Vec::new();
+        let mut type_alias_rhs = if type_alias_name.is_some() {
+            Some(self.nominal_rhs(&mut arms, visible_until, owner, &type_alias_params)?)
+        } else {
+            arms.push(self.labels_arm(visible_until)?);
+            None
+        };
+        if type_alias_name.is_none() && (self.at_sym("|") || self.at_sym("&")) {
             return Err(self
-                .err_here("sum label declaration must define a named alias")
-                .with_help("write `labels Foo = {a: A} | {b: B};`"));
+                .err_here("a composed nominal declaration must define a named alias")
+                .with_help("write `type Choice = { First: A; } | { Second: B; };`"));
         }
-        while type_alias_name.is_some() && self.at_sym("|") {
-            let leading = self.peek_leading_trivia();
-            self.advance();
-            let mut arm = self.with_type_parameters(
-                owner,
-                ScopeOwnerKind::Declaration,
-                &type_alias_params,
-                |parser| parser.labels_arm(visible_until),
-            )?;
-            if let Some(first) = arm.entries.first_mut() {
-                inject_meta_trivia(&mut first.meta, leading);
+        if let Some(rhs) = &mut type_alias_rhs {
+            attach_nominal_rhs_trivia(rhs, &mut arms, header_trivia, false);
+            if matches!(end, DeclarationEnd::Outer) {
+                attach_nominal_rhs_trivia(rhs, &mut arms, self.peek_leading_trivia(), true);
             }
-            arms.push(arm);
+        } else {
+            if let Some(first) = arms.first_mut().and_then(|arm| arm.entries.first_mut()) {
+                inject_meta_trivia(&mut first.meta, header_trivia);
+            }
         }
-        if let Some(first) = arms.first_mut().and_then(|arm| arm.entries.first_mut()) {
-            inject_meta_trivia(&mut first.meta, header_trivia);
-        }
-        if matches!(end, DeclarationEnd::Outer)
-            && let Some(last) = arms.last_mut().and_then(|arm| arm.entries.last_mut())
-        {
-            append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
-        }
-        let semi_end = self.declaration_end(end, "`;` after the labels declaration")?;
+        let semi_end = if type_alias_name.is_none() && matches!(end, DeclarationEnd::Outer) {
+            self.syntax_end
+        } else {
+            self.declaration_end(end, "`;` after the type declaration")?
+        };
         let entries: Vec<LabelEntry> = arms
             .iter()
             .flat_map(|arm| arm.entries.iter().cloned())
@@ -8540,7 +8377,7 @@ impl<'a> Parser<'a> {
         if entries.is_empty() {
             return Err(self.err(
                 Span::new(start, semi_end),
-                "`labels` block must declare at least one label",
+                "a compact nominal declaration must contain at least one entry",
             ));
         }
         let type_alias_arms = if type_alias_name.is_some() {
@@ -8556,6 +8393,7 @@ impl<'a> Parser<'a> {
             type_alias_span,
             type_alias_params,
             type_alias_arms,
+            type_alias_rhs,
             entries,
             meta: Meta::new(Span::new(start, semi_end)),
             editable_span: Some(Span::new(editable_start, semi_end)),
@@ -8565,7 +8403,7 @@ impl<'a> Parser<'a> {
 
     fn labels_header(&mut self) -> Result<LabelsHeader, Error> {
         let start = self.peek_span().start;
-        self.expect_ident_named("labels")?;
+        self.expect_ident_named("type")?;
         // Named form starts with a type-name identifier; anonymous form
         // jumps straight to `{`. Distinguish by lookahead.
         let (type_alias_name, type_alias_span, type_alias_params) =
@@ -8578,7 +8416,7 @@ impl<'a> Parser<'a> {
                 } else {
                     Vec::new()
                 };
-                self.expect_sym("=", "`=` before the named labels declaration body")?;
+                self.expect_sym("=", "`=` before the named type declaration body")?;
                 (Some(name), Some(name_span), params)
             } else {
                 (None, None, Vec::new())
@@ -8601,10 +8439,10 @@ impl<'a> Parser<'a> {
         let mut entries: Vec<LabelEntry> = Vec::new();
         let mut first_error = None;
         let mut seen: std::collections::HashMap<String, Span> = std::collections::HashMap::new();
-        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
-        self.skip_commas_with_trivia(&mut pending_trivia);
+        append_relocated_trivia(&mut pending_trivia, self.leading_block_separator(false)?);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let leading = std::mem::take(&mut pending_trivia);
+            let mut leading = std::mem::take(&mut pending_trivia);
+            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
             let mut entry = match self.label_entry() {
                 Ok(entry) => entry,
                 Err(error) => {
@@ -8616,7 +8454,8 @@ impl<'a> Parser<'a> {
                         return Err(error);
                     }
                     first_error.get_or_insert(error);
-                    if self.skip_commas() {
+                    if matches!(self.peek(), Some(TokenKind::Semicolon)) {
+                        self.advance();
                         continue;
                     }
                     return Err(first_error.expect("recorded label error"));
@@ -8625,34 +8464,29 @@ impl<'a> Parser<'a> {
             if let Some(first_span) = seen.insert(entry.name.clone(), entry.name_span) {
                 return Err(Error::parse(
                     entry.name_span,
-                    format!("duplicate label `{}` in this product arm", entry.name),
+                    format!(
+                        "duplicate nominal `{}` in this declaration group",
+                        entry.name
+                    ),
                 )
                 .with_secondary(first_span, format!("`{}` first written here", entry.name))
-                .with_help("write each label at most once in a product arm"));
+                .with_help("write each nominal at most once in a declaration group"));
             }
             inject_meta_trivia(&mut entry.meta, leading);
-            if !entry.is_reuse_marker() {
-                self.record_type_declaration(
-                    PathSegment::new(
-                        crate::ast::mint_label_newtype_name(&entry.name),
-                        entry.name_span,
-                    ),
-                    Span::new(entry.meta.span.end, visible_until),
-                );
-            }
+            self.record_type_declaration(
+                PathSegment::new(
+                    crate::ast::mint_label_newtype_name(&entry.name),
+                    entry.name_span,
+                ),
+                Span::new(entry.meta.span.end, visible_until),
+            );
             entries.push(entry);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `}`"));
-            }
+            pending_trivia = self.block_separator(false, false, &[])?;
         }
         // Last entry's trailing / dangling comment before the `}` —
         // stash on the last entry so it survives the round-trip.
-        let closing_trivia = std::mem::take(&mut pending_trivia);
+        let mut closing_trivia = std::mem::take(&mut pending_trivia);
+        append_relocated_trivia(&mut closing_trivia, self.peek_leading_trivia());
         if let Some(last) = entries.last_mut() {
             set_trailing_trivia(&mut last.meta, closing_trivia);
         }
@@ -8660,7 +8494,7 @@ impl<'a> Parser<'a> {
         if entries.is_empty() {
             return Err(self.err(
                 Span::new(start, end),
-                "`labels` arm must declare at least one label",
+                "a nominal declaration group must contain at least one entry",
             ));
         }
         if let Some(error) = first_error {
@@ -8683,17 +8517,14 @@ impl<'a> Parser<'a> {
             name_span,
             type_params,
             existential_params,
-            payload_start,
         } = header;
-        if !matches!(self.peek(), Some(TokenKind::Slot1)) {
-            self.record_recursive_type_header(
-                &crate::ast::mint_label_newtype_name(&name),
-                name_span,
-                &type_params,
-            );
-        }
+        self.record_recursive_type_header(
+            &crate::ast::mint_label_newtype_name(&name),
+            name_span,
+            &type_params,
+        );
         let depth = self.cursor.depth();
-        let payload = self.with_type_parameters(
+        let mut payload = self.with_type_parameters(
             name_span,
             ScopeOwnerKind::Declaration,
             type_params.iter().chain(&existential_params),
@@ -8711,29 +8542,37 @@ impl<'a> Parser<'a> {
                     }
                     while !matches!(
                         parser.peek(),
-                        None | Some(TokenKind::Comma | TokenKind::RBrace)
+                        None | Some(TokenKind::Semicolon | TokenKind::RBrace)
                     ) {
                         parser.cursor_choices(CursorSlot::Type, &[]);
                         parser.advance();
                     }
-                    if !matches!(parser.peek(), Some(TokenKind::Comma)) {
+                    if !matches!(parser.peek(), Some(TokenKind::Semicolon)) {
                         parser.cursor_choices(CursorSlot::Type, &[]);
                     }
                 }
                 result
             },
         )?;
-        if matches!(payload, Type::Infer { .. }) && payload.span().start != payload_start {
+        if matches!(payload, Type::Infer { .. }) {
             return Err(Error::parse(
                 payload.span(),
-                "a label reuse marker must be written as exact bare `_`",
+                "a nominal declaration requires an explicit payload type",
             )
             .with_help(
-                "remove the surrounding grouping and write `name: _`, or write an explicit payload type",
+                "use an ordinary type reference outside the declaration group to refer to an existing nominal",
             ));
         }
-        let payload_end = payload.span().end;
-        let mut meta = Meta::new(Span::new(name_span.start, payload_end));
+        let members = if matches!(self.peek(), Some(TokenKind::LBrace)) {
+            append_relocated_trivia(
+                &mut payload.meta_mut().trailing_trivia,
+                self.peek_leading_trivia(),
+            );
+            Some(self.nominal_members(name_span)?)
+        } else {
+            None
+        };
+        let mut meta = Meta::new(Span::new(name_span.start, self.syntax_end));
         meta.leading_trivia = header_trivia;
         Ok(LabelEntry {
             name,
@@ -8741,14 +8580,77 @@ impl<'a> Parser<'a> {
             type_params,
             existential_params,
             payload,
+            members,
             meta,
         })
     }
 
+    fn nominal_members(&mut self, name_span: Span) -> Result<NominalMembers, Error> {
+        self.expect_kind(TokenKind::LBrace, "`{` opening the nominal member body")?;
+        let mut constructor = None;
+        let mut projector = None;
+        let mut pending = self.leading_block_separator(true)?;
+        self.nominal_member_choices(false, false, true);
+        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
+            let mut leading = std::mem::take(&mut pending);
+            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+            let mut member_cursor = self.cursor.clone();
+            member_cursor.advance();
+            self.nominal_member_choices(constructor.is_some(), projector.is_some(), true);
+            let (vis, vis_span) = self.parse_visibility_prefix()?;
+            self.nominal_member_choices(
+                constructor.is_some(),
+                projector.is_some(),
+                vis_span.is_none(),
+            );
+            let (name, span) = self.expect_ident()?;
+            Self::collect_line_comments(&mut member_cursor, span.end, &mut leading);
+            self.record_source_name(span, SourceNameRole::Function);
+            let member = TypeMember {
+                vis,
+                name: name.clone(),
+                span: Span::new(vis_span.map_or(span.start, |span| span.start), span.end),
+                leading_trivia: leading,
+            };
+            let slot = match name.as_str() {
+                "mk" => &mut constructor,
+                "get" => &mut projector,
+                _ => return Err(self.err(span, "a nominal member body admits only `mk` and `get`")),
+            };
+            if slot.replace(member).is_some() {
+                return Err(self.err(span, format!("duplicate `{name}` member")));
+            }
+            pending = self.block_separator(true, false, &["pub", "mk", "get"])?;
+            self.nominal_member_choices(constructor.is_some(), projector.is_some(), true);
+        }
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
+        self.expect_kind(TokenKind::RBrace, "`}` closing the nominal member body")?;
+        Ok(NominalMembers {
+            constructor: constructor
+                .ok_or_else(|| self.err(name_span, "nominal member body is missing `mk`"))?,
+            projector: projector
+                .ok_or_else(|| self.err(name_span, "nominal member body is missing `get`"))?,
+            trailing_trivia: pending,
+        })
+    }
+
+    fn nominal_member_choices(&mut self, constructor: bool, projector: bool, visibility: bool) {
+        let choices = match (constructor, projector, visibility) {
+            (false, false, true) => &["pub", "mk", "get"][..],
+            (false, false, false) => &["mk", "get"],
+            (false, true, true) => &["pub", "mk"],
+            (false, true, false) => &["mk"],
+            (true, false, true) => &["pub", "get"],
+            (true, false, false) => &["get"],
+            (true, true, _) => &[],
+        };
+        self.cursor_choices(CursorSlot::NewtypeMember, choices);
+    }
+
     fn label_entry_header(&mut self) -> Result<LabelEntryHeader, Error> {
         let (name, name_span) = self.expect_binder()?;
-        Self::validate_label_name(&name, name_span)?;
-        self.record_source_name(name_span, SourceNameRole::Label);
+        Self::validate_type_name(&name, name_span)?;
+        self.record_source_name(name_span, SourceNameRole::Type);
         let type_params = if self.peek_starts_type_param_list() {
             self.type_param_list()?
         } else {
@@ -8763,21 +8665,19 @@ impl<'a> Parser<'a> {
         if self.at_sym(".") {
             return Err(Error::parse(
                 self.peek_span(),
-                "a `labels` entry must use an unqualified module-local label name",
+                "a compact nominal entry must use an unqualified module-local type name",
             )
-            .with_secondary(name_span, format!("`{name}` starts this label entry"))
+            .with_secondary(name_span, format!("`{name}` starts this nominal entry"))
             .with_help(
-                "declare the label explicitly in this module, or reuse an earlier local declaration with `name: _`",
+                "use a qualified type reference as an ordinary RHS operand, or declare an unqualified nominal here",
             ));
         }
         self.expect_sym(":", "`:`")?;
-        let payload_start = self.peek_span().start;
         Ok(LabelEntryHeader {
             name,
             name_span,
             type_params,
             existential_params,
-            payload_start,
         })
     }
 
@@ -9187,11 +9087,6 @@ impl<'a> Parser<'a> {
     fn synth_pattern_param_name(&mut self) -> String {
         let id = self.fresh_node_id();
         format!("__pat_param_n{}__", id.0)
-    }
-
-    fn synth_row_let_temp_name(&mut self) -> String {
-        let id = self.fresh_node_id();
-        format!("__row_let_n{}__", id.0)
     }
 
     /// Parse `'(' ParamPatternElem (',' ParamPatternElem)* ','? ')'`.
@@ -9627,8 +9522,8 @@ impl<'a> Parser<'a> {
             )
     }
 
-    /// Single-atom type production: bottom (`!`), `_`, path /
-    /// parenthesized / rejected braced-label type forms. Used as the chain element for the
+    /// Single-atom type production: bottom (`!`), `_`, path, or
+    /// parenthesized type forms. Used as the chain element for the
     /// chain-aware `type_expr`, and directly inside `type_paren`'s
     /// explicit-paren chain logic where
     /// the mixing rule must be enforced at each chain step.
@@ -9668,9 +9563,6 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Ident(_)) => self.type_path(),
             Some(_) if self.peek_starts_type_param() => self.type_prefix_signature(),
             Some(TokenKind::LParen) => self.type_paren(),
-            Some(TokenKind::LBrace) => Err(self.err_here(
-                "labels are value syntax; use the generated nominal type name in type position",
-            )),
             _ => Err(self.err_here("expected type expression")),
         }
     }
@@ -9990,16 +9882,14 @@ impl<'a> Parser<'a> {
             };
         }
 
-        // Standalone existential type expressions `(<U>, body)` are no
-        // longer admissible: existentials are a `newtype`-only feature
-        // (declared as a trailing `<U>` binder run on the newtype's
-        // header) and consumed via the newtype's CPS projector — see
+        // Existentials are declared as trailing `<U>` binders on a nominal
+        // header and consumed through its CPS projector; see
         // `specs/language.md` § Existential type binders.
         if self.at_sym("<") {
             return Err(self.err_here(crate::documentation_help(
                 "existential type expressions are no longer admissible at this position — \
-                 existentials are declared on a `newtype` header (`newtype Name[A] <U> : body`) \
-                 and consumed via the newtype's CPS projector. \
+                 declare existentials on a nominal header, as in `type { Name[A] <U>: A & U; }`, \
+                 and consume the payload through `Name.get`. \
                  See {base}/specs/language.md#existential-type-binders.",
             )));
         }
@@ -11009,48 +10899,6 @@ impl<'a> Parser<'a> {
                         ext: (),
                     };
                 }
-                Some(k) if k.is_sym(".?") && matches!(self.peek_at(1), Some(TokenKind::LBrace)) => {
-                    let start = e.span().start;
-                    Self::collect_comments_into(
-                        self.peek_leading_trivia(),
-                        &mut e.meta_mut().trailing_trivia,
-                    );
-                    self.advance();
-                    let (labels, end, source_trivia) = self.field_access_label_list()?;
-                    let id = self.fresh_node_id();
-                    e = Expr::Elaborator {
-                        occurrence: Default::default(),
-                        kind: ElaboratorKind::Access,
-                        call: ElaboratorCall::FieldAccess {
-                            receiver: Box::new(e),
-                            labels,
-                        },
-                        source_trivia,
-                        meta: Meta::new(Span::new(start, end)),
-                        ext: id,
-                    };
-                }
-                Some(k) if k.is_sym(".!") && matches!(self.peek_at(1), Some(TokenKind::LBrace)) => {
-                    let start = e.span().start;
-                    Self::collect_comments_into(
-                        self.peek_leading_trivia(),
-                        &mut e.meta_mut().trailing_trivia,
-                    );
-                    self.advance();
-                    let (updates, end, source_trivia) = self.field_update_label_list()?;
-                    let id = self.fresh_node_id();
-                    e = Expr::Elaborator {
-                        occurrence: Default::default(),
-                        kind: ElaboratorKind::Filtered,
-                        call: ElaboratorCall::FieldUpdate {
-                            base: crate::ast::FieldUpdateBase::Update(Box::new(e)),
-                            updates,
-                        },
-                        source_trivia,
-                        meta: Meta::new(Span::new(start, end)),
-                        ext: id,
-                    };
-                }
                 Some(k) if k.is_sym(".>") || k.is_sym(".>>") => {
                     let flavor = if k.is_sym(".>") {
                         UfcsFlavor::ReceiverFirst
@@ -11211,183 +11059,6 @@ impl<'a> Parser<'a> {
             meta: Meta::new(Span::new(start, end)),
             ext: self.fresh_node_id(),
         })
-    }
-
-    fn field_access_label_list(&mut self) -> Result<ParsedLabelList<FieldAccessLabel>, Error> {
-        let start = self.peek_span().start;
-        let mut pending_trivia = Vec::new();
-        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
-        self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut labels: Vec<FieldAccessLabel> = Vec::new();
-        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
-        self.skip_commas_with_trivia(&mut pending_trivia);
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let mut leading = std::mem::take(&mut pending_trivia);
-            let LabelPathParts {
-                full: label,
-                full_span: label_span,
-                interstitial,
-                ..
-            } = self.label_path_parts()?;
-            append_relocated_trivia(&mut leading, interstitial);
-            let mut item = FieldAccessLabel {
-                label,
-                label_span,
-                label_type: None,
-                meta: Meta::new(label_span),
-            };
-            inject_meta_trivia(&mut item.meta, leading);
-            labels.push(item);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `}`"));
-            }
-        }
-        let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
-        let _ = start;
-        Ok((labels, end, DelimitedTrivia::from_closing(pending_trivia)))
-    }
-
-    fn field_update_label_list(&mut self) -> Result<ParsedLabelList<FieldUpdateLabel>, Error> {
-        let start = self.peek_span().start;
-        let mut pending_trivia = Vec::new();
-        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
-        self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut updates: Vec<FieldUpdateLabel> = Vec::new();
-        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
-        self.skip_commas_with_trivia(&mut pending_trivia);
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let mut leading = std::mem::take(&mut pending_trivia);
-            let LabelPathParts {
-                full: label,
-                full_span: label_span,
-                last,
-                last_span,
-                interstitial,
-            } = self.label_path_parts()?;
-            append_relocated_trivia(&mut leading, interstitial);
-            let value = if self.at_sym("=") {
-                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
-                let eq_span = self.expect_sym("=", "`=`")?;
-                if matches!(
-                    self.peek(),
-                    Some(TokenKind::Comma) | Some(TokenKind::RBrace)
-                ) {
-                    Expr::Unit {
-                        source_trivia: Default::default(),
-                        occurrence: Default::default(),
-                        meta: Meta::new(eq_span),
-                    }
-                } else {
-                    let leading_trivia = self.peek_leading_trivia();
-                    let mut value = self.expr()?;
-                    inject_leading_trivia(&mut value, leading_trivia);
-                    value
-                }
-            } else {
-                Expr::Path {
-                    occurrence: Default::default(),
-                    segments: vec![PathSegment::new(last, last_span)],
-                    meta: Meta::new(last_span),
-                    ext: (),
-                }
-            };
-            let value_end = value.span().end;
-            let mut item = FieldUpdateLabel {
-                label,
-                label_span,
-                label_type: None,
-                value,
-                meta: Meta::new(Span::new(label_span.start, value_end)),
-            };
-            inject_meta_trivia(&mut item.meta, leading);
-            updates.push(item);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `}`"));
-            }
-        }
-        let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
-        let _ = start;
-        Ok((updates, end, DelimitedTrivia::from_closing(pending_trivia)))
-    }
-
-    fn row_let_entry_list(&mut self) -> Result<(Vec<RowLetEntry>, u32), Error> {
-        let start = self.peek_span().start;
-        let mut pending_trivia = Vec::new();
-        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
-        self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut entries: Vec<RowLetEntry> = Vec::new();
-        let mut locals: Vec<(String, Span)> = Vec::new();
-        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
-        self.skip_commas_with_trivia(&mut pending_trivia);
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let mut leading = std::mem::take(&mut pending_trivia);
-            let LabelPathParts {
-                full: label,
-                full_span: label_span,
-                last,
-                last_span,
-                interstitial,
-            } = self.label_path_parts()?;
-            append_relocated_trivia(&mut leading, interstitial);
-            self.cursor_choices(CursorSlot::Grammar, &["as"]);
-            let (local, local_span, alias_explicit) = if self.peek_ident_named("as") {
-                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
-                self.expect_ident_named("as")?;
-                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
-                let (name, span) = self.expect_ident()?;
-                Self::validate_value_name(&name, span)?;
-                self.record_source_name(span, SourceNameRole::Parameter);
-                (name, span, true)
-            } else {
-                (last, last_span, false)
-            };
-            if let Some((_, first_span)) = locals.iter().find(|(seen, _)| seen == &local) {
-                return Err(self
-                    .err(local_span, format!("duplicate row-let local `{local}`"))
-                    .with_secondary(*first_span, format!("`{local}` first bound here")));
-            }
-            locals.push((local.clone(), local_span));
-            let mut item = RowLetEntry {
-                label,
-                label_span,
-                local,
-                local_span,
-                alias_explicit,
-                access_ext: self.fresh_node_id(),
-                meta: Meta::new(label_span),
-            };
-            inject_meta_trivia(&mut item.meta, leading);
-            entries.push(item);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `}`"));
-            }
-        }
-        if let Some(last) = entries.last_mut() {
-            set_trailing_trivia(&mut last.meta, pending_trivia);
-        }
-        let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
-        if entries.is_empty() {
-            return Err(self.err(
-                Span::new(start, end),
-                "row-let `.{...}` must include at least one label",
-            ));
-        }
-        Ok((entries, end))
     }
 
     /// Parse the right-hand value of `.<` / `.<<`: a primary expression
@@ -11953,7 +11624,6 @@ impl<'a> Parser<'a> {
     ) -> Result<(crate::ast::NeutralItem, crate::ast::NeutralSeparator), Error> {
         enum Binder {
             Value(String, Span, Option<Type>, Option<ParamPattern>),
-            Row(Vec<RowLetEntry>),
             Existential(Vec<TypeParam>, String, Span, Option<ParamPattern>),
         }
         let (leading, start, dot) = self.consume_let_statement_intro()?;
@@ -11970,16 +11640,6 @@ impl<'a> Parser<'a> {
                 Some(pattern),
             )
         } else if matches!(self.peek(), Some(TokenKind::LParen))
-            && matches!(self.peek_at(1), Some(TokenKind::LBrace))
-        {
-            self.advance();
-            let (mut entries, _) = self.row_let_entry_list()?;
-            if let Some(last) = entries.last_mut() {
-                append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
-            }
-            self.expect_kind(TokenKind::RParen, "`)` after the row pattern")?;
-            Binder::Row(entries)
-        } else if matches!(self.peek(), Some(TokenKind::LParen))
             && matches!(self.peek_at(1), Some(TokenKind::SymbolRun(run)) if run == "<")
         {
             self.advance();
@@ -11992,9 +11652,7 @@ impl<'a> Parser<'a> {
         };
         let bind = self.at_sym("<-");
         if bind && !matches!(binder, Binder::Value(..)) {
-            return Err(
-                self.err_here("row and existential-opening patterns require a pure `=` let")
-            );
+            return Err(self.err_here("existential-opening patterns require a pure `=` let"));
         }
         append_relocated_trivia(&mut value_leading, self.peek_leading_trivia());
         self.expect_sym(
@@ -12036,14 +11694,6 @@ impl<'a> Parser<'a> {
                     pattern,
                     value,
                     bind,
-                    meta,
-                }
-            }
-            Binder::Row(entries) => {
-                self.record_scope_prefix(|| ScopeSyntax::RowLet(entries.clone()));
-                crate::ast::NeutralItem::RowBinding {
-                    entries,
-                    value,
                     meta,
                 }
             }
@@ -12177,7 +11827,7 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Ident(s)) if s == "recur" && rec_call => self.rec_call_expr(),
             Some(TokenKind::Ident(_)) => self.expr_path(),
             Some(TokenKind::LParen) => self.expr_paren(),
-            Some(TokenKind::LBrace) => self.label_value_expr(),
+            Some(TokenKind::LBrace) => self.empty_brace_unit_expr(),
             _ => Err(self.err_here("expected expression")),
         }
     }
@@ -12457,15 +12107,19 @@ impl<'a> Parser<'a> {
     }
 
     fn expr_path(&mut self) -> Result<Expr, Error> {
+        let mut path_cursor = self.cursor.clone();
+        path_cursor.advance();
         let (segments, span_end) = self.value_path_segments()?;
         let start = segments
             .first()
             .map(|segment| segment.span.start)
             .unwrap_or(span_end);
+        let mut meta = Meta::new(Span::new(start, span_end));
+        Self::collect_line_comments(&mut path_cursor, span_end, &mut meta.leading_trivia);
         Ok(Expr::Path {
             occurrence: Default::default(),
             segments,
-            meta: Meta::new(Span::new(start, span_end)),
+            meta,
             ext: (),
         })
     }
@@ -12719,140 +12373,16 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// `{f = e, g = e'}` — label-value construction sugar. Each
-    /// label's `f` must resolve to a label in scope; label-elab
-    /// validates this against the per-module label table. The label
-    /// may be qualified `m.f` for cross-module labels. The parser
-    /// distinguishes declaration-position `{f: X}` from
-    /// value-position `{f = e}` via the leading separator:
-    /// `:` for label declarations, `=` for value sugar. An empty
-    /// `{}` is the unit value.
-    fn label_value_expr(&mut self) -> Result<Expr, Error> {
+    fn empty_brace_unit_expr(&mut self) -> Result<Expr, Error> {
         let start = self.peek_span().start;
         self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut labels: Vec<LabelValueLabel> = Vec::new();
-        // Pre-loop trivia: comments between `{` and the first label
-        // (or its leading comma). Merged forward across commas, same
-        // pattern as `call_arg_list`.
-        let mut pending_trivia = self.peek_leading_trivia();
-        self.skip_commas_with_trivia(&mut pending_trivia);
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let leading = std::mem::take(&mut pending_trivia);
-            let mut label = self.label_value_label()?;
-            inject_meta_trivia(&mut label.meta, leading);
-            labels.push(label);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `}`"));
-            }
-        }
-        // Last label's trailing / dangling comment run before the `}` —
-        // stash on the last label's trailing slot so the formatter
-        // keeps it across the round-trip.
-        let closing_trivia = std::mem::take(&mut pending_trivia);
-        if let Some(last) = labels.last_mut() {
-            set_trailing_trivia(&mut last.meta, closing_trivia.clone());
-        }
+        let mut closing_trivia = self.peek_leading_trivia();
+        self.skip_commas_with_trivia(&mut closing_trivia);
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
-        if labels.is_empty() {
-            return Ok(Expr::Unit {
-                source_trivia: DelimitedTrivia::from_closing(closing_trivia),
-                occurrence: Default::default(),
-                meta: Meta::new(Span::new(start, end)),
-            });
-        }
-        let id = self.fresh_node_id();
-        Ok(Expr::LabelValue {
+        Ok(Expr::Unit {
+            source_trivia: DelimitedTrivia::from_closing(closing_trivia),
             occurrence: Default::default(),
-            labels,
             meta: Meta::new(Span::new(start, end)),
-            ext: id,
-        })
-    }
-
-    fn label_path_parts(&mut self) -> Result<LabelPathParts, Error> {
-        let (first, first_span) = self.expect_ident()?;
-        Self::validate_value_name(&first, first_span)?;
-        let mut full_label = first.clone();
-        let mut label_end = first_span.end;
-        let mut last = first;
-        let mut last_span = first_span;
-        let mut interstitial = Vec::new();
-        while self.at_sym(".") {
-            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
-            self.advance();
-            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
-            let (next, next_span) = self.expect_ident()?;
-            Self::validate_value_name(&next, next_span)?;
-            full_label.push('.');
-            full_label.push_str(&next);
-            label_end = next_span.end;
-            last = next;
-            last_span = next_span;
-        }
-        self.record_source_name(
-            last_span,
-            if first_span == last_span {
-                SourceNameRole::LabelReference
-            } else {
-                SourceNameRole::QualifiedLabelReference
-            },
-        );
-        Ok(LabelPathParts {
-            full: full_label,
-            full_span: Span::new(first_span.start, label_end),
-            last,
-            last_span,
-            interstitial,
-        })
-    }
-
-    fn label_value_label(&mut self) -> Result<LabelValueLabel, Error> {
-        let LabelPathParts {
-            full: full_label,
-            full_span: label_span,
-            last,
-            last_span,
-            mut interstitial,
-        } = self.label_path_parts()?;
-        let value = if self.at_sym("=") {
-            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
-            let eq_span = self.expect_sym("=", "`=`")?;
-            if matches!(
-                self.peek(),
-                Some(TokenKind::Comma) | Some(TokenKind::RBrace)
-            ) {
-                Expr::Unit {
-                    source_trivia: Default::default(),
-                    occurrence: Default::default(),
-                    meta: Meta::new(eq_span),
-                }
-            } else {
-                let leading_trivia = self.peek_leading_trivia();
-                let mut value = self.expr()?;
-                inject_leading_trivia(&mut value, leading_trivia);
-                value
-            }
-        } else {
-            Expr::Path {
-                occurrence: Default::default(),
-                segments: vec![PathSegment::new(last, last_span)],
-                meta: Meta::new(last_span),
-                ext: (),
-            }
-        };
-        let value_end = value.span().end;
-        let mut meta = Meta::new(Span::new(label_span.start, value_end));
-        inject_meta_trivia(&mut meta, interstitial);
-        Ok(LabelValueLabel {
-            label: full_label,
-            label_span,
-            value,
-            meta,
         })
     }
 
@@ -13163,12 +12693,6 @@ impl<'a> Parser<'a> {
             return self.numbered_let_statement(block_start, start, leading_trivia, dot);
         }
         if matches!(self.peek(), Some(TokenKind::LParen))
-            && matches!(self.peek_at(1), Some(TokenKind::LBrace))
-        {
-            self.advance();
-            return self.row_let_statement(block_start, start, leading_trivia);
-        }
-        if matches!(self.peek(), Some(TokenKind::LParen))
             && matches!(self.peek_at(1), Some(TokenKind::SymbolRun(run)) if run == "<")
         {
             self.advance();
@@ -13227,41 +12751,6 @@ impl<'a> Parser<'a> {
                 leading_trivia,
                 trailing_trivia: Vec::new(),
             },
-        })
-    }
-
-    fn row_let_statement(
-        &mut self,
-        block_start: u32,
-        start: u32,
-        leading_trivia: Vec<Trivia>,
-    ) -> Result<Expr, Error> {
-        let (mut entries, _) = self.row_let_entry_list()?;
-        if let Some(last) = entries.last_mut() {
-            append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
-        }
-        self.expect_kind(TokenKind::RParen, "`)` after the row pattern")?;
-        let mut value_leading_trivia = self.peek_leading_trivia();
-        self.expect_sym("=", "`=`")?;
-        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
-        let mut value = self.expr()?;
-        inject_leading_trivia(&mut value, value_leading_trivia);
-        self.expect_expression_semicolon(&mut value, "`;` after the row-let binding")?;
-        self.record_scope_prefix(|| ScopeSyntax::RowLet(entries.clone()));
-        let body = self.block_body_continuation(block_start)?;
-        let end = body.span().end;
-        Ok(Expr::RowLet {
-            occurrence: Default::default(),
-            entries,
-            value: Box::new(value),
-            body: Box::new(body),
-            temp_name: self.synth_row_let_temp_name(),
-            meta: Meta {
-                span: Span::new(start, end),
-                leading_trivia,
-                trailing_trivia: Vec::new(),
-            },
-            ext: (),
         })
     }
 
@@ -13548,10 +13037,6 @@ impl<'a> Parser<'a> {
                 Expr::Tuple { items, .. } => pending.extend(items),
                 Expr::Call { callee, .. } => pending.push(callee),
                 Expr::Ufcs { receiver, .. } => pending.push(receiver),
-                Expr::Elaborator { call, .. } => match call {
-                    ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                    ElaboratorCall::FieldUpdate { base, .. } => pending.extend(base.receiver()),
-                },
                 _ => {}
             }
         }
@@ -13675,7 +13160,7 @@ fn partition_top_level_items(
             }
             if let Some(SkeletonNode::Leaf(t)) = children.get(scan_from)
                 && let TokenKind::Ident(name) = &t.kind
-                && matches!(name.as_str(), "fn" | "type" | "newtype" | "labels")
+                && matches!(name.as_str(), "fn" | "type")
             {
                 scan_from += 1;
             }
@@ -13688,6 +13173,46 @@ fn partition_top_level_items(
         start = end;
     }
     slices
+}
+
+fn attach_nominal_rhs_trivia(
+    rhs: &mut NominalRhs,
+    arms: &mut [LabelsArm],
+    trivia: Vec<Trivia>,
+    trailing: bool,
+) {
+    let meta = match rhs {
+        NominalRhs::Group(index) => {
+            let entries = &mut arms[*index].entries;
+            if trailing {
+                &mut entries.last_mut().expect("nonempty compact group").meta
+            } else {
+                &mut entries.first_mut().expect("nonempty compact group").meta
+            }
+        }
+        NominalRhs::Type(ty) => ty.meta_mut(),
+        NominalRhs::Product(left, right, _) | NominalRhs::Sum(left, right, _) => {
+            attach_nominal_rhs_trivia(if trailing { right } else { left }, arms, trivia, trailing);
+            return;
+        }
+        NominalRhs::Grouped(_, meta) => meta,
+    };
+    if trailing {
+        append_relocated_trivia(&mut meta.trailing_trivia, trivia);
+    } else {
+        inject_meta_trivia(meta, trivia);
+    }
+}
+
+fn contains_nominal_group(node: &SkeletonNode) -> bool {
+    match node {
+        SkeletonNode::Group {
+            kind: crate::pass::tree_skeleton::GroupKind::Brace,
+            ..
+        } => true,
+        SkeletonNode::Group { children, .. } => children.iter().any(contains_nominal_group),
+        SkeletonNode::Leaf(_) => false,
+    }
 }
 
 /// Identify the item-keyword starting at `start` in `children`.
@@ -13827,8 +13352,7 @@ fn item_keyword_starts_here(
         "fn" if paren_group(1) || next_is(1, "=") || next_is_semicolon(1) => false,
         "fn" => leaf_value_name(1),
         "type" => leaf_ident(1) || brace_group(1),
-        "literal" | "newtype" | "equiv" | "macro" => leaf_ident(1),
-        "labels" => leaf_ident(1) || brace_group(1),
+        "literal" | "equiv" | "macro" => leaf_ident(1),
         "op" => op_pattern_lead(1),
         "varop" => matches!(
             children.get(idx + 1),
@@ -13846,7 +13370,7 @@ fn item_keyword_starts_here(
                         if matches!(
                             &t.kind,
                             TokenKind::Ident(name)
-                                if matches!(name.as_str(), "type" | "newtype" | "labels")
+                                if name == "type"
                         )
                 )
         }
@@ -13975,7 +13499,7 @@ pub(crate) fn parse_declaration_query(
                     "a qualified operator selector requires parentheses: module.(op _ + _)",
                 ));
             }
-            (true, ImportItem::Name { .. } | ImportItem::Label { .. }) => {
+            (true, ImportItem::Name { .. }) => {
                 return Err(parser.err_here(
                     "a qualified selector's outer parentheses are only for `op` or `varop`",
                 ));

@@ -6,19 +6,20 @@ import list_host as numbers;
 import logic/model as model;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
 fn before(a: model.Event, b: model.Event) -> Bool {
-  if(arith.lt_i32(a.?{model.at}, b.?{model.at})) {
+  if(arith.lt_i32(a.>select { model.At.get }, b.>select { model.At.get })) {
     .t
-  } else if(arith.lt_i32(b.?{model.at}, a.?{model.at})) {
+  } else if(arith.lt_i32(b.>select { model.At.get }, a.>select { model.At.get })) {
     .f
-  } else if(model.same_bit(a.?{model.source}, b.?{model.source})) {
-    arith.lt_i32(a.?{model.serial}, b.?{model.serial})
+  } else if(model.same_bit(a.>select { model.Source.get }, b.>select { model.Source.get })) {
+    arith.lt_i32(a.>select { model.Serial.get }, b.>select { model.Serial.get })
   } else {
-    a.?{model.source}
+    a.>select { model.Source.get }
   }
 }
 
@@ -36,13 +37,18 @@ pub rec(loop) fn insert(event: model.Event, queue: lists.List[model.Event]) -> l
 }
 
 pub fn for_wire(id: I32, queue: lists.List[model.Event]) -> lists.List[model.Event] {
-  traversal.filter(.(event: model.Event) { numbers.eq_i32(event.?{model.target}, id) }, queue)
+  traversal.filter(
+  , .(event: model.Event) {
+      numbers.eq_i32(event.>select { model.Target.get }, id)
+    }
+  , queue
+  )
 }
 
 pub fn without_wire(id: I32, queue: lists.List[model.Event]) -> lists.List[model.Event] {
   traversal.filter(
   , .(event: model.Event) {
-      if(numbers.eq_i32(event.?{model.target}, id)) { .f } else { .t }
+      if(numbers.eq_i32(event.>select { model.Target.get }, id)) { .f } else { .t }
     }
   , queue
   )

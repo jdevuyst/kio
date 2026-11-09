@@ -4,7 +4,7 @@ import macros/spine_macros(macro one_prod);
 import testapi(String);
 import testapi/io(print);
 
-labels { pack[A] <U> : A & U };
+type { Pack[A] <U>: A & U { mk; get } }
 
 fn unwrap_a[A](v: Pack[A]) -> A {
   Pack.get[A](v)(.[U](pair: A & U) { (pair.>one_prod)[A] })

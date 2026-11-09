@@ -11,18 +11,17 @@ import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, String);
 
-pub labels Exit =
-  { open_to: ids.Room_id }
-  | { locked_to: ids.Room_id, locked_by: ids.Item_id }
-  | { no_way: . };
+pub type Exit =
+  { Open_to: ids.Room_id } | { Locked_to: ids.Room_id; Locked_by: ids.Item_id } | { No_way: . }
+  ;
 
-fn opens(to: ids.Room_id) -> Exit { ({open_to = to}.>widen_sum)[Exit] }
+fn opens(to: ids.Room_id) -> Exit { (Open_to.mk(to).>widen_sum)[Exit] }
 
 fn locked(to: ids.Room_id, key: ids.Item_id) -> Exit {
-  ({locked_to = to, locked_by = key}.>widen_sum)[Exit]
+  ((Locked_to.mk(to), Locked_by.mk(key)).>widen_sum)[Exit]
 }
 
-fn walled() -> Exit { ({no_way=}.>widen_sum)[Exit] }
+fn walled() -> Exit { (No_way.mk(()).>widen_sum)[Exit] }
 
 fn edge(from: ids.Room_id, d: ids.Dir_id, room: ids.Room_id, dir: ids.Dir_id) -> Bool {
   ids.and(ids.room_eq(from, room), ids.dir_eq(d, dir))

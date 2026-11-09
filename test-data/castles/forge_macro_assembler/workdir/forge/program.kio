@@ -10,6 +10,7 @@ import forge/isa(Ins, Src);
 import forge/list as l;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/iter(loop);
@@ -23,73 +24,73 @@ pub type Prog = l.List[Ins];
 
 /// One item of a source program. A `mark` names the address the *next*
 /// instruction will occupy; it emits no code of its own.
-pub labels Item = { instr: Src } | { mark: String } | { call: String };
+pub type Item = { Instr: Src } | { Mark: String } | { Call: String };
 
 /// What survives macro expansion: `Flat` reuses `Item`'s `Instr` and
 /// `Mark` nominals and drops `Call`, so the type itself witnesses that
 /// expansion left no call behind.
-pub labels Flat = { instr: _ } | { mark: _ };
+pub type Flat = Instr | Mark;
 
 pub type Items = l.List[Item];
 
 pub type Flats = l.List[Flat];
 
-pub fn instr(i: Src) -> Item { ({instr = i}.>widen_sum)[Item] }
+pub fn instr(i: Src) -> Item { (Instr.mk(i).>widen_sum)[Item] }
 
-pub fn mark(name: String) -> Item { ({mark = name}.>widen_sum)[Item] }
+pub fn mark(name: String) -> Item { (Mark.mk(name).>widen_sum)[Item] }
 
-pub fn call(name: String) -> Item { ({call = name}.>widen_sum)[Item] }
+pub fn call(name: String) -> Item { (Call.mk(name).>widen_sum)[Item] }
 
-pub fn flat_instr(i: Src) -> Flat { ({instr = i}.>widen_sum)[Flat] }
+pub fn flat_instr(i: Src) -> Flat { (Instr.mk(i).>widen_sum)[Flat] }
 
-pub fn flat_mark(name: String) -> Flat { ({mark = name}.>widen_sum)[Flat] }
+pub fn flat_mark(name: String) -> Flat { (Mark.mk(name).>widen_sum)[Flat] }
 
 /// A macro: a name and the instructions it stands for. A body is plain
 /// straight-line code - no label marks, no nested macro calls - which is
 /// what makes expansion one terminating pass rather than a fixpoint.
-pub labels Macro = { macro_name: String, macro_body: Srcs };
+pub type Macro = { Macro_name: String; Macro_body: Srcs };
 
 pub type Macros = l.List[Macro];
 
-pub fn macro_def(name: String, body: Srcs) -> Macro { {macro_name = name, macro_body = body} }
+pub fn macro_def(name: String, body: Srcs) -> Macro { (Macro_name.mk(name), Macro_body.mk(body)) }
 
 /// A placed label: the address pass one gave a mark.
-pub labels Symbol = { sym_name: String, sym_addr: I32 };
+pub type Symbol = { Sym_name: String; Sym_addr: I32 };
 
 pub type Symbols = l.List[Symbol];
 
-pub fn symbol(name: String, at: I32) -> Symbol { {sym_name = name, sym_addr = at} }
+pub fn symbol(name: String, at: I32) -> Symbol { (Sym_name.mk(name), Sym_addr.mk(at)) }
 
 /// A finished image: resolved code, the symbol table that named it, and
 /// how many flat items macro expansion produced - the one number that
 /// says whether the macro pass did any work.
-pub labels Image = { code: Prog, syms: Symbols, expanded: I32 };
+pub type Image = { Code: Prog; Syms: Symbols; Expanded: I32 };
 
-pub fn image(c: Prog, s: Symbols, n: I32) -> Image { {code = c, syms = s, expanded = n} }
+pub fn image(c: Prog, s: Symbols, n: I32) -> Image { (Code.mk(c), Syms.mk(s), Expanded.mk(n)) }
 
 /// One resolved instruction, boxed. `Ins` is itself a thirteen-arm sum,
 /// and `|` composes one flat spine - so an `Ins | Undefined_label` return
 /// would splice the instruction's arms into the error's spine and leave
 /// no single clause that means "an instruction". The box gives pass two's
 /// fallible result exactly two arms.
-pub labels { fixed: Ins };
+pub type { Fixed: Ins }
 
-pub fn fixed(i: Ins) -> Fixed { {fixed = i} }
+pub fn fixed(i: Ins) -> Fixed { Fixed.mk(i) }
 
 /// The three ways assembly rejects a program. Each is its own nominal, so
 /// a caller's `match` has to name every rejection it can receive, and a
 /// pass that can only fail one way says so in its own return type.
-pub labels { unknown_macro: String };
+pub type { Unknown_macro: String }
 
-pub labels { undefined_label: String };
+pub type { Undefined_label: String }
 
-pub labels { duplicate_label: String };
+pub type { Duplicate_label: String }
 
-pub fn unknown_macro(name: String) -> Unknown_macro { {unknown_macro = name} }
+pub fn unknown_macro(name: String) -> Unknown_macro { Unknown_macro.mk(name) }
 
-pub fn undefined_label(name: String) -> Undefined_label { {undefined_label = name} }
+pub fn undefined_label(name: String) -> Undefined_label { Undefined_label.mk(name) }
 
-pub fn duplicate_label(name: String) -> Duplicate_label { {duplicate_label = name} }
+pub fn duplicate_label(name: String) -> Duplicate_label { Duplicate_label.mk(name) }
 
 pub type Reject = Unknown_macro | Undefined_label | Duplicate_label;
 
@@ -100,8 +101,8 @@ pub rec(loop) fn find_macro(ms: Macros, name: String) -> Srcs | . {
   match(l.un_cons(ms)) {
     (
     , .(m: Macro, rest: Macros) {
-        if(string_eq(m.?{macro_name}, name)) {
-          widen_sum(m.?{macro_body})
+        if(string_eq(m.>select { Macro_name.get }, name)) {
+          widen_sum(m.>select { Macro_body.get })
         } else {
           recur find_macro(rest, name)
         }
@@ -115,8 +116,8 @@ pub rec(loop) fn find_symbol(ss: Symbols, name: String) -> I32 | . {
   match(l.un_cons(ss)) {
     (
     , .(s: Symbol, rest: Symbols) {
-        if(string_eq(s.?{sym_name}, name)) {
-          widen_sum(s.?{sym_addr})
+        if(string_eq(s.>select { Sym_name.get }, name)) {
+          widen_sum(s.>select { Sym_addr.get })
         } else {
           recur find_symbol(rest, name)
         }

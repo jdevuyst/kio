@@ -1,3 +1,3 @@
 module core/a;
 
-pub newtype A : . { constructor pack; projector unpack }
+pub type { A: . { mk; get } }

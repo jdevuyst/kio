@@ -550,10 +550,10 @@ fn run() { id([ .x. { x1 }, x ]) }
       (bracket_rbrace))))
 
 ================================================================================
-structural label_and_call
+structural call_and_forall
 ================================================================================
 module source;
-fn run() { id([ { field = let(x) }, call[[*F] F[.] -> F[.]] ]) }
+fn run() { id([ let(x), call[[*F] F[.] -> F[.]] ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -582,21 +582,14 @@ fn run() { id([ { field = let(x) }, call[[*F] F[.] -> F[.]] ]) }
               (bracket_lbracket))
             (variadic_elements
               (variadic_element
-                (label_value_expr
-                  (bracket_lbrace)
-                  (label_value_label
-                    (label_path
-                      (entity_name_label))
-                    (operator_builtin)
-                    (call_expr
-                      (call_callee
-                        (entity_name_function))
-                      (expression_arguments
-                        (bracket_lparen)
-                        (expression_path
-                          (identifier))
-                        (bracket_rparen))))
-                  (bracket_rbrace)))
+                (call_expr
+                  (call_callee
+                    (entity_name_function))
+                  (expression_arguments
+                    (bracket_lparen)
+                    (expression_path
+                      (identifier))
+                    (bracket_rparen))))
               (separator_comma)
               (variadic_element
                 (call_expr
@@ -1204,6 +1197,7 @@ fn after() { let(x) }
           (ERROR
             (separator_dot)
             (ERROR
+              (separator_dot)
               (bracket_lbracket)
               (type_param_binder
                 (variable_parameter)))
@@ -1357,10 +1351,11 @@ varop [. .] { foldr seed seed; };
         (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon))
+
 
 ================================================================================
 structural bracket_marker_rejected
@@ -1779,9 +1774,9 @@ module source; host type Word role(i64); fn run() { role(x) }
       (bracket_rbrace))))
 
 ================================================================================
-structural newtype_members
+structural nominal_members
 ================================================================================
-module source; newtype Box : . { pub constructor constructor; pub projector projector; }; fn run() { constructor(x) }
+module source; type { Box: . { pub mk; pub get; }; }; fn run() { mk(x) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1790,22 +1785,25 @@ module source; newtype Box : . { pub constructor constructor; pub projector proj
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (newtype_decl_head
-    (keyword_newtype)
-    (entity_name_type)
-    (operator_builtin)
-    (separator_dot)
-    (newtype_body
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (newtype_member
-        (keyword_pub)
-        (keyword_constructor)
-        (entity_name_function))
-      (separator_semicolon)
-      (newtype_member
-        (keyword_pub)
-        (keyword_projector)
-        (entity_name_function))
+      (nominal_entry
+        (entity_name_type)
+        (operator_builtin)
+        (separator_dot)
+        (nominal_members
+          (bracket_lbrace)
+          (nominal_member
+            (keyword_pub)
+            (entity_name_function))
+          (separator_semicolon)
+          (nominal_member
+            (keyword_pub)
+            (entity_name_function))
+          (separator_semicolon)
+          (bracket_rbrace)))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -2019,7 +2017,7 @@ fn run() { id[[*F] F[.] -> F[.]] }
 structural all_expression_forms
 ================================================================================
 module source;
-fn run() { id([ do (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply(x), .x. { x1 }, (x, y) ]) }
+fn run() { id([ do (f) { let x <- get(); x }, recur next(x), read(x), write(x, let(x)), apply(x), .x. { x1 }, (x, y) ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2084,37 +2082,33 @@ fn run() { id([ do (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{lab
                     (bracket_rparen))))
               (separator_comma)
               (variadic_element
-                (field_expression
-                  (expression_path
-                    (identifier))
-                  (operator_row_suffix)
-                  (label_value_expr
-                    (bracket_lbrace)
-                    (label_value_label
-                      (label_path
-                        (entity_name_label)))
-                    (bracket_rbrace))))
+                (call_expr
+                  (call_callee
+                    (entity_name_function))
+                  (expression_arguments
+                    (bracket_lparen)
+                    (expression_path
+                      (identifier))
+                    (bracket_rparen))))
               (separator_comma)
               (variadic_element
-                (field_expression
-                  (expression_path
-                    (identifier))
-                  (operator_row_suffix)
-                  (label_value_expr
-                    (bracket_lbrace)
-                    (label_value_label
-                      (label_path
-                        (entity_name_label))
-                      (operator_builtin)
-                      (call_expr
-                        (call_callee
-                          (entity_name_function))
-                        (expression_arguments
-                          (bracket_lparen)
-                          (expression_path
-                            (identifier))
-                          (bracket_rparen))))
-                    (bracket_rbrace))))
+                (call_expr
+                  (call_callee
+                    (entity_name_function))
+                  (expression_arguments
+                    (bracket_lparen)
+                    (expression_path
+                      (identifier))
+                    (separator_comma)
+                    (call_expr
+                      (call_callee
+                        (entity_name_function))
+                      (expression_arguments
+                        (bracket_lparen)
+                        (expression_path
+                          (identifier))
+                        (bracket_rparen)))
+                    (bracket_rparen))))
               (separator_comma)
               (variadic_element
                 (call_expr
@@ -3524,8 +3518,9 @@ if else fn type literal alias
   (identifier)
   (ERROR
     (keyword_type)
-    (entity_name_label)
-    (entity_name_label)))
+    (identifier)
+    (identifier)))
+
 
 ================================================================================
 structural ordinary_callable_keywords
@@ -4678,9 +4673,9 @@ module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }
       (bracket_rbrace))))
 
 ================================================================================
-structural review_label_unit_payload
+structural review_nominal_existentials
 ================================================================================
-module app; import ops(varop [ ]); fn run() { [ { tag= }, { if=value } ] }
+module app; type { Tag<A>: A; If<B>: B; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4689,93 +4684,32 @@ module app; import ops(varop [ ]); fn run() { [ { tag= }, { if=value } ] }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (import_decl
-    (keyword_import)
-    (module_path
-      (entity_name_module))
-    (bracket_lparen)
-    (import_operator_item
-      (keyword_varop)
-      (variadic_head
-        (bracket_lbracket)
-        (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
-  (function_definition
-    (fn_decl_head
-      (keyword_fn)
-      (entity_name_function)
-      (fn_signature
-        (value_param_group
-          (bracket_lparen)
-          (bracket_rparen))))
-    (expression_block
+  (nominal_decl_head
+    (keyword_type)
+    (nominal_group
       (bracket_lbrace)
-      (variadic_expression
-        (variadic_open
-          (bracket_lbracket))
-        (variadic_elements
-          (variadic_element
-            (label_value_expr
-              (bracket_lbrace)
-              (label_value_label
-                (label_path
-                  (entity_name_label))
-                (operator_builtin))
-              (bracket_rbrace)))
-          (separator_comma)
-          (variadic_element
-            (label_value_expr
-              (bracket_lbrace)
-              (label_value_label
-                (label_path
-                  (entity_name_label))
-                (operator_builtin)
-                (expression_path
-                  (identifier)))
-              (bracket_rbrace))))
-        (variadic_close
-          (bracket_rbracket)))
-      (bracket_rbrace))))
-
-================================================================================
-structural review_label_existentials
-================================================================================
-module app; labels { tag<A>: A, if<B>: B };
---------------------------------------------------------------------------------
-
-(source_file
-  (module_decl
-    (keyword_module)
-    path: (module_path
-      (entity_name_module))
-    (separator_semicolon))
-  (labels_decl_head
-    (keyword_labels)
-    (labels_arms
-      (labels_block
-        (bracket_lbrace)
-        (label_entry
-          (entity_name_label)
-          (existential_binder
-            (operator_run)
-            (variable_parameter)
-            (operator_run))
-          (operator_builtin)
-          (type_path
-            (entity_name_type)))
-        (separator_comma)
-        (label_entry
-          (entity_name_label)
-          (existential_binder
-            (operator_run)
-            (variable_parameter)
-            (operator_run))
-          (operator_builtin)
-          (type_path
-            (entity_name_type)))
-        (bracket_rbrace)))
-    (separator_semicolon)))
+      (nominal_entry
+        (entity_name_type)
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (operator_builtin)
+        (type_path
+          (entity_name_type)))
+      (separator_semicolon)
+      (nominal_entry
+        (entity_name_type)
+        (existential_binder
+          (operator_run)
+          (variable_parameter)
+          (operator_run))
+        (operator_builtin)
+        (type_path
+          (entity_name_type)))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (separator_semicolon))
 
 ================================================================================
 structural review_bool_raw_query
@@ -5056,11 +4990,11 @@ fn after() { let(x) }
   (body_block
     (expression_block
       (bracket_lbrace)
-      (expression_path
-        (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
+      (expression_path
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -5083,6 +5017,7 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural review_head_star_mismatched
@@ -5107,11 +5042,11 @@ fn after() { let(x) }
   (body_block
     (expression_block
       (bracket_lbrace)
-      (expression_path
-        (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
+      (expression_path
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -5134,6 +5069,7 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural review_head_reserved_close
@@ -5158,11 +5094,11 @@ fn after() { let(x) }
   (body_block
     (expression_block
       (bracket_lbrace)
-      (expression_path
-        (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
+      (expression_path
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -5185,6 +5121,7 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural review_head_compact
@@ -5612,11 +5549,11 @@ fn after() { let(x) }
   (body_block
     (expression_block
       (bracket_lbrace)
-      (expression_path
-        (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
+      (expression_path
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -5639,6 +5576,7 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural review_head_long_general
@@ -6632,11 +6570,11 @@ fn after() { let(x) }
   (body_block
     (expression_block
       (bracket_lbrace)
-      (expression_path
-        (identifier))
       (ERROR
         (identifier)
-        (entity_name_label))
+        (identifier))
+      (expression_path
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
@@ -6659,6 +6597,7 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
+
 
 ================================================================================
 structural review_adjacent_function_type_groups
@@ -9376,12 +9315,13 @@ module m; varop [+ +] { finalize finish; foldl join empty; finalize finish; };
       (callable_path
         (entity_name_function))
       (separator_semicolon)
-      (ERROR
-        (entity_name_label)
-        (entity_name_label)
-        (separator_semicolon))
-      (bracket_rbrace)))
+      (MISSING bracket_rbrace)))
+  (identifier)
+  (identifier)
+  (separator_semicolon)
+  (bracket_rbrace)
   (separator_semicolon))
+
 
 ================================================================================
 structural order_macro_missing_impl
@@ -9570,11 +9510,12 @@ package app; build { cache (); target rust { out "out"; } cache (); }
         (separator_semicolon)
         (bracket_rbrace))
       (ERROR
-        (entity_name_label)
+        (identifier)
         (bracket_lparen)
         (bracket_rparen))
       (separator_semicolon)
       (bracket_rbrace))))
+
 
 ================================================================================
 structural order_build_duplicate_docs
@@ -9583,36 +9524,39 @@ package app; build { docs { md "a"; } cache (); docs { md "b"; } }
 --------------------------------------------------------------------------------
 
 (source_file
-  (package_file
+  (ERROR
     (package_decl
       (keyword_package)
       (identifier)
       (separator_semicolon))
-    (build_block
-      (keyword_build)
+    (keyword_build)
+    (bracket_lbrace)
+    (docs_block
+      (keyword_declaration)
       (bracket_lbrace)
-      (docs_block
+      (config_field
         (keyword_declaration)
-        (bracket_lbrace)
-        (config_field
-          (keyword_declaration)
-          (string_literal))
-        (separator_semicolon)
-        (bracket_rbrace))
-      (ERROR
-        (entity_name_label)
-        (bracket_lparen)
-        (bracket_rparen))
-      (separator_semicolon)
-      (ERROR
-        (identifier)
-        (bracket_lbrace)
-        (entity_name_label)
         (string_literal))
       (separator_semicolon)
       (bracket_rbrace)))
-  (ERROR
-    (bracket_rbrace)))
+  (call_expr
+    (call_callee
+      (entity_name_function))
+    (expression_arguments
+      (bracket_lparen)
+      (bracket_rparen)))
+  (separator_semicolon)
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (identifier))
+      (string_literal)
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (bracket_rbrace))
+
 
 ================================================================================
 structural order_dependency_missing_source
@@ -9712,17 +9656,23 @@ signature app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { 
           (separator_semicolon)
           (bracket_rbrace))
         (bracket_rbrace))
-      (ERROR
-        (entity_name_label)
-        (bracket_lbrace)
-        (entity_name_label)
-        (bracket_lbrace)
-        (entity_name_label)
-        (separator_dot)
-        (entity_name_label))
-      (separator_semicolon)
+      (MISSING bracket_rbrace)))
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier)
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (bracket_rbrace)))
       (bracket_rbrace)))
-  (bracket_rbrace)
   (identifier)
   (body_block
     (expression_block
@@ -9740,6 +9690,7 @@ signature app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { 
           (bracket_rbrace)))
       (bracket_rbrace)))
   (bracket_rbrace))
+
 
 ================================================================================
 structural order_signature_missing_changes
@@ -9798,45 +9749,49 @@ signature app v(1); v(1) { breaking { remove { api.old; } add { api.fresh; } rem
       (bracket_lparen)
       (number_literal)
       (bracket_rparen))
-    (separator_semicolon)
-    (signature_version_block
-      (signature_version
-        (keyword_declaration)
-        (bracket_lparen)
-        (number_literal)
-        (bracket_rparen))
+    (separator_semicolon))
+  (ERROR
+    (signature_version
+      (keyword_declaration)
+      (bracket_lparen)
+      (number_literal)
+      (bracket_rparen))
+    (bracket_lbrace)
+    (keyword_breaking)
+    (bracket_lbrace)
+    (signature_remove_block
+      (keyword_remove)
       (bracket_lbrace)
-      (signature_breaking_block
-        (keyword_breaking)
-        (bracket_lbrace)
-        (signature_remove_block
-          (keyword_remove)
-          (bracket_lbrace)
-          (signature_item_reference
-            (module_path
-              (entity_name_module))
-            (separator_dot)
-            (identifier))
-          (separator_semicolon)
-          (bracket_rbrace))
-        (ERROR
-          (entity_name_label)
-          (bracket_lbrace)
-          (entity_name_label)
-          (separator_dot)
-          (entity_name_label))
-        (separator_semicolon)
-        (bracket_rbrace))
-      (ERROR
-        (entity_name_label)
-        (bracket_lbrace)
-        (entity_name_label)
+      (signature_item_reference
+        (module_path
+          (entity_name_module))
         (separator_dot)
-        (entity_name_label))
+        (identifier))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier)
+        (separator_dot)
+        (identifier))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (identifier)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier)
+        (separator_dot)
+        (identifier))
       (separator_semicolon)
       (bracket_rbrace)))
   (bracket_rbrace)
   (bracket_rbrace))
+
 
 ================================================================================
 structural order_signature_empty_buckets
@@ -9878,10 +9833,11 @@ op import variadic foldl foldr foldl1 foldr1 finalize
   (ERROR
     (entity_name_module)
     (identifier)
-    (entity_name_label)
-    (entity_name_label)
-    (entity_name_label)
-    (entity_name_label)))
+    (keyword_declaration)
+    (keyword_declaration)
+    (keyword_declaration)
+    (keyword_declaration)))
+
 
 ================================================================================
 structural import_after_function

@@ -71,12 +71,12 @@ main = do
     fail (show (first, second, observed))
   P.export__a__b__c package
   P.export__a__bC package
-  P.export__api__AB__c package
-  P.export__api__A__bC package
+  P.export__api__AB__mk package
+  P.export__api__A__mk package
   P.exp_H010301000000010000000161000000085f666f6f5f626172__a___fooBar package
-  _ <- P.export__a__Foo__bar package
+  _ <- P.export__a__Foo__mk package
   innerY <- P.export__shape__makeY package 17
-  outerY <- P.export__slot0__Y__mkY package 29
+  outerY <- P.export__slot0__Y__mk package 29
   returned <- selectorCollision package ((), ((), innerY)) () outerY
   let nested = outerPattern returned
   outer <- P.export__slot0__readY package (outerSelector returned)
@@ -84,7 +84,7 @@ main = do
   innerFromPattern <- P.export__shape__readY package (innerPattern nested)
   unless ((outer, inner, innerFromPattern) == (29, 17, 17)) $
     fail (show (outer, inner, innerFromPattern))
-  pair <- P.export__slot0__P__mkP package (41, 53)
+  pair <- P.export__slot0__P__mk package (41, 53)
   sumResult <- P.export__shape__patternCollision package (Left pair)
   case sumResult of
     Left _ -> do

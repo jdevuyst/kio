@@ -4,13 +4,13 @@ import macros/spine_macros(macro narrow_prod, macro reorder_prod);
 import testapi(I32, String);
 import testapi/io(print);
 
-newtype A : I32 { pub constructor mk_a; pub projector a }
+type { A: I32 { pub mk; pub get } }
 
-newtype B : I32 { pub constructor mk_b; pub projector b }
+type { B: I32 { pub mk; pub get } }
 
-newtype C : I32 { pub constructor mk_c; pub projector c }
+type { C: I32 { pub mk; pub get } }
 
-newtype D : I32 { pub constructor mk_d; pub projector d }
+type { D: I32 { pub mk; pub get } }
 
 // Repeated macro composition: a function-call chain pins each
 // step's target type via the parameter type, so each macro call
@@ -31,7 +31,7 @@ fn drop_c(p: D & C) -> D { narrow_prod(p) }
 fn last_factor(p: A & B & C & D) -> D { drop_c(drop_b(drop_a(reorder(p)))) }
 
 pub fn main() {
-  let p = (A.mk_a(1), B.mk_b(2), C.mk_c(3), D.mk_d(4));
+  let p = (A.mk(1), B.mk(2), C.mk(3), D.mk(4));
   // Force evaluation of the chain; the constant message confirms
   // the program reached the print without a macro error.
   let _ = last_factor(p);

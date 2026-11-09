@@ -1,0 +1,42 @@
+module main;
+
+import __comptime__;
+
+pure fn observer(ct: __Comptime__) -> [A] . -> Comptime_bool {
+  .[A](_unit: .) -> Comptime_bool { __type_is_product_root__(ct, __reflect_type__(ct)[A]) }
+}
+
+equiv unit_instantiation(ct: __Comptime__) {
+  observer(ct)[.](());
+  .f[Comptime_bool]
+}
+
+equiv product_instantiation(ct: __Comptime__) {
+  observer(ct)[. & .](());
+  .t[Comptime_bool]
+}
+
+equiv unit_observation(ct: __Comptime__) {
+  __type_is_product_root__(ct, __reflect_type__(ct)[.]);
+  .f[Comptime_bool]
+}
+
+equiv product_observation(ct: __Comptime__) {
+  __type_is_product_root__(ct, __reflect_type__(ct)[. & .]);
+  .t[Comptime_bool]
+}
+
+pure fn indirect[A](ct: __Comptime__) -> __Type__ {
+  let reflected = __reflect_type__(ct);
+  reflected[A]
+}
+
+equiv unit(ct: __Comptime__) {
+  indirect[.](ct);
+  __reflect_type__(ct)[.]
+}
+
+equiv product(ct: __Comptime__) {
+  indirect[. & .](ct);
+  __reflect_type__(ct)[. & .]
+}

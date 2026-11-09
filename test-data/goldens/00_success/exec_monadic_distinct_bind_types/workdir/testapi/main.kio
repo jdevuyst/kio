@@ -5,11 +5,11 @@ import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
-fn pure[A](value: A) -> Box[A] { Box.box(value) }
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 
-fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 fn combine() -> String {
   let result =
@@ -18,7 +18,7 @@ fn combine() -> String {
       let append <- pure(.(prefix: String) { text.string_concat(prefix, "right!") });
       pure(append(first))
     };
-  Box.unbox(result)
+  Box.get(result)
 }
 
 pub fn main() { io.print(combine()); io.print("\n") }

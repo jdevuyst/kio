@@ -19,24 +19,33 @@
 module skyline/city;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import skyline/list as lst;
 import skyline/logic as logic;
 import testapi(I32, String);
 import testapi/iter(loop);
 
-pub labels Building = { name: String, left: I32, right: I32, height: I32 };
+pub type Building = { Name: String; Left: I32; Right: I32; Height: I32 };
 
 pub fn building(name: String, left: I32, right: I32, height: I32) -> Building {
-  {name, left, right, height}
+  (Name.mk(name), Left.mk(left), Right.mk(right), Height.mk(height))
 }
 
-pub fn name_of(b: Building) -> String { b.?{name} }
+pub fn name_of(b: Building) -> String {
+  b.>select { Name.get }
+}
 
-pub fn left_of(b: Building) -> I32 { b.?{left} }
+pub fn left_of(b: Building) -> I32 {
+  b.>select { Left.get }
+}
 
-pub fn right_of(b: Building) -> I32 { b.?{right} }
+pub fn right_of(b: Building) -> I32 {
+  b.>select { Right.get }
+}
 
-pub fn height_of(b: Building) -> I32 { b.?{height} }
+pub fn height_of(b: Building) -> I32 {
+  b.>select { Height.get }
+}
 
 /// The skyline the whole program is about. Built back to front and reversed so
 /// the source reads in the same order the report prints.
@@ -58,7 +67,7 @@ rec(loop) {
   /// column count.
   pub fn max_right(bs: lst.List[Building]) -> I32 { recur widest(bs, 0) };
   fn widest(bs: lst.List[Building], best: I32) -> I32 {
-    match(bs.>lst.List.un_list) {
+    match(bs.>lst.List.get) {
       (
       , .(b: Building, rest: lst.List[Building]) {
           recur widest(rest, logic.max(best, right_of(b)))

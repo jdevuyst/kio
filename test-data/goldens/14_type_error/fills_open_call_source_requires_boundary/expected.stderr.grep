@@ -1,4 +1,3 @@
-this value source needs a complete type before an `impl\(fills\)` macro can run
-main\.kio:10:9: error:
+cannot determine the type of this string literal
 infer\(apply\(\.\(_unit: \.\) \{ "inline" \}\)\)
-help: add a type argument or annotation, or complete the value in an ordinary `let` first
+help: annotate this literal with `<literal>\[T\]`, or supply an expected type in its enclosing expression

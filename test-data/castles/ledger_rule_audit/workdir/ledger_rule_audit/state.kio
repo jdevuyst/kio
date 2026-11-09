@@ -1,76 +1,96 @@
 module ledger_rule_audit/state;
 
+import macros/row_macros(macro record, macro select, macro with);
 import testapi(I32);
 import testapi/arith as arith;
 
-pub labels Ledger = {
-, balance: I32
-, credit_count: I32
-, debit_count: I32
-, fee_count: I32
-, invalid_count: I32
-, credit_total: I32
-, debit_total: I32
-, fee_total: I32
+pub type Ledger = {
+  Balance: I32;
+  Credit_count: I32;
+  Debit_count: I32;
+  Fee_count: I32;
+  Invalid_count: I32;
+  Credit_total: I32;
+  Debit_total: I32;
+  Fee_total: I32
 };
 
 pub fn empty() -> Ledger {
-  {
-  , balance = 0
-  , credit_count = 0
-  , debit_count = 0
-  , fee_count = 0
-  , invalid_count = 0
-  , credit_total = 0
-  , debit_total = 0
-  , fee_total = 0
+  record {
+    Balance.mk(0);
+    Credit_count.mk(0);
+    Debit_count.mk(0);
+    Fee_count.mk(0);
+    Invalid_count.mk(0);
+    Credit_total.mk(0);
+    Debit_total.mk(0);
+    Fee_total.mk(0)
   }
 }
 
 pub fn credit(state: Ledger, amount: I32) -> Ledger {
-  let .({balance, credit_count, credit_total}) = state;
-  state.!{
-  , balance = arith.add_i32(balance, amount)
-  , credit_count = arith.add_i32(credit_count, 1)
-  , credit_total = arith.add_i32(credit_total, amount)
+  let .(balance, credit_count, credit_total) =
+    state.>select { Balance.get; Credit_count.get; Credit_total.get };
+  state.>with {
+    Balance.mk(arith.add_i32(balance, amount));
+    Credit_count.mk(arith.add_i32(credit_count, 1));
+    Credit_total.mk(arith.add_i32(credit_total, amount))
   }
 }
 
 pub fn debit(state: Ledger, amount: I32) -> Ledger {
-  let .({balance, debit_count, debit_total}) = state;
-  state.!{
-  , balance = arith.sub_i32(balance, amount)
-  , debit_count = arith.add_i32(debit_count, 1)
-  , debit_total = arith.add_i32(debit_total, amount)
+  let .(balance, debit_count, debit_total) =
+    state.>select { Balance.get; Debit_count.get; Debit_total.get };
+  state.>with {
+    Balance.mk(arith.sub_i32(balance, amount));
+    Debit_count.mk(arith.add_i32(debit_count, 1));
+    Debit_total.mk(arith.add_i32(debit_total, amount))
   }
 }
 
 pub fn fee(state: Ledger, amount: I32) -> Ledger {
-  let .({balance, fee_count, fee_total}) = state;
-  state.!{
-  , balance = arith.sub_i32(balance, amount)
-  , fee_count = arith.add_i32(fee_count, 1)
-  , fee_total = arith.add_i32(fee_total, amount)
+  let .(balance, fee_count, fee_total) =
+    state.>select { Balance.get; Fee_count.get; Fee_total.get };
+  state.>with {
+    Balance.mk(arith.sub_i32(balance, amount));
+    Fee_count.mk(arith.add_i32(fee_count, 1));
+    Fee_total.mk(arith.add_i32(fee_total, amount))
   }
 }
 
 pub fn invalid(state: Ledger) -> Ledger {
-  let .({invalid_count}) = state;
-  state.!{invalid_count = arith.add_i32(invalid_count, 1)}
+  let invalid_count = state.>select { Invalid_count.get };
+  state.>with { Invalid_count.mk(arith.add_i32(invalid_count, 1)) }
 }
 
-pub fn balance_value(state: Ledger) -> I32 { state.?{balance} }
+pub fn balance_value(state: Ledger) -> I32 {
+  state.>select { Balance.get }
+}
 
-pub fn credit_count_value(state: Ledger) -> I32 { state.?{credit_count} }
+pub fn credit_count_value(state: Ledger) -> I32 {
+  state.>select { Credit_count.get }
+}
 
-pub fn debit_count_value(state: Ledger) -> I32 { state.?{debit_count} }
+pub fn debit_count_value(state: Ledger) -> I32 {
+  state.>select { Debit_count.get }
+}
 
-pub fn fee_count_value(state: Ledger) -> I32 { state.?{fee_count} }
+pub fn fee_count_value(state: Ledger) -> I32 {
+  state.>select { Fee_count.get }
+}
 
-pub fn invalid_count_value(state: Ledger) -> I32 { state.?{invalid_count} }
+pub fn invalid_count_value(state: Ledger) -> I32 {
+  state.>select { Invalid_count.get }
+}
 
-pub fn credit_total_value(state: Ledger) -> I32 { state.?{credit_total} }
+pub fn credit_total_value(state: Ledger) -> I32 {
+  state.>select { Credit_total.get }
+}
 
-pub fn debit_total_value(state: Ledger) -> I32 { state.?{debit_total} }
+pub fn debit_total_value(state: Ledger) -> I32 {
+  state.>select { Debit_total.get }
+}
 
-pub fn fee_total_value(state: Ledger) -> I32 { state.?{fee_total} }
+pub fn fee_total_value(state: Ledger) -> I32 {
+  state.>select { Fee_total.get }
+}

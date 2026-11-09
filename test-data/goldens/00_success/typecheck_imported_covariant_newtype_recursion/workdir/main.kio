@@ -2,4 +2,4 @@ module main;
 
 import list as list;
 
-rec newtype Command : . | (. & list.List[Command]) { constructor mk_command; projector un_command }
+rec type { Command: . | (. & list.List[Command]) { mk; get } }

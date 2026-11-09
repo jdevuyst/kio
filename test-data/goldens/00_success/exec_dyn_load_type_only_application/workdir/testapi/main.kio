@@ -20,12 +20,12 @@ import value(Value);
 import value(value_to_scalar, vhost);
 
 /// The argument list one call applies, in order.
-rec labels { vargs: . | (Value & Vargs) };
+rec type { Vargs: . | (Value & Vargs) { mk; get } }
 
-fn vargs_nil() -> Vargs { {vargs = widen_sum(())[. | (Value & Vargs)]} }
+fn vargs_nil() -> Vargs { Vargs.mk(widen_sum(())[. | (Value & Vargs)]) }
 
 fn vargs_cons(a: Value, rest: Vargs) -> Vargs {
-  {vargs = widen_sum((a, rest))[. | (Value & Vargs)]}
+  Vargs.mk(widen_sum((a, rest))[. | (Value & Vargs)])
 }
 
 fn vargs_one(a: Value) -> Vargs { vargs_cons(a, vargs_nil()) }

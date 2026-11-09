@@ -25,8 +25,8 @@ for source in "$scratch/host/"*.go.txt; do
   fi
   case "$name" in
     wrong_kind.go.txt|wrong_host_kind.go.txt) diagnostic='does not satisfy.*KioIndexKind' ;;
-    private_constructor.go.txt) diagnostic='undefined.*CallExp_Api__Hidden_make' ;;
-    private_projector.go.txt) diagnostic='undefined.*CallExp_Api__Box_open' ;;
+    private_constructor.go.txt) diagnostic='undefined.*CallExp_Api__Hidden_mk' ;;
+    private_projector.go.txt) diagnostic='undefined.*CallExp_Api__Box_get' ;;
     hidden_witness.go.txt) diagnostic='not enough type arguments|too many type arguments' ;;
     explicit_*.go.txt) diagnostic='cannot convert' ;;
     *) diagnostic='cannot use|does not match inferred type' ;;

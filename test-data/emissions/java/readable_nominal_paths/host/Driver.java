@@ -43,22 +43,22 @@ public final class Driver {
     var nested = new Shapes.KioModule_api.KioModule_types.Token<String>(new Shapes.Unit());
     if (pkg.api.nestedRound(nested) != nested) throw new AssertionError("same leaf identity");
     new Shapes.KioModule_api.Types<String>(new Shapes.Unit()).value();
-    Shapes.KioModule_api.Foo_bar<String> words = pkg.api.KioType_FooBar.makeFooBar();
-    Shapes.KioModule_api.Foobar<String> word = pkg.api.KioType_Foobar.makeFoobar();
+    Shapes.KioModule_api.Foo_bar<String> words = pkg.api.KioType_FooBar.mk();
+    Shapes.KioModule_api.Foobar<String> word = pkg.api.KioType_Foobar.mk();
     words.value();
     word.value();
     Shapes.KioModule_api.KioModule_foo_ubar.Token<String> moduleWords =
-        pkg.api.KioModule_fooBar.KioType_Token.makeToken();
+        pkg.api.KioModule_fooBar.KioType_Token.mk();
     Shapes.KioModule_api.KioModule_foobar.Token<String> moduleWord =
-        pkg.api.KioModule_foobar.KioType_Token.makeToken();
+        pkg.api.KioModule_foobar.KioType_Token.mk();
     moduleWords.value();
     moduleWord.value();
     Shapes.KioModule_api.KioType_Kiomodule_utypes<String> moduleRole =
-        pkg.api.KioType_KiomoduleTypes.makeModule();
+        pkg.api.KioType_KiomoduleTypes.mk();
     Shapes.KioModule_api.KioType_Kiotype_ushapes<String> typeRole =
-        pkg.api.KioType_KiotypeShapes.makeType();
+        pkg.api.KioType_KiotypeShapes.mk();
     Shapes.KioModule_api.KioType_Kionominal_uhost<String> nominalRole =
-        pkg.api.KioType_KionominalHost.makeNominal();
+        pkg.api.KioType_KionominalHost.mk();
     moduleRole.value();
     typeRole.value();
     nominalRole.value();
@@ -71,12 +71,12 @@ public final class Driver {
     var reserved = new Shapes.KioModule_java.KioModule_class.Token<String>(new Shapes.Unit());
     if (pkg.api.reservedRound(reserved) != reserved) throw new AssertionError("reserved modules");
     pkg.KioModule_java.KioModule_class.java();
-    pkg.KioModule_java.KioModule_class.KioType_Token.makeToken().value();
+    pkg.KioModule_java.KioModule_class.KioType_Token.mk().value();
     var deep = new Shapes.KioNominal_Newtype_Hf02cf3a0e284f12e<String>(new Shapes.Unit());
     if (pkg.api.deepRound(deep) != deep) throw new AssertionError("bounded deep nominal");
     Shapes.Apply1<Shapes.Apply1<Shapes.KioModule_api.Pick_first<String>, String>, Shapes.Unit> picked =
-        pkg.api.KioType_PickFirst.<String, Shapes.Unit>makePick("picked");
-    if (!pkg.api.KioType_PickFirst.readPick(picked).equals("picked")) throw new AssertionError("generic indices");
+        pkg.api.KioType_PickFirst.<String, Shapes.Unit>mk("picked");
+    if (!pkg.api.KioType_PickFirst.get(picked).equals("picked")) throw new AssertionError("generic indices");
     Object storage = new Object();
     Shapes.Apply1<Shapes.KioModule_api.Box, Token<String>> boxed = Shapes.KioModule_api.Box.Storage.fromNative(storage);
     if (Shapes.KioModule_api.Box.Storage.toNative(pkg.api.boxRound(boxed)) != storage) throw new AssertionError("host storage");

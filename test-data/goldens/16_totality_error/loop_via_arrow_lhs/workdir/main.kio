@@ -10,6 +10,6 @@ module main;
 // is benign just because `Bad`'s outer payload is `A -> .`. A
 // non-aware check would accept the program and break strong
 // normalization of the `rec` boundary.
-newtype Bad[A] : A -> . { pub constructor mk_bad; pub projector un_bad }
+type { Bad[A]: A -> . { pub mk; pub get } }
 
-rec newtype Loop : Bad[Loop] { pub constructor mk_loop; pub projector un_loop }
+rec type { Loop: Bad[Loop] { pub mk; pub get } }

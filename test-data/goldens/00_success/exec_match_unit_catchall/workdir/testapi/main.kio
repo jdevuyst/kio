@@ -5,7 +5,7 @@ import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io as io;
 
-labels { first: String, second: String, tag: . };
+type { First: String; Second: String; Tag: . }
 
 fn typed(input: First | Second) -> String {
   match(input) {
@@ -29,11 +29,11 @@ fn overlap(input: First | Second) -> String {
 
 fn named(_all: .) -> String { "named\n" }
 
-fn produce() -> First { io.print("source\n"); {first = "value"} }
+fn produce() -> First { io.print("source\n"); First.mk("value") }
 
 fn with_unit_component(value: First) -> String {
   match(value) {
-    .(_unit: ., payload: First) { payload.?{first} }
+    .(_unit: ., payload: First) { First.get(payload) }
   }
 }
 
@@ -46,7 +46,7 @@ fn tagged(value: Tag | First) -> String {
 
 fn produce_pair() -> First & Second {
   io.print("pair-source\n");
-  ({first = "left"}, {second = "right"})
+  (First.mk("left"), Second.mk("right"))
 }
 
 fn rigid[A](input: . | A) -> String {
@@ -71,7 +71,7 @@ fn unit_sum(input: First | Second) -> String {
   match(input) {
     .(slot: . | First) {
       match(slot) {
-        .(value: First) { value.?{first} };
+        .(value: First) { First.get(value) };
         .() { "sum-unit\n" }
       }
     }
@@ -83,24 +83,24 @@ fn nested_unit_sum(input: Tag & Second) -> String {
     .(slot: (. | First) & Second) {
       let .(choice, payload) = slot;
       io.print(match(choice) {
-        .(value: First) { value.?{first} };
+        .(value: First) { First.get(value) };
         .() { "nested-unit\n" }
       });
-      payload.?{second}
+      Second.get(payload)
     }
   }
 }
 
-fn produce_second() -> Second { io.print("sum-source\n"); {second = "discarded"} }
+fn produce_second() -> Second { io.print("sum-source\n"); Second.mk("discarded") }
 
 fn produce_nested() -> Tag & Second {
   io.print("nested-source\n");
-  ({tag=}, {second = "nested-payload\n"})
+  (Tag.mk(()), Second.mk("nested-payload\n"))
 }
 
 pub fn main() {
-  let left = widen_sum({first = "left"})[First | Second];
-  let right = widen_sum({second = "right"})[First | Second];
+  let left = widen_sum(First.mk("left"))[First | Second];
+  let right = widen_sum(Second.mk("right"))[First | Second];
   io.print(typed(left));
   io.print(typed(right));
   io.print(match(produce()) {
@@ -111,9 +111,9 @@ pub fn main() {
   io.print(fallback(right));
   io.print(overlap(left));
   io.print(overlap(right));
-  io.print(with_unit_component({first = "component\n"}));
-  io.print(tagged(widen_sum({tag=})[Tag | First]));
-  io.print(tagged(widen_sum({first = "left"})[Tag | First]));
+  io.print(with_unit_component(First.mk("component\n")));
+  io.print(tagged(widen_sum(Tag.mk(()))[Tag | First]));
+  io.print(tagged(widen_sum(First.mk("left"))[Tag | First]));
   io.print(match(produce_pair()) {
     .() { "pair\n" }
   });
@@ -121,7 +121,7 @@ pub fn main() {
   io.print(rigid[.](present[.](())));
   io.print(rigid_pair[.](empty[. & .](())));
   io.print(rigid_pair[.](present(((), ()))));
-  io.print(unit_sum(widen_sum({first = "sum-first\n"})[First | Second]));
+  io.print(unit_sum(widen_sum(First.mk("sum-first\n"))[First | Second]));
   io.print(unit_sum(widen_sum(produce_second())[First | Second]));
   io.print(nested_unit_sum(produce_nested()));
   io.print(match(produce_second()) {

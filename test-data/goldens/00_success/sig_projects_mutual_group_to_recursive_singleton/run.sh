@@ -10,7 +10,7 @@ cd "$scratch" || exit 1
 
 signature=$("$KIO_BIN" sig stage --force --stdout) || exit 1
 # shellcheck disable=SC2016 # Backticks are literal diagnostic text.
-for required in 'pub rec newtype A : A | B' 'pub newtype B : .'; do
+for required in 'pub rec type { A: A | B' 'pub type { B: .'; do
   if ! printf '%s\n' "$signature" | grep -Fq "$required"; then
     printf 'projected signature omitted `%s`:\n%s\n' "$required" "$signature" >&2
     exit 1

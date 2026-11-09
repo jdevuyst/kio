@@ -1,0 +1,10 @@
+module main;
+
+import macros(macro natural, macro required);
+
+fn choose[A](left: A, _right: A) -> A { left }
+
+fn run() {
+  let _chosen = choose(required(.(_left: .) { () }), natural(.(_right: .) { () }));
+  ()
+}

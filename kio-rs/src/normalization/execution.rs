@@ -408,6 +408,7 @@ enum Frame<'code> {
         base: usize,
     },
     FoldStep,
+    FoldRemainder,
     DirectResidual {
         builtin: ComptimeBuiltin,
         base: usize,
@@ -422,7 +423,7 @@ enum Frame<'code> {
     LetBody,
     SeqValue(Code<'code>),
     SeqBody,
-    TypeApplication,
+    TypeApplication(Code<'code>),
     Callee {
         call: Code<'code>,
         base: usize,
@@ -488,7 +489,10 @@ enum Handler<'code> {
 }
 
 enum Task<'code> {
-    TypeApplication(Value),
+    TypeApplication {
+        value: Value,
+        argument: Value,
+    },
     Handler {
         handler: Handler<'code>,
         args: EvalArgs,
@@ -521,7 +525,7 @@ struct Machine<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserve
     frames: Stack<Pending<'code>, 4>,
     values: Values,
     records: Stack<CallRecord<'code>, 1>,
-    memos: Vec<ExactCallMemoTicket>,
+    memos: Vec<ExactCallMemoKey>,
     tasks: Vec<Task<'code>>,
     branches: Vec<Branch<'code>>,
     folds: Vec<reflection::Fold<'code>>,
@@ -569,13 +573,14 @@ fn is_terminal(expr: &EvalExpr) -> bool {
             | EvalExpr::StructuralRecurPrimitive(_)
             | EvalExpr::NewtypeMember(_)
             | EvalExpr::Const(_)
+            | EvalExpr::TypeValue(_)
             | EvalExpr::Local(_)
             | EvalExpr::Atom(_)
     )
 }
 
 #[inline(always)]
-fn terminal(expr: &EvalExpr, local: impl FnOnce(usize) -> Option<Value>) -> Value {
+fn terminal(expr: &EvalExpr, mut local: impl FnMut(usize) -> Option<Value>) -> Value {
     match expr {
         EvalExpr::Unit => Value::Unit,
         EvalExpr::Bool(value) => Value::Bool(*value),
@@ -589,6 +594,7 @@ fn terminal(expr: &EvalExpr, local: impl FnOnce(usize) -> Option<Value>) -> Valu
         EvalExpr::StructuralRecurPrimitive(primitive) => Value::Data(primitive.clone()),
         EvalExpr::NewtypeMember(member) => Value::NewtypeMember(member.clone()),
         EvalExpr::Const(value) => value.clone(),
+        EvalExpr::TypeValue(template) => template.instantiate(local),
         EvalExpr::Local(slot) => {
             local(*slot).expect("compiled local slot exists in the active evaluation layout")
         }
@@ -731,7 +737,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
         match self.frames.pop().expect("live continuation").frame {
             Frame::LetBody => self.pop_local(),
-            Frame::SeqBody => {
+            Frame::SeqBody | Frame::FoldRemainder => {
                 drop(self.values.pop());
             }
             Frame::BranchLeft | Frame::BranchRight => {
@@ -1099,8 +1105,9 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         result: &mut Value,
     ) -> Control<'code> {
         let definition = function.get();
-        let exact = self.values.len - args == definition.abi_arity()
-            && abi_slots_saturate_groups(definition);
+        let exact = self.values.len - args == definition.slot_arity()
+            && private_slots_saturate_groups(definition)
+            && private_slot_types_match(definition, &self.values.as_slice()[args..]);
         let memo = if exact {
             match lookup_exact_call_memo(
                 definition,
@@ -1121,7 +1128,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         let started = (record_apply && self.ctx.metrics.is_some()).then(Instant::now);
         let (locals, excess, generic_started) = if exact {
             (
-                (!definition.params_are_abi_identity()).then(|| {
+                (!definition.params_are_slot_identity()).then(|| {
                     bind_eval_function_abi_slots(definition, &self.values.as_slice()[args..])
                 }),
                 self.values.len,
@@ -1132,7 +1139,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 && definition
                     .value_groups
                     .first()
-                    .is_some_and(|group| group.abi_arity == 0)
+                    .is_some_and(|group| !group.type_arity.is_some() && group.abi_arity == 0)
             {
                 self.push_value(Value::Unit);
             }
@@ -1252,11 +1259,16 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         let callee = self.values.take(base);
         if let Value::EvalClosure { function, captured } = callee {
             let values = &self.values.as_slice()[args..];
-            if values.len() == function.abi_arity()
-                || (function.abi_arity() == 0 && matches!(values, [Value::Unit]))
+            if (function.type_param_count() == 0 && values.len() == function.abi_arity())
+                || (function.type_param_count() == 0
+                    && function.abi_arity() == 0
+                    && matches!(values, [Value::Unit]))
                 || can_bind_eval_function_args(&function, values)
             {
-                if function.abi_arity() == 0 && matches!(values, [Value::Unit]) {
+                if function.type_param_count() == 0
+                    && function.abi_arity() == 0
+                    && matches!(values, [Value::Unit])
+                {
                     self.values.truncate(args);
                 }
                 return self.enter_function(
@@ -1272,7 +1284,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 && function
                     .value_groups
                     .first()
-                    .is_none_or(|group| group.abi_arity != 0)
+                    .is_none_or(|group| group.type_arity.is_some() || group.abi_arity != 0)
             {
                 self.measure(Measure::Generic);
                 self.values.truncate(base);
@@ -1428,12 +1440,17 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         result: &mut Value,
     ) -> Control<'code> {
         #[cfg(feature = "surface")]
+        if let Some(fault) = projected_observation::check(builtin, &args, self.ctx) {
+            *result = fault;
+            return Control::Return;
+        }
+        #[cfg(feature = "surface")]
         let args = {
             if args.iter().any(|arg| matches!(arg, Value::Projected(_)))
                 && let ProjectedBuiltinClass::Helper(class) = projected_builtin_class(builtin)
             {
                 let Some(proof) = args.first().and_then(marked_comptime_proof_from_value) else {
-                    *result = Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into());
+                    *result = reflection_residual(builtin, args);
                     return Control::Return;
                 };
                 if class
@@ -1441,8 +1458,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 {
                     let Some(closed) = close_authenticated_projected_args(&args, proof, self.ctx)
                     else {
-                        *result =
-                            Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into());
+                        *result = reflection_residual(builtin, args);
                         return Control::Return;
                     };
                     closed
@@ -1453,6 +1469,11 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 args
             }
         };
+        if neutral_reflection_is_pending(builtin, reflection_runtime_args(builtin, &args), self.ctx)
+        {
+            *result = reflection_residual(builtin, args);
+            return Control::Return;
+        }
         if matches!(
             builtin,
             ComptimeBuiltin::TypeArityFold | ComptimeBuiltin::TypeNameParamAritiesFold
@@ -1492,7 +1513,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             *result = if args.is_empty() && record_reflection {
                 Value::Primitive(builtin)
             } else {
-                Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into())
+                reflection_residual(builtin, args)
             };
             return Control::Return;
         }
@@ -1530,7 +1551,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             ComptimeBuiltin::TypeProductSpineFold
                 | ComptimeBuiltin::TypeSumSpineFold
                 | ComptimeBuiltin::TypeArgsFold
-                | ComptimeBuiltin::TypeFunctionParamsFold
+                | ComptimeBuiltin::TypeForallPrefixFold
         ) {
             let started = direct_reflection_start(self.ctx);
             if let Some(items) = reflection::primitive_type_fold_items(builtin, &args, self.ctx) {
@@ -1545,12 +1566,12 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                         started,
                     });
                 }
-                return self.fold(items, init, step, result);
+                return self.type_fold(items, init, step, result);
             }
             *result = if args.is_empty() {
                 Value::Primitive(builtin)
             } else {
-                Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into())
+                reflection_residual(builtin, args)
             };
             return Control::Return;
         }
@@ -1573,7 +1594,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             *result = if args.is_empty() && record_reflection {
                 Value::Primitive(builtin)
             } else {
-                Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into())
+                reflection_residual(builtin, args)
             };
         }
         Control::Return
@@ -1767,6 +1788,20 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
     }
 
+    fn type_fold(
+        &mut self,
+        fold: reflection::TypeFold,
+        init: Value,
+        step: Handler<'code>,
+        result: &mut Value,
+    ) -> Control<'code> {
+        if let Some(remainder) = fold.remainder {
+            self.push_value(remainder);
+            self.push_frame(Frame::FoldRemainder);
+        }
+        self.fold(fold.items, init, step, result)
+    }
+
     fn fold(
         &mut self,
         items: Vec<Value>,
@@ -1875,7 +1910,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                             started,
                         });
                     }
-                    return self.fold(items, init, step, result);
+                    return self.type_fold(items, init, step, result);
                 }
                 self.push_value(typ);
                 self.push_value(init);
@@ -1953,16 +1988,34 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
     }
 
-    fn type_application(&mut self, value: Value, result: &mut Value) -> Control<'code> {
+    fn type_application(
+        &mut self,
+        value: Value,
+        argument: Value,
+        result: &mut Value,
+    ) -> Control<'code> {
         match value {
+            Value::Stuck(callee, args)
+                if matches!(
+                    callee.as_ref(),
+                    Value::Primitive(ComptimeBuiltin::ReflectType)
+                ) && args.len() == 1 =>
+            {
+                // The proof stage has already evaluated; reflection consumes the written type.
+                *result = argument;
+                Control::Return
+            }
             value @ Value::EvalClosure { .. } => self.task(Task::Handler {
                 handler: Handler::Value(value),
-                args: EvalArgs::One([Value::Unit]),
+                args: EvalArgs::One([argument]),
             }),
             Value::Seq { value, body } => {
                 self.push_value(value.unwrap_or_clone());
                 self.push_frame(Frame::SeqBody);
-                self.task(Task::TypeApplication(body.unwrap_or_clone()))
+                self.task(Task::TypeApplication {
+                    value: body.unwrap_or_clone(),
+                    argument,
+                })
             }
             Value::CaseSplit {
                 scrutinee,
@@ -1975,16 +2028,27 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     scrutinee,
                     left_payload,
                     right_payload,
-                    next: Some(Task::TypeApplication(right.unwrap_or_clone())),
+                    next: Some(Task::TypeApplication {
+                        value: right.unwrap_or_clone(),
+                        argument: argument.clone(),
+                    }),
                     left: None,
                 });
                 self.push_frame(Frame::BranchLeft);
-                self.task(Task::TypeApplication(left.unwrap_or_clone()))
+                self.task(Task::TypeApplication {
+                    value: left.unwrap_or_clone(),
+                    argument,
+                })
+            }
+            value if erases_type_stage(&value) => {
+                *result = value;
+                Control::Return
             }
             value => {
-                // Primitive/member and opaque values erase types; only an
-                // ordinary evaluator closure owns an executable type stage.
-                *result = value;
+                let Value::ReflType(argument) = argument else {
+                    unreachable!("opaque type application retains an actual type operand");
+                };
+                *result = Value::StuckType(EvalRef::new(value), argument);
                 Control::Return
             }
         }
@@ -2042,7 +2106,7 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     thunks,
                 })
             }
-            scrutinee @ (Value::Atom(_) | Value::Stuck(..)) => {
+            scrutinee @ (Value::Atom(_) | Value::Stuck(..) | Value::StuckType(..)) => {
                 let left_payload = fresh_case_split_payload("l");
                 let right_payload = fresh_case_split_payload("r");
                 let left_args = if thunks {
@@ -2113,10 +2177,18 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     {
                         comparison::Outcome::Apply(callee, args) => {
                             self.push_frame(Frame::ComparisonApply);
-                            self.task(Task::Handler {
-                                handler: Handler::Value(callee),
-                                args: args.into_eval(),
-                            })
+                            match args {
+                                comparison::ProbeArgs::Type(argument) => {
+                                    self.task(Task::TypeApplication {
+                                        value: callee,
+                                        argument: Value::ReflType(argument),
+                                    })
+                                }
+                                args => self.task(Task::Handler {
+                                    handler: Handler::Value(callee),
+                                    args: args.into_eval(),
+                                }),
+                            }
                         }
                         comparison::Outcome::Done(value) => {
                             self.comparisons.pop();
@@ -2126,7 +2198,9 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                     }
                 }
                 Control::Task => match self.tasks.pop().expect("scheduled operation") {
-                    Task::TypeApplication(value) => self.type_application(value, &mut result),
+                    Task::TypeApplication { value, argument } => {
+                        self.type_application(value, argument, &mut result)
+                    }
                     Task::Handler { handler, args } => self.handler(handler, args, &mut result),
                     Task::Either {
                         scrutinee,
@@ -2226,12 +2300,12 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                             }
                             EvalExpr::TypeApplication { .. } => {
                                 let callee = code.child(|expr| {
-                                    let EvalExpr::TypeApplication { callee } = expr else {
+                                    let EvalExpr::TypeApplication { callee, .. } = expr else {
                                         unreachable!()
                                     };
                                     callee
                                 });
-                                self.push_frame(Frame::TypeApplication);
+                                self.push_frame(Frame::TypeApplication(code));
                                 Control::Eval(callee)
                             }
                             EvalExpr::Call { .. } => {
@@ -2402,6 +2476,11 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                             Control::Return
                         }
                     }
+                    Some(Frame::FoldRemainder) => {
+                        let remainder = self.values.pop().expect("prefix fold remainder");
+                        result = value_pair(std::mem::replace(&mut result, Value::Unit), remainder);
+                        Control::Return
+                    }
                     Some(Frame::FoldStep) => {
                         let mut fold = self.folds.pop().expect("fold callback owner");
                         if let Some(item) = fold.items.next() {
@@ -2445,9 +2524,20 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                         self.push_value(std::mem::replace(&mut result, Value::Unit));
                         self.start_arguments(call, base, &mut result)
                     }
-                    Some(Frame::TypeApplication) => self.task(Task::TypeApplication(
-                        std::mem::replace(&mut result, Value::Unit),
-                    )),
+                    Some(Frame::TypeApplication(code)) => {
+                        let EvalExpr::TypeApplication { argument, .. } = code.expr() else {
+                            unreachable!("type stage retains its operand code");
+                        };
+                        let actual = if erases_type_stage(&result) {
+                            Value::Unit
+                        } else {
+                            argument.instantiate(|slot| self.local(slot).cloned())
+                        };
+                        self.task(Task::TypeApplication {
+                            value: std::mem::replace(&mut result, Value::Unit),
+                            argument: actual,
+                        })
+                    }
                     Some(Frame::Arguments { call, base, next }) => {
                         self.push_value(std::mem::replace(&mut result, Value::Unit));
                         if next < Self::call_args(call.expr()).len() {
@@ -3170,11 +3260,13 @@ mod tests {
                     .expect("unique function")
                     .value_groups = vec![
                     EvalParamGroup {
+                        type_arity: None,
                         param_start: 0,
                         param_count: 0,
                         abi_arity: 0,
                     },
                     EvalParamGroup {
+                        type_arity: None,
                         param_start: 0,
                         param_count: 1,
                         abi_arity: 1,
@@ -3186,11 +3278,13 @@ mod tests {
                     .expect("unique function")
                     .value_groups = vec![
                     EvalParamGroup {
+                        type_arity: None,
                         param_start: 0,
                         param_count: 1,
                         abi_arity: 1,
                     },
                     EvalParamGroup {
+                        type_arity: None,
                         param_start: 1,
                         param_count: 1,
                         abi_arity: 1,
@@ -3250,10 +3344,7 @@ mod tests {
         let ctx = EvalCtx::new().with_metrics(metrics.clone());
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _guard = ctx
-                    .structural_recur_operations
-                    .lock()
-                    .expect("unpoisoned operation state");
+                let _guard = ctx.operations.lock().expect("unpoisoned operation state");
                 panic!("selected memo preparation fault");
             }))
             .is_err()

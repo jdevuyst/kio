@@ -22,13 +22,13 @@ construct-only self-shadowing nominal header: accepted
 inspect-only self-shadowing nominal header: accepted
 public-member self-shadowing nominal header: accepted
 ambient-decoy self-shadowing nominal header: accepted
-malformed opaque nominal header: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 2, column 19
+malformed opaque nominal header: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 2, column 18
 private nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
 scoped nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
 unbridged nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches unbridged nominal type `hidden.Hidden`
-private nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches non-public nominal type `guest.Hidden`
-scoped nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches non-public nominal type `guest.Hidden`
-unbridged nominal in member signature: dyn_load_prime: export signature `guest.Box.mk_box` reaches unbridged nominal type `hidden.Hidden`
+private nominal in member signature: dyn_load_prime: export signature `guest.Box.mk` reaches non-public nominal type `guest.Hidden`
+scoped nominal in member signature: dyn_load_prime: export signature `guest.Box.mk` reaches non-public nominal type `guest.Hidden`
+unbridged nominal in member signature: dyn_load_prime: export signature `guest.Box.mk` reaches unbridged nominal type `hidden.Hidden`
 host group shapes: two / two / two / three / zero
 host type lookup (missing): missing
 host type lookup (single): found

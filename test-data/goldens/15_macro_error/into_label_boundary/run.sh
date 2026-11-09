@@ -1,9 +1,8 @@
 #!/bin/sh
-# The elaborator rejects coercions that would cross a label boundary:
-# none of `iso!` / `into!` / `onto!` ever manufactures or strips a
-# label wrapper. To move between a payload type and `F` you write
-# `{f = x}` or call `F.get`. Exit code 15 (elaborator
-# error).
+# The elaborator rejects coercions that cross a nominal boundary:
+# none of `iso!` / `into!` / `onto!` manufactures or strips a
+# nominal wrapper. Use `F.mk(x)` or `F.get` to cross it explicitly.
+# Exit code 15 (elaborator error).
 set -u
 cd workdir || exit
 "$KIO_BIN" dep fetch >/dev/null || exit

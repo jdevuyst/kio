@@ -1,6 +1,7 @@
 module graph_routes/render;
 
-import graph_routes/model(Search_state, inf, {blocked}, {df}, {dg}, {relaxed}, {visited});
+import graph_routes/model(Blocked, Df, Dg, Relaxed, Search_state, Visited, inf);
+import macros/row_macros(macro select);
 import testapi(Bool, String);
 import testapi/arith(eq_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -8,25 +9,27 @@ import testapi/text(string_concat);
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
-fn unreachable_g(s: Search_state) -> Bool { eq_i32(s.?{dg}, inf()) }
+fn unreachable_g(s: Search_state) -> Bool {
+  eq_i32(s.>select { Dg.get }, inf())
+}
 
 pub fn summary(s: Search_state) -> String {
   cat(
   , "gate_graph_routes route=A>C>E>D>F cost="
   , cat(
-    , int_to_string(s.?{df})
+    , int_to_string(s.>select { Df.get })
     , cat(
       , " visited="
       , cat(
-        , int_to_string(s.?{visited})
+        , int_to_string(s.>select { Visited.get })
         , cat(
           , " relaxed="
           , cat(
-            , int_to_string(s.?{relaxed})
+            , int_to_string(s.>select { Relaxed.get })
             , cat(
               , " blocked_C_D_seen="
               , cat(
-                , int_to_string(s.?{blocked})
+                , int_to_string(s.>select { Blocked.get })
                 , cat(" unreachable_G=", cat(bool_to_string(unreachable_g(s)), "\n"))
                 )
               )

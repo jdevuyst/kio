@@ -1,0 +1,47 @@
+module main;
+
+import __comptime__;
+
+pure fn inspect_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, target: __Type__
+, _source: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let prefix =
+    __type_forall__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(a: __Type_var__) -> __Type__ {
+        __type_forall__(
+        , ct
+        , __type_arity_succ__(ct, __type_arity_zero__(ct))
+        , .(_f: __Type_var__) -> __Type__ { __type_arrow__(ct, __type_var__(ct, a), target) }
+        )
+      }
+    );
+  let folded =
+    __type_forall_prefix_fold__(ct)[__Type_arity__](
+    , prefix
+    , __type_arity_zero__(ct)
+    , .(count: __Type_arity__, _binder: __Type_var__) -> __Type_arity__ {
+        __type_arity_succ__(ct, count)
+      }
+    );
+  let count = __fst__[__Type_arity__][__Type__](folded);
+  let expected = __type_arity_succ__(ct, __type_arity_succ__(ct, __type_arity_zero__(ct)));
+  __if_then_else__(
+  , __type_arity_equal__(ct, count, expected)
+  , .() -> __Checked_term__ & __Fill_ctx__ {
+      (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct)))
+    }
+  , .() -> __Checked_term__ & __Fill_ctx__ { (__macro_error__(ct, "prefix binder count"), fills) }
+  )
+}
+
+macro inspect : [Target] (. -> Target) -> Target { impl(fills) inspect_impl }
+
+fn run() {
+  let result = inspect(.() { () });
+  result
+}

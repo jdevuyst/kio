@@ -1184,7 +1184,7 @@ fn collect_sig_context_type_heads(
                 collect_sig_context_type_heads(argument, bound, out);
             }
         }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } | Type::LabelSugar { .. } => {}
+        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
     }
 }
 
@@ -2589,12 +2589,12 @@ mod tests {
                  add {{ // {note} module\n\
                    module api {{\n\
                      /// {note} type\n\
-                     pub newtype Token : . {{\n\
+                     pub type {{ Token: . {{\n\
                        // {note} constructor\n\
-                       pub constructor make;\n\
+                       pub mk;\n\
                        // {note} projector\n\
-                       pub projector take\n\
-                     }};\n\
+                       pub get\n\
+                     }}; }};\n\
                      type Pair[A] = A & A;\n\
                      type Twice = Pair[\n\
                        // {note} argument\n\
@@ -2820,7 +2820,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };
@@ -2837,7 +2837,7 @@ v(1) {
     module api {
       rec {
         pub type A = B | B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };
@@ -2868,11 +2868,11 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       };
       rec {
         pub type C = D;
-        pub newtype D : C { pub constructor mk_d; pub projector un_d; };
+        pub type { D: C { pub mk; pub get; }; };
       }
     }
   };
@@ -2890,11 +2890,11 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       };
       rec {
         pub type C = D | D;
-        pub newtype D : C { pub constructor mk_d; pub projector un_d; };
+        pub type { D: C { pub mk; pub get; }; };
       }
     }
   };
@@ -2927,8 +2927,8 @@ v(1) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
-        pub newtype C : A { pub constructor mk_c; pub projector un_c; };
+        pub type { B: A { pub mk; pub get; }; };
+        pub type { C: A { pub mk; pub get; }; };
       }
     }
   };
@@ -2939,7 +2939,7 @@ v(2) {
   breaking {
     modify {
       module api {
-        pub newtype C : . { pub constructor mk_c; pub projector un_c; };
+        pub type { C: . { pub mk; pub get; }; };
       }
     }
   }
@@ -2955,8 +2955,8 @@ v(1) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
-        pub newtype C : A { pub constructor mk_c; pub projector un_c; };
+        pub type { B: A { pub mk; pub get; }; };
+        pub type { C: A { pub mk; pub get; }; };
       }
     }
   };
@@ -2968,14 +2968,14 @@ v(2) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };
   breaking {
     modify {
       module api {
-        pub newtype C : . { pub constructor mk_c; pub projector un_c; };
+        pub type { C: . { pub mk; pub get; }; };
       }
     }
   }
@@ -3210,7 +3210,7 @@ v(2) {
 v(1) {
   with {
     module api {
-      pub rec newtype Bad : (Bad -> .) { pub constructor mk; pub projector un; };
+      pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.Bad; } }
@@ -3398,7 +3398,7 @@ v(1) {
     module api {
       rec {
         pub type A = B;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };
@@ -3439,10 +3439,7 @@ v(1) {
   with {
     module api {
       import left as dep;
-      pub rec newtype Left : dep.Token | Left {
-        pub constructor mk_left;
-        pub projector un_left;
-      };
+      pub rec type { Left: dep.Token | Left { pub mk; pub get; }; };
     }
   };
   breaking { add { module left { host type Token; } } };
@@ -3453,10 +3450,7 @@ v(2) {
   with {
     module api {
       import right as dep;
-      pub rec newtype Right : dep.Token | Right {
-        pub constructor mk_right;
-        pub projector un_right;
-      };
+      pub rec type { Right: dep.Token | Right { pub mk; pub get; }; };
     }
   };
   breaking { add { module right { host type Token; } } };
@@ -3479,8 +3473,8 @@ v(2) {
             1,
             "{text}"
         );
-        assert_eq!(text.matches("pub rec newtype Left").count(), 1, "{text}");
-        assert_eq!(text.matches("pub rec newtype Right").count(), 1, "{text}");
+        assert_eq!(text.matches("pub rec type { Left:").count(), 1, "{text}");
+        assert_eq!(text.matches("pub rec type { Right:").count(), 1, "{text}");
 
         let compacted = parse_signature_file(&text, Some("app")).unwrap_or_else(|error| {
             panic!("separated recursive origins must reparse: {error:?}\n{text}")
@@ -3500,10 +3494,7 @@ signature app v(3);
 v(1) {
   with {
     module api {
-      pub rec newtype List[A] : . | (A & List[A]) {
-        pub constructor mk_list;
-        pub projector un_list;
-      };
+      pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; };
     }
   };
   nonbreaking { add { api.List; } }
@@ -3520,7 +3511,7 @@ v(2) {
 
         let text = compact_file(&file, "app", 3).expect("recursive singleton history compacts");
         assert!(text.contains("v(2) {\n  with {"), "{text}");
-        assert_eq!(text.matches("rec newtype List").count(), 1, "{text}");
+        assert_eq!(text.matches("rec type { List").count(), 1, "{text}");
         assert!(text.contains("api.List;"), "{text}");
 
         let compacted = parse_signature_file(&text, Some("app")).unwrap_or_else(|error| {
@@ -3547,15 +3538,15 @@ v(2) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       };
       rec {
         pub type C = D;
-        pub newtype D : C { pub constructor mk_d; pub projector un_d; };
+        pub type { D: C { pub mk; pub get; }; };
       };
       rec {
         pub type E = F;
-        pub newtype F : E { pub constructor mk_f; pub projector un_f; };
+        pub type { F: E { pub mk; pub get; }; };
       }
     }
   };
@@ -3574,11 +3565,11 @@ v(2) {
         assert_eq!(filtered.versions.len(), 1);
         let text = sig::emit_signature_file(&filtered);
         assert!(text.contains("pub type A = B | C;"), "{text}");
-        assert!(text.contains("pub newtype B : A"), "{text}");
+        assert!(text.contains("pub type { B: A"), "{text}");
         assert!(text.contains("pub type C = D;"), "{text}");
-        assert!(text.contains("pub newtype D : C"), "{text}");
+        assert!(text.contains("pub type { D: C"), "{text}");
         assert!(!text.contains("pub type E = F;"), "{text}");
-        assert!(!text.contains("pub newtype F : E"), "{text}");
+        assert!(!text.contains("pub type { F: E"), "{text}");
         assert!(text.contains("\n      api.A\n"), "{text}");
         assert!(!text.contains("api.E"), "{text}");
     }
@@ -3594,8 +3585,8 @@ v(1) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
-        pub newtype C : A { pub constructor mk_c; pub projector un_c; };
+        pub type { B: A { pub mk; pub get; }; };
+        pub type { C: A { pub mk; pub get; }; };
       }
     }
   };
@@ -3607,14 +3598,14 @@ v(2) {
     module api {
       rec {
         pub type A = B | C;
-        pub newtype B : A { pub constructor mk_b; pub projector un_b; };
+        pub type { B: A { pub mk; pub get; }; };
       }
     }
   };
   breaking {
     modify {
       module api {
-        pub newtype C : . { pub constructor mk_c; pub projector un_c; };
+        pub type { C: . { pub mk; pub get; }; };
       }
     }
   }
@@ -3631,8 +3622,8 @@ v(2) {
         let text = sig::emit_signature_file(&filtered);
         assert_eq!(filtered.versions.len(), 1, "{text}");
         assert!(text.contains("pub type A = B | C;"), "{text}");
-        assert!(text.contains("pub newtype B : A"), "{text}");
-        assert!(text.contains("pub newtype C : ."), "{text}");
+        assert!(text.contains("pub type { B: A"), "{text}");
+        assert!(text.contains("pub type { C: ."), "{text}");
     }
 
     /// Compact validates the historical origin before attempting to collapse
@@ -3936,7 +3927,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        newtype Token : . { pub constructor make_token; pub projector un_token; };
+        type { Token: . { pub mk; pub get; }; };
         host fn consume(x: Token) -> .;
       }
     }

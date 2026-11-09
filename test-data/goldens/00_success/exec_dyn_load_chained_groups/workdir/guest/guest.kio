@@ -2,7 +2,7 @@ module guest;
 
 import hostapi(I32, add_i32);
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
 pub fn f[A](x: I32)[B]() -> I32 { add_i32(x, 1) }
 
@@ -41,7 +41,7 @@ pub fn call_lambda_stages(x: I32) -> I32 {
 }
 
 pub fn call_member_values(x: I32) -> I32 {
-  let construct = Box.mk_box;
-  let project = Box.un_box;
+  let construct = Box.mk;
+  let project = Box.get;
   project[I32](construct[I32](x))
 }

@@ -92,9 +92,9 @@ op _ ## _ { impl review }
 // `r %% n` replaces the `hed` field; `r %% a %% b` chains, last write wins.
 // `set_hed` is a lens's "set" half specialised to a named field — the
 // concrete link between optics and row types.
-labels { hed: I32, mid: String, tal: I32 };
+type { Hed: I32; Mid: String; Tal: I32 }
 
-fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x)[R]) }
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { (Hed.mk(n), narrow_prod(x)[R]) }
 
 op __ %% _ { impl set_hed }
 
@@ -273,7 +273,7 @@ fn tour() {
   // the row is inferred from the receiver's value type — no type arguments
   // at the call site. Left-assoc `__ %% _` chains without parens:
   // `r %% a %% b` is `set_hed(set_hed(r, a), b)`.
-  let row = ({hed = 7}, ({mid = "kio"}, {tal = 11}));
+  let row = (Hed.mk(7), (Mid.mk("kio"), Tal.mk(11)));
   show_hmt(row);
   show_hmt(row %% 100);
   show_hmt(row %% 200 %% 300)

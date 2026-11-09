@@ -2,9 +2,9 @@ module testapi/main;
 
 import macros/match(macro match);
 // Exercises a host `loop` whose STATE is a nested higher-kinded
-// carrier: `Box(I32, I32)` is a label-newtype wrapping an ALIAS
-// `Trail(k, v)` over a 2-type-parameter RECURSIVE newtype `Crumbs(k, v)`
-// whose node is a SUM of two label-generated products (`left` / `right`),
+// carrier: `Box[I32][I32]` is a nominal type wrapping an ALIAS
+// `Trail[K][V]` over a 2-type-parameter RECURSIVE nominal type `Crumbs[K][V]`
+// whose node is a SUM of two nominal products (`Left` / `Right`),
 // each mentioning both params. Threading that state through `loop`
 // drives a carrier whose payload is an alias-wrapped recursive
 // sum-of-products mentioning both binders — the combination (recursion +
@@ -16,32 +16,32 @@ import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
 
-// `Crumbs(k, v)` is a 2-type-param recursive newtype whose node is a
-// SUM of two label-generated products (`left` / `right`), each
+// `Crumbs[K][V]` is a 2-type-param recursive nominal type whose node is a
+// SUM of two nominal products (`Left` / `Right`), each
 // mentioning both params.
-labels { left[K][V]: K & V, right[K][V]: K & V };
+type { Left[K][V]: K & V { mk; get }; Right[K][V]: K & V { mk; get } }
 
-rec labels { crumbs[K][V]: . | ((Left[K][V] | Right[K][V]) & Crumbs[K][V]) };
+rec type { Crumbs[K][V]: . | ((Left[K][V] | Right[K][V]) & Crumbs[K][V]) { mk; get } }
 
-// `Box(k, v)` wraps an ALIAS `Trail(k, v)` over the recursive newtype —
+// `Box[K][V]` wraps an ALIAS `Trail[K][V]` over the recursive nominal type —
 // the alias indirection means the carrier's payload must be unfolded
 // before its shape is visible.
 type Trail[K][V] = Crumbs[K][V];
 
-labels { box[K][V]: Trail[K][V] };
+type { Box[K][V]: Trail[K][V] { mk; get } }
 
 fn nil_c[K][V]() -> Crumbs[K][V] {
-  {crumbs = widen_sum(())[. | ((Left[K][V] | Right[K][V]) & Crumbs[K][V])]}
+  Crumbs.mk(widen_sum(())[. | ((Left[K][V] | Right[K][V]) & Crumbs[K][V])])
 }
 
 fn cons_l[K][V](key: K, val: V, t: Crumbs[K][V]) -> Crumbs[K][V] {
-  {crumbs = widen_sum((widen_sum({left = (key, val)})[Left[K][V] | Right[K][V]], t))[| .
-  | ((Left[K][V] | Right[K][V]) & Crumbs[K][V])]}
+  Crumbs.mk(widen_sum((widen_sum(Left.mk((key, val)))[Left[K][V] | Right[K][V]], t))[| .
+  | ((Left[K][V] | Right[K][V]) & Crumbs[K][V])])
 }
 
-fn boxed[K][V](t: Trail[K][V]) -> Box[K][V] { {box = t} }
+fn boxed[K][V](t: Trail[K][V]) -> Box[K][V] { Box.mk(t) }
 
-// A loop whose STATE is `Box(I32, I32)` — threads the alias-wrapped
+// A loop whose STATE is `Box[I32][I32]` — threads the alias-wrapped
 // recursive sum-of-products carrier through the loop body.
 fn head_key(b: Box[I32][I32]) -> I32 {
   loop(

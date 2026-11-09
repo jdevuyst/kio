@@ -1,3 +1,0 @@
-label `origin.item`
-restricted to `pub\(scope\)`
-not visible from `outside`

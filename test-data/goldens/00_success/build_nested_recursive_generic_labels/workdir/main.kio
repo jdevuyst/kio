@@ -2,16 +2,20 @@ module main;
 
 host type I32 role(i32);
 
-pub labels { present[A]: A };
+pub type { Present[A]: A { pub mk; pub get } }
 
 pub type Option[A] = Present[A] | .;
 
-pub labels { leafopt[A]: Option[A] };
+pub type { Leafopt[A]: Option[A] { pub mk; pub get } }
 
-pub rec labels { tree[A]: Leafopt[A] | (Tree[A] & Tree[A]) };
+pub rec type { Tree[A]: Leafopt[A] | (Tree[A] & Tree[A]) { pub mk; pub get } }
 
-pub labels Patch = { count: I32, root: Tree[I32] };
+pub type { Count: I32 { pub mk; pub get }; Root: Tree[I32] { pub mk; pub get } }
 
-pub labels Journal = { data: Patch, checkpoint: Patch };
+pub type Patch = Count & Root;
+
+pub type { Data: Patch { pub mk; pub get }; Checkpoint: Patch { pub mk; pub get } }
+
+pub type Journal = Data & Checkpoint;
 
 pub fn keep(journal: Journal) -> Journal { journal }

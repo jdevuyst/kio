@@ -55,11 +55,11 @@ pkg = create_specializedCallable(typed_host)
 callbacks = [unbox(pkg.api.boxed()), unbox(pkg.api.boxedNamed()), unbox(pkg.api.boxedLiteral())]
 assert host.api.packed == 3
 assert host.api.calls == 0
-valid = pkg.api.KioType_N.wrap(17)
-foreign = pkg.other.KioType_N.wrap(29)
-assert pkg.other.KioType_N.unwrap(foreign) == 29
+valid = pkg.api.KioType_N.mk(17)
+foreign = pkg.other.KioType_N.mk(29)
+assert pkg.other.KioType_N.get(foreign) == 29
 for count, callback in enumerate(callbacks, 1):
-    assert pkg.api.KioType_N.unwrap(callback(valid)) == 17
+    assert pkg.api.KioType_N.get(callback(valid)) == 17
     assert host.api.calls == count
 assert host.api.packed == 3
 
@@ -99,7 +99,7 @@ depth_calls = [0, 0]
 
 def foreign_transform(value: Nominal[int]) -> PeerHidden[int]:
     depth_calls[0] += 1
-    assert pkg.api.KioType_N.unwrap(value) == 17
+    assert pkg.api.KioType_N.get(value) == 17
     return peer_hidden
 
 

@@ -15,13 +15,13 @@ pub type Alias = .;
 
 pub literal text = "example";
 
-pub newtype Box : . { pub constructor build_box; projector read_box }
+pub type { Box: . { pub mk; get }; }
 
-pub labels Row = { field: . };
+pub type Row = { Field: .; };
 
-pub labels { other: . };
+pub type { Other: .; };
 
-pub labels { foo: . };
+pub type { Foo: .; };
 
 pub fn add(left: ., right: .) { () }
 
@@ -50,6 +50,6 @@ rec(loop) {
 
 rec {
   pub type Chain = Node;
-  pub newtype Node : . | Chain { constructor wrap; projector unwrap };
-  pub labels Markers = { mark: . }
+  pub type { Node: . | Chain { mk; get }; };
+  pub type Markers = { Mark: .; }
 }

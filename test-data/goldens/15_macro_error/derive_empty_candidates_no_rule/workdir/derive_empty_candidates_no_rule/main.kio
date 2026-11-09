@@ -2,7 +2,7 @@ module derive_empty_candidates_no_rule/main;
 
 import macros/derive(macro derive);
 
-newtype Token : . { constructor make_token; projector read_token }
+type { Token: . { mk; get } }
 
 fn bad() -> Token { derive(())[Token] }
 

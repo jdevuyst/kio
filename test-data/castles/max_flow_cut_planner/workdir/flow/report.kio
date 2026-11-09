@@ -6,6 +6,7 @@ import flow/math as math;
 import flow/network as net;
 import flow/solver as solver;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -28,11 +29,11 @@ rec(loop) fn print_history(history: Array[solver.Augmentation], index: I32) {
     io.print("  augment ");
     number(a.add_i32(index, 1));
     io.print(": ");
-    io.print(step.?{solver.route});
+    io.print(step.>select { solver.Route.get });
     io.print(" amount=");
-    number(step.?{solver.amount});
+    number(step.>select { solver.Amount.get });
     io.print(" cancelled=");
-    number(step.?{solver.cancelled});
+    number(step.>select { solver.Cancelled.get });
     io.print("\n");
     recur print_history(history, a.add_i32(index, 1))
   } else {
@@ -41,19 +42,19 @@ rec(loop) fn print_history(history: Array[solver.Augmentation], index: I32) {
 }
 
 rec(loop) fn print_edges(network: net.Network, residual: Array[I32], index: I32) {
-  if(math.less(index, ar.array_len(network.?{net.edges}))) {
-    let edge = ar.array_get(network.?{net.edges}, index);
-    if(edge.?{net.backward}) {
+  if(math.less(index, ar.array_len(network.>select { net.Edges.get }))) {
+    let edge = ar.array_get(network.>select { net.Edges.get }, index);
+    if(edge.>select { net.Backward.get }) {
       ()
     } else {
       io.print("  link ");
-      number(edge.?{net.from});
+      number(edge.>select { net.From.get });
       io.print("->");
-      number(edge.?{net.to});
+      number(edge.>select { net.To.get });
       io.print(" flow=");
-      number(a.sub_i32(edge.?{net.capacity}, ar.array_get(residual, index)));
+      number(a.sub_i32(edge.>select { net.Capacity.get }, ar.array_get(residual, index)));
       io.print("/");
-      number(edge.?{net.capacity});
+      number(edge.>select { net.Capacity.get });
       io.print("\n")
     };
     recur print_edges(network, residual, a.add_i32(index, 1))
@@ -77,73 +78,84 @@ rec(loop) fn print_side(side: Array[Bool], node: I32, separator: String) {
 }
 
 pub fn run(fixture: fixtures.Fixture) -> solver.Solution {
-  let network = fixture.?{fixtures.network};
-  let solution = solver.solve(network, fixture.?{fixtures.source}, fixture.?{fixtures.sink});
+  let network = fixture.>select { fixtures.Network.get };
+  let solution =
+    solver.solve(
+    , network
+    , fixture.>select { fixtures.Source.get }
+    , fixture.>select { fixtures.Sink.get }
+    );
   let certificate =
     cert.inspect(
     , network
-    , solution.?{solver.residual}
-    , fixture.?{fixtures.source}
-    , fixture.?{fixtures.sink}
-    , solution.?{solver.value}
+    , solution.>select { solver.Residual.get }
+    , fixture.>select { fixtures.Source.get }
+    , fixture.>select { fixtures.Sink.get }
+    , solution.>select { solver.Value.get }
     );
-  io.print(text.string_concat("network: ", fixture.?{fixtures.title}));
+  io.print(text.string_concat("network: ", fixture.>select { fixtures.Title.get }));
   io.print("\n");
-  print_history(solution.?{solver.history}, 0);
-  print_edges(network, solution.?{solver.residual}, 0);
+  print_history(solution.>select { solver.History.get }, 0);
+  print_edges(network, solution.>select { solver.Residual.get }, 0);
   io.print("  source side={");
-  print_side(certificate.?{cert.source_side}, 0, "");
+  print_side(certificate.>select { cert.Source_side.get }, 0, "");
   io.print("} flow=");
-  number(solution.?{solver.value});
+  number(solution.>select { solver.Value.get });
   io.print(" cut=");
-  number(certificate.?{cert.cut_capacity});
+  number(certificate.>select { cert.Cut_capacity.get });
   io.print("\n");
-  flag("  capacity bounds: ", certificate.?{cert.capacity_ok});
-  flag("  reverse pairs: ", certificate.?{cert.pairing_ok});
-  flag("  conservation: ", certificate.?{cert.conservation_ok});
-  flag("  minimum-cut certificate: ", certificate.?{cert.boundary_ok});
+  flag("  capacity bounds: ", certificate.>select { cert.Capacity_ok.get });
+  flag("  reverse pairs: ", certificate.>select { cert.Pairing_ok.get });
+  flag("  conservation: ", certificate.>select { cert.Conservation_ok.get });
+  flag("  minimum-cut certificate: ", certificate.>select { cert.Boundary_ok.get });
   flag(
   , "  independent expected value: "
-  , math.equal(solution.?{solver.value}, fixture.?{fixtures.expected})
+  , math.equal(solution.>select { solver.Value.get }, fixture.>select { fixtures.Expected.get })
   );
   solution
 }
 
 pub fn cancellation_witness(fixture: fixtures.Fixture, solution: solver.Solution) {
-  let network = fixture.?{fixtures.network};
-  let history = solution.?{solver.history};
+  let network = fixture.>select { fixtures.Network.get };
+  let history = solution.>select { solver.History.get };
   let first = ar.array_get(history, 0);
   let second = ar.array_get(history, 1);
-  let middle_edge = ar.array_get(network.?{net.edges}, 2);
+  let middle_edge = ar.array_get(network.>select { net.Edges.get }, 2);
   let remaining_flow =
-    a.sub_i32(middle_edge.?{net.capacity}, ar.array_get(solution.?{solver.residual}, 2));
+    a.sub_i32(
+    , middle_edge.>select { net.Capacity.get }
+    , ar.array_get(solution.>select { solver.Residual.get }, 2)
+    );
   let trace_ok =
     math.both(
-    , text.string_eq(first.?{solver.route}, "0->1->2->3")
-    , text.string_eq(second.?{solver.route}, "0->2-cancel->1->3")
+    , text.string_eq(first.>select { solver.Route.get }, "0->1->2->3")
+    , text.string_eq(second.>select { solver.Route.get }, "0->2-cancel->1->3")
     );
   let cancellation_ok =
     math.both(
-    , math.equal(first.?{solver.cancelled}, 0)
-    , math.both(math.equal(second.?{solver.cancelled}, 1), math.equal(remaining_flow, 0))
+    , math.equal(first.>select { solver.Cancelled.get }, 0)
+    , math.both(
+      , math.equal(second.>select { solver.Cancelled.get }, 1)
+      , math.equal(remaining_flow, 0)
+      )
     );
   flag("cancellation witness: ", math.both(trace_ok, cancellation_ok))
 }
 
 pub fn reject_damaged_witnesses(fixture: fixtures.Fixture, solution: solver.Solution) {
-  let network = fixture.?{fixtures.network};
-  let residual = solution.?{solver.residual};
-  let source = fixture.?{fixtures.source};
-  let sink = fixture.?{fixtures.sink};
-  let value = solution.?{solver.value};
+  let network = fixture.>select { fixtures.Network.get };
+  let residual = solution.>select { solver.Residual.get };
+  let source = fixture.>select { fixtures.Source.get };
+  let sink = fixture.>select { fixtures.Sink.get };
+  let value = solution.>select { solver.Value.get };
   let bad_bounds = ar.array_clone(residual);
   ar.array_set(bad_bounds, 0, -1);
   let bounds = cert.inspect(network, bad_bounds, source, sink, value);
-  flag("reject negative residual: ", math.invert(bounds.?{cert.capacity_ok}));
+  flag("reject negative residual: ", math.invert(bounds.>select { cert.Capacity_ok.get }));
   let bad_pair = ar.array_clone(residual);
   ar.array_set(bad_pair, 1, 0);
   let pairs = cert.inspect(network, bad_pair, source, sink, value);
-  flag("reject broken reverse pair: ", math.invert(pairs.?{cert.pairing_ok}));
+  flag("reject broken reverse pair: ", math.invert(pairs.>select { cert.Pairing_ok.get }));
   let bad_balance = ar.array_clone(residual);
   ar.array_set(bad_balance, 0, 1);
   ar.array_set(bad_balance, 1, 0);
@@ -151,8 +163,11 @@ pub fn reject_damaged_witnesses(fixture: fixtures.Fixture, solution: solver.Solu
   flag(
   , "reject unconserved feasible edge flows: "
   , math.both(
-    , balance.?{cert.capacity_ok}
-    , math.both(balance.?{cert.pairing_ok}, math.invert(balance.?{cert.conservation_ok}))
+    , balance.>select { cert.Capacity_ok.get }
+    , math.both(
+      , balance.>select { cert.Pairing_ok.get }
+      , math.invert(balance.>select { cert.Conservation_ok.get })
+      )
     )
   );
   let exaggerated = cert.inspect(network, residual, source, sink, a.add_i32(value, 1));

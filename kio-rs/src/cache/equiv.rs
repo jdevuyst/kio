@@ -560,12 +560,9 @@ fn collect_expr_refs(
         | Expr::BoolLit { .. } => {}
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
+            match *ext {}
+        }
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},

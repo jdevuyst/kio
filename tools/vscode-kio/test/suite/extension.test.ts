@@ -183,18 +183,18 @@ suite("Kio extension — activation & highlighting", () => {
 
     // Legend positions are fixed by `SEMANTIC_KINDS` in extension.ts:
     // macro=1, type=2, variable=3, operator=4, function=11.
-    assert.strictEqual(semanticTokenTypeAt(doc, decoded, "Box.un_box"), 2);
-    assert.strictEqual(semanticTokenTypeAt(doc, decoded, "_Box.un_marked"), 2);
+    assert.strictEqual(semanticTokenTypeAt(doc, decoded, "Box.get"), 2);
+    assert.strictEqual(semanticTokenTypeAt(doc, decoded, "_Box.get"), 2);
     assert.strictEqual(
-      semanticTokenTypeAt(doc, decoded, "un_box[A](Box", "un_box[".length),
+      semanticTokenTypeAt(doc, decoded, "get[A](Box", "get[".length),
       2,
     );
     assert.strictEqual(
       semanticTokenTypeAt(
         doc,
         decoded,
-        "un_marked[_A](_Box",
-        "un_marked[".length,
+        "get[_A](_Box",
+        "get[".length,
       ),
       2,
     );
@@ -339,7 +339,6 @@ fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
     "variable.parameter": 9,
     "entity.name.module": 10,
     "entity.name.function": 11,
-    "entity.name.label": 12,
     "operator.user": 4,
     "operator.builtin": 4,
     "punctuation.bracket": 8,
@@ -670,10 +669,10 @@ suite("Kio extension — real kio lsp", () => {
         "Replace with `support`",
       ],
       [
-        "label-import",
-        "module main; import support({mrk}); pub fn main() { let _ = {mark = ()}; () }\n",
-        "module main; import support({mark}); pub fn main() { let _ = {mark = ()}; () }\n",
-        "Replace with `mark`",
+        "nominal-import",
+        "module main; import support(Mrk); pub fn main() { let _ = Mark.mk(()); () }\n",
+        "module main; import support(Mark); pub fn main() { let _ = Mark.mk(()); () }\n",
+        "Replace with `Mark`",
       ],
       [
         "definition",
@@ -687,7 +686,7 @@ suite("Kio extension — real kio lsp", () => {
       fs.mkdirSync(root);
       fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
       fs.writeFileSync(path.join(root, "support.kio"),
-        "module support; pub fn helper() { () } pub labels { mark: . }; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn reenter[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n");
+        "module support; pub fn helper() { () } pub type { Mark: .; }; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn reenter[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n");
       fs.writeFileSync(path.join(root, "main.kio"), source);
       const doc = await openFixture(`${relative}/main.kio`);
       const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)

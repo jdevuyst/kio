@@ -50,6 +50,26 @@ meaning of its existing function bodies. Compatibility is checked against
 the module's imports and declarations, including names and operator syntax,
 without inspecting function bodies to see whether conflicts are used.
 
+### Predictable type inference
+
+Visible program structure should provide natural boundaries for local inference.
+A local `let` finishes typing its initializer before later uses are considered.
+When that expression can be typed independently of its enclosing use, introducing
+such a binding or inlining it at its single use should preserve acceptance,
+resulting types, and meaning. This assumes unchanged lexical scope and runtime
+evaluation count, order, and conditionality. Moving an expression that needs
+contextual type information across a boundary may require an annotation.
+
+Making type choices that successful inference already determined explicit,
+including inferred type arguments at their corresponding call stages, should
+preserve acceptance, resulting types, and meaning. Macros may generate code from
+determined types, but making those same choices explicit should neither change
+the generated program’s meaning nor turn a successful expansion into an error.
+
+Inference should follow one derivation rather than search alternative typings.
+Constraint propagation may complete postponed work; the compiler must not retry
+macro expansions until one succeeds.
+
 ### Self-contained operator syntax
 
 [Operator imports](specs/language.md#operators) state the complete grammar, so
@@ -148,6 +168,16 @@ normal lexical resolution selects each call. Their generated
 terms must satisfy the receiving context's contract and become ordinary Kio'.
 This gives users a way to build abstractions without adding a compiler
 primitive for each library operation.
+
+Macros reflect function types, not declaration signatures. Value-parameter
+grouping belongs to function-body binding and host-interface generation, not
+type reflection.
+
+Compile-time evaluation is pure. Its semantic results and failures depend only
+on explicit semantic inputs, never on allocation history, cache state, or
+evaluator scheduling. Invalid inputs or insufficient type information may cause
+evaluation to fail. Reusing a successfully computed result must be equivalent
+to recomputing it from the same inputs.
 
 ## Portable business logic and glue code
 

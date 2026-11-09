@@ -15,7 +15,6 @@ fn type_tag(ty: &Type<Surface>) -> &'static str {
         Type::Function { .. } => "function",
         Type::Product { .. } => "product",
         Type::Sum { .. } => "sum",
-        Type::LabelSugar { .. } => "label-sugar",
         Type::Infer { .. } => "inference-hole",
         Type::Goal { ext, .. } => match *ext {},
         Type::Forall { .. } => "forall",
@@ -30,7 +29,6 @@ fn expr_tag(expr: &Expr<Surface>) -> &'static str {
         Expr::RecCall { .. } => "recursive-call",
         Expr::FnExpr { .. } => "lambda",
         Expr::Let { .. } => "let",
-        Expr::RowLet { .. } => "row-let",
         Expr::Seq { .. } => "sequence",
         Expr::Unit { .. } => "unit",
         Expr::StrLit { .. } => "string-literal",
@@ -39,11 +37,6 @@ fn expr_tag(expr: &Expr<Surface>) -> &'static str {
         Expr::BoolLit { .. } => "boolean-literal",
         Expr::Tuple { .. } => "tuple",
         Expr::FnPlaceholder { .. } => "placeholder-lambda",
-        Expr::LabelValue { .. } => "label-value",
-        Expr::Elaborator { call, .. } => match call {
-            crate::ast::ElaboratorCall::FieldAccess { .. } => "field-access",
-            crate::ast::ElaboratorCall::FieldUpdate { .. } => "field-update",
-        },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { .. } => "macro-call",
         Expr::Ufcs { .. } => "ufcs",
@@ -242,19 +235,12 @@ const EXPR_FORMS: &[ExprForm] = &[
         root_tag: "tuple",
     },
     ExprForm {
-        id: "empty-label-value",
-        grammar: "LabelValue",
+        id: "empty-braces",
+        grammar: "BraceUnit",
         declarations: "",
         source: "{}",
-        // The language contract identifies empty label construction with unit.
+        // Empty braces denote unit.
         root_tag: "unit",
-    },
-    ExprForm {
-        id: "label-value",
-        grammar: "LabelValue",
-        declarations: "",
-        source: "{form_field = form_value}",
-        root_tag: "label-value",
     },
     ExprForm {
         id: "conditional",
@@ -325,20 +311,6 @@ const EXPR_FORMS: &[ExprForm] = &[
         declarations: "",
         source: "recur(poly, cont) form_loop(form_arg)",
         root_tag: "recursive-call",
-    },
-    ExprForm {
-        id: "field-access",
-        grammar: "FieldAccess",
-        declarations: "",
-        source: "form_record.?{form_field}",
-        root_tag: "field-access",
-    },
-    ExprForm {
-        id: "field-update",
-        grammar: "FieldUpdate",
-        declarations: "",
-        source: "form_record.!{form_field = form_value}",
-        root_tag: "field-update",
     },
     ExprForm {
         id: "ufcs-receiver-first",
@@ -491,13 +463,6 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         subject: Subject::Function,
     },
     ExprContext {
-        id: "row-let-rhs",
-        grammar: "RowLet",
-        declarations: "",
-        item: "fn subject() -> . { let .({context_field as context_bound}) = __EXPR_HOLE__; context_bound }",
-        subject: Subject::Function,
-    },
-    ExprContext {
         id: "lambda-body",
         grammar: "FnExpr",
         declarations: "",
@@ -546,20 +511,6 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         // Grouping keeps an arbitrary expression's edge punctuation separate
         // from the source-selected mirrored frame.
         item: "fn subject() -> . { [! (__EXPR_HOLE__) !] }",
-        subject: Subject::Function,
-    },
-    ExprContext {
-        id: "label-payload",
-        grammar: "LabelValueLabel",
-        declarations: "",
-        item: "fn subject() -> . { {context_field = __EXPR_HOLE__} }",
-        subject: Subject::Function,
-    },
-    ExprContext {
-        id: "field-update-payload",
-        grammar: "FieldUpdateLabel",
-        declarations: "",
-        item: "fn subject() -> . { context_record.!{context_field = __EXPR_HOLE__} }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -630,20 +581,6 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         grammar: "PlaceholderLambda",
         declarations: "",
         item: "fn subject() -> . { .x. { let context_bound = __EXPR_HOLE__; x1 } }",
-        subject: Subject::Function,
-    },
-    ExprContext {
-        id: "field-access-receiver",
-        grammar: "FieldAccess",
-        declarations: "",
-        item: "fn subject() -> . { (__EXPR_HOLE__).?{context_field} }",
-        subject: Subject::Function,
-    },
-    ExprContext {
-        id: "field-update-receiver",
-        grammar: "FieldUpdate",
-        declarations: "",
-        item: "fn subject() -> . { (__EXPR_HOLE__).!{context_field = context_value} }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -1009,9 +946,14 @@ const TYPE_CONTEXTS: &[TypeContext] = &[
         item: "type Subjecttype = __TYPE_HOLE__;",
     },
     TypeContext {
-        id: "newtype-payload",
-        grammar: "NewtypeAfterVis",
-        item: "newtype Subjecttype : __TYPE_HOLE__ { constructor make_subject; projector un_subject; };",
+        id: "explicit-nominal-payload",
+        grammar: "NewtypeEntry",
+        item: "type { Subjecttype: __TYPE_HOLE__ { mk; get; }; };",
+    },
+    TypeContext {
+        id: "compact-nominal-payload",
+        grammar: "NominalPayload",
+        item: "type { Subjecttype: __TYPE_HOLE__; };",
     },
     TypeContext {
         id: "type-argument",
@@ -1103,6 +1045,23 @@ fn type_forms_compose_across_grammar_contexts() {
 
         for &context in TYPE_CONTEXTS {
             let cell = format!("{} x {}", form.id, context.id);
+            if form.id == "inference-hole"
+                && matches!(context.grammar, "NewtypeEntry" | "NominalPayload")
+            {
+                let source = type_matrix_source(context, form.source);
+                for error in [
+                    parse(&source).expect_err("a nominal declaration needs a payload"),
+                    parse_lazy(&source)
+                        .and_then(|module| module.force_all())
+                        .expect_err("lazy parsing rejects the same missing payload"),
+                ] {
+                    assert!(
+                        error.diag().1.contains("requires an explicit payload type"),
+                        "{cell}: {error:?}"
+                    );
+                }
+                continue;
+            }
             let scaffold = parse_eager_and_lazy(
                 &type_matrix_source(context, "Matrixtype"),
                 &format!("{cell} scaffold"),
@@ -1308,7 +1267,7 @@ fn explicit_parametric_type_stage_survives_typechecking() {
     use std::path::{Path, PathBuf};
 
     let source = "module matrix;\n\
-        newtype Formbox[A] : A { constructor make_formbox; projector un_formbox; };\n\
+        type { Formbox[A]: A { mk; get; }; };\n\
         fn identity[A](value: A) -> A { value }\n\
         fn subject[A](value: Formbox[A]) -> Formbox[A] { identity[Formbox[A]](value) }";
     let parsed = parse(source).expect("parse explicit type-stage fixture");
@@ -1475,19 +1434,15 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
         assert_pretty_topology(&parsed, id);
     }
 
-    assert_deferred_body_rejected(
-        "module matrix; fn subject() -> . { do {context_field = context_value} { context_final } }",
-        "ungrouped-braced-monadic-receiver",
-    );
     let grouped = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { do({context_field = context_value}) { context_final } }",
-        "grouped-braced-monadic-receiver",
+        "module matrix; fn subject() -> . { do({}) { context_final } }",
+        "grouped-unit-prefix",
     );
     assert!(matches!(
         subject_expr(&grouped, Subject::Function),
         Expr::BlockCall { .. }
     ));
-    assert_pretty_topology(&grouped, "grouped-braced-monadic-receiver");
+    assert_pretty_topology(&grouped, "grouped-unit-prefix");
 
     assert_deferred_body_rejected(
         "module matrix; fn subject() -> . { #1 }",
@@ -1731,6 +1686,8 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "TypeAlias",
     "TypeAliasBody",
     "NewtypeAfterVis",
+    "NewtypeEntry",
+    "NominalPayload",
     "FnDef",
     "TypeBinderGroup",
     "SignatureParam",
@@ -1774,11 +1731,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "FixedOperatorUse",
     "OpUsePart",
     "TupleLit",
-    "LabelValue",
-    "LabelValueLabel",
-    "FieldAccess",
-    "FieldUpdate",
-    "FieldUpdateLabel",
+    "BraceUnit",
     "BlockMacroCall",
     "NeutralBlock",
     "NeutralBinding",
@@ -1801,7 +1754,6 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "ParamPatternElem",
     "ExistentialLet",
     "ExistentialLetBinder",
-    "RowLet",
     "TrailingBlockDecl",
     "BlockExposure",
     "BlockPrefix",
@@ -1817,15 +1769,12 @@ const DIRECT_EXPR_OWNERS: &[&str] = &[
     "ExistentialLet",
     "ExprAtom",
     "ExprStmt",
-    "FieldUpdateLabel",
-    "LabelValueLabel",
     "LetStmt",
     "NeutralBind",
     "NeutralBlock",
     "NonemptyCallArgList",
     "OpUsePart",
     "PatternLet",
-    "RowLet",
     "TupleLit",
     "ValueApplication",
     "ValueElements",
@@ -1836,10 +1785,10 @@ const DIRECT_TYPE_OWNERS: &[&str] = &[
     "FnExpr",
     "FnSignatureParam",
     "HostFnBody",
-    "LabelPayload",
     "LiteralCall",
     "MacroItem",
-    "NewtypeAfterVis",
+    "NewtypeEntry",
+    "NominalPayload",
     "ParamPatternElem",
     "RecFnDef",
     "SigExportFn",
@@ -1859,10 +1808,6 @@ const NON_MATRIX_TYPE_OWNERS: &[(&str, &str)] = &[
         "shares SignatureParam and return-type parsing with function declarations",
     ),
     (
-        "LabelPayload",
-        "exact bare `_` is a label-reuse marker rather than an inference type",
-    ),
-    (
         "RecFnDef",
         "shares SignatureParam and return-type parsing with FnDef",
     ),
@@ -1878,7 +1823,9 @@ const NON_MATRIX_TYPE_OWNERS: &[(&str, &str)] = &[
 
 const EXPECTED_EXPRESSION_GRAMMAR: &str = r#"TypeAlias ::= TypeAliasBody ';'
 TypeAliasBody ::= Vis? 'type' IDENT TypeParamList? '=' Type
-NewtypeAfterVis ::= 'newtype' IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
+NewtypeAfterVis ::= 'type' '{' ';'? NewtypeEntry ';'? '}'
+NewtypeEntry ::= IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
+NominalPayload ::= Type
 FnDef ::= FnDeclModifiers 'fn' IDENT Signature ('->' Type)? Block
 TypeBinderGroup ::= '[' TypeBinder ']'
 SignatureParam ::= IDENT ':' Type
@@ -1898,19 +1845,18 @@ TypeArgList ::= '[' Type ']'
 Block ::= '{' BlockBody '}'
 BlockBody ::= ';'* (Stmt ';'*)* Expr ';'*
 Stmt ::= LetStmt | ExprStmt
-Stmt += PatternLet | ExistentialLet | RowLet
+Stmt += PatternLet | ExistentialLet
 LetStmt ::= 'let' LetBinder '=' Expr ';'
 ExprStmt ::= Expr ';'
 Expr ::= ExprPostfix
 Expr += PrefixOpExpr
 ExprPostfix ::= ExprAtom ExprSuffix*
 ExprSuffix ::= ValueApplication | TypeApplication
-ExprSuffix += FieldAccess | FieldUpdate
 ExprSuffix += DotSpliceSuffix | ReverseSpliceSuffix | OperatorTail
 ValueApplication ::= '(' (Expr (',' Expr)*)? ')'
 TypeApplication ::= '[' Type ']'
 ExprAtom ::= LiteralCall | '(' ')' | '(' Expr ')' | ValuePath | FnExpr
-ExprAtom += TupleLit | LabelValue | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
+ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
 ExprAtom += VariadicLiteral | ClosedFixedOpExpr
 LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '[' Type ']'
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)
@@ -1932,14 +1878,10 @@ ClosedFixedOpExpr ::= FixedOperatorUse
 FixedOperatorUse ::= OpUsePart+
 OpUsePart ::= FixedOpToken | Expr
 TupleLit ::= '(' Expr ',' Expr (',' Expr)* ','? ')'
-LabelValue ::= '{' (LabelValueLabel (',' LabelValueLabel)* ','?)? '}'
-LabelValueLabel ::= LabelPath ('=' Expr?)?
-FieldAccess ::= '.?' '{' (FieldAccessLabel (',' FieldAccessLabel)* ','?)? '}'
-FieldUpdate ::= '.!' '{' (FieldUpdateLabel (',' FieldUpdateLabel)* ','?)? '}'
-FieldUpdateLabel ::= LabelPath ('=' Expr?)?
+BraceUnit ::= '{' ','* '}'
 BlockMacroCall ::= MacroHead BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
 NeutralBlock ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
-NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
+NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | NeutralBind
 NeutralBind ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
 MacroCall ::= MacroHead (TypeApplication | ValueApplication)+
@@ -1959,7 +1901,6 @@ PatternLet ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ParamPatternElem ::= IDENT (':' Type)? | '_' (':' Type)? | ParamPatternTuple | IDENT ':' ParamPatternTuple
 ExistentialLet ::= 'let' '.' '(' ExistsBinder+ ExistentialLetBinder ')' '=' Expr ';'
 ExistentialLetBinder ::= IDENT | ParamPatternTuple
-RowLet ::= 'let' '.' '(' '{' RowLetEntry (',' RowLetEntry)* ','? '}' ')' '=' Expr ';'
 TrailingBlockDecl ::= 'trailing' BlockExposure IDENT?
 BlockExposure ::= 'product' | 'thunk' | 'sequence'
 BlockPrefix ::= BlockValueArgs+

@@ -113,8 +113,10 @@ groups and returned binders across native, Prime and editor parsers.
 One written value group applies one Function layer; tuple packing is not curry
 crossing. Check UFCS against its selected written stage, including outermost
 reverse insertion, a final type-stage boundary, and first/last block prefixes.
-Multiple block prefixes and each projected block are successive stages, while
-explicit block-call type arguments remain excluded. Whole direct macro chains
+Earlier block prefix groups remain separate stages; the whole final prefix
+value and whole projected blocks form one right-associated product for one
+stage. Exercise nested products, omission versus Unit, direct calls and
+residualization after all blocks. Explicit block-call type arguments remain excluded. Whole direct macro chains
 must gather public inference before source admission/action without absorbing
 ordinary generated-result calls into reflected operands.
 
@@ -244,8 +246,8 @@ Trace the shared context/scope machinery through each actual LSP, terminal REPL,
 
 REPL declaration queries use the single-import-item selector contract in
 `specs/cli.md` § Declaration selectors. Keep operator grammar and provider
-identity separate from the callable implementing it, preserve braced labels'
-separate namespace, and replace the whole selector in completion. Qualified
+identity separate from the callable implementing it, and replace the whole
+selector in completion. Retired braced label selectors are not candidates. Qualified
 operator insertion includes its required outer parentheses; inner import-pattern
 parentheses are independent. Shared declaration rendering does not imply that
 Kiodoc directives or expression queries accept REPL selector syntax.

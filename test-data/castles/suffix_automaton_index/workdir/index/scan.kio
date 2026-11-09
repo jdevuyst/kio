@@ -4,6 +4,7 @@ import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
 import macros/control(macro if);
+import macros/row_macros(macro record, macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith as n;
 import testapi/array as a;
@@ -47,7 +48,7 @@ pub fn occurrences(source: Array[I32], query: Array[I32]) -> I32 {
   count_from(source, query, 0, n.add_i32(n.sub_i32(a.array_len(source), a.array_len(query)), 1), 0)
 }
 
-pub labels Audit = { intervals: I32, mismatches: I32, unique: I32, repeated: I32 };
+pub type Audit = { Intervals: I32; Mismatches: I32; Unique: I32; Repeated: I32 };
 
 rec(loop) fn enumerate(source: Array[I32], index: sam.Index, start: I32, stop: I32, audit: Audit) -> Audit {
   if(num.less(start, a.array_len(source))) {
@@ -61,20 +62,20 @@ rec(loop) fn enumerate(source: Array[I32], index: sam.Index, start: I32, stop: I
       };
       let .(first: I32) = if(num.equal(count_from(source, query, 0, start, 0), 0)) { 1 } else { 0 };
       let longest = if(n.leq_i32(2, count)) {
-        num.max(audit.?{repeated}, a.array_len(query))
+        num.max(audit.>select { Repeated.get }, a.array_len(query))
       } else {
-        audit.?{repeated}
+        audit.>select { Repeated.get }
       };
       recur enumerate(
       , source
       , index
       , start
       , n.add_i32(stop, 1)
-      , {
-        , intervals = n.add_i32(audit.?{intervals}, 1)
-        , mismatches = n.add_i32(audit.?{mismatches}, mismatch)
-        , unique = n.add_i32(audit.?{unique}, first)
-        , repeated = longest
+      , record {
+          Intervals.mk(n.add_i32(audit.>select { Intervals.get }, 1));
+          Mismatches.mk(n.add_i32(audit.>select { Mismatches.get }, mismatch));
+          Unique.mk(n.add_i32(audit.>select { Unique.get }, first));
+          Repeated.mk(longest)
         }
       )
     } else {
@@ -86,5 +87,11 @@ rec(loop) fn enumerate(source: Array[I32], index: sam.Index, start: I32, stop: I
 }
 
 pub fn verify(source: Array[I32], index: sam.Index) -> Audit {
-  enumerate(source, index, 0, 1, {intervals = 0, mismatches = 0, unique = 0, repeated = 0})
+  enumerate(
+  , source
+  , index
+  , 0
+  , 1
+  , record { Intervals.mk(0); Mismatches.mk(0); Unique.mk(0); Repeated.mk(0) }
+  )
 }

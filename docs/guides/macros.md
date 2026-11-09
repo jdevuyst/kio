@@ -40,8 +40,9 @@ connection, and the macro itself is never a first-class value.
 ## A complete checked macro
 
 The implementation below receives the source type, checked source term, and
-an optional target type. It returns the source term unchanged when the caller
-provides enough context to solve the target:
+a required target type. The caller supplies that target explicitly or through
+context. The implementation returns the source term, and the compiler checks
+that it has the requested result type:
 
 <!--kio {file}
 package guide;
@@ -59,23 +60,14 @@ module library;
 ```kio {file}
 module library/identity;
 
-import __intrinsics__;
-
 import __comptime__;
 
-type Target_request = __Type__ | .;
-
 pure fn checked_impl(
-  , ct: __Comptime__
+  , _ct: __Comptime__
   , _source: __Type__
   , value: __Checked_term__
-  , target: Target_request
-  ) -> __Checked_term__ {
-  __either__[__Type__][.][__Checked_term__](target
-    , .(_target: __Type__) -> __Checked_term__ { value }
-    , .() -> __Checked_term__ { __macro_error__(ct, "identity needs a target type"[__Diagnostic_text__]) }
-    )
-}
+  , _target: __Type__
+  ) -> __Checked_term__ { value }
 
 pub macro identity : [Source] Source -> [Target] Target { impl checked_impl }
 
@@ -159,16 +151,21 @@ There are three ways for a declaration to expose a block:
   binding or non-final action. Pure `let` bindings remain local, and the block
   ends with an explicit final action.
 
-Descriptors correspond to successive final function stages in the macro's
-public type, in written descriptor order. Each projects one value for the
-whole domain of its stage, rather than one component of a shared product. The first is unlabelled; later descriptors have
-distinct labels, such as `trailing thunk else`. Other declaration entries can
-appear between descriptors without changing that order. A block call must
-supply every required block and cannot leave an ordinary argument group
-unapplied. A macro with trailing descriptors is called with blocks, not
-with blockless parentheses. [UFCS](ufcs.md#calls-with-trailing-blocks) can
-insert a receiver among the ordinary values before the blocks; it does not
-replace the blocks with ordinary arguments.
+Descriptors select how each block becomes a value. The first is unlabelled;
+later descriptors have distinct labels, such as `trailing thunk else`. Other
+declaration entries can appear between descriptors without changing their order.
+A block call supplies every declared block. Its final prefix value, if present,
+and the projected block values form one right-associated product for one
+function stage. Earlier prefix groups remain separate stages. A direct call may
+instead write the values, such as `if(condition, .() { yes() }, .() { no() })`; its ordinary public type
+and the macro's semantic checks determine admission. Once all blocks are present,
+ordinary macro residualization applies. There is no partial application within
+a product domain.
+
+A macro may omit its whole quoted input from the generated code. If the
+generated code evaluates a product input, its components evaluate in order.
+Pass a component as a thunk when it must be independently skippable; the
+generated code can choose whether to invoke it.
 
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="calling-a-block-macro"></a>
@@ -186,13 +183,14 @@ Written ordinary values between the head and first block are prefix arguments
 and always use an argument list: `match(value) { clauses }` and
 `form(left, right) { body() }`. The latter supplies one product, exactly as
 `form((left, right)) { body() }` does. To apply two prefix function stages,
-write `form(left)(right) { body() }`. Direct `form() { body() }` supplies one
-Unit stage, whereas `form { body() }` has no prefix stage.
+write `form(left)(right) { body() }`: `(left)` is the earlier stage and
+`right` combines with the block. Direct `form() { body() }` includes Unit in
+that product, whereas `form { body() }` has no prefix value.
 Block calls infer all type arguments; their explicit prefixes contain only
 values. Names, literals and operator expressions all follow the same rule.
 UFCS can supply a receiver without a written prefix list, for example
-`value.>match { clauses }`; the receiver creates a prefix stage before the
-blocks. With several written prefix groups, forward UFCS inserts into the
+`value.>match { clauses }`; the receiver creates a prefix value before the
+blocks are projected. With several written prefix groups, forward UFCS inserts into the
 first and reverse UFCS into the last. Neither inserts into a projected block.
 
 The list also makes nested ownership clear. In
@@ -234,7 +232,7 @@ The ordinary `impl` field contains a lexical path to a function whose type must
 match the reflected ABI below. Use a bare local or selectively imported name
 such as `checked_impl`, or select through an explicit module alias such as
 `helpers.checked_impl`. The shared path grammar can also name a local/imported
-newtype member directly or through an identity alias, but a constructor or
+nominal member directly or through an identity alias, but a constructor or
 projector has its ordinary member type, which does not match this ABI; define
 an ABI-shaped function instead. Calls, inline lambdas, and slash-qualified
 package paths such as
@@ -248,7 +246,7 @@ ordinary function called `fills`.
 
 The path follows ordinary expression source order: a same-module ordinary
 function, host function, or recursive-group member must appear first. The same
-is true of the newtype or identity-alias head used to qualify a constructor or
+is true of the nominal or identity-alias head used to qualify a constructor or
 projector. Local captured types and functions, including host declarations,
 must also appear before the macro. A same-module alias
 or selective self-import does not make a later declaration available early.
@@ -287,15 +285,22 @@ It then calls the implementation with:
 3. one reflected argument for every call slot, in declaration order; and
 4. an expected return value of `__Checked_term__`.
 
-A value slot such as `Source` becomes `__Checked_term__`. A type slot becomes
-`__Type__` when the implementation requires it to be solved before evaluation,
-or `__Type__ | .` when the implementation accepts an unresolved request as
-unit. In the example, `Source`, the source value, and trailing `Target` become
-`_source`, `value`, and `target` respectively. Optional absence controls only
-whether that already-selected action may run: the exact declaration binder
-must occur in the result, must have no value dependency, and must not be
-shadowed before that result occurrence. It does not turn an unresolved `_`
-into a new polymorphic residual.
+A value slot such as `Source` becomes `__Checked_term__`. A type slot normally
+becomes `__Type__`. A binder used only in the terminal result may instead use
+`.` in the private implementation: it always receives unit, even when the
+caller supplies an expected type. This natural mode lets the implementation
+construct its result from the source. The compiler then checks that result
+against any caller expectation. Required mode uses `__Type__` and refuses to
+evaluate until that target is complete, even if the implementation ignores it.
+There is no optional-presence branch.
+
+Eligibility follows the exact lexical binder after alias expansion: it must
+occur in the result and in no later value domain, with shadowing respected.
+A dead binder is ineligible. In the example, `Source`, the source value, and
+trailing `Target` become `_source`, `value`, and `_target`. Replacing only
+`_target: __Type__` with `_target: .` makes this identity implementation natural
+without changing its public call type. Other source-related type slots can
+still receive information from ordinary public call constraints.
 
 After evaluation, the typer checks the returned term against the declared
 result. If result variables remain unsolved, the returned term's actual type
@@ -321,7 +326,8 @@ A marked implementation receives:
    and
 4. an expected result of `__Checked_term__ & __Fill_ctx__`.
 
-Every marked type slot is `__Type__`. Each value slot is a checked recipe whose
+Marked result-only slots use the same natural `.` or required `__Type__`
+choice. Other marked type slots remain `__Type__` handles. Each value slot is a checked recipe whose
 product and lambda headers are available even when a nested body is waiting
 for an expected type. The implementation runs once over those headers, returns
 one checked result and the final context, and cannot enter or inspect a pending
@@ -339,11 +345,16 @@ has a known type and `identity` has type `[A] A -> A`, both calls in
 `(identity(value), identity(value))` have determined types. A direct lambda is the
 exception: all of its type binders and value parameters must be complete, and
 no `_` placeholder may remain. Only unresolved goals in its final body result
-may stay open. Any other input with an undetermined type fails at its source
-before the implementation runs. An ordinary `let` can finish a call whose
-result needs callback-body checking. It cannot invent a missing generic type
-argument: supply that argument or a complete binding annotation when neither
-the arguments nor the context determine it.
+may stay open.
+
+An inner computed expression can finish ordinary typechecking before the outer
+macro prepares its inputs. For example, a call whose callback body determines
+its result can be used inline or bound to an ordinary `let` first. An inner macro
+can likewise finish when its own inputs determine its result. This does not
+supply a generic choice that needs information from the outer macro's action:
+add a type argument or annotation, or change the composition, when the ordinary
+arguments and context do not determine it. A computed input must be complete
+before the outer implementation runs.
 
 An ordinary call can also obtain its result type from a fully annotated
 callback without checking the callback body first. For example, given
@@ -381,15 +392,28 @@ anchor. If the destination is already known, every candidate checks it. If it
 is open, any candidate whose result is independently determined may establish
 or refine it, and all other candidates must agree. A conflict or a group with
 no determining candidate fails as a non-directional common-result problem. The
-returned checked result does not implicitly fill an open marked target. Only
-the relations you append participate; unrelated declarations cannot change
-the group's result.
+returned checked result can determine a natural result only after all its
+producers finish and its own type is complete; it cannot supply context to an
+unfinished producer. Unrelated declarations cannot change the group's result.
+
+Use `__fill_result__(ct, fills, candidate)` to relate a candidate to the whole
+terminal result without receiving or inspecting that result type. For example,
+a natural branch-selection macro can append every clause's return type to one
+context and build its dispatch term using a source-derived return-type handle.
+All equations are adopted together, so choosing a handle for construction does
+not privilege that clause during inference. The endpoint denotes the body
+result, including its residual generic scope, rather than an enclosing residual
+function. Both fill helpers preserve candidate dependencies and take effect
+only through the returned context.
 
 `__term_specialize__(ct, term, pattern, target)` specializes a provisional
 term's explicit leading type binders by exact structural matching, not
 subtyping or containment, without changing fill state. Its three
 arms are a specialized checked term, unit for a normal structural mismatch,
-and diagnostic text for malformed or underdetermined input.
+and diagnostic text for malformed or underdetermined specialization of
+complete input. The pattern and target must be complete, and the term's
+leading forall prefix and end head must be known. Observing missing information
+raises an uncatchable compile-time error instead of either recoverable arm.
 
 When a marked argument is an explicit tuple, its components' headers are
 available separately. A call to the core product constructor `__pair__` works
@@ -414,13 +438,20 @@ inspection does not evaluate a source argument twice.
 - `__Diagnostic_text__`, `Comptime_str`, and `Comptime_bool` are compile-time
   message, string, and predicate values.
 
-Every callable helper takes `__Comptime__` first. Only `__fill__` additionally
-takes `__Fill_ctx__` second and returns the descendant context.
+Every callable helper takes `__Comptime__` first. Both `__fill__` and
+`__fill_result__` take `__Fill_ctx__` second and return the descendant context.
 
 `__reflect_type__(ct)[T]` reflects a solved type argument. `__type_view__`
 decomposes a type into the complete structural view: unit, bottom, product,
 sum, function, forall, type variable, or named head. Equality helpers preserve
-nominal and host identities; transparent aliases unfold.
+nominal and host identities; transparent aliases unfold. The function arm
+contains its domain and result. The domain describes one complete argument
+packet, including a product when the function accepts several components.
+Corresponding parameters opened from equivalent complete generic types compare
+equal, even when the types were built separately. Display names are not binder
+identities. A comparison that needs unresolved type information fails instead
+of returning a guessed answer; inspecting or storing an opened fragment need
+not perform that comparison.
 
 A checked term is stronger than an untyped syntax tree. Construction helpers
 validate the type at every step, so a macro cannot return malformed Kio'
@@ -432,6 +463,16 @@ Type constructors such as `__type_product__`, `__type_sum__`,
 `__type_arrow__`, and `__type_forall__` build reflected types. Checked-term
 constructors such as `__term_fn__`, `__term_call__`, `__term_let__`, and
 `__intrinsic_pair__` build typed Kio' nodes.
+
+When `__type_forall__` or `__term_type_fn__` introduces a parameter, its
+returned Type or checked term cannot leave a parameter opened from another
+generic type free. You can keep the other generic type intact, or instantiate
+it with the new parameter before using its body. The new parameter, a live
+enclosing constructor parameter, and a genuine free caller parameter may be
+used normally. Passing an opened fragment through an ordinary generic helper
+does not rebind it: the helper's type arguments are substituted normally.
+Outside these construction results you can still inspect and store opened
+fragments.
 
 This helper builds the checked identity function at any reflected type:
 
@@ -458,15 +499,14 @@ pure fn exercise(value: .) -> . { make_identity(value) }
 
 ```kio {@macro_helper}
 pure fn identity_term(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
-  let one = __type_arity_succ__(ct, __type_arity_zero__(ct));
-  let fn_type = __type_arrow__(ct, typ, one, typ);
+  let fn_type = __type_arrow__(ct, typ, typ);
   __term_fn__(ct, fn_type, .(parameter: __Checked_term__) -> __Checked_term__ { parameter })
 }
 ```
 
 `__term_fn__` creates a hygienic parameter and passes its checked reference to
-the callback. If `fn_type` is not a one-parameter function with the callback's
-result type, construction cannot yield a valid term. `__term_call__` applies
+the callback. The callback receives the complete domain packet, and its
+result must match the function result type. `__term_call__` applies
 the same discipline to a callee and argument packet.
 
 The checked example invokes this helper through a macro that constructs
@@ -475,14 +515,23 @@ an application of the generated function. The
 shows the implementation, caller, and behavior test together.
 
 Use `__term_type__(ct, term)` to inspect a checked argument's exact type.
-Prefer the supplied folds over reflected products, sums, arguments, arities,
-and function parameters to ad hoc encoding of compiler data.
+Prefer the supplied folds over reflected products, sums, arguments, and kind arities to ad hoc encoding of compiler data.
 
-After aliases unfold, an unresolved outer type or head keeps
-`__type_args_fold__` or `__type_apply__` pending. The fold does not assume zero
-arguments, and type application does not discard its argument. This prevents
-an open reflected handle from producing a concrete answer before its outer
-structure is known.
+Unknown information can be carried without being inspected. A known function
+view can expose an unknown result child; constructing a product or appending a
+fill can carry that child onward. Viewing the child itself, comparing it for
+type equality, or displaying it requires information that is not available and
+raises an uncatchable compile-time error. Rigid generic variables such as a
+function's declared `A` are known and remain inspectable.
+
+Root predicates need only the outer constructor. Spine folds need each
+traversed right-spine head but may pass opaque elements to the callback.
+`__type_args_fold__` needs a known head, and `__type_apply__` needs the head it
+applies to; an unresolved required head fails rather than acting empty or
+unchanged. Type instantiation and equality need complete operands. A named view
+also needs the argument-root arities it reports. An evaluated failure cannot
+be caught or hidden by discarding its result; an untaken branch does not fail.
+These rules do not change the structural fuel requirements below.
 
 ## Three similarly named surfaces
 
@@ -525,8 +574,7 @@ pure fn checked_impl(
   , id_i32_term: __Checked_term__
   , value: __Checked_term__
   ) -> __Checked_term__ {
-  let one = __type_arity_succ__(ct, __type_arity_zero__(ct));
-  let fn_type = __type_arrow__(ct, i32_type, one, i32_type);
+  let fn_type = __type_arrow__(ct, i32_type, i32_type);
   __term_call__(ct, fn_type, id_i32_term, value)
 }
 
@@ -626,9 +674,10 @@ The evaluator measures the root fuel and checks every recursive callback:
   established structure; reflection and fills still see the original scoped
   type. An unknown outer structure cannot supply fuel, and a projected value
   passed directly to the recursive callback must be complete;
-- a finite constructor containing a projected field uses that field's known
-  outer structure consistently in its size. An unknown outer field makes the
-  whole constructor unmeasurable;
+- a reflected Type nested inside ordinary data counts as one item, including
+  a completely opaque Type. Removing a data constructor can make progress even
+  if its Type payload grows. Shrinking only a Type inside a fixed-size tuple
+  does not make progress; pass that Type directly when traversing its structure;
 - a determined child can remain measurable even when its parent is open;
 - closures, opaque atoms, stuck terms, case splits, and recursive callbacks are
   not valid fuel.
@@ -639,6 +688,14 @@ available so you can find the failing edge. Ignoring the callback's result
 does not erase the failure: compile-time evaluation reports its first failed
 edge. The size check permits recursive macro code while ensuring that
 every recursive path terminates.
+
+To visit leading universal binders without inspecting a function's result,
+use `__type_forall_prefix_fold__`. It threads an accumulator through the binders
+in outermost-first order and returns the accumulator with the remaining Type.
+A known Function can stop the fold even if its result is opaque. An unknown
+next head fails rather than pretending the prefix has ended. The callback
+receives the same binder handle as `__type_view__`; use `__type_var_arity__` when
+its kind arity matters.
 
 The [reflected product walk](macro-authoring.md#walk-an-actual-reflected-product-tree)
 shows shrinking type fuel separately from generated-term state, with an invoked

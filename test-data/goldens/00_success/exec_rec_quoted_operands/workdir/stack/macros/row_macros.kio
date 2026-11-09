@@ -1,27 +1,21 @@
-/// Row-shaped product macros for constructing, updating, and projecting labeled fields.
+/// Constructs, updates, and selects ordinary product fields by exact applied type.
 module stack/macros/row_macros;
 
 import __intrinsics__;
 
 import __comptime__;
 import stack/macros/macro_util(
-, Macro_result
 , Matched_slot
 , Matched_slot_tail
-, Maybe_matched_slot
-, Optional_type
 , Slot
 , Slot_list
 , Term_list
 , Type_list
 , Type_pair
 , build_product_from_slots
-, err
 , finish_macro_result
-, ok
 , product_slots
 , product_spine
-, right_fold_product
 , right_fold_term_product_from_reversed
 , slot_cons
 , slot_empty
@@ -38,9 +32,7 @@ import stack/macros/macro_util(
 , type_reverse
 );
 
-type Function_view_tail = __Type_arity__ & __Type__;
-
-type Function_view = __Type__ & Function_view_tail;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -64,29 +56,15 @@ type Maybe_function_view = Function_view | .;
 
 type Slot_list_result = Slot_list | __Diagnostic_text__;
 
-type Slot_result = Slot | __Diagnostic_text__;
-
 type Slot_cell = Slot & Slot_list;
 
 type Slots_fold_state = Type_list & Term_list;
-
-type Apply_state = Type_list & Slot_list;
-
-type Apply_next = Slot_list & Apply_state;
-
-type Apply_step = Slot_list | Apply_next;
-
-type Patch_list_next = Slot_list & Slot_list;
-
-type Patch_list_step = Slot_list | Patch_list_next;
 
 type Select_state = Type_list & Slot_list;
 
 type Select_next = Slot_list & Select_state;
 
 type Select_step = Slot_list_result | Select_next;
-
-type Patch_parser = (__Type__ & __Checked_term__) -> Slot_list_result;
 
 /// Combines two row values into one product.
 pub pure fn row_pair[A][B](left: A, right: B) -> A & B { (left, right) }
@@ -161,11 +139,11 @@ pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
 }
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__[__Type__][Function_view_tail](view)
+  __fst__[__Type__][__Type__](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][Function_view_tail](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 pure fn slot_list_ok(ct: __Comptime__, slots: Slot_list) -> Slot_list_result {
@@ -174,14 +152,6 @@ pure fn slot_list_ok(ct: __Comptime__, slots: Slot_list) -> Slot_list_result {
 
 pure fn slot_list_err(ct: __Comptime__, message: __Diagnostic_text__) -> Slot_list_result {
   __right__[Slot_list][__Diagnostic_text__](message)
-}
-
-pure fn slot_ok(ct: __Comptime__, slot: Slot) -> Slot_result {
-  __left__[Slot][__Diagnostic_text__](slot)
-}
-
-pure fn slot_err(ct: __Comptime__, message: __Diagnostic_text__) -> Slot_result {
-  __right__[Slot][__Diagnostic_text__](message)
 }
 
 pure fn slots_fold_types_rev(state: Slots_fold_state) -> Type_list {
@@ -208,7 +178,7 @@ pure fn slots_fold(ct: __Comptime__, slots: Slot_list) -> Slots_fold_state {
       let loop_step_fn =
         .(fuel: Slot_list, state: Slots_fold_state) -> Slots_fold_step {
           __either__[.][Slot_cell][Slots_fold_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_done: .) -> Slots_fold_step { __left__[Slots_fold_state][Slots_fold_next](state) }
           , .(cell: Slot_cell) -> Slots_fold_step {
               let current = __fst__[Slot][Slot_list](cell);
@@ -246,10 +216,6 @@ pure fn slot_append(ct: __Comptime__, left: Slot_list, right: Slot_list) -> Slot
   )
 }
 
-pure fn slots_type(ct: __Comptime__, slots: Slot_list) -> __Type__ {
-  right_fold_product(ct, type_reverse(ct, slots_fold_types_rev(slots_fold(ct, slots))))
-}
-
 pure fn slots_term(ct: __Comptime__, slots: Slot_list) -> __Checked_term__ {
   let folded = slots_fold(ct, slots);
   right_fold_term_product_from_reversed(
@@ -259,312 +225,65 @@ pure fn slots_term(ct: __Comptime__, slots: Slot_list) -> __Checked_term__ {
   )
 }
 
-pure fn finish_slots_exact_target(
-, ct: __Comptime__
-, slots: Slot_list
-, target: Optional_type
-, mismatch_message: __Diagnostic_text__
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result {
-      __if_then_else__(
-      , __type_equal__(ct, slots_type(ct, slots), target_type)
-      , .() -> Macro_result { ok(ct, slots_term(ct, slots)) }
-      , .() -> Macro_result { err(ct, mismatch_message) }
-      )
-    }
-  , .() -> Macro_result { ok(ct, slots_term(ct, slots)) }
-  )
-}
+type Row_consumer = Slot_list -> __Checked_term__;
 
-pure fn finish_slots_reordered_target(ct: __Comptime__, slots: Slot_list, target: Optional_type) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result {
-      build_product_from_slots(
-      , ct
-      , product_spine(ct, target_type)
-      , product_spine(ct, slots_type(ct, slots))
-      , slots
-      , .t
-      )
-    }
-  , .() -> Macro_result { ok(ct, slots_term(ct, slots)) }
-  )
-}
+type Row_walk_state = __Checked_term__ & Row_consumer;
 
-pure fn mk_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: Optional_type) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result {
-      build_product_from_slots(
-      , ct
-      , product_spine(ct, target_type)
-      , product_spine(ct, source)
-      , product_slots(ct, source, value)
-      , .t
-      )
-    }
-  , .() -> Macro_result { ok(ct, value) }
-  )
-}
-
-/// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn mk_checked(
+pure fn with_product_slots(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, mk_macro(ct, source, value, target)) }
-
-/// Builds a row product, reordering fields only when an explicit or expected target asks for it.
-pub macro mk : [Source] Source -> [Target] Target { impl mk_checked }
-
-pure fn patch_from_pair(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Slot_result {
-  __either__[Type_pair][.][Slot_result](
-  , product_view(ct, source)
-  , .(pair: Type_pair) -> Slot_result {
-      let constructor_type = __fst__[__Type__][__Type__](pair);
-      let payload_type = __snd__[__Type__][__Type__](pair);
-      __either__[Function_view][.][Slot_result](
-      , function_view(ct, constructor_type)
-      , .(view: Function_view) -> Slot_result {
-          __if_then_else__(
-          , __type_equal__(ct, function_param(ct, view), payload_type)
-          , .() -> Slot_result {
-              let constructor = __intrinsic_fst__(ct, source, value);
-              let payload = __intrinsic_snd__(ct, source, value);
-              slot_ok(
-              , ct
-              , (
-                , function_result(ct, view)
-                , __term_call__(ct, constructor_type, constructor, payload)
-                )
-              )
-            }
-          , .() -> Slot_result {
-              slot_err(
-              , ct
-              , "set patch constructor parameter does not match payload"[__Diagnostic_text__]
-              )
-            }
-          )
-        }
-      , .(_not_function: .) -> Slot_result {
-          slot_err(ct, "set patch must start with a constructor function"[__Diagnostic_text__])
-        }
-      )
-    }
-  , .(_not_product: .) -> Slot_result {
-      slot_err(ct, "set patch must be a constructor-payload pair"[__Diagnostic_text__])
-    }
-  )
-}
-
-pure fn parse_patch_packet_step(
-, ct: __Comptime__
-, recur: Patch_parser
-, source: __Type__
-, value: __Checked_term__
-) -> Slot_list_result {
-  __either__[Type_pair][.][Slot_list_result](
-  , product_view(ct, source)
-  , .(pair: Type_pair) -> Slot_list_result {
-      let left_type = __fst__[__Type__][__Type__](pair);
-      let right_type = __snd__[__Type__][__Type__](pair);
-      __either__[Function_view][.][Slot_list_result](
-      , function_view(ct, left_type)
-      , .(view: Function_view) -> Slot_list_result {
-          __if_then_else__(
-          , __type_equal__(ct, function_param(ct, view), right_type)
-          , .() -> Slot_list_result {
-              __either__[Slot][__Diagnostic_text__][Slot_list_result](
-              , patch_from_pair(ct, source, value)
-              , .(slot: Slot) -> Slot_list_result {
-                  slot_list_ok(ct, slot_cons(ct, slot, slot_nil()))
-                }
-              , .(message: __Diagnostic_text__) -> Slot_list_result { slot_list_err(ct, message) }
-              )
-            }
-          , .() -> Slot_list_result {
-              slot_list_err(
-              , ct
-              , "set patch constructor parameter does not match payload"[__Diagnostic_text__]
-              )
-            }
-          )
-        }
-      , .(_not_function: .) -> Slot_list_result {
-          let left_value = __intrinsic_fst__(ct, source, value);
-          let right_value = __intrinsic_snd__(ct, source, value);
-          __either__[Slot_list][__Diagnostic_text__][Slot_list_result](
-          , recur(left_type, left_value)
-          , .(left_slots: Slot_list) -> Slot_list_result {
-              __either__[Slot_list][__Diagnostic_text__][Slot_list_result](
-              , recur(right_type, right_value)
-              , .(right_slots: Slot_list) -> Slot_list_result {
-                  slot_list_ok(ct, slot_append(ct, left_slots, right_slots))
-                }
-              , .(message: __Diagnostic_text__) -> Slot_list_result { slot_list_err(ct, message) }
-              )
-            }
-          , .(message: __Diagnostic_text__) -> Slot_list_result { slot_list_err(ct, message) }
-          )
-        }
-      )
-    }
-  , .(_not_product: .) -> Slot_list_result {
-      slot_list_err(ct, "set patches must be constructor-payload pairs"[__Diagnostic_text__])
-    }
-  )
-}
-
-pure fn parse_patch_packet(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Slot_list_result {
-  __structural_recur__(ct)[__Type__][__Checked_term__][Slot_list_result](
-  , source
-  , value
-  , .(loop_recur: Patch_parser, loop_fuel: __Type__, loop_state: __Checked_term__) -> Slot_list_result {
-      parse_patch_packet_step(ct, loop_recur, loop_fuel, loop_state)
-    }
-  )
-}
-
-pure fn apply_types_rev(state: Apply_state) -> Type_list { __fst__[Type_list][Slot_list](state) }
-
-pure fn apply_slots_rev(state: Apply_state) -> Slot_list { __snd__[Type_list][Slot_list](state) }
-
-pure fn apply_patch_to_slots(ct: __Comptime__, patch: Slot, slots: Slot_list) -> Slot_list {
-  __structural_recur__(ct)[Slot_list][Apply_state][Slot_list](
-  , slots
-  , (type_nil(), slot_nil())
-  , .(
-    , loop_recur: (Slot_list & Apply_state) -> Slot_list
-    , loop_fuel: Slot_list
-    , loop_state: Apply_state
-    ) -> Slot_list {
-      let loop_step_fn =
-        .(fuel: Slot_list, state: Apply_state) -> Apply_step {
-          __either__[.][Slot_cell][Apply_step](
-          , Slot_list.un_slot_list(fuel)
-          , .(_done: .) -> Apply_step {
-              __left__[Slot_list][Apply_next](slot_cons(
-              , ct
-              , patch
-              , slot_prepend_reverse_by_types(
-                , ct
-                , apply_types_rev(state)
-                , apply_slots_rev(state)
-                , slot_nil()
-                )
-              ))
-            }
-          , .(cell: Slot_cell) -> Apply_step {
-              let current = __fst__[Slot][Slot_list](cell);
-              __if_then_else__(
-              , __type_equal__(ct, slot_type(ct, current), slot_type(ct, patch))
-              , .() -> Apply_step {
-                  __left__[Slot_list][Apply_next](slot_prepend_reverse_by_types(
-                  , ct
-                  , apply_types_rev(state)
-                  , apply_slots_rev(state)
-                  , slot_cons(ct, patch, __snd__[Slot][Slot_list](cell))
-                  ))
-                }
-              , .() -> Apply_step {
-                  __right__[Slot_list][Apply_next]((
-                  , __snd__[Slot][Slot_list](cell)
-                  , (
-                    , type_cons(ct, slot_type(ct, current), apply_types_rev(state))
-                    , slot_cons(ct, current, apply_slots_rev(state))
-                    )
-                  ))
-                }
-              )
-            }
-          )
-        };
-      __either__[Slot_list][Apply_next][Slot_list](
-      , loop_step_fn(loop_fuel, loop_state)
-      , .(loop_done: Slot_list) -> Slot_list { loop_done }
-      , .(loop_next: Apply_next) -> Slot_list {
-          loop_recur(
-          , __fst__[Slot_list][Apply_state](loop_next)
-          , __snd__[Slot_list][Apply_state](loop_next)
-          )
-        }
-      )
-    }
-  )
-}
-
-pure fn apply_patch_list(ct: __Comptime__, patches: Slot_list, slots: Slot_list) -> Slot_list {
-  __structural_recur__(ct)[Slot_list][Slot_list][Slot_list](
-  , patches
-  , slots
-  , .(loop_recur: (Slot_list & Slot_list) -> Slot_list, loop_fuel: Slot_list, loop_state: Slot_list) -> Slot_list {
-      let loop_step_fn =
-        .(fuel: Slot_list, state: Slot_list) -> Patch_list_step {
-          __either__[.][Slot_cell][Patch_list_step](
-          , Slot_list.un_slot_list(fuel)
-          , .(_done: .) -> Patch_list_step { __left__[Slot_list][Patch_list_next](state) }
-          , .(cell: Slot_cell) -> Patch_list_step {
-              __right__[Slot_list][Patch_list_next]((
-              , __snd__[Slot][Slot_list](cell)
-              , apply_patch_to_slots(ct, __fst__[Slot][Slot_list](cell), state)
-              ))
-            }
-          )
-        };
-      __either__[Slot_list][Patch_list_next][Slot_list](
-      , loop_step_fn(loop_fuel, loop_state)
-      , .(loop_done: Slot_list) -> Slot_list { loop_done }
-      , .(loop_next: Patch_list_next) -> Slot_list {
-          loop_recur(
-          , __fst__[Slot_list][Slot_list](loop_next)
-          , __snd__[Slot_list][Slot_list](loop_next)
-          )
-        }
-      )
-    }
-  )
-}
-
-pure fn set_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, patches_source: __Type__
-, patches: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[Slot_list][__Diagnostic_text__][Macro_result](
-  , parse_patch_packet(ct, patches_source, patches)
-  , .(patch_slots: Slot_list) -> Macro_result {
-      finish_slots_reordered_target(
-      , ct
-      , apply_patch_list(ct, patch_slots, product_slots(ct, source, value))
-      , target
-      )
-    }
-  , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
-  )
-}
-
-/// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn set_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, patches_source: __Type__
-, patches: __Checked_term__
-, target: Optional_type
+, consume: Row_consumer
 ) -> __Checked_term__ {
-  finish_macro_result(ct, set_macro(ct, source, value, patches_source, patches, target))
+  __structural_recur__(ct)[__Type__][Row_walk_state][__Checked_term__](
+  , source
+  , (value, consume)
+  , .(recur: (__Type__ & Row_walk_state) -> __Checked_term__, typ: __Type__, state: Row_walk_state) -> __Checked_term__ {
+      let current = __fst__[__Checked_term__][Row_consumer](state);
+      let finish = __snd__[__Checked_term__][Row_consumer](state);
+      __either__[Type_pair][.][__Checked_term__](
+      , product_view(ct, typ)
+      , .(pair: Type_pair) -> __Checked_term__ {
+          let head_type = __fst__[__Type__][__Type__](pair);
+          let tail_type = __snd__[__Type__][__Type__](pair);
+          let head = (head_type, __intrinsic_fst__(ct, typ, current));
+          __term_let__(
+          , ct
+          , tail_type
+          , __intrinsic_snd__(ct, typ, current)
+          , .(tail: __Checked_term__) -> __Checked_term__ {
+              recur(
+              , tail_type
+              , (
+                , tail
+                , .(slots: Slot_list) -> __Checked_term__ { finish(slot_cons(ct, head, slots)) }
+                )
+              )
+            }
+          )
+        }
+      , .() -> __Checked_term__ { finish(slot_cons(ct, (typ, current), slot_nil())) }
+      )
+    }
+  )
 }
 
-/// Applies constructor-payload patch packets to a row, replacing existing fields and prepending new fields.
-pub macro set : [Source] Source -> [Patches] Patches -> [Target] Target { impl set_checked }
+pure fn with_row_slots(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, consume: Row_consumer
+) -> __Checked_term__ {
+  __if_then_else__(
+  , __type_equal__(ct, source, __type_unit__(ct))
+  , .() -> __Checked_term__ { consume(slot_nil()) }
+  , .() -> __Checked_term__ { with_product_slots(ct, source, value, consume) }
+  )
+}
+
+pure fn row_slot_types(ct: __Comptime__, slots: Slot_list) -> Type_list {
+  type_reverse(ct, slots_fold_types_rev(slots_fold(ct, slots)))
+}
 
 pure fn select_types_rev(state: Select_state) -> Type_list { __fst__[Type_list][Slot_list](state) }
 
@@ -575,6 +294,8 @@ pure fn select_slots(
 , selectors: Slot_list
 , source_types: Type_list
 , source_slots: Slot_list
+, missing_message: __Diagnostic_text__
+, non_function_message: __Diagnostic_text__
 ) -> Slot_list_result {
   __structural_recur__(ct)[Slot_list][Select_state][Slot_list_result](
   , selectors
@@ -587,7 +308,7 @@ pure fn select_slots(
       let loop_step_fn =
         .(fuel: Slot_list, state: Select_state) -> Select_step {
           __either__[.][Slot_cell][Select_step](
-          , Slot_list.un_slot_list(fuel)
+          , Slot_list.get(fuel)
           , .(_done: .) -> Select_step {
               __left__[Slot_list_result][Select_next](slot_list_ok(
               , ct
@@ -625,18 +346,12 @@ pure fn select_slots(
                       ))
                     }
                   , .(_missing: .) -> Select_step {
-                      __left__[Slot_list_result][Select_next](slot_list_err(
-                      , ct
-                      , "get selector has no matching row field"[__Diagnostic_text__]
-                      ))
+                      __left__[Slot_list_result][Select_next](slot_list_err(ct, missing_message))
                     }
                   )
                 }
               , .(_not_function: .) -> Select_step {
-                  __left__[Slot_list_result][Select_next](slot_list_err(
-                  , ct
-                  , "get selector must be a projector function"[__Diagnostic_text__]
-                  ))
+                  __left__[Slot_list_result][Select_next](slot_list_err(ct, non_function_message))
                 }
               )
             }
@@ -656,44 +371,252 @@ pure fn select_slots(
   )
 }
 
-pure fn get_macro(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, selectors_source: __Type__
-, selectors: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[Slot_list][__Diagnostic_text__][Macro_result](
-  , select_slots(
-    , ct
-    , product_slots(ct, selectors_source, selectors)
-    , product_spine(ct, source)
-    , product_slots(ct, source, value)
-    )
-  , .(selected: Slot_list) -> Macro_result {
-      finish_slots_exact_target(
-      , ct
-      , selected
-      , target
-      , "get target must match selector order exactly"[__Diagnostic_text__]
+pure fn remove_updated_slots(ct: __Comptime__, patches: Slot_list, source: Slot_list) -> Slot_list_result {
+  __structural_recur__(ct)[Slot_list][Slot_list][Slot_list_result](
+  , patches
+  , source
+  , .(recur: (Slot_list & Slot_list) -> Slot_list_result, pending: Slot_list, remaining: Slot_list) -> Slot_list_result {
+      __either__[.][Slot_cell][Slot_list_result](
+      , Slot_list.get(pending)
+      , .() -> Slot_list_result { slot_list_ok(ct, remaining) }
+      , .(cell: Slot_cell) -> Slot_list_result {
+          let patch_type = slot_type(ct, __fst__[Slot][Slot_list](cell));
+          let rest = __snd__[Slot][Slot_list](cell);
+          __either__[Matched_slot][.][Slot_list_result](
+          , take_first_matching(ct, patch_type, row_slot_types(ct, rest), rest)
+          , .(_duplicate: Matched_slot) -> Slot_list_result {
+              slot_list_err(ct, "with repeats an exact update type"[__Diagnostic_text__])
+            }
+          , .() -> Slot_list_result {
+              __either__[Matched_slot][.][Slot_list_result](
+              , take_first_matching(ct, patch_type, row_slot_types(ct, remaining), remaining)
+              , .(taken: Matched_slot) -> Slot_list_result {
+                  recur(
+                  , rest
+                  , __snd__[Type_list][Slot_list](__snd__[Slot][Matched_slot_tail](taken))
+                  )
+                }
+              , .() -> Slot_list_result { recur(rest, remaining) }
+              )
+            }
+          )
+        }
       )
     }
-  , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
   )
 }
 
-/// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn get_checked(
+// Target permutation reads already-bound packets. Expanding only the final
+// logical slot avoids constructing and decomposing an intermediate product.
+pure fn normalize_final_bound_slot(ct: __Comptime__, slots: Slot_list) -> Slot_list {
+  __structural_recur__(ct)[Slot_list][Slot_list -> Slot_list][Slot_list](
+  , slots
+  , .(value: Slot_list) -> Slot_list { value }
+  , .(
+    , recur: (Slot_list & (Slot_list -> Slot_list)) -> Slot_list
+    , current: Slot_list
+    , finish: Slot_list -> Slot_list
+    ) -> Slot_list {
+      __either__[.][Slot_cell][Slot_list](
+      , Slot_list.get(current)
+      , .() -> Slot_list {
+          finish(slot_cons(ct, (__type_unit__(ct), __term_unit__(ct)), slot_nil()))
+        }
+      , .(cell: Slot_cell) -> Slot_list {
+          let head = __fst__[Slot][Slot_list](cell);
+          let tail = __snd__[Slot][Slot_list](cell);
+          __if_then_else__(
+          , slot_empty(ct, tail)
+          , .() -> Slot_list { finish(product_slots(ct, slot_type(ct, head), slot_term(ct, head))) }
+          , .() -> Slot_list {
+              recur(tail, .(rest: Slot_list) -> Slot_list { finish(slot_cons(ct, head, rest)) })
+            }
+          )
+        }
+      )
+    }
+  )
+}
+
+pure fn finish_bound_slots_reordered(ct: __Comptime__, slots: Slot_list, target: __Type__) -> __Checked_term__ {
+  let normalized = normalize_final_bound_slot(ct, slots);
+  finish_macro_result(
+  , ct
+  , build_product_from_slots(
+    , ct
+    , product_spine(ct, target)
+    , row_slot_types(ct, normalized)
+    , normalized
+    , .t
+    )
+  )
+}
+
+pure fn record_impl(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, selectors_source: __Type__
-, selectors: __Checked_term__
-, target: Optional_type
+, finish: Slot_list -> __Checked_term__
 ) -> __Checked_term__ {
-  finish_macro_result(ct, get_macro(ct, source, value, selectors_source, selectors, target))
+  __term_let__(
+  , ct
+  , source
+  , value
+  , .(bound: __Checked_term__) -> __Checked_term__ {
+      with_row_slots(ct, source, bound, .(slots: Slot_list) -> __Checked_term__ { finish(slots) })
+    }
+  )
 }
 
-/// Projects row fields with projector packets, preserving selector order exactly.
-pub macro get : [Source] Source -> [Selectors] Selectors -> [Target] Target { impl get_checked }
+pure fn record_checked(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, target: __Type__
+) -> __Checked_term__ {
+  record_impl(
+  , ct
+  , source
+  , value
+  , .(slots: Slot_list) -> __Checked_term__ { finish_bound_slots_reordered(ct, slots, target) }
+  )
+}
+
+pure fn record_natural_checked(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, _target: .
+) -> __Checked_term__ {
+  record_impl(ct, source, value, .(slots: Slot_list) -> __Checked_term__ { slots_term(ct, slots) })
+}
+
+/// Permutes written fields to the exact requested product type.
+pub macro record : [Source] Source -> [Target] Target { trailing product; impl record_checked }
+
+/// Builds a product in written order.
+pub macro record_ : [Source] Source -> [Target] Target { trailing product; impl record_natural_checked }
+
+pure fn with_impl(
+, ct: __Comptime__
+, source: __Type__
+, patches_source: __Type__
+, inputs: __Checked_term__
+, finish: Slot_list -> __Checked_term__
+) -> __Checked_term__ {
+  let inputs_type = __term_type__(ct, inputs);
+  __term_let__(
+  , ct
+  , inputs_type
+  , inputs
+  , .(bound: __Checked_term__) -> __Checked_term__ {
+      with_row_slots(
+      , ct
+      , source
+      , __intrinsic_fst__(ct, inputs_type, bound)
+      , .(source_slots: Slot_list) -> __Checked_term__ {
+          with_row_slots(
+          , ct
+          , patches_source
+          , __intrinsic_snd__(ct, inputs_type, bound)
+          , .(patch_slots: Slot_list) -> __Checked_term__ {
+              __either__[Slot_list][__Diagnostic_text__][__Checked_term__](
+              , remove_updated_slots(ct, patch_slots, source_slots)
+              , .(remaining: Slot_list) -> __Checked_term__ {
+                  finish(slot_append(ct, patch_slots, remaining))
+                }
+              , .(message: __Diagnostic_text__) -> __Checked_term__ { __macro_error__(ct, message) }
+              )
+            }
+          )
+        }
+      )
+    }
+  )
+}
+
+pure fn with_checked(
+, ct: __Comptime__
+, source: __Type__
+, patches_source: __Type__
+, inputs: __Checked_term__
+, target: __Type__
+) -> __Checked_term__ {
+  with_impl(
+  , ct
+  , source
+  , patches_source
+  , inputs
+  , .(slots: Slot_list) -> __Checked_term__ { finish_bound_slots_reordered(ct, slots, target) }
+  )
+}
+
+pure fn with_natural_checked(
+, ct: __Comptime__
+, source: __Type__
+, patches_source: __Type__
+, inputs: __Checked_term__
+, _target: .
+) -> __Checked_term__ {
+  with_impl(
+  , ct
+  , source
+  , patches_source
+  , inputs
+  , .(slots: Slot_list) -> __Checked_term__ { slots_term(ct, slots) }
+  )
+}
+
+/// Places distinct updates first, removes their first exact receiver matches, and retains other fields.
+/// Permutes the resulting product to the requested type without changing evaluation order.
+pub macro with : [Source][Patches] (Source & Patches) -> [Target] Target { trailing product; impl with_checked }
+
+/// Places distinct updates first and preserves the remaining receiver order.
+pub macro with_ : [Source][Patches] (Source & Patches) -> [Target] Target { trailing product; impl with_natural_checked }
+
+pure fn select_checked(
+, ct: __Comptime__
+, source: __Type__
+, selectors_source: __Type__
+, inputs: __Checked_term__
+, _target: .
+) -> __Checked_term__ {
+  let inputs_type = __term_type__(ct, inputs);
+  __term_let__(
+  , ct
+  , inputs_type
+  , inputs
+  , .(bound: __Checked_term__) -> __Checked_term__ {
+      with_row_slots(
+      , ct
+      , source
+      , __intrinsic_fst__(ct, inputs_type, bound)
+      , .(source_slots: Slot_list) -> __Checked_term__ {
+          with_row_slots(
+          , ct
+          , selectors_source
+          , __intrinsic_snd__(ct, inputs_type, bound)
+          , .(selector_slots: Slot_list) -> __Checked_term__ {
+              __either__[Slot_list][__Diagnostic_text__][__Checked_term__](
+              , select_slots(
+                , ct
+                , selector_slots
+                , row_slot_types(ct, source_slots)
+                , source_slots
+                , "select function input has no exact matching row field"[__Diagnostic_text__]
+                , "select requires a function for each selector"[__Diagnostic_text__]
+                )
+              , .(selected: Slot_list) -> __Checked_term__ { slots_term(ct, selected) }
+              , .(message: __Diagnostic_text__) -> __Checked_term__ { __macro_error__(ct, message) }
+              )
+            }
+          )
+        }
+      )
+    }
+  )
+}
+
+/// Applies each supplied function to the first field of its exact input type, preserving selector order.
+/// The receiver and all selector factories run once before the selected functions are called.
+pub macro select : [Source][Selectors] (Source & Selectors) -> [Target] Target { trailing product; impl select_checked }

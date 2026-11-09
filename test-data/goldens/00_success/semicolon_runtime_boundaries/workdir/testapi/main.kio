@@ -3,7 +3,7 @@ module testapi/main;
 import testapi(String);
 import testapi/io as io;
 
-newtype Message : String { constructor make; projector read }
+type { Message: String { mk; get } }
 
 pure fn first(value: String, other: String) -> String { value }
 
@@ -20,6 +20,6 @@ equiv first_message() {
 
 pub fn main() {
   let text = [* "boundaries", "discarded" *] <+> "ignored";
-  io.print(text.>Message.make.>Message.read);
+  io.print(text.>Message.mk.>Message.get);
   io.print("\n")
 }

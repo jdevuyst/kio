@@ -18,6 +18,7 @@ import forge/vm as vm;
 import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/iter(loop);
@@ -47,7 +48,7 @@ fn words_text(ws: Words) -> String {
 }
 
 fn reg_text(m: Vm, name: String, r: Reg) -> String {
-  t.cat3(name, "=", t.num(vm.read_reg(m.?{vm.bank}, r)))
+  t.cat3(name, "=", t.num(vm.read_reg(m.>select { vm.Bank.get }, r)))
 }
 
 fn regs_text(m: Vm) -> String {
@@ -64,7 +65,9 @@ fn stop_text(m: Vm, why: Stop) -> String {
     , .(_x: Halted) { "halted" }
     , .(_x: Ran_off) { "ran off the end" }
     , .(_x: Out_of_fuel) { "out of fuel" }
-    , .(x: Faulted) { t.cat4("fault: ", x.?{vm.faulted}, " at ", t.addr(m.?{vm.pc})) }
+    , .(x: Faulted) {
+        t.cat4("fault: ", x.>select { vm.Faulted.get }, " at ", t.addr(m.>select { vm.Pc.get }))
+      }
     )
   }
 }
@@ -88,23 +91,28 @@ fn rejected(items: Items, why: String, tally: Tally) -> Tally {
 
 fn accepted(items: Items, img: Image, tally: Tally) -> Tally {
   let .(built: I32, turned_down: I32, spent: I32) = tally;
-  let code = img.?{p.code};
-  let syms = img.?{p.syms};
+  let code = img.>select { p.Code.get };
+  let syms = img.>select { p.Syms.get };
   t.line(t.cat3(
   , t.cat("items: ", t.num(l.len(items)))
-  , t.cat("   expanded: ", t.num(img.?{p.expanded}))
+  , t.cat("   expanded: ", t.num(img.>select { p.Expanded.get }))
   , t.cat("   instructions: ", t.num(l.len(code)))
   ));
   t.line(t.cat("symbols: ", d.symbols_text(syms)));
   t.line("listing:");
   d.listing(code, syms);
   let .(m: Vm, why: Stop) = vm.run(code, vm.boot());
-  let used = sub_i32(vm.budget(), m.?{vm.fuel});
-  t.line(t.cat("emit: ", words_text(l.reverse(m.?{vm.out}))));
+  let used = sub_i32(vm.budget(), m.>select { vm.Fuel.get });
+  t.line(t.cat("emit: ", words_text(l.reverse(m.>select { vm.Out.get }))));
   t.line(t.cat("registers: ", regs_text(m)));
   t.line(t.cat("stop: ", stop_text(m, why)));
   t.line(t.cat4("steps: ", t.num(used), "/", t.num(vm.budget())));
-  t.line(t.cat4("stack: final ", t.num(m.?{vm.depth}), ", max ", t.num(m.?{vm.high})));
+  t.line(t.cat4(
+  , "stack: final "
+  , t.num(m.>select { vm.Depth.get })
+  , ", max "
+  , t.num(m.>select { vm.High.get })
+  ));
   (add_i32(built, 1), turned_down, add_i32(spent, used))
 }
 
@@ -116,13 +124,21 @@ pub fn program(name: String, items: Items, macros: Macros, tally: Tally) -> Tall
     (
     , .(img: Image) { accepted(items, img, tally) }
     , .(e: Unknown_macro) {
-        rejected(items, t.cat("unknown macro ", t.quoted(e.?{p.unknown_macro})), tally)
+        rejected(items, t.cat("unknown macro ", t.quoted(e.>select { p.Unknown_macro.get })), tally)
       }
     , .(e: Undefined_label) {
-        rejected(items, t.cat("undefined label ", t.quoted(e.?{p.undefined_label})), tally)
+        rejected(
+        , items
+        , t.cat("undefined label ", t.quoted(e.>select { p.Undefined_label.get }))
+        , tally
+        )
       }
     , .(e: Duplicate_label) {
-        rejected(items, t.cat("duplicate label ", t.quoted(e.?{p.duplicate_label})), tally)
+        rejected(
+        , items
+        , t.cat("duplicate label ", t.quoted(e.>select { p.Duplicate_label.get }))
+        , tally
+        )
       }
     )
   }

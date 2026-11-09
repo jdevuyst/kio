@@ -71,6 +71,6 @@ main = do
   readIORef events >>= check ["first", "second", "unit", "first", "head"]
   later "f" >>= check ("e", "f")
   readIORef events >>= check ["first", "second", "unit", "first", "head", "tail"]
-  pair <- P.export__api__Pair__pair package (12 :: Int, 13)
-  P.export__api__Pair__unPair package pair >>= check (12, 13)
+  pair <- P.export__api__Pair__mk package (12 :: Int, 13)
+  P.export__api__Pair__get package pair >>= check (12, 13)
   putStrLn "source grouping ok"

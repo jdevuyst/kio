@@ -1,0 +1,7 @@
+module main;
+
+type Choice = { // first operand
+  First: .
+} // before separator
+| // second operand
+Second;

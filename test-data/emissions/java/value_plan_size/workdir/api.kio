@@ -2,7 +2,7 @@ module api;
 
 host type N;
 
-pub newtype Box[A] : A & N { pub constructor make_box; pub projector read_box }
+pub type { Box[A]: A & N { pub mk; pub get } }
 
 pub fn pipeline_n1[A](value: Box[A], callback: Box[A] -> Box[A]) ->
   Box[A] & Box[A] & Box[A] & Box[A]

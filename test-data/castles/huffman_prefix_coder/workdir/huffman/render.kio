@@ -2,17 +2,18 @@
 /// so a run can be read and checked without the source beside it.
 module huffman/render;
 
-import huffman/code(Bits, Entry, {entry_bits}, {entry_freq}, {entry_len}, {entry_symbol});
-import huffman/freq(Count, {count_freq}, {count_symbol});
+import huffman/code(Bits, Entry, Entry_bits, Entry_freq, Entry_len, Entry_symbol);
+import huffman/freq(Count, Count_freq, Count_symbol);
 import huffman/list(List, fold, for_each, len);
 import huffman/message(glyph);
-import huffman/report(Savings, {alphabet}, {baseline_bits}, {coded_bits}, {fixed_width});
-import huffman/report({milli_bits_each}, {saved_bits}, {saved_permille}, {symbol_count});
+import huffman/report(Alphabet, Baseline_bits, Coded_bits, Fixed_width, Savings);
+import huffman/report(Milli_bits_each, Saved_bits, Saved_permille, Symbol_count);
 import huffman/text(cat, cat3, cat4, line, num, pad_num, pad_text);
 import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
-import huffman/tree({step_left}, {step_merged}, {step_right});
+import huffman/tree(Step_left, Step_merged, Step_right);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32);
 import testapi/io(print);
@@ -50,7 +51,7 @@ pub fn print_message(text: String, symbols: I32, alphabet_size: I32) {
 }
 
 fn count_line(row: Count) -> String {
-  let .({count_symbol, count_freq}) = row;
+  let .(count_symbol, count_freq) = row.>select { Count_symbol.get; Count_freq.get };
   cat4(
   , cat3("  ", pad_num(count_symbol, 4), "  ")
   , pad_text(glyph(count_symbol), 1, 5)
@@ -82,7 +83,8 @@ pub fn print_queue(queue: List[Node], first_merge_key: I32) {
 }
 
 fn step_line(index: I32, entry: Step) -> String {
-  let .({step_left, step_right, step_merged}) = entry;
+  let .(step_left, step_right, step_merged) =
+    entry.>select { Step_left.get; Step_right.get; Step_merged.get };
   cat4(
   , cat3("  ", pad_num(index, 2), "  ")
   , cat3(node_text(step_left), " + ", node_text(step_right))
@@ -92,7 +94,7 @@ fn step_line(index: I32, entry: Step) -> String {
 }
 
 rec(loop) fn print_steps(steps: List[Step], index: I32) {
-  match(steps.>List.un_list) {
+  match(steps.>List.get) {
     (
     , .(head: Step, rest: List[Step]) {
         print(step_line(index, head));
@@ -109,7 +111,8 @@ pub fn print_build(steps: List[Step]) {
 }
 
 fn entry_line(row: Entry) -> String {
-  let .({entry_symbol, entry_freq, entry_bits, entry_len}) = row;
+  let .(entry_symbol, entry_freq, entry_bits, entry_len) =
+    row.>select { Entry_symbol.get; Entry_freq.get; Entry_bits.get; Entry_len.get };
   cat4(
   , cat3("  ", pad_text(glyph(entry_symbol), 1, 5), "  ")
   , cat3(pad_num(entry_freq, 5), "  ", pad_num(entry_len, 6))
@@ -140,7 +143,7 @@ pub fn print_decoded(symbols: I32, matches: Bool) {
 }
 
 pub fn print_savings(figures: Savings) {
-  let .({
+  let .(
   , symbol_count
   , alphabet
   , fixed_width
@@ -149,7 +152,17 @@ pub fn print_savings(figures: Savings) {
   , saved_bits
   , saved_permille
   , milli_bits_each
-  }) = figures;
+  ) =
+    figures.>select {
+      Symbol_count.get;
+      Alphabet.get;
+      Fixed_width.get;
+      Baseline_bits.get;
+      Coded_bits.get;
+      Saved_bits.get;
+      Saved_permille.get;
+      Milli_bits_each.get
+    };
   heading("compression report");
   figure("symbols coded", num(symbol_count));
   figure("alphabet size", num(alphabet));

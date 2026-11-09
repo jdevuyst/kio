@@ -215,7 +215,7 @@ parameter is its boundary shape (§ FFI surface), and the return is its
 boundary shape (`KioUnit` for a `()` return). The method runs the package
 function with those native values; its public interface never exposes `Any`.
 
-Every exported **`pub newtype`** contributes a **per-type handle** under
+Every public nominal type contributes a **per-type handle** under
 its module namespace, even when it exports no members. A type handle uses
 the disjoint exact selector `KioType_<exact-component>`; a newtype `T` in
 module `a/b` is reached at `pkg.a.KioModule_b.KioType_T`. The handle exposes
@@ -600,7 +600,7 @@ Swift uses [shared source-component word casing](README.md#source-derived-public
   `____KioType_<encoded-newtype>__KioItem_<encoded-member>`: the ordinary
   module/member separator plus a reserved role frame whose newtype and member
   components independently word-case before encoding remaining `_` as `_u`.
-  Thus `(A_b, c)` and `(A, b_c)`
+  Thus `(A_b, mk)` and `(A, mk)`
   remain distinct. An alias containing an exact host atom takes
   `<H: <Handle>Host>`.
 

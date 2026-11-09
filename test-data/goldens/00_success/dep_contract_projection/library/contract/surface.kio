@@ -6,4 +6,6 @@ pub op _ + _ { impl add }
 
 pub literal zero = 0;
 
-pub labels Choice = { tag: . } | { other: . };
+pub type { Tag: . { pub mk; pub get }; Other: . { pub mk; pub get } }
+
+pub type Choice = Tag | Other;

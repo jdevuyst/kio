@@ -2,4 +2,4 @@ module domain;
 
 host type I32;
 
-pub labels { wrap[A]: A };
+pub type { Wrap[A]: A { pub mk; pub get } }

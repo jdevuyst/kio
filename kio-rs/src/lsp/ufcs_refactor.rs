@@ -4,9 +4,7 @@ use std::collections::HashMap;
 
 use lsp_types::{Range, TextEdit};
 
-use crate::ast::{
-    CallArg, ElaboratorCall, Expr, Item, Module, OpChainKind, Phase, Surface, UfcsFlavor,
-};
+use crate::ast::{CallArg, Expr, Item, Module, OpChainKind, Phase, Surface, UfcsFlavor};
 use crate::cmd::check::LspAnalysis;
 use crate::pass::typecheck_full::{PositionIndex, ResolvedBinder};
 use crate::span::Span;
@@ -286,13 +284,10 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                     }),
             ),
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),
-            Expr::Let { value, body, .. }
-            | Expr::RowLet { value, body, .. }
-            | Expr::Seq { value, body, .. } => pending.extend([&**value, &**body]),
-            Expr::Tuple { items, .. } => pending.extend(items),
-            Expr::LabelValue { labels, .. } => {
-                pending.extend(labels.iter().map(|label| &label.value))
+            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+                pending.extend([&**value, &**body])
             }
+            Expr::Tuple { items, .. } => pending.extend(items),
             Expr::BlockCall { prefix, blocks, .. } => {
                 pending.extend(
                     prefix
@@ -312,13 +307,6 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                         .flat_map(|block| block.items.iter().map(|item| item.value())),
                 );
             }
-            Expr::Elaborator { call, .. } => match call {
-                ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { base, updates, .. } => {
-                    pending.extend(base.receiver());
-                    pending.extend(updates.iter().map(|update| &update.value));
-                }
-            },
             Expr::Ufcs {
                 receiver,
                 callee,

@@ -1,0 +1,28 @@
+module testapi/main;
+
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import testapi/io(print);
+
+type { A: . { mk; get } }
+
+type { B: . { mk; get } }
+
+fn factory_a() -> A -> . {
+  print("factory A\n");
+  .(value: A) { A.get(value); print("body A\n") }
+}
+
+fn factory_b() -> B -> . {
+  print("factory B\n");
+  .(value: B) { B.get(value); print("body B\n") }
+}
+
+fn source_a() -> A | B { print("source A\n"); widen_sum(A.mk(())) }
+
+fn source_b() -> A | B { print("source B\n"); widen_sum(B.mk(())) }
+
+pub fn main() {
+  match(source_a()) { factory_a(); factory_b() };
+  match(source_b()) { factory_a(); factory_b() }
+}

@@ -10,9 +10,9 @@ host fn inspect(value: . & !);
 
 host fn branch(value: .) -> . | !;
 
-pub newtype Never : ! { pub constructor mk_never; pub projector un_never }
+pub type { Never: ! { pub mk; pub get } }
 
-pub newtype Unit_never : . & ! { pub constructor mk_unit_never; pub projector un_unit_never }
+pub type { Unit_never: . & ! { pub mk; pub get } }
 
 pub fn stop_public(value: .) -> ! { stop(value) }
 

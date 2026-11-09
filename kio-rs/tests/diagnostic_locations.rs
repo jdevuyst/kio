@@ -23,7 +23,7 @@ fn tabbed_type_mismatch_excerpts_align_without_changing_source_columns() {
             fs::write(
                 fixture.path().join("main.kio"),
                 format!(
-                    "module main;\nnewtype W : . {{ constructor mk; projector get; }};\nfn caller() -> {annotation} {{\n{body}\n}}\n"
+                    "module main;\ntype {{ W: . {{ mk; get; }} }};\nfn caller() -> {annotation} {{\n{body}\n}}\n"
                 ),
             ).unwrap();
             let output = Command::new(&binary)

@@ -1,0 +1,8 @@
+source A
+factory A
+factory B
+body A
+source B
+factory A
+factory B
+body B

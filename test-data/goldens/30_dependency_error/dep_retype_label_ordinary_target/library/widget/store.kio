@@ -1,3 +1,0 @@
-module store;
-
-pub labels { foo: . };

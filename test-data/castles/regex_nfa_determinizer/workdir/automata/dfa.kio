@@ -12,28 +12,40 @@ module automata/dfa;
 import automata/seq(Ints, List, member, nth_or);
 import automata/symbol(width);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, mul_i32);
 import testapi/iter(loop);
 
-pub labels Dfa = { dfa_count: I32, dfa_start: I32, dfa_accepts: Ints, dfa_table: Ints };
+pub type Dfa = { Dfa_count: I32; Dfa_start: I32; Dfa_accepts: Ints; Dfa_table: Ints };
 
 pub fn make(dfa_count: I32, dfa_start: I32, dfa_accepts: Ints, dfa_table: Ints) -> Dfa {
-  {dfa_count, dfa_start, dfa_accepts, dfa_table}
+  (
+  , Dfa_count.mk(dfa_count)
+  , Dfa_start.mk(dfa_start)
+  , Dfa_accepts.mk(dfa_accepts)
+  , Dfa_table.mk(dfa_table)
+  )
 }
 
-pub fn count(d: Dfa) -> I32 { d.?{dfa_count} }
+pub fn count(d: Dfa) -> I32 {
+  d.>select { Dfa_count.get }
+}
 
-pub fn start(d: Dfa) -> I32 { d.?{dfa_start} }
+pub fn start(d: Dfa) -> I32 {
+  d.>select { Dfa_start.get }
+}
 
 pub fn step(d: Dfa, state: I32, sym: I32) -> I32 {
-  nth_or(d.?{dfa_table}, add_i32(mul_i32(state, width()), sym), 0)
+  nth_or(d.>select { Dfa_table.get }, add_i32(mul_i32(state, width()), sym), 0)
 }
 
-pub fn is_accepting(d: Dfa, state: I32) -> Bool { member(state, d.?{dfa_accepts}) }
+pub fn is_accepting(d: Dfa, state: I32) -> Bool {
+  member(state, d.>select { Dfa_accepts.get })
+}
 
 rec(loop) fn walk(d: Dfa, word: Ints, state: I32) -> I32 {
-  match(word.>List.unpack) {
+  match(word.>List.get) {
     (.(sym: I32, rest: Ints) { recur walk(d, rest, step(d, state, sym)) }, .(_empty: .) { state })
   }
 }

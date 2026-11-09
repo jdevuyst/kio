@@ -7,9 +7,10 @@ fn newtype type signature
 (source_file
   (identifier)
   (ERROR
-    (keyword_newtype)
-    (entity_name_label)
-    (entity_name_label)))
+    (identifier)
+    (identifier)
+    (keyword_signature)))
+
 
 ================================================================================
 structural semicolon_owner_package_fields

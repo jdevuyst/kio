@@ -24,7 +24,7 @@ pub fn through_value(pair: Count & Count) -> Count { let call = split; call(pair
 
 pub fn callback(step: (Count & Count) -> Count, pair: Count & Count) -> Count { step(pair) }
 
-pub newtype Pair : Count & Count { pub constructor make; pub projector read }
+pub type { Pair: Count & Count { pub mk; pub get } }
 
 pub type Callback[A] = A -> Count;
 

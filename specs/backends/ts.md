@@ -182,7 +182,7 @@ it does not change which items are present.
   with its binary structural keys, while a direct Unit-only domain is nullary.
   Callbacks, returns, and nested `forall`s remain first-class values and retain
   their own callable and generic layers.
-- One namespace per `pub newtype`, selected as
+- One namespace per public nominal type, selected as
   `KioType_<exact-component>` under its module namespace, whose typed
   members are the newtype's pub constructor and projector
   ([`js.md` § Public newtype namespaces](js.md#public-newtype-namespaces)).
@@ -388,8 +388,7 @@ including unknown right tails:
 - A function type — `<Handle>Callable<A, R>` (see § Carve-outs).
 - A nonexistential `newtype` with payload `X` and both members public —
   `{ [k]: shape(X) }` where `[k]` is the newtype's FFI key (its type name)
-  with source-component word casing. `labels` sugar
-  and an equivalent explicit `newtype` use this same shape. An uncut
+  with source-component word casing. An uncut
   payload-visible recursive cycle is the exception (**Recursive newtypes**
   below).
 - A public `newtype` with fewer than two public members, an existential, or a
@@ -436,7 +435,7 @@ A visible nominal wrapper uses its word-cased type leaf (`Native_token` →
 The declaration-private brand of a hidden nominal is independent of display
 keys, preserving exact identity across same-leaf declarations.
 
-Worked examples (assume `labels { t1 : I32, t2 : Str };` declares generated
+Worked examples (assume `type { T1: I32; T2: Str; }` declares nominal
 types `T1`, `T2`; `I32`, `Str` are role-typed host types):
 
 | Kio type            | TypeScript type                         |
@@ -534,7 +533,7 @@ types, selected host types, and public Kio newtype constructors available by
 their readable declaration paths for generic host-side composition.
 
 **Polymorphic newtype payloads.** The dictionary pattern
-(`pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]`) needs no special
+(`pub type { Monad[*F]: [A][B](F[A] & (A -> F[B])) -> F[B]; }`) needs no special
 HKT representation in the `.js`: bound types erase at runtime, but the stored
 callable retains the application stages described in
 [`README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads).

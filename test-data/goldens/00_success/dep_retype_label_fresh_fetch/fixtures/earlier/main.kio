@@ -4,12 +4,12 @@ import acore/store as target;
 import widget/store as source;
 
 equiv forwarded_constructor() {
-  target.Foo.get({source.foo=});
+  target.Foo.get(source.Foo.mk(()));
   ()
 }
 
 equiv original_constructor() {
-  target.Foo.mk(()).?{source.foo};
+  source.Foo.get(target.Foo.mk(()));
   ()
 }
 

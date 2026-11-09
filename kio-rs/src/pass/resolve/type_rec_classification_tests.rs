@@ -7,8 +7,8 @@ fn projected_type_rec_analysis_keeps_import_validation_at_the_module_boundary() 
     let module = crate::pass::parser::parse(
         "module api; import __comptime__; \
          rec { \
-             newtype Left : . | Right { constructor left; projector read_left; }; \
-             newtype Right : . | Left { constructor right; projector read_right; }; \
+             type { Left: . | Right { mk; get; }; }; \
+             type { Right: . | Left { mk; get; }; }; \
          }",
     )
     .expect("parse a recursive declaration graph with compile-time import metadata");
@@ -33,7 +33,7 @@ fn independent_group(count: usize) -> (String, TypeRecGroup<Prime>, TypeRecAnaly
     let mut source = String::from("module x;\nrec {\n");
     for index in 0..count {
         source.push_str(&format!(
-            "newtype Loop{index} : . | Loop{index} {{ constructor make{index}; projector read{index}; }};\n"
+            "type {{ Loop{index}: . | Loop{index} {{ mk; get; }}; }};\n"
         ));
     }
     source.push_str("}\n");
@@ -139,8 +139,8 @@ fn recursive_group_repairs_reconstruct_parent_separators() {
     for body in [
         "type A = .",
         "; type A = .;",
-        "newtype A : . { constructor make; projector get }; type B = A",
-        "; newtype A : . | B { constructor make_a; projector get_a }; newtype B : . | A { constructor make_b; projector get_b }; type C = .;",
+        "type { A: . { mk; get }; }; type B = A",
+        "; type { A: . | B { mk; get }; }; type { B: . | A { mk; get }; }; type C = .;",
     ] {
         for suffix in ["", ";", " // outer comment\n;"] {
             let source = format!("module x; rec {{ {body} }}{suffix}");
@@ -185,7 +185,7 @@ fn implicit_group_wrap_inserts_only_missing_braced_peer_separator() {
 
     for suffix in ["", ";", " // between declaration and suffix\n;"] {
         let source = format!(
-            "module x; newtype A : . | B {{ constructor make_a; projector get_a }}{suffix}\nnewtype B : . | A {{ constructor make_b; projector get_b }}"
+            "module x; type {{ A: . | B {{ mk; get }}; }}{suffix}\ntype {{ B: . | A {{ mk; get }}; }}"
         );
         let module = source_module(&source);
         let error = Resolver::check_module(&module).expect_err("implicit mutual group");
@@ -232,9 +232,13 @@ fn cyclic_component_classification_split_fix_is_linear() {
     let work = type_rec_classification_work();
     assert_eq!(fix, expected_fix(&group));
     let repaired = apply_fix(&source, &fix);
-    let expected = format!("module x;\n{}\n", (0..COUNT).map(|index| format!(
-        "rec newtype Loop{index} : . | Loop{index} {{ constructor make{index}; projector read{index}; }};"
-    )).collect::<Vec<_>>().join("\n"));
+    let expected = format!(
+        "module x;\n{}\n",
+        (0..COUNT)
+            .map(|index| format!("rec type {{ Loop{index}: . | Loop{index} {{ mk; get; }}; }};"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
     assert_eq!(repaired, expected);
     let module =
         crate::prime::lower::lower_module(crate::pass::parser::parse(&repaired).unwrap()).unwrap();
@@ -275,9 +279,9 @@ fn cyclic_component_classification_preserves_mixed_partitions() {
     let source = "module x; rec {\n\
         type Alias = Left;\n\
         /// Left member.\n\
-        pub newtype Left : Right { pub constructor make_left; projector read_left; };\n\
-        newtype Right : Left { constructor make_right; projector read_right; };\n\
-        newtype Alone : Alone { constructor make_alone; projector read_alone; };\n\
+        pub type { Left: Right { pub mk; get; }; };\n\
+        type { Right: Left { mk; get; }; };\n\
+        type { Alone: Alone { mk; get; }; };\n\
         type Base = .;\n}";
     let mut module =
         crate::prime::lower::lower_module(crate::pass::parser::parse(source).unwrap()).unwrap();

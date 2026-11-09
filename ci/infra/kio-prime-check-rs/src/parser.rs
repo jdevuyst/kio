@@ -2,7 +2,7 @@
 //! `specs/prime.md` § Grammar.
 //!
 //! Returns `Ok(())` if the source is syntactically Kio'. Any
-//! deviation — surface sugar (trailing blocks, `labels`,
+//! deviation — surface sugar (trailing blocks, compact nominal groups,
 //! macro declarations and tagged macro imports, n-ary tuple literals at
 //! the value level), type-expression naming-rule violations, or any
 //! other parse failure — is reported as `ParseError`.
@@ -754,11 +754,6 @@ impl Parser {
                 return self.err("expected at least one imported item");
             }
             loop {
-                if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
-                    return self.err(
-                        "braced label imports are surface syntax — Kio' import items are ordinary identifiers",
-                    );
-                }
                 if (self.ident_named("op") || self.ident_named("varop"))
                     && !matches!(self.peek_kind_at(1), Some(TokenKind::Ident(name)) if name == "as")
                     && !matches!(
@@ -829,8 +824,8 @@ impl Parser {
                 return self.err("`pure` is valid only on ordinary `fn` declarations");
             }
             self.advance();
-            if self.eat_ident_named("newtype") {
-                self.newtype_after_keyword()?;
+            if self.eat_ident_named("type") {
+                self.nominal_after_keyword()?;
                 self.optional_outer_semicolon();
                 Ok(())
             } else if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
@@ -842,12 +837,8 @@ impl Parser {
                 self.type_rec_group()?;
                 self.optional_outer_semicolon();
                 Ok(())
-            } else if self.ident_named("type") {
-                self.err("`rec type` is not a declaration form")
-            } else if self.ident_named("labels") {
-                self.err("`labels` is surface sugar — not in Kio'")
             } else {
-                self.err("expected `newtype` or `{` after `rec` in Kio'")
+                self.err("expected `type { ... }` or `{` after `rec` in Kio'")
             }
         } else if self.ident_named("fn") {
             self.advance();
@@ -859,21 +850,15 @@ impl Parser {
                 return self.err("`pure` is not valid on `type` declarations");
             }
             self.advance();
-            self.type_alias_after_keyword()
-        } else if self.ident_named("newtype") {
-            if pure {
-                return self.err("`pure` is not valid on `newtype` declarations");
+            if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
+                self.nominal_after_keyword()?;
+                self.optional_outer_semicolon();
+                Ok(())
+            } else {
+                self.type_alias_after_keyword()
             }
-            self.advance();
-            self.newtype_after_keyword()?;
-            self.optional_outer_semicolon();
-            Ok(())
         } else if self.ident_named("literal") {
             self.err("`literal` aliases are Kio surface sugar — not in Kio'")
-        } else if self.ident_named("labels") {
-            self.err(
-                "`labels` is surface sugar — not in Kio' (see specs/prime.md § What's not in Kio')",
-            )
         } else if self.ident_named("if") {
             self.err("`if`/`else` is surface sugar — not in Kio'")
         } else if self.ident_named("match") {
@@ -887,7 +872,7 @@ impl Parser {
         } else if self.ident_named("macro") {
             self.err("`macro` declarations are not in Kio'")
         } else {
-            self.err("expected `fn`, `type`, or `newtype`")
+            self.err("expected `fn` or `type`")
         }
     }
 
@@ -906,20 +891,18 @@ impl Parser {
         while !matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
             let (_, pure, _) = self.decl_modifiers()?;
             if pure {
-                return self.err(
-                    "a bare `rec { ... }` type group admits only `type` and `newtype` declarations",
-                );
+                return self.err("a bare `rec { ... }` type group admits only `type` declarations");
             }
             if self.eat_ident_named("type") {
-                self.type_alias_body()?;
-            } else if self.eat_ident_named("newtype") {
-                self.newtype_after_keyword()?;
-            } else if self.ident_named("labels") {
-                return self.err("`labels` is surface sugar — not in Kio'");
+                if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
+                    self.nominal_after_keyword()?;
+                } else {
+                    self.type_alias_body()?;
+                }
             } else if self.ident_named("rec") {
                 return self.err("the enclosing `rec { ... }` already supplies recursive scope");
             } else {
-                return self.err("expected `type` or `newtype` in bare `rec { ... }` type group");
+                return self.err("expected `type` in bare `rec { ... }` type group");
             }
             members += 1;
             if matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
@@ -1063,66 +1046,74 @@ impl Parser {
         Ok(())
     }
 
-    /// After consuming `newtype`: `IDENT TypeParamList? ('<' IDENT '>')* ':' Type NewtypeBody`.
+    /// After `type`: one explicit nominal entry enclosed in braces.
     ///
     /// Existential binders trail the universal-parameter list as
     /// zero-or-more whitespace-separated `<X>` atoms before the `:`.
     /// The payload is an ordinary type expression — it must not begin
     /// with `(<…>, …)`, since standalone existential type expressions
     /// are no longer admissible.
-    fn newtype_after_keyword(&mut self) -> Result<(), ParseError> {
-        let (name, span) = self.expect_ident_with_span("name after `newtype`")?;
+    fn nominal_after_keyword(&mut self) -> Result<(), ParseError> {
+        self.expect_kind(
+            &TokenKind::LBrace,
+            "`{` opening an explicit singleton nominal declaration",
+        )?;
+        self.optional_outer_semicolon();
+        let (name, span) = self.expect_ident_with_span("nominal type name")?;
         Self::validate_type_name(&name, span)?;
         if self.peek_starts_type_bracket() {
             self.type_param_list()?;
         }
         while self.at_sym("<") {
-            self.consume_angle_binder("existential binder name on newtype header")?;
+            self.consume_angle_binder("existential binder name on nominal header")?;
         }
-        self.expect_sym(":", "`:` before `newtype` payload")?;
+        self.expect_sym(":", "`:` before nominal payload")?;
         self.type_()?;
         self.newtype_body()?;
+        self.optional_outer_semicolon();
+        self.expect_kind(&TokenKind::RBrace, "`}` after the singleton nominal entry")?;
         Ok(())
     }
 
     /// Newtype members are separated by semicolon runs; edge runs are allowed.
-    /// The two members form an unordered set: exactly one `constructor`
-    /// and exactly one `projector`, in either order. Both are required;
+    /// The two members form an unordered set: exactly one `mk`
+    /// and exactly one `get`, in either order. Both are required;
     /// neither may be duplicated.
     fn newtype_body(&mut self) -> Result<(), ParseError> {
-        self.expect_kind(&TokenKind::LBrace, "`{` opening `newtype` body")?;
+        self.expect_kind(
+            &TokenKind::LBrace,
+            "`{` opening the explicit `mk`/`get` body",
+        )?;
         let mut saw_constructor = false;
         let mut saw_projector = false;
         self.skip_semicolons();
         while !matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
             self.eat_vis()?;
-            if self.eat_ident_named("constructor") {
+            if self.eat_ident_named("mk") {
                 if saw_constructor {
-                    return self.err("duplicate `constructor` member in newtype body");
+                    return self.err("duplicate `mk` member in nominal body");
                 }
                 saw_constructor = true;
-            } else if self.eat_ident_named("projector") {
+            } else if self.eat_ident_named("get") {
                 if saw_projector {
-                    return self.err("duplicate `projector` member in newtype body");
+                    return self.err("duplicate `get` member in nominal body");
                 }
                 saw_projector = true;
             } else {
-                break;
+                return self.err("expected `mk` or `get` in nominal body");
             }
-            let (name, span) = self.expect_ident_with_span("member name")?;
-            Self::validate_value_name(&name, span)?;
             let separated = self.skip_semicolons();
             if !separated && !matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
-                return self.err("expected `;` or `}` after newtype member");
+                return self.err("expected `;` or `}` after nominal member");
             }
         }
         if !saw_constructor {
-            return self.err("missing `constructor` member in newtype body");
+            return self.err("missing `mk` member in nominal body");
         }
         if !saw_projector {
-            return self.err("missing `projector` member in newtype body");
+            return self.err("missing `get` member in nominal body");
         }
-        self.expect_kind(&TokenKind::RBrace, "`}` closing `newtype` body")?;
+        self.expect_kind(&TokenKind::RBrace, "`}` closing nominal body")?;
         Ok(())
     }
 
@@ -1427,11 +1418,11 @@ impl Parser {
 
         // Standalone existential type expressions `(<U>, body)` are
         // no longer admissible — existentials are declared on a
-        // `newtype` header.
+        // nominal header.
         if self.at_sym("<") {
             return self.err(
                 "standalone existential type expressions are no longer admissible; \
-                 existentials live on a `newtype` header (`newtype Name[A] <U> : body`)",
+                 existentials live on a nominal header (`type { Name[A] <U>: body { mk; get; }; }`)",
             );
         }
 
@@ -1487,8 +1478,8 @@ impl Parser {
     }
 
     /// Consume one `<IDENT>` angle binder. Used by the existential
-    /// binder run that trails a `newtype` declaration's universal-
-    /// parameter list (e.g., `newtype Box[A] <U> : A & U`).
+    /// binder run that trails a nominal declaration's universal-
+    /// parameter list (e.g., `type { Box[A] <U>: A & U { mk; get; }; }`).
     fn consume_angle_binder(&mut self, what: &str) -> Result<(), ParseError> {
         self.expect_sym("<", "`<` opening existential binder")?;
         let (name, span) = self.expect_ident_with_span(what)?;
@@ -1866,12 +1857,12 @@ mod tests {
             "module m; default pub type Number = numbers.Int;",
             "module m; default type Number = Identity(numbers.Int);",
             "module m; import numbers(default Int as Number, default Bool);",
-            "module m; rec { default type Number = Int; newtype Box : Int { constructor box; projector unbox; } }",
+            "module m; rec { default type Number = Int; type { Box : Int { mk; get; }; } }",
             "module m; pub default host type Int role(i32);",
             "module m; default default host type Int role(i32);",
             "module m; default host fn value();",
             "module m; default fn value() {}",
-            "module m; default newtype Int : . {}",
+            "module m; default type { Int : . {}; }",
             "module m; import numbers(default value);",
             "module m; import numbers(default Int as value);",
         ] {
@@ -1994,11 +1985,9 @@ mod tests {
 
     #[test]
     fn pure_newtype_modifier_rejected() {
-        let message = err(
-            "module m; pure newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap; };",
-        );
+        let message = err("module m; pure type { Wrap[A] : A { pub mk; pub get; }; };");
         assert!(
-            message.contains("`pure`") && message.contains("`newtype`"),
+            message.contains("`pure`") && message.contains("`type`"),
             "{message}"
         );
     }
@@ -2089,16 +2078,13 @@ mod tests {
         ok("module m; \
              host type Host; host type _Host; \
              type Alias = .; type _Alias = .; \
-             newtype Box : . { constructor mk_box; projector un_box; }; \
-             newtype _Box : . { constructor mk_marked; projector un_marked; };");
+             type { Box : . { mk; get; }; }; \
+             type { _Box : . { mk; get; }; };");
 
         for (name, source) in [
             ("_foo", "module m; type _foo = .;"),
             ("_1Foo", "module m; host type _1Foo;"),
-            (
-                "_FooBar",
-                "module m; newtype _FooBar : . { constructor mk_box; projector un_box; };",
-            ),
+            ("_FooBar", "module m; type { _FooBar : . { mk; get; }; };"),
             ("__Foo", "module m; type __Foo = .;"),
         ] {
             let message = err(source);
@@ -2127,7 +2113,7 @@ mod tests {
 
     #[test]
     fn newtype_bracket_binder() {
-        ok("module m; newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap; };");
+        ok("module m; type { Wrap[A] : A { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -2147,7 +2133,7 @@ mod tests {
             "module m; type Id = [A, B] A -> B;",
             "module m; fn pair[A, B](a: A) -> A { a }",
             "module m; host type Pair[A, B];",
-            "module m; newtype Pair[A, B] : A { constructor mk; projector get; };",
+            "module m; type { Pair[A, B] : A { mk; get; }; };",
             "module m; type Pair[A, B] = A & B;",
             "module m; fn run() { .[A, B](a: A) { a } }",
             "module m; type Applied = Pair[A, B];",
@@ -2191,10 +2177,10 @@ mod tests {
     #[test]
     fn standalone_existential_type_rejected() {
         // Standalone existential type expressions no longer parse —
-        // existentials live on a `newtype` header.
+        // existentials live on a nominal header.
         let m = err("module m; type Pack[A] = (<U>, (A & U));");
         assert!(
-            m.contains("standalone existential") || m.contains("newtype` header"),
+            m.contains("standalone existential") || m.contains("nominal header"),
             "msg = {m}"
         );
     }
@@ -2202,15 +2188,9 @@ mod tests {
     #[test]
     fn newtype_universal_with_header_existential() {
         // Universals in brackets, existentials trailing as `<X>` atoms.
-        ok(
-            "module m; newtype Pack[A] <U> : (A & U) { pub constructor mk_pack; pub projector un_pack; };",
-        );
-        ok(
-            "module m; newtype _Pack[_A] <_Hidden> : (_A & _Hidden) { pub constructor mk_pack; pub projector un_pack; };",
-        );
-        let message = err(
-            "module m; newtype Pack <_hidden> : . { pub constructor mk_pack; pub projector un_pack; };",
-        );
+        ok("module m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
+        ok("module m; type { _Pack[_A] <_Hidden> : (_A & _Hidden) { pub mk; pub get; }; };");
+        let message = err("module m; type { Pack <_hidden> : . { pub mk; pub get; }; };");
         assert!(
             message.contains("must match _?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*"),
             "{message}"
@@ -2264,10 +2244,8 @@ mod tests {
         // `><` (two binders with no whitespace) fuse; the parser peels
         // the `>` and leaves the residual for the next consumer —
         // mirrors kio-rs's `expect_existential_close`.
-        ok("module m; newtype Single[A] <U>: (A & U) { pub constructor mk; pub projector un; };");
-        ok(
-            "module m; newtype Pair[A] <U><V>: (A & U & V) { pub constructor mk; pub projector un; };",
-        );
+        ok("module m; type { Single[A] <U>: (A & U) { pub mk; pub get; }; };");
+        ok("module m; type { Pair[A] <U><V>: (A & U & V) { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -2431,7 +2409,20 @@ mod tests {
             "module m; rec { type {forward} = {count}; type Alias = .; }",
         ] {
             let message = err(source);
-            assert!(message.contains("name after `type`"), "{source}: {message}");
+            assert!(
+                message.contains("type name `forward`"),
+                "{source}: {message}"
+            );
+        }
+        for source in [
+            "module m; type {Forward} = {Count};",
+            "module m; rec { type {Forward} = {Count}; type Alias = .; }",
+        ] {
+            let message = err(source);
+            assert!(
+                message.contains("before nominal payload"),
+                "{source}: {message}"
+            );
         }
         ok("module m; type Alias = .; pub(scope/path) type Scoped[A] = A;");
         ok("module m; fn type(forward: .) -> . { forward }");
@@ -2445,15 +2436,15 @@ mod tests {
 
     #[test]
     fn newtype_nullary() {
-        ok("module m; newtype Wrap : . { pub constructor mk_wrap; pub projector un_wrap; };");
+        ok("module m; type { Wrap : . { pub mk; pub get; }; };");
     }
 
     #[test]
     fn outer_braced_semicolons_are_optional_and_single() {
         for declaration in [
             "fn f() -> . { () }",
-            "newtype Wrap : . { constructor wrap; projector unwrap }",
-            "rec newtype Loop : . | Loop { constructor wrap; projector unwrap }",
+            "type { Wrap : . { mk; get }; }",
+            "rec type { Loop : . | Loop { mk; get }; }",
             "rec { type A = B; type B = A }",
         ] {
             ok(&format!("module m; {declaration} fn next() -> . {{ () }}"));
@@ -2469,20 +2460,62 @@ mod tests {
 
     #[test]
     fn newtype_semicolon_edges_preserve_member_policy() {
-        for body in [
-            "constructor wrap; projector unwrap",
-            "; constructor wrap; projector unwrap;",
-            ";; projector unwrap;; constructor wrap;;",
-        ] {
-            ok(&format!("module m; newtype Wrap : . {{ {body} }}"));
+        for body in ["mk; get", "; mk; get;", ";; get;; mk;;"] {
+            ok(&format!("module m; type {{ Wrap : . {{ {body} }}; }}"));
         }
-        for body in [
-            "constructor wrap projector unwrap",
-            ";",
-            "constructor wrap; constructor again; projector unwrap",
-            "constructor wrap",
+        for body in ["mk get", ";", "mk; mk; get", "mk"] {
+            err(&format!("module m; type {{ Wrap : . {{ {body} }}; }}"));
+        }
+    }
+
+    #[test]
+    fn nominal_outer_entry_has_single_semicolon_edges() {
+        for entry in [
+            "N: . { mk; get }",
+            "; N: . { mk; get };",
+            "N: . { ;;; mk;;; get;;; };",
         ] {
-            err(&format!("module m; newtype Wrap : . {{ {body} }}"));
+            ok(&format!("module m; type {{ {entry} }}"));
+        }
+        for entry in [";; N: . { mk; get }", "N: . { mk; get };;", ";", ""] {
+            err(&format!("module m; type {{ {entry} }}"));
+        }
+    }
+
+    #[test]
+    fn prime_nominal_declarations_require_an_explicit_singleton() {
+        for declaration in [
+            "type { N: .; }",
+            "type { N: . {}; }",
+            "type { N: . { mk; get; }; M: . { mk; get; }; }",
+            "type Alias = { N: . { mk; get; }; };",
+            "type Alias = . & { N: . { mk; get; }; };",
+            "rec type { N: . | N; }",
+            "rec type Alias = { N: . | Alias { mk; get; }; };",
+            "rec { type Alias = { N: . { mk; get; }; }; type Other = Alias; }",
+        ] {
+            err(&format!("module m; {declaration}"));
+        }
+        ok(
+            "module m; pub(scope) type { _N[*F][A]<Hidden>: F[A] & Hidden { pub(scope) get; mk; }; }",
+        );
+        ok("module m; rec type { N: . | N { mk; get; }; }");
+    }
+
+    #[test]
+    fn nominal_member_roles_reject_custom_names_and_bodies() {
+        for members in [
+            "constructor make; projector read;",
+            "mk make; get read;",
+            "mk _Foo; get;",
+            "mk _foo; get;",
+            "mk; get _Foo;",
+            "mk; get _foo;",
+            "pub make; pub read;",
+            "mk() { () }; get;",
+            "mk; get { () };",
+        ] {
+            err(&format!("module m; type {{ N: . {{ {members} }}; }}"));
         }
     }
 
@@ -2491,13 +2524,13 @@ mod tests {
         for body in [
             "type A = B; type B = A",
             "; type A = B; type B = A;",
-            "; newtype Box : A { constructor wrap; projector unwrap }; type A = Box;",
+            "; type { Box : A { mk; get }; }; type A = Box;",
         ] {
             ok(&format!("module m; rec {{ {body} }}"));
         }
         for body in [
             "type A = B type B = A",
-            "newtype Box : A { constructor wrap; projector unwrap } type A = Box",
+            "type { Box : A { mk; get }; } type A = Box",
             ";; type A = B; type B = A",
             "type A = B;; type B = A",
             "type A = B; type B = A;;",
@@ -2510,68 +2543,61 @@ mod tests {
 
     #[test]
     fn newtype_recursive_self_ref() {
-        ok(
-            "module m; rec newtype List[A] : (. | (A & List[A])) { pub constructor cons; pub projector un_list; };",
-        );
+        ok("module m; rec type { List[A] : (. | (A & List[A])) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn mutually_recursive_type_group_is_kio_prime_syntax() {
         ok("module m; rec { \
              type Loop = Box; \
-             newtype Box : . | Loop { pub constructor mk_box; pub projector un_box; }; \
+             type { Box : . | Loop { pub mk; pub get; }; }; \
              }");
     }
 
     #[test]
     fn recursive_type_forms_keep_the_kio_prime_boundary_narrow() {
-        assert!(err("module m; rec type Loop = Loop;").contains("not a declaration form"));
-        assert!(err("module m; rec labels Loop = { next: Loop };").contains("surface sugar"));
+        assert!(err("module m; rec type Loop = Loop;").contains("explicit singleton nominal"));
+        assert!(
+            err("module m; rec type Loop = { Next: Loop };").contains("explicit singleton nominal")
+        );
         assert!(
             err("module m; pub rec { type A = B; type B = A; }").contains("no leading visibility")
         );
         assert!(
-            err("module m; rec { fn f() -> . { () } type A = .; }")
-                .contains("expected `type` or `newtype`")
+            err("module m; rec { fn f() -> . { () } type A = .; }").contains("expected `type`")
         );
     }
 
     #[test]
     fn newtype_with_existential_binder() {
-        ok(
-            "module m; newtype Pack[A] <U> : (A & U) { pub constructor mk_pack; pub projector un_pack; };",
-        );
+        ok("module m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_multiple_existential_binders() {
-        ok(
-            "module m; newtype Pack[A] <L> <R> : (A & L & R) { pub constructor mk_pack; pub projector un_pack; };",
-        );
+        ok("module m; type { Pack[A] <L> <R> : (A & L & R) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_existentials_no_universals() {
-        ok("module m; newtype Pack <U> : U { pub constructor mk_pack; pub projector un_pack; };");
+        ok("module m; type { Pack <U> : U { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_members_reversed_order() {
-        ok("module m; newtype Wrap[A] : A { pub projector un_wrap; pub constructor mk_wrap; };");
+        ok("module m; type { Wrap[A] : A { pub get; pub mk; }; };");
     }
 
     #[test]
     fn newtype_duplicate_constructor_rejected() {
-        let m = err(
-            "module m; newtype W : . { pub constructor c1; pub constructor c2; pub projector p; };",
-        );
-        assert!(m.contains("duplicate `constructor`"), "got: {m}");
+        let m = err("module m; type { W : . { pub mk; pub mk; pub get; }; };");
+        assert!(m.contains("duplicate `mk`"), "got: {m}");
     }
 
     #[test]
     fn newtype_missing_projector_rejected() {
-        let m = err("module m; newtype W : . { pub constructor c; };");
-        assert!(m.contains("missing `projector`"), "got: {m}");
+        let m = err("module m; type { W : . { pub mk; }; };");
+        assert!(m.contains("missing `get`"), "got: {m}");
     }
 
     #[test]
@@ -2610,17 +2636,6 @@ mod tests {
     #[test]
     fn multi_segment_module_decl_and_import_path() {
         ok("module a/b/c; import x/y/z(f);");
-    }
-
-    #[test]
-    fn braced_label_import_is_not_kio_prime() {
-        for source in [
-            "module m; import origin({field});",
-            "module m; import origin(Field, {field});",
-        ] {
-            let message = err(source);
-            assert!(message.contains("braced label imports are surface syntax"));
-        }
     }
 
     #[test]
@@ -2749,12 +2764,6 @@ mod tests {
         ] {
             err(&format!("module m; fn run() {{ {expression} }}"));
         }
-    }
-
-    #[test]
-    fn rejects_labels() {
-        let m = err("module m; labels { f : . };");
-        assert!(m.contains("labels"), "msg = {m}");
     }
 
     #[test]
@@ -3257,16 +3266,6 @@ mod tests {
                 "module m; fn f() -> . { let _foo = (); () }",
             ),
             (
-                "constructor",
-                "module m; newtype Box : . { constructor _Foo; projector un_box; };",
-                "module m; newtype Box : . { constructor _foo; projector un_box; };",
-            ),
-            (
-                "projector",
-                "module m; newtype Box : . { constructor mk_box; projector _Foo; };",
-                "module m; newtype Box : . { constructor mk_box; projector _foo; };",
-            ),
-            (
                 "type-path module qualifier",
                 "module m; type T = _Foo.Bar;",
                 "module m; type T = _foo.Bar;",
@@ -3340,7 +3339,7 @@ mod tests {
         // value-position projector reference into, so the kio-prime
         // build-target round-trip must re-verify it.
         ok("module m; \
-            newtype Pack <U> : . & U { constructor mk; projector get; }; \
+            type { Pack <U> : . & U { mk; get; }; }; \
             fn a(_f: Pack -> [R] ([U] (Pack & U) -> R) -> R) -> . { () }");
     }
 }

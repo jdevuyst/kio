@@ -5,8 +5,6 @@ import __intrinsics__;
 import __comptime__;
 import testapi(String);
 
-pub type Target_request = __Type__ | .;
-
 pure fn comptime_bool_and(ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
   __if_then_else__(left, .() -> Comptime_bool { right }, .() -> Comptime_bool { .f })
 }
@@ -34,12 +32,7 @@ pure fn forall_identity(ct: __Comptime__) -> __Type__ {
   , ct
   , __type_arity_zero__(ct)
   , .(var: __Type_var__) -> __Type__ {
-      __type_arrow__(
-      , ct
-      , __type_var__(ct, var)
-      , __type_arity_succ__(ct, __type_arity_zero__(ct))
-      , __type_var__(ct, var)
-      )
+      __type_arrow__(ct, __type_var__(ct, var), __type_var__(ct, var))
     }
   )
 }
@@ -60,18 +53,12 @@ pub pure fn checked_impl(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Target_request
+, target: __Type__
 ) -> __Checked_term__ {
-  __either__[__Type__][.][__Checked_term__](
-  , target
-  , .(target_type: __Type__) -> __Checked_term__ {
-      __if_then_else__(
-      , pass_checks(ct, source, target_type)
-      , .() -> __Checked_term__ { value }
-      , .() -> __Checked_term__ { __macro_error__(ct, "reflection surface check failed") }
-      )
-    }
-  , .() -> __Checked_term__ { __macro_error__(ct, "elaborator needs a target") }
+  __if_then_else__(
+  , pass_checks(ct, source, target)
+  , .() -> __Checked_term__ { value }
+  , .() -> __Checked_term__ { __macro_error__(ct, "reflection surface check failed") }
   )
 }
 

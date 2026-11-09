@@ -4,6 +4,7 @@ import certificate as certificate;
 import distance as distance;
 import forest as forest;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -40,20 +41,20 @@ pub fn compare(title: String, source: forest.Tree, target: forest.Tree) {
   line("source: ", forest.render(source));
   line("target: ", forest.render(target));
   let solution = distance.solve(source, target);
-  line("distance: ", fmt.int_to_string(solution.?{distance.cost}));
+  line("distance: ", fmt.int_to_string(solution.>select { distance.Cost.get }));
   io.print("mapping:");
-  mapping_pairs(solution.?{distance.mapping}, 0);
+  mapping_pairs(solution.>select { distance.Mapping.get }, 0);
   io.print("\n");
-  if(certificate.valid(source, target, solution.?{distance.mapping})) {
-    let counts = certificate.counts(source, target, solution.?{distance.mapping});
-    number("edits: delete=", counts.?{certificate.deleted});
-    number(" insert=", counts.?{certificate.inserted});
-    number(" rename=", counts.?{certificate.renamed});
-    number(" keep=", counts.?{certificate.kept});
+  if(certificate.valid(source, target, solution.>select { distance.Mapping.get })) {
+    let counts = certificate.counts(source, target, solution.>select { distance.Mapping.get });
+    number("edits: delete=", counts.>select { certificate.Deleted.get });
+    number(" insert=", counts.>select { certificate.Inserted.get });
+    number(" rename=", counts.>select { certificate.Renamed.get });
+    number(" keep=", counts.>select { certificate.Kept.get });
     io.print("\n");
     line(
     , "certificate: "
-    , if(forest.equal(certificate.cost(counts), solution.?{distance.cost})) {
+    , if(forest.equal(certificate.cost(counts), solution.>select { distance.Cost.get })) {
         "valid; cost agrees"
       } else {
         "valid; cost disagrees"

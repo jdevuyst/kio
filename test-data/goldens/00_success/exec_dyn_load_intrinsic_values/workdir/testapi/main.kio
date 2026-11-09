@@ -1,22 +1,23 @@
 module testapi/main;
 
 import defaults(instantiate_default);
+import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
 import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
-import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
 import loader/scan(load_package);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
 fn call_value[P](surface: Surface[P]) -> String {
-  match(surface.?{lookup}("value"[String])) {
+  match((surface.>select { Lookup.get[P] })("value"[String])) {
     (
     , .(callee: P) {
-        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+        match((surface.>select { Apply.get[P] })((callee, surface.>select { Unit_in.get[P] }))) {
           (
           , .(answer: P) {
-              match(surface.?{i32_out}(answer)) {
+              match((surface.>select { I32_out.get[P] })(answer)) {
                 (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
               }
             }

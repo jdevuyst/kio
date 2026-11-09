@@ -8,7 +8,7 @@ host type Int role(i32);
 
 host fn host_identity[A](value: A) -> A;
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
 fn host_value() -> Str & Int { let choose = host_identity; (choose("host"[Str]), choose(7[Int])) }
 
@@ -18,8 +18,8 @@ fn lambda_value() -> Str & Int {
 }
 
 fn projector_value() -> Str & Int {
-  let unbox = Box.unbox;
-  (unbox(Box.box("projector"[Str])), unbox(Box.box(13[Int])))
+  let unbox = Box.get;
+  (unbox(Box.mk("projector"[Str])), unbox(Box.mk(13[Int])))
 }
 
 fn qualified_value() -> Str & Int {
@@ -28,6 +28,6 @@ fn qualified_value() -> Str & Int {
 }
 
 fn qualified_projector_value() -> Str & Int {
-  let unbox = helper.Box.unbox;
-  (unbox(helper.Box.box("qualified projector"[Str])), unbox(helper.Box.box(19[Int])))
+  let unbox = helper.Box.get;
+  (unbox(helper.Box.mk("qualified projector"[Str])), unbox(helper.Box.mk(19[Int])))
 }

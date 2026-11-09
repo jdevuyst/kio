@@ -413,10 +413,6 @@ fn surface_forms_appear_in_corpus() {
     // emitted package text for any `surface_mode` program (the
     // gating flag in `emit.rs`).
     let with_equiv = progs.iter().filter(|p| p.surface_mode).count();
-    let with_label_value = progs
-        .iter()
-        .filter(|p| p.uses_surface && body_has_label_value(&render::render_fn_def(p)))
-        .count();
     let with_match_macro = progs
         .iter()
         .filter(|p| p.uses_surface && body_has_match_macro(&render::render_fn_def(p)))
@@ -653,7 +649,18 @@ fn surface_forms_appear_in_corpus() {
                 spec.impl_name
             );
             match spec.implementation {
-                UserMacroImplementation::Late(_) => {
+                UserMacroImplementation::Late(template) => {
+                    let implementation = generated
+                        .lines()
+                        .find(|line| line.starts_with(&fn_needle))
+                        .expect("generated implementation signature");
+                    let target = match template {
+                        UserMacroTemplate::RequiredTarget
+                        | UserMacroTemplate::SourceTargetGuard
+                        | UserMacroTemplate::TermTypeGuard => "__Type__",
+                        _ => ".",
+                    };
+                    assert!(implementation.contains(&format!("target: {target})")));
                     let declaration = format!("impl {} }}\n", spec.impl_name);
                     assert!(
                         generated.contains(&declaration),
@@ -732,6 +739,10 @@ fn surface_forms_appear_in_corpus() {
                 && root.contains("equiv kio_gen_seeded_fold_step { [* 1[I32], 2[I32] *]; 0[I32] }"),
             "surface-mode prog.kio missing nonvacuous seeded variadic-operator coverage"
         );
+        assert!(
+            root.contains("pub type Kio_gen_choice = { Kio_gen_text: String; } | I32;"),
+            "surface-mode prog.kio missing mixed nominal/type declaration"
+        );
         for witness in [
             "pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }",
             "equiv kio_gen_bare_fold_singleton { [2[I32]]; 2[I32] }",
@@ -742,51 +753,7 @@ fn surface_forms_appear_in_corpus() {
         ] {
             assert!(root.contains(witness), "missing surface witness: {witness}");
         }
-        assert!(
-            root.contains("labels Kio_gen_labels = { greet : _ } | { count : _ }"),
-            "surface-mode prog.kio missing explicit repeated-label reuse coverage"
-        );
-        assert!(
-            root.contains("pub type {kio_gen_count_forward} = {count};"),
-            "surface-mode prog.kio missing the fixed nonminting label forward"
-        );
-        assert!(
-            root.contains(
-                "equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7[I32]}; Count.mk(7[I32]) }"
-            ),
-            "surface-mode prog.kio missing forwarded-to-original nominal equivalence"
-        );
-        assert!(
-            root.contains(
-                "equiv kio_gen_label_forward_payload { Count.mk(11[I32]).?{kio_gen_count_forward}; 11[I32] }"
-            ),
-            "surface-mode prog.kio missing independently constructed payload-access coverage"
-        );
     }
-    let core = progs
-        .iter()
-        .find(|p| !p.surface_mode)
-        .expect("the sampled corpus must include a core-mode program");
-    let core_files = kio_gen::emit::render_package_files(core);
-    let core_root = core_files
-        .iter()
-        .find(|(path, _)| path == "workdir/prog.kio")
-        .map(|(_, source)| source.as_str())
-        .expect("core-mode package must have a root module");
-    for surface_fragment in [
-        "pub type {kio_gen_count_forward}",
-        "equiv kio_gen_label_forward_nominal",
-        "equiv kio_gen_label_forward_payload",
-    ] {
-        assert!(
-            !core_root.contains(surface_fragment),
-            "core-mode prog.kio contains surface-only forwarding: {surface_fragment}"
-        );
-    }
-    assert!(
-        with_label_value > 0,
-        "no program rendered with label-value sugar `{{label = e}}` across {N} seeds"
-    );
     assert!(
         with_match_macro > 0,
         "no program rendered with `match` across {N} seeds"
@@ -936,13 +903,6 @@ fn body_has_user_macro_call(rendered: &str) -> bool {
     })
 }
 
-fn body_has_label_value(rendered: &str) -> bool {
-    // Surface `{<label> = …}` value-construction sugar fires only in
-    // surface mode; the Kio' fallback emits `mk_<label>(…)`. The
-    // `{greet = ` / `{count = ` shape is unique to the surface form.
-    rendered.contains("{greet = ") || rendered.contains("{count = ")
-}
-
 fn body_has_match_macro(rendered: &str) -> bool {
     // Surface `match(<scrutinee>) { … }` is only emitted by the
     // MatchMacro surface render path; the Kio' fallback prints
@@ -1075,7 +1035,6 @@ fn term_depth(t: &Term) -> u32 {
                 .max(term_depth(then))
                 .max(term_depth(else_))
         }
-        Term::LabelConstruct { payload, .. } => 1 + term_depth(payload),
         Term::Into { inner }
         | Term::Onto { inner }
         | Term::Iso { inner }
@@ -1148,9 +1107,6 @@ fn collect_user_macro_call_names<'a>(term: &'a Term, names: &mut Vec<&'a str>) {
             collect_user_macro_call_names(cond, names);
             collect_user_macro_call_names(then, names);
             collect_user_macro_call_names(else_, names);
-        }
-        Term::LabelConstruct { payload, .. } => {
-            collect_user_macro_call_names(payload, names);
         }
         Term::MatchMacro {
             scrutinee,
@@ -1226,7 +1182,6 @@ fn contains_poly_call(t: &Term, name: &str) -> bool {
                 || contains_poly_call(then, name)
                 || contains_poly_call(else_, name)
         }
-        Term::LabelConstruct { payload, .. } => contains_poly_call(payload, name),
         Term::Into { inner }
         | Term::Onto { inner }
         | Term::Iso { inner }

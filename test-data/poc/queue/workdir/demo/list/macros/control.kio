@@ -14,28 +14,41 @@ pure fn if_checked(
 , ct: __Comptime__
 , fills: __Fill_ctx__
 , result_type: __Type__
-, condition: __Checked_term__
-, on_true: __Checked_term__
-, on_false: __Checked_term__
+, inputs: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
-  let true_result = invoke(ct, on_true);
-  let false_result = invoke(ct, on_false);
+  let inputs_type = __term_type__(ct, inputs);
+  let branches = __intrinsic_snd__(ct, inputs_type, inputs);
+  let branches_type = __term_type__(ct, branches);
+  let true_result = invoke(ct, __intrinsic_fst__(ct, branches_type, branches));
+  let false_result = invoke(ct, __intrinsic_snd__(ct, branches_type, branches));
   let with_true = __fill__(ct, fills, result_type, __term_type__(ct, true_result));
   let with_false = __fill__(ct, with_true, result_type, __term_type__(ct, false_result));
   (
-  , __intrinsic_if_then_else__(
+  , __term_let__(
     , ct
-    , result_type
-    , condition
-    , .() -> __Checked_term__ { true_result }
-    , .() -> __Checked_term__ { false_result }
+    , inputs_type
+    , inputs
+    , .(bound: __Checked_term__) -> __Checked_term__ {
+        let bound_branches = __intrinsic_snd__(ct, inputs_type, bound);
+        __intrinsic_if_then_else__(
+        , ct
+        , result_type
+        , __intrinsic_fst__(ct, inputs_type, bound)
+        , .() -> __Checked_term__ {
+            invoke(ct, __intrinsic_fst__(ct, branches_type, bound_branches))
+          }
+        , .() -> __Checked_term__ {
+            invoke(ct, __intrinsic_snd__(ct, branches_type, bound_branches))
+          }
+        )
+      }
     )
   , with_false
   )
 }
 
-/// Evaluates the condition once and evaluates only its selected branch.
-pub macro if : [Result] Bool -> (. -> Result) -> (. -> Result) -> Result { trailing thunk; trailing thunk else; impl(fills) if_checked }
+/// Evaluates its arguments once and invokes only the selected branch thunk.
+pub macro if : [Result] (Bool & (. -> Result) & (. -> Result)) -> Result { trailing thunk; trailing thunk else; impl(fills) if_checked }
 
 pure fn scope_checked(
 , ct: __Comptime__

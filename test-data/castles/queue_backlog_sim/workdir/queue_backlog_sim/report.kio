@@ -1,15 +1,16 @@
 module queue_backlog_sim/report;
 
+import macros/row_macros(macro select);
 import queue_backlog_sim/model(
+, Arrived_count
+, Backlog_count
+, Completed_effort
+, Current_tick
+, Max_backlog
+, Next_ticket
+, Served_count
 , State
-, {arrived_count}
-, {backlog_count}
-, {completed_effort}
-, {current_tick}
-, {max_backlog}
-, {next_ticket}
-, {served_count}
-, {total_wait}
+, Total_wait
 );
 import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
@@ -24,13 +25,13 @@ fn line(label: String, value: String) { print(cat3(label, value, "\n")) }
 pub fn print_report(state: State) {
   print("queue_backlog_sim\n");
   print("schedule=arrivals[3,0,4,1,0,2,0];capacity[1,2,1,3,2,1,4]\n");
-  line("ticks=", int_to_string(state.?{current_tick}));
-  line("arrivals=", int_to_string(state.?{arrived_count}));
-  line("served=", int_to_string(state.?{served_count}));
-  line("final_backlog=", int_to_string(state.?{backlog_count}));
-  line("max_backlog=", int_to_string(state.?{max_backlog}));
-  line("wait_units=", int_to_string(state.?{total_wait}));
-  line("effort_units=", int_to_string(state.?{completed_effort}));
-  line("next_ticket=", int_to_string(state.?{next_ticket}));
-  line("drained=", bool_to_string(eq_i32(state.?{backlog_count}, 0)))
+  line("ticks=", int_to_string(state.>select { Current_tick.get }));
+  line("arrivals=", int_to_string(state.>select { Arrived_count.get }));
+  line("served=", int_to_string(state.>select { Served_count.get }));
+  line("final_backlog=", int_to_string(state.>select { Backlog_count.get }));
+  line("max_backlog=", int_to_string(state.>select { Max_backlog.get }));
+  line("wait_units=", int_to_string(state.>select { Total_wait.get }));
+  line("effort_units=", int_to_string(state.>select { Completed_effort.get }));
+  line("next_ticket=", int_to_string(state.>select { Next_ticket.get }));
+  line("drained=", bool_to_string(eq_i32(state.>select { Backlog_count.get }, 0)))
 }

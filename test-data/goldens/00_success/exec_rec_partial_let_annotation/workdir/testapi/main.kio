@@ -7,22 +7,17 @@ import testapi/fmt(i32_to_string);
 import testapi/io(print);
 import testapi/iter(loop);
 
-newtype Box[A] : A { constructor mk_box; projector un_box }
+type { Box[A]: A { mk; get } }
 
 fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value }
 
 rec(loop) fn direct_partial(n: I32) -> Box[I32] {
-  if(leq_i32(n, 0)) {
-    Box.mk_box(10)
-  } else {
-    let .(box: Box[_]) = recur(cont) direct_partial(0);
-    box
-  }
+  if(leq_i32(n, 0)) { Box.mk(10) } else { let .(box: Box[_]) = recur(cont) direct_partial(0); box }
 }
 
 rec(loop) fn nested_partial(n: I32) -> Box[I32] {
   if(leq_i32(n, 0)) {
-    Box.mk_box(20)
+    Box.mk(20)
   } else {
     let .(box: Box[_]) = choose_box(0, recur(cont) nested_partial(0));
     box
@@ -30,8 +25,8 @@ rec(loop) fn nested_partial(n: I32) -> Box[I32] {
 }
 
 pub fn main() {
-  print(i32_to_string(Box.un_box(direct_partial(1))));
+  print(i32_to_string(Box.get(direct_partial(1))));
   print(",");
-  print(i32_to_string(Box.un_box(nested_partial(1))));
+  print(i32_to_string(Box.get(nested_partial(1))));
   print("\n")
 }

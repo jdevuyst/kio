@@ -5,6 +5,6 @@ pub fn make() { helper() }
 
 fn helper() { () }
 
-pub newtype Box : . { constructor box; projector unbox }
+pub type { Box: . { mk; get }; }
 
-pub fn build_box() { () }
+pub fn mk() { () }

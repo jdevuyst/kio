@@ -2,11 +2,11 @@ module main;
 
 import macros/sequence(macro do);
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A]: A { mk; get } }
 
 host fn make_bind[*M]() -> [A][B] (M[A] & (A -> M[B])) -> M[B];
 
 pub fn run() {
-  let result = do(make_bind()) { let value <- Box.box(()); Box.box(value) };
-  Box.unbox(result)
+  let result = do(make_bind()) { let value <- Box.mk(()); Box.mk(value) };
+  Box.get(result)
 }

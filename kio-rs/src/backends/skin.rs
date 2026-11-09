@@ -302,9 +302,7 @@ where
                 }
             }
         }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::LabelSugar { .. } | Type::Infer { .. } => {
-            false
-        }
+        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => false,
         Type::Goal { ext, .. } => match *ext {},
     }
 }
@@ -371,7 +369,6 @@ pub(crate) fn erase_scoped_type_vars(ty: &Type<Routed>, scope: &BTreeSet<String>
                 meta: meta.clone(),
             }
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -631,7 +628,7 @@ fn collect_referenced_type_vars(
             scoped.remove(&param.name);
             collect_referenced_type_vars(body, &scoped, out);
         }
-        Type::Unit { .. } | Type::Bottom { .. } | Type::LabelSugar { .. } | Type::Infer { .. } => {}
+        Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
     }
 }
@@ -726,7 +723,6 @@ pub(crate) fn substitute_type_vars(
         }
         Type::Unit { meta } => Type::Unit { meta: meta.clone() },
         Type::Bottom { meta } => Type::Bottom { meta: meta.clone() },
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -789,7 +785,6 @@ fn write_canonical(ty: &Type<Routed>, out: &mut String) {
                 out.push(')');
             }
         }
-        Type::LabelSugar { ext, .. } => match *ext {},
         Type::Infer { ext, .. } => match *ext {},
         Type::Goal { ext, .. } => match *ext {},
     }
@@ -1115,10 +1110,10 @@ mod tests {
             "module extra; \
              host type Text role(str); \
              pub fn distract(value: (Text & Text)) -> (Text & Text) { value } \
-             pub newtype Noise : (Text | Text) { \
-               pub constructor make_noise; \
-               pub projector take_noise; \
-             };",
+             pub type { Noise: (Text | Text) { \
+               pub mk; \
+               pub get; \
+             }; };",
         ]);
 
         assert_swift_facade_unchanged(&base, &with_unbridged, &["extra__Noise"]);
@@ -1129,37 +1124,37 @@ mod tests {
     fn local_binders_cannot_resolve_to_unrelated_newtypes_in_carrier_storage() {
         let main = "module main; \
                     host type Exact; \
-                    pub newtype Existential <U> : U { \
-                      constructor make_existential; \
-                      projector read_existential; \
-                    }; \
-                    pub newtype Rank_n : [U] U { \
-                      constructor make_rank_n; \
-                      projector read_rank_n; \
-                    }; \
-                    newtype Hidden <V> : V { \
-                      constructor make_hidden; \
-                      projector read_hidden; \
-                    }; \
-                    pub newtype Outer : Hidden { \
-                      constructor make_outer; \
-                      projector read_outer; \
-                    }; \
-                    newtype Inner[A] : A { \
-                      constructor make_inner; \
-                      projector read_inner; \
-                    }; \
-                    pub newtype Nested <U> : Inner[U] { \
-                      constructor make_nested; \
-                      projector read_nested; \
-                    };";
+                    pub type { Existential <U>: U { \
+                      mk; \
+                      get; \
+                    }; }; \
+                    pub type { Rank_n: [U] U { \
+                      mk; \
+                      get; \
+                    }; }; \
+                    type { Hidden <V>: V { \
+                      mk; \
+                      get; \
+                    }; }; \
+                    pub type { Outer: Hidden { \
+                      mk; \
+                      get; \
+                    }; }; \
+                    type { Inner[A]: A { \
+                      mk; \
+                      get; \
+                    }; }; \
+                    pub type { Nested <U>: Inner[U] { \
+                      mk; \
+                      get; \
+                    }; };";
         let base = build_package_with_modules(&[main]);
         let with_same_leaf = build_package_with_modules(&[
             main,
             "module extra; \
              import main(Exact); \
-             newtype U : Exact { constructor make_u; projector read_u; }; \
-             newtype V : Exact { constructor make_v; projector read_v; };",
+             type { U: Exact { mk; get; }; }; \
+             type { V: Exact { mk; get; }; };",
         ]);
 
         assert_swift_facade_unchanged(&base, &with_same_leaf, &["extra__U", "extra__V"]);
@@ -1190,17 +1185,17 @@ mod tests {
     #[test]
     fn recursive_newtype_resolution_is_module_scoped() {
         let main = "module main; \
-                    pub rec newtype Chain : . | Chain { \
-                      pub constructor make_chain; \
-                      pub projector read_chain; \
-                    };";
+                    pub rec type { Chain: . | Chain { \
+                      pub mk; \
+                      pub get; \
+                    }; };";
         let base = build_package_with_modules(&[main]);
         let with_same_leaf = build_package_with_modules(&[
             "module aaa; \
-             pub newtype Chain : . { \
-               pub constructor make_chain; \
-               pub projector read_chain; \
-             };",
+             pub type { Chain: . { \
+               pub mk; \
+               pub get; \
+             }; };",
             main,
         ]);
 
@@ -1280,10 +1275,10 @@ mod tests {
         let package = build_package(
             "module main; \
              host type Str role(str); \
-             pub newtype T : Str { pub constructor make_t; pub projector un_t; }; \
-             pub newtype Pack <T> : T { pub constructor make_pack; pub projector un_pack; }; \
-             pub newtype Poly : [T] T -> T { pub constructor make_poly; pub projector un_poly; }; \
-             pub newtype Capture[A] : [T] A -> T { pub constructor make_capture; pub projector un_capture; }; \
+             pub type { T: Str { pub mk; pub get; }; }; \
+             pub type { Pack <T>: T { pub mk; pub get; }; }; \
+             pub type { Poly: [T] T -> T { pub mk; pub get; }; }; \
+             pub type { Capture[A]: [T] A -> T { pub mk; pub get; }; }; \
              host fn nested(f: [T] T -> T) -> Str; \
              host fn ordered(value: T)[T](later: T) -> T; \
              host fn packed(value: Pack) -> Pack; \

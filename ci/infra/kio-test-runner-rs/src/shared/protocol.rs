@@ -1188,6 +1188,7 @@ pub const MAIN_BOX_FIXTURE_PROTOCOL_NAME: &str = "main-box-fixture";
 pub const EMPTY_API_MAIN_PROTOCOL_NAME: &str = "empty-api-main";
 pub const GENERATED_CORE_MAIN_PROTOCOL_NAME: &str = "generated-core-main";
 pub const GENERATED_SURFACE_MAIN_PROTOCOL_NAME: &str = "generated-surface-main";
+pub const LITERAL_INFERENCE_MAIN_PROTOCOL_NAME: &str = "literal-inference-main";
 pub const GENERATED_CONTROL_MAIN_PROTOCOL_NAME: &str = "generated-control-main";
 pub const GENERATED_RECURSION_MAIN_PROTOCOL_NAME: &str = "generated-recursion-main";
 pub const EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME: &str = "export-namespace-roundtrip";
@@ -1421,6 +1422,7 @@ pub enum RunnerProtocol {
     EmptyApiMain,
     GeneratedCoreMain,
     GeneratedSurfaceMain,
+    LiteralInferenceMain,
     GeneratedControlMain,
     GeneratedRecursionMain,
     ExportNamespaceRoundtrip,
@@ -1507,7 +1509,7 @@ pub enum RunnerProtocol {
     ExportNewtypeSumRoundtrip,
     /// `00_success/ffi_export_newtype_scalar_roundtrip` — a
     /// testapi-conformed export roundtrip whose subject is a **bare
-    /// scalar-payload newtype** (`newtype Wrap : I32`) crossing a `pub fn`
+    /// scalar-payload newtype** (`type { Wrap: I32 }`) crossing a `pub fn`
     /// in **both** directions: the package exports `bump(Wrap) -> Wrap`,
     /// taking the newtype as a param (In) and returning it (Out). The
     /// driver builds a `Wrap` through its public ctor, calls `bump`, and
@@ -1971,6 +1973,26 @@ const TYPES_GENERATED_SURFACE: &[HostTypeBinding] = &[
     HostTypeBinding::role("prog", "F64", RoleFixture::F64),
     HostTypeBinding::role("prog", "String", RoleFixture::String),
     HostTypeBinding::role("control", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
+];
+const TYPES_LITERAL_INFERENCE: &[HostTypeBinding] = &[
+    HostTypeBinding::role("prog", "I8", RoleFixture::I8),
+    HostTypeBinding::role("prog", "I16", RoleFixture::I16),
+    HostTypeBinding::role("prog", "I32", RoleFixture::I32),
+    HostTypeBinding::role("prog", "I64", RoleFixture::I64),
+    HostTypeBinding::role("prog", "I128", RoleFixture::I128),
+    HostTypeBinding::role("prog", "U8", RoleFixture::U8),
+    HostTypeBinding::role("prog", "U16", RoleFixture::U16),
+    HostTypeBinding::role("prog", "U32", RoleFixture::U32),
+    HostTypeBinding::role("prog", "U64", RoleFixture::U64),
+    HostTypeBinding::role("prog", "U128", RoleFixture::U128),
+    HostTypeBinding::role("prog", "F32", RoleFixture::F32),
+    HostTypeBinding::role("prog", "F64", RoleFixture::F64),
+    HostTypeBinding::role("prog", "String", RoleFixture::String),
+    HostTypeBinding::role("prog", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
@@ -3899,6 +3921,7 @@ impl RunnerProtocol {
         Self::EmptyApiMain,
         Self::GeneratedCoreMain,
         Self::GeneratedSurfaceMain,
+        Self::LiteralInferenceMain,
         Self::GeneratedControlMain,
         Self::GeneratedRecursionMain,
         Self::ExportNamespaceRoundtrip,
@@ -4041,6 +4064,7 @@ impl RunnerProtocol {
             Self::EmptyApiMain => EMPTY_API_MAIN_PROTOCOL_NAME,
             Self::GeneratedCoreMain => GENERATED_CORE_MAIN_PROTOCOL_NAME,
             Self::GeneratedSurfaceMain => GENERATED_SURFACE_MAIN_PROTOCOL_NAME,
+            Self::LiteralInferenceMain => LITERAL_INFERENCE_MAIN_PROTOCOL_NAME,
             Self::GeneratedControlMain => GENERATED_CONTROL_MAIN_PROTOCOL_NAME,
             Self::GeneratedRecursionMain => GENERATED_RECURSION_MAIN_PROTOCOL_NAME,
             Self::ExportNamespaceRoundtrip => EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME,
@@ -4217,6 +4241,7 @@ impl RunnerProtocol {
             EMPTY_API_MAIN_PROTOCOL_NAME => Ok(Self::EmptyApiMain),
             GENERATED_CORE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedCoreMain),
             GENERATED_SURFACE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedSurfaceMain),
+            LITERAL_INFERENCE_MAIN_PROTOCOL_NAME => Ok(Self::LiteralInferenceMain),
             GENERATED_CONTROL_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedControlMain),
             GENERATED_RECURSION_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedRecursionMain),
             EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportNamespaceRoundtrip),
@@ -4442,6 +4467,12 @@ impl RunnerProtocol {
             Self::GeneratedSurfaceMain => invoke_contract(
                 ExportDriver::Main { module: "prog" },
                 TYPES_GENERATED_SURFACE,
+                FNS_GENERATED_OBSERVATION,
+                false,
+            ),
+            Self::LiteralInferenceMain => invoke_contract(
+                ExportDriver::Main { module: "prog" },
+                TYPES_LITERAL_INFERENCE,
                 FNS_GENERATED_OBSERVATION,
                 false,
             ),
@@ -6148,6 +6179,20 @@ mod tests {
                 .iter()
                 .all(|binding| binding.module == "prog")
         );
+
+        let literal = RunnerProtocol::LiteralInferenceMain.contract();
+        assert_eq!(literal.host_types, TYPES_LITERAL_INFERENCE);
+        assert_eq!(literal.host_types.len(), 18);
+        assert!(literal.host_types.contains(&HostTypeBinding::role(
+            "prog",
+            "Bool",
+            RoleFixture::Bool,
+        )));
+        assert!(!literal.host_types.contains(&HostTypeBinding::role(
+            "control",
+            "Bool",
+            RoleFixture::Bool,
+        )));
 
         let surface = RunnerProtocol::GeneratedSurfaceMain.contract();
         assert_eq!(surface.host_fns, FNS_GENERATED_OBSERVATION);

@@ -18,6 +18,43 @@ fn complete_marked(kind: &str, marked: &str) -> (String, CompletionList) {
 }
 
 #[test]
+fn completed_import_selector_keeps_alias_choice_at_recovered_close() {
+    for selector in ["Entry", "value", "macro choose", "op _ + _", "varop [* *]"] {
+        for close in ["", ");"] {
+            let marked = format!("module app; import dep/api({selector} |{close}");
+            let (_, result) = complete_marked("", &marked);
+            assert!(!result.is_incomplete, "{marked}: {result:?}");
+            assert_eq!(
+                result
+                    .items
+                    .iter()
+                    .map(|item| item.label.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["as"],
+                "{marked}"
+            );
+        }
+    }
+    for marked in [
+        "module app; import dep/api(|",
+        "module app; import dep/api(Entry, |",
+    ] {
+        let (_, result) = complete_marked("", marked);
+        assert!(
+            result.is_incomplete,
+            "missing provider remains incomplete: {marked}"
+        );
+        assert!(result.items.is_empty(), "{marked}: {result:?}");
+    }
+    let (_, result) = complete_marked("", "module app; import dep/api(Entry as |");
+    assert!(!result.is_incomplete);
+    assert!(
+        result.items.is_empty(),
+        "alias destination remains a binder"
+    );
+}
+
+#[test]
 fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
     for (kind, header, marked) in [
         (
@@ -77,22 +114,27 @@ fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
 }
 
 #[test]
-fn parser_context_recursive_label_payload_recovery_keeps_type_scope() {
+fn parser_context_recursive_nominal_payload_recovery_keeps_type_scope() {
     for (marked, expected, excluded) in [
         (
-            "module app; import pkg/dep(Imported); rec labels { list[A] <U> : Pair[A][bogus[B]: |",
+            "module app; import pkg/dep(Imported); rec type { List[A] <U> : Pair[A][bogus[B]: |",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
-            "module app; import pkg/dep(Imported); rec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: |",
-            vec!["A", "B", "U", "Tree", "List", "Imported"],
-            vec!["C", "Bogus"],
+            "module app; import pkg/dep(Imported); rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: |",
+            vec!["B", "U", "Tree", "List", "Imported"],
+            vec!["A", "C", "Bogus"],
         ),
         (
-            "module app; rec labels { first[A]: Pair[A][bogus[B]: ], second[C]: |",
+            "module app; rec type { First[A]: Pair[A][bogus[B]: ]; Second[C]: |",
             vec!["C", "First", "Second"],
             vec!["A", "B", "Bogus"],
+        ),
+        (
+            "module app; import pkg/dep(Pair); type Tree[A] = { List[B]: B; } & Pair[|",
+            vec!["A", "List", "Pair"],
+            vec!["B", "Tree"],
         ),
     ] {
         let (_, result) = complete_marked("", marked);
@@ -115,10 +157,10 @@ fn parser_context_recursive_label_payload_recovery_keeps_type_scope() {
         }
     }
     for marked in [
-        "module app; rec labels { malformed[A B]: |",
-        "module app; rec labels { list[A] <U> : Pair[A][bogus[B]: // A|",
-        "module app; rec labels { list[A] <U> : Pair[A][bogus[B]: \"A|",
-        "module app; rec labels { first[A]: Pair[A][bogus[B]: ], se|cond[C]: . };",
+        "module app; rec type { Malformed[A B]: |",
+        "module app; rec type { List[A] <U> : Pair[A][bogus[B]: // A|",
+        "module app; rec type { List[A] <U> : Pair[A][bogus[B]: \"A|",
+        "module app; rec type { First[A]: Pair[A][bogus[B]: ]; Se|cond[C]: . };",
     ] {
         assert!(complete_marked("", marked).1.items.is_empty(), "{marked}");
     }
@@ -157,11 +199,7 @@ fn parser_context_closed_vocabularies_cover_file_kinds_and_retract_fields() {
             "signature app v(1); v(1) { |",
             vec!["breaking", "nonbreaking", "with"],
         ),
-        (
-            "",
-            "module app; newtype A : . { constructor mk; |",
-            vec!["projector", "pub"],
-        ),
+        ("", "module app; type { A: . { mk; |", vec!["get", "pub"]),
     ] {
         let (_, result) = complete_marked(kind, source);
         let mut labels: Vec<_> = result
@@ -452,7 +490,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
         let (_, result) = complete_marked(
             "",
             &format!(
-                "module app; newtype Box[A] : A {{ constructor make; projector read; }}; type Alias[A] = Box[A]; fn run() {{ {head}.|"
+                "module app; type {{ Box[A]: A {{ mk; get; }}; }}; type Alias[A] = Box[A]; fn run() {{ {head}.|"
             ),
         );
         assert_eq!(
@@ -461,12 +499,12 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
                 .iter()
                 .map(|item| item.label.as_str())
                 .collect::<Vec<_>>(),
-            ["make", "read"]
+            ["get", "mk"]
         );
     }
     let (_, result) = complete_marked(
         "",
-        "module app; fn run() { Later.| } newtype Later : . { constructor make; projector read; };",
+        "module app; fn run() { Later.| } type { Later: . { mk; get; }; };",
     );
     assert!(
         result.items.is_empty(),
@@ -475,7 +513,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
     );
     let (_, result) = complete_marked(
         "",
-        "module app; labels Record = { field: . }; fn run() { Record.|",
+        "module app; type Record = { Field: .; }; fn run() { Record.|",
     );
     assert_eq!(
         result

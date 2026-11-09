@@ -1,3 +1,2 @@
-newtype `Image` has no accessible member `mk`
-newtype member `Image\.seal_image_state` is not visible from module `testapi/main`
-newtype member `Image\.open_image_state` is not visible from module `testapi/main`
+newtype member `Image\.mk` is not visible from module `testapi/main`
+newtype member `Image\.get` is not visible from module `testapi/main`

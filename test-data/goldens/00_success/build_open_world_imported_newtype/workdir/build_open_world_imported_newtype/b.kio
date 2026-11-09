@@ -2,6 +2,6 @@ module build_open_world_imported_newtype/b;
 
 import build_open_world_imported_newtype(String);
 
-pub newtype Item : String { pub constructor mk_item; pub projector un_item }
+pub type { Item: String { pub mk; pub get } }
 
-pub fn make_b() -> Item { Item.mk_item("b"[String]) }
+pub fn make_b() -> Item { Item.mk("b"[String]) }

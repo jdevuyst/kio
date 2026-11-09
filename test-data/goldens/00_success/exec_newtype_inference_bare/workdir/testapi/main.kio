@@ -12,24 +12,24 @@ import testapi/text(string_concat);
 // is matched out of one `List` instantiation and flows into a freshly
 // built one, so two distinct instantiations of the same newtype must
 // unify under inference rather than by spelling.
-pub rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Map the head of a `List(A)` through `f` into a singleton `List(B)`,
 // or `nil(B, ())` when empty. Polymorphic in both `A` and `B`; the result
 // `List(B)` must unify against the `B`-typed payload `push` builds.
 fn map_head[A][B](xs: List[A], f: A -> B) -> List[B] {
-  match(xs.>List.un_list) {
+  match(xs.>List.get) {
     (.(x: A, _rest: List[A]) { push(f(x), nil[B](())) }, .(_empty: .) { nil[B](()) })
   }
 }
 
 // Project the head of a `List(String)`, or a default when empty.
 fn head_or(xs: List[String], dflt: String) -> String {
-  match(xs.>List.un_list) {
+  match(xs.>List.get) {
     (.(x: String, _rest: List[String]) { x }, .(_empty: .) { dflt })
   }
 }

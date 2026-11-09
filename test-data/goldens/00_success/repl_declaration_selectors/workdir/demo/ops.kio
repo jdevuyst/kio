@@ -10,10 +10,10 @@ pub fn varop() { () }
 
 pub fn field() { () }
 
-pub labels { original: . };
+pub type { Original: . }
 
-/// A label view, distinct from the function.
-pub type {field} = {original};
+/// A type alias, distinct from the function.
+pub type Field = Original;
 
 /// Select the left operand.
 pub op _ + _ { impl choose }

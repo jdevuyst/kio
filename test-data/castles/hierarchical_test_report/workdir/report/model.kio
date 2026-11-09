@@ -1,69 +1,68 @@
 module report/model;
 
 import list/core as cells;
+import macros/row_macros(macro select, macro with);
 import testapi(I32, String);
 import testapi/arith as arith;
 
-pub labels Counts = { passed: I32, failed: I32, skipped: I32 };
+pub type Counts = { Passed: I32; Failed: I32; Skipped: I32 };
 
-pub labels Case = { name: String, message: String, count: I32 };
+pub type Case = { Name: String; Message: String; Count: I32 };
 
-pub rec newtype Suite : String & Counts & cells.List[Suite] & cells.List[Case] {
-  pub constructor make;
-  pub projector unpack
-  }
+pub rec type { Suite: String & Counts & cells.List[Suite] & cells.List[Case] { pub mk; pub get } }
 
-pub labels State = {
-, stack: cells.List[Suite]
-, roots: cells.List[Suite]
-, errors: cells.List[String]
-};
+pub type State = { Stack: cells.List[Suite]; Roots: cells.List[Suite]; Errors: cells.List[String] };
 
-pub fn zero() -> Counts { {passed = 0, failed = 0, skipped = 0} }
+pub fn zero() -> Counts { (Passed.mk(0), Failed.mk(0), Skipped.mk(0)) }
 
 pub fn combine(a: Counts, b: Counts) -> Counts {
-  {
-  , passed = arith.add_i32(a.?{passed}, b.?{passed})
-  , failed = arith.add_i32(a.?{failed}, b.?{failed})
-  , skipped = arith.add_i32(a.?{skipped}, b.?{skipped})
-  }
+  (
+  , Passed.mk(arith.add_i32(a.>select { Passed.get }, b.>select { Passed.get }))
+  , Failed.mk(arith.add_i32(a.>select { Failed.get }, b.>select { Failed.get }))
+  , Skipped.mk(arith.add_i32(a.>select { Skipped.get }, b.>select { Skipped.get }))
+  )
 }
 
 pub fn total(c: Counts) -> I32 {
-  arith.add_i32(c.?{passed}, arith.add_i32(c.?{failed}, c.?{skipped}))
+  arith.add_i32(
+  , c.>select { Passed.get }
+  , arith.add_i32(c.>select { Failed.get }, c.>select { Skipped.get })
+  )
 }
 
 pub fn empty_state() -> State {
-  {stack = cells.nil[_], roots = cells.nil[_], errors = cells.nil[_]}
+  (Stack.mk(cells.nil[_]), Roots.mk(cells.nil[_]), Errors.mk(cells.nil[_]))
 }
 
-pub fn empty_suite(name: String) -> Suite { Suite.make(name, zero(), cells.nil[_], cells.nil[_]) }
+pub fn empty_suite(name: String) -> Suite { Suite.mk((name, zero(), cells.nil[_], cells.nil[_])) }
 
 pub fn suite_name(s: Suite) -> String {
-  let .(name, _counts, _children, _failures) = s.>Suite.unpack;
+  let .(name, _counts, _children, _failures) = s.>Suite.get;
   name
 }
 
 pub fn suite_counts(s: Suite) -> Counts {
-  let .(_name, counts, _children, _failures) = s.>Suite.unpack;
+  let .(_name, counts, _children, _failures) = s.>Suite.get;
   counts
 }
 
 pub fn attach(parent: Suite, child: Suite) -> Suite {
-  let .(name, counts, children, failures) = parent.>Suite.unpack;
-  Suite.make(name, combine(counts, suite_counts(child)), cells.cons(child, children), failures)
+  let .(name, counts, children, failures) = parent.>Suite.get;
+  Suite.mk((name, combine(counts, suite_counts(child)), cells.cons(child, children), failures))
 }
 
 pub fn add_case(s: Suite, counts: Counts, failures: cells.List[Case]) -> Suite {
-  let .(name, previous, children, _old_failures) = s.>Suite.unpack;
-  Suite.make(name, combine(previous, counts), children, failures)
+  let .(name, previous, children, _old_failures) = s.>Suite.get;
+  Suite.mk((name, combine(previous, counts), children, failures))
 }
 
 pub fn failures(s: Suite) -> cells.List[Case] {
-  let .(_name, _counts, _children, failures) = s.>Suite.unpack;
+  let .(_name, _counts, _children, failures) = s.>Suite.get;
   failures
 }
 
 pub fn error(state: State, message: String) -> State {
-  state.!{errors = cells.cons(message, state.?{errors})}
+  state.>with {
+    Errors.mk(cells.cons(message, state.>select { Errors.get }))
+  }
 }

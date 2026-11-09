@@ -25,14 +25,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use lsp_types::{TextDocumentContentChangeEvent, Uri};
 
 use crate::ast::{Module, Surface};
 use crate::cmd::check::LspAnalysis;
 use crate::error::Error;
-use crate::lsp::label_reuse::LabelReuseIndex;
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::snapshot::{Snapshot, SnapshotId};
 use crate::lsp::util::uri_to_canonical;
@@ -66,10 +64,6 @@ pub struct OpenDocument {
     /// Lazily-built surface parse over `text`. `None` after a mutation;
     /// the next syntax-level request populates it.
     parsed_module: Option<(ParseContextKey, Result<Module<Surface>, Error>)>,
-    /// Label declarations and reuse markers derived from `parsed_module`.
-    /// The nested option caches syntactically broken text as well as a
-    /// successful index.
-    label_reuse_index: Option<Option<Arc<LabelReuseIndex>>>,
     /// Lazily-built header/body-thunk parse over `text`. Used by
     /// syntax-level requests that do not need function bodies.
     lazy_module: Option<Result<LazyModule, Error>>,
@@ -87,7 +81,6 @@ impl OpenDocument {
             version,
             line_index: None,
             parsed_module: None,
-            label_reuse_index: None,
             lazy_module: None,
             #[cfg(test)]
             parse_count: 0,
@@ -143,39 +136,9 @@ impl OpenDocument {
                 self.parse_count += 1;
             }
             self.parsed_module = Some((context, parse(&self.text)));
-            self.label_reuse_index = None;
         }
         let module = self.parsed_module.as_ref()?.1.as_ref().ok()?;
         Some(f(module, &self.text))
-    }
-
-    /// Return the cached label-reuse index for this document version.
-    /// Building it shares the document's lazy surface parse, so cursor-level
-    /// requests never parse or rebuild the index independently.
-    #[cfg(test)]
-    pub fn label_reuse_index(&mut self) -> Option<Arc<LabelReuseIndex>> {
-        self.label_reuse_index_in_context(ParseContextKey::Source, crate::pass::parser::parse)
-    }
-
-    fn label_reuse_index_in_context(
-        &mut self,
-        context: ParseContextKey,
-        parse: impl FnOnce(&str) -> Result<Module<Surface>, Error>,
-    ) -> Option<Arc<LabelReuseIndex>> {
-        let context_is_current = self
-            .parsed_module
-            .as_ref()
-            .is_some_and(|(cached, _)| cached == &context);
-        if !context_is_current {
-            self.label_reuse_index = None;
-        }
-        if self.label_reuse_index.is_none() {
-            let index = self.with_parsed_module_in_context(context, parse, |module, source| {
-                Arc::new(LabelReuseIndex::from_module(module, source))
-            });
-            self.label_reuse_index = Some(index);
-        }
-        self.label_reuse_index.as_ref()?.clone()
     }
 
     /// Borrow a lazily parsed surface module for the current text,
@@ -241,30 +204,9 @@ impl OpenDocument {
             }
             let header = self.materialize_file_header();
             self.parsed_module = Some((context, header.force_all().map(|file| file.module)));
-            self.label_reuse_index = None;
         }
         let module = self.parsed_module.as_ref()?.1.as_ref().ok()?;
         Some(f(module, &self.text))
-    }
-
-    fn file_label_reuse_index_in_context(
-        &mut self,
-        context: ParseContextKey,
-    ) -> Option<Arc<LabelReuseIndex>> {
-        let context_is_current = self
-            .parsed_module
-            .as_ref()
-            .is_some_and(|(cached, _)| cached == &context);
-        if !context_is_current {
-            self.label_reuse_index = None;
-        }
-        if self.label_reuse_index.is_none() {
-            let index = self.with_file_parsed_module_in_context(context, |module, source| {
-                Arc::new(LabelReuseIndex::from_module(module, source))
-            });
-            self.label_reuse_index = Some(index);
-        }
-        self.label_reuse_index.as_ref()?.clone()
     }
 
     /// Replace the entire text. Used for `didChange` events whose
@@ -275,7 +217,6 @@ impl OpenDocument {
         self.version = version;
         self.line_index = None;
         self.parsed_module = None;
-        self.label_reuse_index = None;
         self.lazy_module = None;
     }
 
@@ -360,7 +301,6 @@ impl OpenDocument {
         self.version = new_version;
         self.line_index = None;
         self.parsed_module = None;
-        self.label_reuse_index = None;
         self.lazy_module = None;
         Ok(())
     }
@@ -574,33 +514,6 @@ impl ServerState {
         self.documents
             .get_mut(uri)?
             .with_file_parsed_module_in_context(context, f)
-    }
-
-    /// Return the cached label-reuse index for an open document.
-    pub fn overlay_label_reuse_index(&mut self, uri: &Uri) -> Option<Arc<LabelReuseIndex>> {
-        let context = ParseContextKey::Source;
-        self.documents
-            .get_mut(uri)?
-            .label_reuse_index_in_context(context, |source| {
-                crate::pass::parser::parse_module_file(source).map(|file| file.module)
-            })
-    }
-
-    /// Return the cached label-reuse index for an ordinary URI-backed file.
-    pub(crate) fn overlay_label_reuse_index_for_file(
-        &mut self,
-        uri: &Uri,
-        source_path: &Path,
-    ) -> Option<Arc<LabelReuseIndex>> {
-        let file_context = self
-            .documents
-            .get_mut(uri)?
-            .file_parser_context(source_path)
-            .ok()?;
-        let context = ParseContextKey::File(file_context);
-        self.documents
-            .get_mut(uri)?
-            .file_label_reuse_index_in_context(context)
     }
 
     /// Use the cached lazy parse for an open document. Returns `None`
@@ -1004,7 +917,7 @@ mod tests {
 
     const IMPORT_GRAMMAR_LSP_CONSUMER: &str = "module app/main;
         import syntax(op _ + _, op _ => _, varop [% %]);
-        labels { field: . };
+        type { Field: .; };
         pub fn run(a: ., b: .) -> . { [% a => (a + b), b => a %] }";
 
     fn import_grammar_assert_lsp_ast(module: &Module, operator: &str) {
@@ -1063,11 +976,6 @@ mod tests {
                     })
                     .is_some()
             );
-            assert!(
-                state
-                    .overlay_label_reuse_index_for_file(consumer, &path)
-                    .is_some()
-            );
         } else {
             assert!(
                 state
@@ -1076,7 +984,6 @@ mod tests {
                     ))
                     .is_some()
             );
-            assert!(state.overlay_label_reuse_index(consumer).is_some());
         }
         let source = state.document(consumer).unwrap().text().to_owned();
         let formatted = crate::cmd::fmt::format_source("", &source).unwrap();
@@ -1317,10 +1224,8 @@ mod tests {
         LspAnalysis {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
             warnings: Vec::new(),
         }
@@ -1874,22 +1779,17 @@ mod tests {
     }
 
     #[test]
-    fn label_reuse_index_parses_once_per_document_version() {
+    fn full_parse_is_reused_once_per_document_version() {
         let source = "module pkg/main; fn run() -> . { () }";
         let mut doc = OpenDocument::new(source.to_owned(), 1);
-
-        let first = doc.label_reuse_index().expect("first index");
-        let second = doc.label_reuse_index().expect("cached index");
-        assert!(Arc::ptr_eq(&first, &second));
-        assert!(first.binding_at(0).is_none());
+        doc.with_parsed_module(|_, _| ()).expect("first parse");
+        doc.with_parsed_module(|_, _| ()).expect("cached parse");
         assert_eq!(doc.parse_count, 1);
-
         doc.set_text(
-            "module pkg/main; labels { other: . }; labels Row = { other: _ };".to_owned(),
+            "module pkg/main; type { Other: .; }; type Row = Other;".to_owned(),
             2,
         );
-        let after_edit = doc.label_reuse_index().expect("rebuilt index");
-        assert!(!Arc::ptr_eq(&first, &after_edit));
+        doc.with_parsed_module(|_, _| ()).expect("parse after edit");
         assert_eq!(doc.parse_count, 2);
     }
 
@@ -1993,14 +1893,14 @@ mod tests {
         assert_eq!(document.file_context_materialization_count, 1);
         assert!(
             state
-                .overlay_label_reuse_index_for_file(&consumer, &first)
+                .with_overlay_parsed_module_for_file(&consumer, &first, |_, _| ())
                 .is_some()
         );
         let document = state.document(&consumer).expect("consumer");
         assert_eq!(document.parse_count, 1);
         assert_eq!(
             document.file_context_materialization_count, 1,
-            "cache hits and label-index reuse must borrow the cached lazy syntax"
+            "cache hits must borrow the cached lazy syntax"
         );
         assert!(
             state

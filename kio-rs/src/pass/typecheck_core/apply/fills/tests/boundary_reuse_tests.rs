@@ -45,7 +45,7 @@ fn projected(ty: ScopedType) -> ProjectedType {
         seal: InvocationSeal::fresh(),
         specialization: ty.clone(),
         ty,
-        closed: None,
+        closed: Default::default(),
         focus: None,
         contains_focus: false,
         producers: ProducerSet::default(),
@@ -165,7 +165,7 @@ fn settled_projected_types_normalize_once_with_identical_scope_identity_and_erro
         )
         .unwrap();
         assert!(
-            matches!(snapshot.closed.unwrap().as_type(), crate::ast::Type::Path { segments, args, .. }
+            matches!(snapshot.closed.as_ref().unwrap().as_type(), crate::ast::Type::Path { segments, args, .. }
             if segments.last().unwrap().name == "Carrier" && matches!(args.as_slice(), [crate::ast::Type::Unit { .. }]))
         );
         types.extend([applied, aliased]);

@@ -10,11 +10,11 @@ import testapi/iter(loop);
 
 // Cons-list of `A`: the `()` branch is the empty list, the
 // `(A & List(A))` branch is a cons cell.
-rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
-fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
+fn nil[A]() -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.mk(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Right-recursive cons: `a :: b :: c :: nil()` desugars to
 // `push(a, push(b, push(c, nil())))`. The `__` slot at the
@@ -22,7 +22,7 @@ fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A &
 op _ :: __ { impl push }
 
 fn step[A][B](f: (A & B) -> B, acc: B, ys: List[A]) -> (B & List[A]) | B {
-  match(ys.>List.un_list) {
+  match(ys.>List.get) {
     (
     , .(x: A, rest: List[A]) { widen_sum((f(x, acc), rest))[(B & List[A]) | B] }
     , .(_empty: .) { widen_sum(acc)[(B & List[A]) | B] }

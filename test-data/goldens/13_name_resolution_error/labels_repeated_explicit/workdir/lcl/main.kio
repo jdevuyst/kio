@@ -4,6 +4,6 @@ host type I32 role(i32);
 
 host type String role(str);
 
-labels { f: I32 };
+type { F: I32 }
 
-labels { f: String };
+type { F: String }

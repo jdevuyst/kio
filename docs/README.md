@@ -9,7 +9,7 @@ terms and distinctions while following the learning path.
 
 New to Kio? Start here — these read top to bottom.
 
-- [The Kio language](tutorials/language.md) — a guided tour: packages, modules, functions, types, tuples and labels, sums and pattern matching, polymorphism, macro calls, and structural glue.
+- [The Kio language](tutorials/language.md) — a guided tour: packages, modules, functions, types, tuples and nominal types, sums and pattern matching, polymorphism, macro calls, and structural glue.
 - [Getting started with the tooling](tutorials/tooling.md) — one full lap of the dev loop on a tiny package: `kio init`, `fmt`, `check`, `test`, `build`, and sealing the contract surface with `kio sig`.
 
 For exact command-line behavior, see [`specs/cli.md`](../specs/cli.md).
@@ -23,16 +23,16 @@ authors, not the starting point for products and sums.
 ### Writing the language
 
 - [Understanding typechecking](guides/typechecking.md) — where types come from, how calls share information, where bindings stop inference, and when to add annotations.
-- [Structural products and row types](guides/products.md) — tuples, labels, row-polymorphic parameters, access, update, and product order.
-- [Structural sums and pattern matching](guides/sums.md) — `|`, named label arms, imported `widen_sum`, and exhaustive `match` clauses.
-- [Aliases, newtypes, visibility, and purity](guides/declarations.md) — transparent aliases, nominal and existential types, explicit recursive-data scopes, scoped exports, and transitive purity.
+- [Row-typed records with ordinary products](guides/products.md) — nominal fields, natural and target-ordered construction and updates, selection, and open product tails.
+- [Structural sums and pattern matching](guides/sums.md) — `|`, named nominal alternatives, imported `widen_sum`, and exhaustive `match` clauses.
+- [Aliases, nominal types, visibility, and purity](guides/declarations.md) — transparent aliases, nominal and existential types, explicit recursive-data scopes, scoped exports, and transitive purity.
 - [Recursion](guides/recursion.md) — `rec` declarations, `recur` calls, and the `poly` / `cont` / `escape` annotations with their loop capabilities.
 - [UFCS calls](guides/ufcs.md) — `.>`, `.>>`, `.<`, and `.<<` call splices.
 - [Operators](guides/operators.md) — fixed `op` declarations and the slot vocabulary.
 - [Variadic operators](guides/variadic-operators.md) — four fold modes, compound elements, finalizers, and collection literals.
 - [Error handling](guides/error-handling.md) — `(T | !)` sums and explicit failure flow.
-- [Dependency injection](guides/dependency-injection.md) — capabilities as product values, labeled bundles, and row-shaped subsets.
-- [Higher-kinded types](guides/higher-kinded-types.md) — kinds, type-constructor application, instance newtypes, and imported `do` sequencing.
+- [Dependency injection](guides/dependency-injection.md) — capabilities as product values, nominal field bundles, and open product tails.
+- [Higher-kinded types](guides/higher-kinded-types.md) — kinds, type-constructor application, nominal instance types, and imported `do` sequencing.
 
 ### Packages and libraries
 

@@ -2,15 +2,15 @@ module main;
 
 host type I32 role(i32);
 
-// The label `a` synthesizes a module-level type `A`, which the `[A]`
-// binders on `id` / `snd` shadow in type position. A bare binder must
+// The `[A]` binders on `id` / `snd` shadow the module-level nominal
+// type `A` in type position. A bare binder must
 // stay a type variable through nominal-head canonicalization, not be
-// qualified to the label's `A` — the value-argument-slot accounting a
+// qualified to the module's `A` — the value-argument-slot accounting a
 // dot-splice callee goes through depends on it. The dot-splice form
 // (`receiver.>callee`) is load-bearing: it is the path that reaches that
 // accounting, so the same shape written as a plain call exercises a
 // different code path.
-labels { a: . };
+type { A: . { mk; get } }
 
 fn id[A](x: A) -> A { x }
 

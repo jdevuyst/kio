@@ -1,0 +1,34 @@
+module testapi/main;
+
+import __comptime__;
+import testapi(String);
+import testapi/io as io;
+
+pure fn retain_impl(_ct: __Comptime__, fills: __Fill_ctx__, value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (value, fills) }
+
+macro retain : String -> String { impl(fills) retain_impl }
+
+pure fn relay_impl(
+, _ct: __Comptime__
+, _source: __Type__
+, value: __Checked_term__
+, _selectors: __Type__
+, _selector: __Checked_term__
+, _target: __Type__
+) -> __Checked_term__ { value }
+
+macro relay : [Source] Source -> [Selectors] Selectors -> [Target] Target { impl relay_impl }
+
+fn produce[A](callback: . -> A) -> A { callback(()) }
+
+fn ordinary(value: String) -> String { value }
+
+pub fn main() {
+  io.print(ordinary(relay(produce(.() -> String {
+    io.print("ordinary callback\n");
+    "ordinary value\n"
+  }))(())));
+  io.print(retain(relay(produce(.() -> String { io.print("marked callback\n"); "marked value\n" }))(())))
+}

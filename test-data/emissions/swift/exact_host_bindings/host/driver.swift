@@ -134,8 +134,8 @@ let aliasCallback: Exp_main__applyText_arg0<ExactHost> = {
 let callbackResult: Exp_main__applyText_ret<ExactHost> = package.main.applyText(aliasCallback, "callback")
 precondition(callbackResult.raw == "callback aliased")
 let collisionPair = package.main.pair("alias", Token(raw: 10))
-let memberOne: Exp_main____KioType_AB__KioItem_c_ret<ExactHost> = package.main.KioType_AB.c(collisionPair)
-let memberTwo: Exp_main____KioType_A__KioItem_bC_ret<ExactHost> = package.main.KioType_A.bC(collisionPair)
+let memberOne: Exp_main____KioType_AB__KioItem_mk_ret<ExactHost> = package.main.KioType_AB.mk(collisionPair)
+let memberTwo: Exp_main____KioType_A__KioItem_mk_ret<ExactHost> = package.main.KioType_A.mk(collisionPair)
 _ = (memberOne, memberTwo)
 requireExactHostContract(ExactHost.self, flag: false, unused: false, token: Token(raw: 0))
 
@@ -159,12 +159,12 @@ precondition(package.main.applyText(
 let pair = package.main.pair("pair", Token(raw: 8))
 precondition(pair._0.raw == "pair")
 precondition(pair._1 == Token(raw: 8))
-let bundled = package.main.KioType_Bundle.bundle(pair)
-let unbundled = package.main.KioType_Bundle.unbundle(bundled)
+let bundled = package.main.KioType_Bundle.mk(pair)
+let unbundled = package.main.KioType_Bundle.get(bundled)
 precondition(unbundled._0.raw == "pair")
 precondition(unbundled._1 == Token(raw: 8))
-_ = package.main.KioType_AB.c(pair)
-_ = package.main.KioType_A.bC(pair)
+_ = package.main.KioType_AB.mk(pair)
+_ = package.main.KioType_A.mk(pair)
 
 switch package.main.textOrToken("sum") {
 case ._0(let value):

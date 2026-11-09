@@ -1,5 +1,5 @@
 module origin;
 
-pub newtype Box[A] : A & A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A & A { pub mk; pub get } }
 
 host fn preserve[X](value: Box[X]) -> Box[X];

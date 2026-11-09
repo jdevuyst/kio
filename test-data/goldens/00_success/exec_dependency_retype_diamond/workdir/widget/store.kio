@@ -9,4 +9,4 @@ pub type Tag = _rehost_gdgphcgfcphdhegphcgf.Tag;
 
 pub fn make_tag(n: I32) -> Tag { Tag.mk(n) }
 
-pub fn tag_val(t: Tag) -> I32 { Tag.un(t) }
+pub fn tag_val(t: Tag) -> I32 { Tag.get(t) }

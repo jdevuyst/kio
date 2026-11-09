@@ -12,7 +12,7 @@ import testapi(Bool, I32);
 import testapi/arith as a;
 import testapi/iter(loop);
 
-pub labels Reduction = { reduced: m.Matrix, pivots: c.List[I32], swaps: I32 };
+pub type Reduction = { Reduced: m.Matrix; Pivots: c.List[I32]; Swaps: I32 };
 
 rec(loop) fn find_pivot(matrix: m.Matrix, column: I32, row: I32) -> I32 | . {
   if(a.leq_i32(l.length(matrix), row)) {
@@ -42,7 +42,7 @@ fn eliminate(matrix: m.Matrix, pivot_row: I32, column: I32) -> m.Matrix {
 rec(loop) fn columns(matrix: m.Matrix, variables: I32, column: I32, pivots: c.List[I32], swaps: I32) -> Reduction {
   let rank = l.length(pivots);
   if(a.leq_i32(variables, column)) {
-    {reduced = matrix, pivots, swaps}
+    (Reduced.mk(matrix), Pivots.mk(pivots), Swaps.mk(swaps))
   } else match(find_pivot(matrix, column, rank)) {
     .(found: I32) {
       let switched = m.swap(matrix, rank, found);

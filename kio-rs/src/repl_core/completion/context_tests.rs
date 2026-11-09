@@ -229,11 +229,11 @@ fn parser_context_repl_known_value_argument_excludes_type_names() {
         ),
         (
             root.join("app/main.kio"),
-            "module app/main; import app/provider(remote); import app/provider as api; type Item = .; newtype Box : . { constructor make; projector read; }; type Alias = Box; fn identity(x: .) -> . { x } fn choose[A](x: A) -> A { x } fn staged(value: .)[A](x: A) -> A { x }".to_owned(),
+            "module app/main; import app/provider(remote); import app/provider as api; type Item = .; type { Box: . { mk; get; }; }; type Alias = Box; fn identity(x: .) -> . { x } fn choose[A](x: A) -> A { x } fn staged(value: .)[A](x: A) -> A { x }".to_owned(),
         ),
         (
             root.join("app/provider.kio"),
-            "module app/provider; pub fn remote(x: .) -> . { x } pub newtype Box : . { pub constructor make; projector hidden; }; pub type Alias = Box; pub newtype Poly[A] : A { pub constructor make; projector hidden; }; newtype Secret : . { pub constructor make; projector hidden; };".to_owned(),
+            "module app/provider; pub fn remote(x: .) -> . { x } pub type { Box: . { pub mk; get; }; }; pub type Alias = Box; pub type { Poly[A]: A { pub mk; get; }; }; type { Secret: . { pub mk; get; }; };".to_owned(),
         ),
         (
             root.join("app/poly.kio"),
@@ -256,19 +256,19 @@ fn parser_context_repl_known_value_argument_excludes_type_names() {
         ("choose(I", true),
         ("remote(I", false),
         ("api.remote(I", false),
-        ("api.Box.make(I", false),
-        ("api.Alias.make(I", false),
-        ("api.Poly.make(I", true),
-        ("api.Secret.make(I", true),
-        ("api.Box.hidden(I", true),
-        (".(api: .) { api.Box.make(I", true),
-        ("Box.make(I", false),
-        ("Alias.make(I", false),
+        ("api.Box.mk(I", false),
+        ("api.Alias.mk(I", false),
+        ("api.Poly.mk(I", true),
+        ("api.Secret.mk(I", true),
+        ("api.Box.get(I", true),
+        (".(api: .) { api.Box.mk(I", true),
+        ("Box.mk(I", false),
+        ("Alias.mk(I", false),
         ("staged(I", false),
         ("staged((), I", true),
         ("missing(I", true),
         (".(identity: . -> .) { identity(I", true),
-        (".[Box](x: Box) { Box.make(I", true),
+        (".[Box](x: Box) { Box.mk(I", true),
     ] {
         let result = complete(&names, &provider, input, input.len());
         let labels: Vec<_> = result
@@ -360,9 +360,9 @@ fn parser_context_repl_routes_expression_operators() {
 }
 
 #[test]
-fn parser_context_repl_newtype_and_identity_alias_members() {
+fn parser_context_repl_nominal_and_identity_alias_members() {
     let names = NameSet {
-        current_module_src: Some("module app; newtype Box[A] : A { constructor make; projector read; }; type Alias[A] = Box[A]; type Partial = Box;".to_owned()),
+        current_module_src: Some("module app; type { Box[A]: A { mk; get; }; }; type Alias[A] = Box[A]; type Partial = Box;".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);
@@ -374,7 +374,7 @@ fn parser_context_repl_newtype_and_identity_alias_members() {
             .map(|candidate| candidate.label.as_str())
             .collect();
         labels.sort_unstable();
-        assert_eq!(labels, ["make", "read"], "{input:?}");
+        assert_eq!(labels, ["get", "mk"], "{input:?}");
     }
     assert!(
         complete(&names, &provider, "Partial.", 8)

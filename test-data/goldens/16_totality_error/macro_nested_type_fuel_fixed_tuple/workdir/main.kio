@@ -1,0 +1,27 @@
+module main;
+
+import __comptime__;
+
+type Fuel = __Type__ & .;
+
+type State = __Checked_term__ | __Checked_term__;
+
+pure fn shrink_impl(ct: __Comptime__, source_type: __Type__, source: __Checked_term__) -> __Checked_term__ {
+  __structural_recur__(ct)[Fuel][State][__Checked_term__](
+  , (__type_product__(ct, source_type, source_type), ())
+  , __left__[__Checked_term__][__Checked_term__](source)
+  , .(recur: (Fuel & State) -> __Checked_term__, _fuel: Fuel, input: State) -> __Checked_term__ {
+      __either__[__Checked_term__][__Checked_term__][__Checked_term__](
+      , input
+      , .(first: __Checked_term__) -> __Checked_term__ {
+          recur((__type_unit__(ct), ()), __right__[__Checked_term__][__Checked_term__](first))
+        }
+      , .(last: __Checked_term__) -> __Checked_term__ { last }
+      )
+    }
+  )
+}
+
+macro shrink : [Source] Source -> Source { impl shrink_impl }
+
+fn run() { shrink(()) }

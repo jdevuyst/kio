@@ -5,13 +5,13 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 fn show(x: A | B) -> String {
   match(x) {
-    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+    (.(a: A) { A.get(a) }, .(b: B) { B.get(b) })
   }
 }
 
@@ -24,5 +24,5 @@ fn provider(x: A | B, y: A | B) { print(show(x)); print(show(y)) }
 
 pub fn main() {
   let narrow_call = ease(provider)[(A & A) -> .];
-  narrow_call(A.mk_a("ease! "), A.mk_a("multi arg ok\n"))
+  narrow_call(A.mk("ease! "), A.mk("multi arg ok\n"))
 }

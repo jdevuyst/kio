@@ -1,0 +1,34 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import macros/spine_macros(macro narrow_sum_);
+import testapi(String);
+import testapi/io(print);
+
+fn drop_right_bottom[A](value: A) -> A {
+  let narrowed = narrow_sum_(__left__[A][!](value));
+  narrowed
+}
+
+fn drop_left_bottom[A](value: A) -> A {
+  let narrowed = narrow_sum_(__right__[!][A](value));
+  narrowed
+}
+
+fn only_bottom(value: !) -> ! { let narrowed = narrow_sum_(__left__[!][!](value)); narrowed }
+
+equiv right_bottom_law[A](value: A) {
+  drop_right_bottom(value);
+  value
+}
+
+equiv left_bottom_law[A](value: A) {
+  drop_left_bottom(value);
+  value
+}
+
+pub fn main() {
+  print(drop_right_bottom("right Bottom removed\n"[String]));
+  print(drop_left_bottom("left Bottom removed\n"[String]))
+}

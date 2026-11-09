@@ -64,9 +64,8 @@ fn written_type(name: &str) -> Type<UncheckedPrime> {
 
 #[test]
 fn every_template_input_guards_unrenamed_written_binders_without_growing_entries() {
-    let variants: [fn(PresentedTypeMemoKey) -> UserMacroMemoInputKey; 5] = [
+    let variants: [fn(PresentedTypeMemoKey) -> UserMacroMemoInputKey; 4] = [
         UserMacroMemoInputKey::Type,
-        UserMacroMemoInputKey::OptionalTypeKnown,
         UserMacroMemoInputKey::Term,
         UserMacroMemoInputKey::ResidualShape,
         UserMacroMemoInputKey::CapturedTerm,

@@ -5,9 +5,9 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 // Source: `(A | B) -> .`. The function's parameter was widened
 // from `A` to `A | B` in the provider. The call site still wants to call
@@ -17,11 +17,8 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // the call-site `A` value into the source's wider `A | B` parameter.
 fn foo(x: A | B) {
   print(match(x) {
-    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+    (.(a: A) { A.get(a) }, .(b: B) { B.get(b) })
   })
 }
 
-pub fn main() {
-  let narrow_call = ease(foo)[A -> .];
-  narrow_call(A.mk_a("ease! param widened ok\n"))
-}
+pub fn main() { let narrow_call = ease(foo)[A -> .]; narrow_call(A.mk("ease! param widened ok\n")) }

@@ -3,7 +3,7 @@
 # Kio' source to the impl's primary target, then run it through
 # the impl's runner. Asserts that the kinded HKT surface -- the
 # applied brand `Wrap(a)` and the brand-crossing members
-# `Wrap.mk_wrap` / `Wrap.un_wrap` -- survives the Kio' boundary intact.
+# `Wrap.mk` / `Wrap.get` -- survives the Kio' boundary intact.
 set -u
 cd workdir || exit
 "$KIO_BIN" build kio-prime || exit

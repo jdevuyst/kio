@@ -2,4 +2,4 @@ module testapi/labels;
 
 import testapi(String);
 
-pub labels { greeting: String };
+pub type { Greeting: String { pub mk; pub get } }

@@ -22,7 +22,8 @@ import huffman/message(alphabet_size, message, message_text);
 import huffman/render(print_build, print_codes, print_decoded, print_encoded);
 import huffman/render(print_frequencies, print_kraft, print_message, print_queue, print_savings);
 import huffman/report(kraft_holds, kraft_sum, longest_code, pow2, savings);
-import huffman/tree(Step, build, initial_queue, {built_log}, {built_root});
+import huffman/tree(Built_log, Built_root, Step, build, initial_queue);
+import macros/row_macros(macro select);
 import testapi(String);
 import testapi/io(print);
 
@@ -30,7 +31,8 @@ pub fn main() {
   let symbols = message();
   let counts = tally(symbols, zero_counts());
   let queue = initial_queue(present(counts));
-  let .({built_root, built_log}) = build(queue, alphabet_size(), nil[Step]);
+  let .(built_root, built_log) =
+    build(queue, alphabet_size(), nil[Step]).>select { Built_root.get; Built_log.get };
   let table = code_table(built_root);
   let bits = encode(table, symbols);
   let decoded = decode(built_root, bits);

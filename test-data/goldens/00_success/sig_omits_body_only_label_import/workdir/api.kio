@@ -1,11 +1,11 @@
 module api;
 
-import labels({item});
+import labels(Item);
 import types as t;
 import types(A);
 import types(Kept);
 
-pub fn make() { {item=}.?{item} }
+pub fn make() { Item.get(Item.mk(())) }
 
 pub fn keep(value: Kept) -> Kept { value }
 

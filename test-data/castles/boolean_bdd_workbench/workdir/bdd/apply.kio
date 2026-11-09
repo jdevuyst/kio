@@ -6,16 +6,16 @@ import list/core as lists;
 import list/list as walk;
 import macros/control(macro if);
 import macros/match(macro match);
-import macros/spine_macros(macro reorder_prod);
+import macros/row_macros(macro select);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
 pub type Cached = logic.Operation & table.Node_id & table.Node_id & table.Node_id;
 
-pub labels Manager = { store: table.Store, cache: lists.List[Cached], hits: I32 };
+pub type Manager = { Store: table.Store; Cache: lists.List[Cached]; Hits: I32 };
 
-pub fn empty() -> Manager { {store = table.empty(), cache = lists.nil[_], hits = 0} }
+pub fn empty() -> Manager { (Store.mk(table.empty()), Cache.mk(lists.nil[_]), Hits.mk(0)) }
 
 fn remember(
 , m: Manager
@@ -24,21 +24,29 @@ fn remember(
 , b: table.Node_id
 , answer: table.Node_id
 ) -> Manager & table.Node_id {
-  ((m.!{cache = lists.cons((op, a, b, answer), m.?{cache})}.>reorder_prod)[Manager], answer)
+  (
+  , (
+    , Store.mk(m.>select { Store.get })
+    , Cache.mk(lists.cons((op, a, b, answer), m.>select { Cache.get }))
+    , Hits.mk(m.>select { Hits.get })
+    )
+  , answer
+  )
 }
 
 pub fn intern(m: Manager, level: I32, low: table.Node_id, high: table.Node_id) ->
   Manager & table.Node_id
    {
-  let .(store: table.Store, id: table.Node_id) = table.intern(m.?{store}, level, low, high);
-  (m.!{store}, id)
+  let .(store: table.Store, id: table.Node_id) =
+    table.intern(m.>select { Store.get }, level, low, high);
+  ((Store.mk(store), Cache.mk(m.>select { Cache.get }), Hits.mk(m.>select { Hits.get })), id)
 }
 
 pub rec(loop) fn apply(m: Manager, op: logic.Operation, left: table.Node_id, right: table.Node_id) ->
   Manager & table.Node_id
    {
   // All three supported operations commute, so one cache key covers both orders.
-  let ordered = arith.leq_i32(left.>table.Node_id.to_int, right.>table.Node_id.to_int);
+  let ordered = arith.leq_i32(left.>table.Node_id.get, right.>table.Node_id.get);
   let a = if(ordered) { left } else { right };
   let b = if(ordered) { right } else { left };
   match(walk.find(
@@ -53,16 +61,23 @@ pub rec(loop) fn apply(m: Manager, op: logic.Operation, left: table.Node_id, rig
       , logic.and(table.same_id(a, saved_a), table.same_id(b, saved_b))
       )
     }
-  , m.?{cache}
+  , m.>select { Cache.get }
   )) {
     .(_op: logic.Operation, _a: table.Node_id, _b: table.Node_id, answer: table.Node_id) {
-      ((m.!{hits = arith.add_i32(m.?{hits}, 1)}.>reorder_prod)[Manager], answer)
+      (
+      , (
+        , Store.mk(m.>select { Store.get })
+        , Cache.mk(m.>select { Cache.get })
+        , Hits.mk(arith.add_i32(m.>select { Hits.get }, 1))
+        )
+      , answer
+      )
     };
     .() {
       if(logic.and(table.terminal(a), table.terminal(b))) {
         remember(m, op, a, b, table.from_bool(logic.operate(op, table.truth(a), table.truth(b))))
       } else {
-        let store = m.?{store};
+        let store = m.>select { Store.get };
         let level_a = table.top(store, a);
         let level_b = table.top(store, b);
         let level = if(arith.lt_i32(level_a, level_b)) { level_a } else { level_b };

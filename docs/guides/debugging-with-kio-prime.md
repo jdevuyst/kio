@@ -53,7 +53,7 @@ disappears:
 | `match` | A decision tree built from intrinsics and let-bound handlers |
 | `do` blocks | Nested calls to the receiver's `bind` |
 | Placeholder lambdas | Explicit lambdas with generated parameters |
-| `labels`, `literal` aliases, operators, `equiv` | Lowered or removed before the Kio' boundary |
+| Compact nominal groups, `literal` aliases, operators, `equiv` | Lowered or removed before the Kio' boundary |
 
 If the Kio' is surprising, the issue is earlier than the backend:
 resolution, typechecking, elaboration, or lowering. If the Kio'

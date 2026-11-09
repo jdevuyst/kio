@@ -1,3 +1,0 @@
-module use_label_requires_braces/labels;
-
-pub labels { item: . };

@@ -56,8 +56,8 @@ Check the request-specific rules in `specs/cli.md`, including:
   `audit-lsp-completion`.
 - Prepare-rename and rename preserve binding ownership across the package,
   reject invalid names and capture/collisions, and respect nonrenameable and
-  package-external boundaries. Include row-let shorthand, numbered binding
-  families, and label identities where applicable. Inspect actual versioned
+  package-external boundaries. Include numbered binding families and nominal type/member identities; retired
+  row-let shorthand is rejected. Inspect actual versioned
   edits and reanalysis, not only replacement strings.
 - Document symbols, folding ranges, inlay hints, and signature help retain
   their specified hierarchy, ranges, supported contexts and refusal cases.

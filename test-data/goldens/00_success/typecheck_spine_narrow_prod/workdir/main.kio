@@ -2,11 +2,11 @@ module main;
 
 import macros/spine_macros(macro narrow_prod);
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
-newtype C : . { pub constructor mk_c; pub projector un_c }
+type { C: . { pub mk; pub get } }
 
 // Trailing slot drop. Source `[A, B]`, target `[A]` — the `B` slot
 // projects away. Target multiset `{A}` ⊆ source `{A, B}`.

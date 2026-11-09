@@ -140,11 +140,10 @@ where
     /// `(module, name)` form; but a single-segment head that
     /// names one of these binders is a type **variable**, not a nominal,
     /// so qualifying it would mis-resolve it to a same-named module type.
-    /// That mis-resolution bites when a generic binder shadows a
-    /// label-generated type alias of the same name (a `labels { a: … }`
-    /// declaration synthesizes a type `A`, and `fn f[A](x: A)` /
-    /// `newtype W[A] : A` rebinds `A`): the bare binder in the scheme's
-    /// param/payload would otherwise resolve to the label's `A`, so the
+    /// A generic binder can shadow a same-named module type: after
+    /// `type { A: … }`, `fn f[A](x: A)` or `type { W[A]: A }` binds a
+    /// distinct `A`. The bare binder in the scheme's parameter or payload
+    /// would otherwise resolve to the module's `A`, so the
     /// binder-unification arm in
     /// [`crate::pass::typecheck_core::synth::unify_pattern`]
     /// never fires and the call surfaces a spurious type mismatch. The
@@ -803,7 +802,7 @@ enum AliasTransportNodeKind<'a> {
 
 trait AliasTransportSink<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     type Node: Copy + Default;
     type Children: Default;
@@ -852,7 +851,7 @@ struct NoAliasTransport;
 
 impl<P> AliasTransportSink<P> for NoAliasTransport
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     type Node = ();
     type Children = ();
@@ -900,7 +899,7 @@ struct SourceOccurrenceTransportSink {
 impl SourceOccurrenceTransportSink {
     fn new<P>(root: &crate::ast::Type<P>) -> Self
     where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+        P: crate::ast::Phase,
     {
         let mut sink = Self {
             recording: true,
@@ -924,7 +923,7 @@ impl SourceOccurrenceTransportSink {
         ty: &crate::ast::Type<P>,
         direct_first_forall: Option<AliasBinderOriginId>,
     ) where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+        P: crate::ast::Phase,
     {
         let introduced_forall = match ty {
             crate::ast::Type::Forall { param, .. } => {
@@ -988,7 +987,6 @@ impl SourceOccurrenceTransportSink {
             crate::ast::Type::Unit { .. }
             | crate::ast::Type::Bottom { .. }
             | crate::ast::Type::Infer { .. } => {}
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         }
     }
 
@@ -1053,7 +1051,7 @@ impl SourceOccurrenceTransportSink {
 
 impl<P> AliasTransportSink<P> for SourceOccurrenceTransportSink
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     type Node = Option<AliasOutputOccurrenceId>;
     type Children = Vec<(AliasTransportEdge, AliasOutputOccurrenceId)>;
@@ -1351,11 +1349,11 @@ where
 
 struct AliasMaterializedStack<P, N>(Vec<AliasMaterialized<P, N>>)
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>;
+    P: crate::ast::Phase;
 
 impl<P, N> Drop for AliasMaterializedStack<P, N>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     fn drop(&mut self) {
         if !self.0.is_empty() {
@@ -1371,7 +1369,7 @@ where
 
 fn release_alias_materialized_types<P>(mut pending: Vec<crate::ast::Type<P>>)
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     while let Some(ty) = pending.pop() {
         match ty {
@@ -1391,14 +1389,13 @@ where
             crate::ast::Type::Unit { .. }
             | crate::ast::Type::Bottom { .. }
             | crate::ast::Type::Infer { .. } => {}
-            crate::ast::Type::LabelSugar { ext, .. } => match ext {},
         }
     }
 }
 
 struct AliasMaterializer<'p, 'v, 'c, 'm, P, S = NoAliasTransport>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     S: AliasTransportSink<P>,
     'm: 'v,
 {
@@ -1419,7 +1416,7 @@ where
 
 impl<'p, 'v, 'c, 'm, P> AliasMaterializer<'p, 'v, 'c, 'm, P, NoAliasTransport>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     'm: 'v,
 {
     fn for_caller(
@@ -1495,7 +1492,12 @@ where
     /// formal-argument, owner-scope, and binder semantics while making a
     /// finite type's depth a heap-work concern rather than a Rust stack bound.
     #[cfg(feature = "surface")]
-    fn materialized_node_measure(&mut self, root: AliasVirtualView<'v, P>) -> Option<usize> {
+    fn materialized_node_measure(
+        &mut self,
+        root: AliasVirtualView<'v, P>,
+        neutral_heads: &HashSet<String>,
+        initial: bool,
+    ) -> Option<usize> {
         let mut total = 0usize;
         let mut pending = vec![root];
         while let Some(mut view) = pending.pop() {
@@ -1574,6 +1576,23 @@ where
                             };
                             continue;
                         }
+                        let context = self.context(view.context);
+                        if let [head] = segments.as_slice()
+                            && neutral_heads.contains(head.as_str())
+                            && context.ambient_protected.contains(head.as_str())
+                            && context
+                                .protected
+                                .get(&AliasBorrowedName(head.as_str()))
+                                .is_none()
+                        {
+                            if !initial {
+                                return None;
+                            }
+                            // A supplied arbitrary Type has at least one node.
+                            // Its constructor may discard every argument.
+                            total = total.checked_add(1)?;
+                            break;
+                        }
                         total = total.checked_add(1)?;
                         for id in self.collect_arg_views(view.appended).into_iter().rev() {
                             pending.push(self.views[id.0]);
@@ -1603,7 +1622,6 @@ where
                         }
                         break;
                     }
-                    crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
                 }
             }
         }
@@ -1613,7 +1631,7 @@ where
 
 impl<'p, 'v, 'c, 'm, P, S> AliasMaterializer<'p, 'v, 'c, 'm, P, S>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     S: AliasTransportSink<P>,
     'm: 'v,
 {
@@ -2017,7 +2035,6 @@ where
                 crate::ast::Type::Goal { args, .. } => {
                     pending.extend(args.iter().rev().map(Frame::Enter));
                 }
-                crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
             }
         }
     }
@@ -2253,7 +2270,6 @@ where
                                 &mut pending,
                             );
                         }
-                        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
                     }
                 }
                 Frame::FinishStructure(view) => {
@@ -2737,7 +2753,6 @@ where
                     super::kind_scheme::SchemeFrontier::Incomplete
                 }
                 crate::ast::Type::Goal { .. } => super::kind_scheme::SchemeFrontier::Deferred,
-                crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
             };
             Ok::<_, std::convert::Infallible>(frontier)
         });
@@ -2761,7 +2776,7 @@ fn materialize_alias_root_state<'v, 'a, 'm, P>(
     identity_canonical: bool,
 ) -> Option<AliasRootMaterialized<P>>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     'm: 'v,
 {
     let ambient_protected = ctx
@@ -2779,7 +2794,7 @@ fn materialize_alias_root_state_with_ambient<'v, 'a, 'm, P>(
     identity_canonical: bool,
 ) -> Option<AliasRootMaterialized<P>>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     'm: 'v,
 {
     let provider = NominalProvider::new(ctx.source_module, ctx.package);
@@ -2802,7 +2817,7 @@ fn materialize_alias_root_state_with_provider<'v, 'a, 'm, P>(
     identity_canonical: bool,
 ) -> Option<AliasRootMaterialized<P>>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
     'm: 'v,
 {
     let crate::ast::Type::Path { segments, args, .. } = ty else {
@@ -3017,6 +3032,8 @@ pub(crate) fn measure_materialized_aliases_in_scope<P>(
     package: Option<&crate::pass::resolve::Package<P>>,
     binder_locals: Option<&HashSet<String>>,
     identity_canonical: bool,
+    neutral_heads: &HashSet<String>,
+    initial: bool,
 ) -> Option<usize>
 where
     P: crate::pass::resolve::ExportContractPhase + Clone,
@@ -3046,7 +3063,7 @@ where
         ambient_protected,
         identity_canonical,
     );
-    materializer.materialized_node_measure(root)
+    materializer.materialized_node_measure(root, neutral_heads, initial)
 }
 
 /// Materialize one admitted source annotation while indexing its direct source
@@ -3231,7 +3248,7 @@ where
 /// declaration in the alias owner.
 pub fn unfold_top<P>(ty: &crate::ast::Type<P>, ctx: &AliasCtx<'_, '_, P>) -> crate::ast::Type<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     materialize_alias_root_state(ty, ctx, false)
         .map_or_else(|| ty.clone(), |materialized| materialized.ty)
@@ -3377,7 +3394,6 @@ where
             meta: meta.clone(),
             ext: ext.clone(),
         },
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
@@ -4116,7 +4132,6 @@ where
                 )
             }
             crate::ast::Type::Infer { .. } => (ty.clone(), true),
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
         };
         (ty, descendants_canonical)
     }
@@ -4148,7 +4163,7 @@ where
 /// by name + args (they live inside `newtype` payloads and are
 /// nominal).
 ///
-/// Phase-polymorphic with `P::TypeLabelSugar = Never`. The bound is
+/// The phase bound is
 /// [`crate::pass::resolve::ExportContractPhase`] (which adds
 /// `ItemLiteralAlias`/`ItemOp`/`ItemRecGroup` `= Never` over the
 /// looser `unfold_top` bound) so the head canonicalizer can resolve a
@@ -4483,8 +4498,6 @@ where
                     self.alpha.pop(&left_param.name, &right_param.name);
                     equivalent
                 }
-                (crate::ast::Type::LabelSugar { ext, .. }, _) => match *ext {},
-                (_, crate::ast::Type::LabelSugar { ext, .. }) => match *ext {},
                 _ => false,
             }
         }
@@ -4723,7 +4736,7 @@ mod tests {
 
     fn unfold_top_with_original_public_bound<P>(ty: &Type<P>, ctx: &AliasCtx<'_, '_, P>) -> Type<P>
     where
-        P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+        P: crate::ast::Phase + Clone,
     {
         unfold_top(ty, ctx)
     }
@@ -6041,7 +6054,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            materializer.materialized_node_measure(root),
+            materializer.materialized_node_measure(root, &HashSet::new(), false),
             Some(2),
             "Consume removes every forwarded argument except Tail(Terminal)"
         );
@@ -7995,12 +8008,12 @@ mod tests {
     fn type_equiv_matches_qualified_expanded_payload_to_imported_alias_payload() {
         let owner = parse_module(
             "module type_of; \
-             pub newtype Rep_unit : . { pub constructor mk_u; pub projector un_u; }; \
-             pub newtype Rep_bottom : . { pub constructor mk_b; pub projector un_b; }; \
-             pub newtype Rep_product : . { pub constructor mk_p; pub projector un_p; }; \
-             pub newtype Rep_sum : . { pub constructor mk_s; pub projector un_s; }; \
-             pub newtype Rep_function : . { pub constructor mk_f; pub projector un_f; }; \
-             pub newtype Rep_opaque : . { pub constructor mk_o; pub projector un_o; }; \
+             pub type { Rep_unit: . { pub mk; pub get; }; }; \
+             pub type { Rep_bottom: . { pub mk; pub get; }; }; \
+             pub type { Rep_product: . { pub mk; pub get; }; }; \
+             pub type { Rep_sum: . { pub mk; pub get; }; }; \
+             pub type { Rep_function: . { pub mk; pub get; }; }; \
+             pub type { Rep_opaque: . { pub mk; pub get; }; }; \
              pub type Type_rep_tail4 = Rep_function | Rep_opaque; \
              pub type Type_rep_tail3 = Rep_sum | Type_rep_tail4; \
              pub type Type_rep_tail2 = Rep_product | Type_rep_tail3; \

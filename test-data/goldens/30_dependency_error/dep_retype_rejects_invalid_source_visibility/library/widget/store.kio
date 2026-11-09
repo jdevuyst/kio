@@ -2,4 +2,4 @@ module store;
 
 import provider as p;
 
-pub newtype Node : p.Hidden { pub constructor mk_node; pub projector get_node }
+pub type { Node: p.Hidden { pub mk; pub get; }; };

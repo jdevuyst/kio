@@ -1,6 +1,6 @@
 module main;
 
-newtype W : . { pub constructor mk_w; pub projector un_w }
+type { W: . { pub mk; pub get } }
 
 fn ident(u: .) { u }
 

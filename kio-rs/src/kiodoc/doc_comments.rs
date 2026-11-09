@@ -380,9 +380,6 @@ fn item_name_and_doc(item: &Item) -> (std::borrow::Cow<'_, str>, Option<&DocComm
         Item::Newtype(n) => (n.name.as_str(), n.doc.as_ref()),
         Item::LiteralAlias(l, _) => (l.name.as_str(), l.doc.as_ref()),
         Item::Labels(t, _) => (t.type_alias_name.as_deref().unwrap_or(""), t.doc.as_ref()),
-        Item::LabelForward(forward, _) => {
-            return (format!("{{{}}}", forward.name).into(), forward.doc.as_ref());
-        }
         Item::Op(o, _) => ("", o.doc.as_ref()),
         Item::VariadicOperator(f, _) => ("", f.doc.as_ref()),
         Item::Macro(s, _) => (s.name.as_str(), s.doc.as_ref()),
@@ -1055,15 +1052,15 @@ mod tests {
     }
 
     #[test]
-    fn forwarding_docs_keep_braced_owner_identity_and_validate_their_own_references() {
+    fn alias_docs_keep_type_owner_identity_and_validate_their_own_references() {
         let source = concat!(
             "module pkg/main;\n",
-            "pub labels { foo: . };\n",
-            "/// See [`{field}`].\n",
+            "pub type { Foo: .; };\n",
+            "/// See [`Field`].\n",
             "/// ```kio {@}\n",
             "/// ()\n",
             "/// ```\n",
-            "pub type {field} = {foo};\n",
+            "pub type Field = Foo;\n",
             "/// ```kio {@}\n",
             "/// ()\n",
             "/// ```\n",
@@ -1071,14 +1068,14 @@ mod tests {
         );
         let snippets = extract_doc_snippets(Path::new("t.kio"), source).expect("both docs extract");
         assert_eq!(snippets.len(), 2);
-        assert_eq!(snippets[0].item_name, "{field}");
+        assert_eq!(snippets[0].item_name, "Field");
         assert_eq!(snippets[1].item_name, "field");
         assert_ne!(
             make_synthetic_fn_name(&snippets[0]),
             make_synthetic_fn_name(&snippets[1])
         );
 
-        let invalid_ref = source.replace("[`{field}`]", "[`{missing}`]");
+        let invalid_ref = source.replace("[`Field`]", "[`Missing`]");
         let errors = extract_doc_snippets(Path::new("t.kio"), &invalid_ref).unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message.contains("not in scope"));
@@ -1097,7 +1094,7 @@ mod tests {
             "/// ```kio {@}\n",
             "/// ()\n",
             "/// ```\n",
-            "pub newtype Wrapped : . { constructor make; projector read; };\n",
+            "pub type { Wrapped: . { mk; get; }; };\n",
         );
         let snippets = extract_doc_snippets(Path::new("t.kio"), source).expect("docs extract");
         assert_eq!(snippets.len(), 1);

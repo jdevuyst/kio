@@ -1,8 +1,8 @@
 module main;
 
-newtype A : . { pub constructor mk_a; pub projector un_a }
+type { A: . { pub mk; pub get } }
 
-newtype B : . { pub constructor mk_b; pub projector un_b }
+type { B: . { pub mk; pub get } }
 
 // `f` takes two value params with surface arity 2; its type is
 // `Function(Product(A, B), Unit)`. The call-site dual of §4a (a

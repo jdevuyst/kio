@@ -1,6 +1,6 @@
 module helper;
 
-pub newtype T : . { pub constructor mk_t; pub projector un_t }
+pub type { T: . { pub mk; pub get } }
 
 pub type Alias = T;
 

@@ -3,12 +3,12 @@ module fold/plan;
 import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32);
 
-pub labels Decision = { unpaired: . } | { paired: I32 };
+pub type Decision = { Unpaired: . } | { Paired: I32 };
 
-pub labels Interval = { lo: I32, hi: I32 };
+pub type Interval = { Lo: I32; Hi: I32 };
 
-pub labels Program = { length: I32, scores: Array[I32], decisions: Array[Decision] };
+pub type Program = { Length: I32; Scores: Array[I32]; Decisions: Array[Decision] };
 
-pub fn skip() -> Decision { ({unpaired=}.>widen_sum)[Decision] }
+pub fn skip() -> Decision { (Unpaired.mk(()).>widen_sum)[Decision] }
 
-pub fn pair(k: I32) -> Decision { ({paired = k}.>widen_sum)[Decision] }
+pub fn pair(k: I32) -> Decision { (Paired.mk(k).>widen_sum)[Decision] }

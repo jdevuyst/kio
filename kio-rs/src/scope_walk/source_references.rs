@@ -3,14 +3,15 @@ use super::{
     CandidateKind, CandidateSink, NamedOrigin, contains, imports_scope, item_names, item_scope,
 };
 use super::{CandidateOrigin, Namespace, in_scope_origin, named_origin};
-use crate::ast::{ImportKind, Item, Module, TypeRecMember};
+#[cfg(all(test, feature = "lsp"))]
+use crate::ast::Item;
+use crate::ast::{ImportKind, Module};
 use crate::span::Span;
 use crate::tokens::{SourceNameKind, SourceReference};
 #[cfg(feature = "lsp")]
 use std::collections::HashMap;
 
-/// The written declaration selected by a source occurrence. Forwarded labels
-/// retain this binding independently of their terminal nominal identity.
+/// The written declaration selected by a source occurrence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceBinding {
     pub module: String,
@@ -67,35 +68,7 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
             _ => None,
         };
     }
-    if module.items.iter().any(|item| match (reference.kind, item) {
-        (SourceNameKind::Label, Item::LabelForward(def, _)) => def.name == *name,
-        (SourceNameKind::Label, Item::Labels(labels, _)) => labels.entries.iter().any(|entry| {
-            entry.name == *name && !entry.is_reuse_marker()
-        }),
-        (SourceNameKind::Label, Item::TypeRecGroup(group)) => group.members.iter().any(|member| {
-            matches!(member, TypeRecMember::Labels(labels, _) if labels.entries.iter().any(|entry| entry.name == *name && !entry.is_reuse_marker()))
-        }),
-        _ => false,
-    }) {
-        return Some(local(name));
-    }
-    module.imports.iter().find_map(|import| {
-        let ImportKind::Selective { from, items } = &import.kind else {
-            return None;
-        };
-        items.iter().find_map(|item| {
-            let selected = match reference.kind {
-                SourceNameKind::Label => item.as_label(),
-                SourceNameKind::Macro => None,
-                SourceNameKind::Value | SourceNameKind::Type | SourceNameKind::Equiv => None,
-            }?;
-            (selected.0 == name).then(|| SourceBinding {
-                module: from.segments.join("/"),
-                name: item.as_name().unwrap_or(name).to_owned(),
-                import_span: Some(selected.1),
-            })
-        })
-    })
+    None
 }
 
 #[cfg(feature = "lsp")]
@@ -113,8 +86,8 @@ type OriginMap = HashMap<String, Vec<IndexedOrigin>>;
 #[cfg(feature = "lsp")]
 pub(crate) struct SourceBindingIndex<'a> {
     module: &'a Module,
-    declarations: [OriginMap; 3],
-    imports: [OriginMap; 3],
+    declarations: [OriginMap; 2],
+    imports: [OriginMap; 2],
 }
 
 #[cfg(feature = "lsp")]
@@ -162,40 +135,6 @@ impl<'a> SourceBindingIndex<'a> {
                     },
                 );
             }
-            let mut label = |name: &str, span| {
-                IndexSink {
-                    origins: &mut index.declarations[2],
-                    item: item_index,
-                    eligible_after: item.span().end,
-                }
-                .push(
-                    name,
-                    CandidateKind::Type,
-                    CandidateOrigin::Declaration(span),
-                );
-            };
-            match item {
-                Item::LabelForward(def, _) => label(&def.name, def.name_span),
-                Item::Labels(labels, _) => {
-                    for entry in &labels.entries {
-                        if !entry.is_reuse_marker() {
-                            label(&entry.name, entry.name_span);
-                        }
-                    }
-                }
-                Item::TypeRecGroup(group) => {
-                    for member in &group.members {
-                        if let TypeRecMember::Labels(labels, _) = member {
-                            for entry in &labels.entries {
-                                if !entry.is_reuse_marker() {
-                                    label(&entry.name, entry.name_span);
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
         }
         for import in &module.imports {
             for (slot, ns) in [Namespace::Value, Namespace::Type].into_iter().enumerate() {
@@ -209,26 +148,6 @@ impl<'a> SourceBindingIndex<'a> {
                         eligible_after: import.span.end,
                     },
                 );
-            }
-            if let ImportKind::Selective { from, items } = &import.kind {
-                for selected in items {
-                    if let Some((name, span)) = selected.as_label() {
-                        IndexSink {
-                            origins: &mut index.imports[2],
-                            item: 0,
-                            eligible_after: import.span.end,
-                        }
-                        .push(
-                            name,
-                            CandidateKind::Function,
-                            CandidateOrigin::Import {
-                                provider: from.segments.join("/"),
-                                source: selected.as_name().unwrap_or(name).to_owned(),
-                                span,
-                            },
-                        );
-                    }
-                }
             }
         }
         index
@@ -257,14 +176,13 @@ impl<'a> SourceBindingIndex<'a> {
             .get(name)
             .and_then(|entries| {
                 entries.iter().find(|entry| {
-                    slot >= 2
-                        || active
-                            .map_or(entry.eligible_after <= offset, |active| entry.item < active)
+                    active.map_or(entry.eligible_after <= offset, |active| entry.item < active)
                 })
             })
             .or_else(|| {
-                self.imports[slot]
-                    .get(name)
+                self.imports
+                    .get(slot)
+                    .and_then(|origins| origins.get(name))
                     .and_then(|entries| entries.iter().find(|entry| entry.eligible_after <= offset))
             })
             .map(|entry| entry.origin.clone())
@@ -289,14 +207,11 @@ impl<'a> SourceBindingIndex<'a> {
         let slot = match reference.kind {
             SourceNameKind::Value => 0,
             SourceNameKind::Type => 1,
-            SourceNameKind::Label => 2,
             SourceNameKind::Macro => 0,
             SourceNameKind::Equiv => return None,
         };
         let active = self.active_item(offset);
-        if slot < 2
-            && let Some(item) = active
-        {
+        if let Some(item) = active {
             let mut out = NamedOrigin {
                 name: &reference.path,
                 origin: None,
@@ -388,8 +303,8 @@ mod tests {
     #[test]
     fn source_dependency_index_preserves_recursive_type_and_value_namespaces() {
         let source = "module main; import provider(marker, Foo);
-            rec newtype Tree[A] : A & Tree[A] { constructor mk; projector un; };
-            rec { type Left = Right; newtype Right[Left] : Left { constructor right; projector unright; }; }
+            rec type { Tree[A]: A & Tree[A] { mk; get; }; };
+            rec { type Left = Right; type { Right[Left]: Left { mk; get; }; }; }
             fn bare() -> . { marker }
             fn parameter(marker: .) -> . { marker }
             fn nested() -> . { let marker = marker; .(marker: .) { marker }(marker) }
@@ -427,31 +342,51 @@ mod tests {
                 other => panic!("unexpected origin {other:?}"),
             }
         }
-        assert_eq!((declarations, locals, placeholders, imports), (2, 6, 1, 2));
+        assert_eq!((declarations, locals, placeholders, imports), (4, 6, 1, 2));
     }
 
     #[cfg(feature = "lsp")]
     #[test]
-    fn source_dependency_index_preserves_label_macro_and_builtin_origins() {
+    fn source_dependency_index_preserves_nominal_macro_and_builtin_origins() {
         let source = "module main;
-            import provider({tag}, macro expand); import provider as q;
+            import provider(Tag, macro expand); import provider as q;
             import __intrinsics__; import __intrinsics__;
             import __comptime__; import __comptime__;
-            labels { local: . }; type {forwarded} = {q.tag};
+            type { Local: .; }; type Forwarded = q.Tag;
             pure fn helper(value: .) -> . { value }
             macro build : . -> . { impl helper; };
-            fn run() -> . { let _ = {tag = ()}; let _ = {local = ()}; let _ = {forwarded = ()};
+            fn run() -> . { let _ = Tag.mk(()); let _ = Local.mk(()); let _ = Forwarded.mk(());
                 let _ = expand(()); let _ = build(()); let _ = __pair__((), ()); __term_unit__(()) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let references = crate::tokens::source_dependencies(source, &module).unwrap();
         let index = SourceBindingIndex::new(&module);
-        let mut special = 0;
-        for reference in references.iter().filter(|reference| {
-            matches!(
-                reference.kind,
-                SourceNameKind::Label | SourceNameKind::Macro
-            )
-        }) {
+        let selected: Vec<_> = references
+            .iter()
+            .filter(|reference| {
+                matches!(reference.kind, SourceNameKind::Type | SourceNameKind::Macro)
+            })
+            .collect();
+        assert_eq!(
+            selected
+                .iter()
+                .map(|reference| reference.path.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Local",
+                "q.Tag",
+                "build",
+                "Tag",
+                "Local",
+                "Forwarded",
+                "expand",
+                "build"
+            ],
+        );
+        assert_eq!(
+            source_binding(&module, selected[5]).unwrap().name,
+            "Forwarded"
+        );
+        for reference in selected {
             let old = source_binding(&module, reference).unwrap();
             let new = index.origin(reference).unwrap();
             match new {
@@ -464,9 +399,7 @@ mod tests {
                 CandidateOrigin::QualifiedImport(span) => assert_eq!(old.import_span, Some(span)),
                 other => panic!("unexpected special origin {other:?}"),
             }
-            special += 1;
         }
-        assert_eq!(special, 9);
         for (name, class) in [
             ("__pair__", "__intrinsics__"),
             ("__term_unit__", "__comptime__"),

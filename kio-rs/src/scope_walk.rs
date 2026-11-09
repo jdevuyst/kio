@@ -6,9 +6,8 @@
 //! Inner binders precede outer binders, and namespaces are collected separately.
 
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, FnDef, HostFnParam, ImportKind, Item, Labels, Module,
-    OpChainKind, ParamPattern, ParamPatternElem, Signature, SignatureParam, Surface, Type,
-    TypeParam, TypeRecMember,
+    CallArg, Expr, FnDef, HostFnParam, ImportKind, Item, Labels, Module, OpChainKind, ParamPattern,
+    ParamPatternElem, Signature, SignatureParam, Surface, Type, TypeParam, TypeRecMember,
 };
 use crate::span::Span;
 
@@ -379,7 +378,7 @@ fn item_scope(item: &Item<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 labels_names(labels, out);
             } else {
                 for entry in &labels.entries {
-                    if entry.meta.span.end < offset && !entry.is_reuse_marker() {
+                    if entry.meta.span.end < offset {
                         declaration(
                             out,
                             &crate::ast::mint_label_newtype_name(&entry.name),
@@ -472,14 +471,12 @@ fn labels_names(labels: &Labels<Surface>, out: &mut impl CandidateSink) {
         );
     }
     for entry in &labels.entries {
-        if !entry.is_reuse_marker() {
-            declaration(
-                out,
-                &crate::ast::mint_label_newtype_name(&entry.name),
-                entry.name_span,
-                CandidateKind::Type,
-            );
-        }
+        declaration(
+            out,
+            &crate::ast::mint_label_newtype_name(&entry.name),
+            entry.name_span,
+            CandidateKind::Type,
+        );
     }
 }
 
@@ -492,8 +489,12 @@ fn labels_scope(labels: &Labels<Surface>, offset: u32, out: &mut impl CandidateS
         type_scope(&entry.payload, offset, out);
         type_params(&entry.existential_params, offset, out);
         type_params(&entry.type_params, offset, out);
+    } else {
+        if let Some(rhs) = &labels.type_alias_rhs {
+            rhs.visit_types(&mut |ty| type_scope(ty, offset, out));
+        }
+        type_params(&labels.type_alias_params, offset, out);
     }
-    type_params(&labels.type_alias_params, offset, out);
 }
 
 fn type_member_names(member: &TypeRecMember<Surface>, out: &mut impl CandidateSink) {
@@ -554,13 +555,6 @@ fn type_scope(ty: &Type<Surface>, offset: u32, out: &mut impl CandidateSink) {
         | Type::Sum { left, right, .. } => {
             type_scope(left, offset, out);
             type_scope(right, offset, out);
-        }
-        Type::LabelSugar { labels, .. } => {
-            for label in labels {
-                if let Some(payload) = &label.payload {
-                    type_scope(payload, offset, out);
-                }
-            }
         }
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
         Type::Goal { ext, .. } => match *ext {},
@@ -742,20 +736,11 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                             pattern,
                             type_params: params,
                             ..
-                        } => {
-                            if in_tail {
-                                if ns == Namespace::Value {
-                                    binding_scope(name, *name_span, pattern.as_ref(), out);
-                                } else {
-                                    type_params(params, offset, out);
-                                }
-                            }
-                        }
-                        crate::ast::NeutralItem::RowBinding { entries, .. }
-                            if in_tail && ns == Namespace::Value =>
-                        {
-                            for entry in entries.iter().rev() {
-                                local(out, &entry.local, entry.local_span, CandidateKind::Variable);
+                        } if in_tail => {
+                            if ns == Namespace::Value {
+                                binding_scope(name, *name_span, pattern.as_ref(), out);
+                            } else {
+                                type_params(params, offset, out);
                             }
                         }
                         _ => {}
@@ -787,23 +772,6 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                         pattern_scope(pattern, offset, ns, false, out);
                     }
                 }
-            }
-        }
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            ..
-        } => {
-            if contains(body.span(), offset) {
-                expr_scope(body, offset, ns, out);
-                if ns == Namespace::Value {
-                    for entry in entries.iter().rev() {
-                        local(out, &entry.local, entry.local_span, CandidateKind::Variable);
-                    }
-                }
-            } else {
-                expr_scope(value, offset, ns, out);
             }
         }
         Expr::Seq { value, body, .. } => {
@@ -853,22 +821,6 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 placeholder_scope(stem, *slot_count, out);
             }
         }
-        Expr::LabelValue { labels, .. } => {
-            for label in labels {
-                expr_scope(&label.value, offset, ns, out);
-            }
-        }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => expr_scope(receiver, offset, ns, out),
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver() {
-                    expr_scope(receiver, offset, ns, out);
-                }
-                for update in updates {
-                    expr_scope(&update.value, offset, ns, out);
-                }
-            }
-        },
         Expr::Ufcs {
             receiver,
             callee,
@@ -981,9 +933,9 @@ mod tests {
             "recur loop(INNER)",
             "scope { INNER }",
             ".x. { let _ = x1; INNER }",
-            "{ field = INNER }",
-            "(INNER).?{field}",
-            "().!{field = INNER}",
+            "Field.mk(INNER)",
+            "Field.get(INNER)",
+            "Pair.mk(((), INNER))",
             "().>apply(INNER)",
             "INNER + ()",
             "[* INNER, *]",
@@ -1165,9 +1117,9 @@ fn caller(value: .) -> . { first(value) }\n";
     fn type_candidates_follow_source_order_outside_recursive_scopes() {
         let src = "module pkg/main;\n\
 type Earlier = .;\n\
-newtype Current : Later { constructor mk; projector un; };\n\
+type { Current: Later { mk; get; }; };\n\
 type Later = .;\n";
-        let candidates = type_candidates(&parse(src), offset_after(src, "Current : "));
+        let candidates = type_candidates(&parse(src), offset_after(src, "Current: "));
         let names = labels(&candidates);
         assert!(names.contains(&"Earlier"), "got: {names:?}");
         assert!(!names.contains(&"Current"), "got: {names:?}");
@@ -1177,8 +1129,8 @@ type Later = .;\n";
     #[test]
     fn type_candidates_include_only_explicit_recursive_singleton_scope() {
         let src = "module pkg/main;\n\
-rec newtype Tree[A] : A & Tree[A] { constructor mk; projector un; };\n";
-        let candidates = type_candidates(&parse(src), offset_after(src, "Tree[A] : "));
+rec type { Tree[A]: A & Tree[A] { mk; get; }; };\n";
+        let candidates = type_candidates(&parse(src), offset_after(src, "Tree[A]: "));
         let names = labels(&candidates);
         assert!(names.contains(&"Tree"), "got: {names:?}");
         assert!(names.contains(&"A"), "got: {names:?}");
@@ -1189,9 +1141,9 @@ rec newtype Tree[A] : A & Tree[A] { constructor mk; projector un; };\n";
         let src = "module pkg/main;\n\
 rec {\n\
   type A = B;\n\
-  newtype B[A] : A & A { constructor mk; projector un; };\n\
+  type { B[A]: A & A { mk; get; }; };\n\
 }\n";
-        let candidates = type_candidates(&parse(src), offset_after(src, "B[A] : "));
+        let candidates = type_candidates(&parse(src), offset_after(src, "B[A]: "));
         let names = labels(&candidates);
         assert!(names.contains(&"A"), "got: {names:?}");
         assert!(names.contains(&"B"), "got: {names:?}");
@@ -1205,8 +1157,8 @@ rec {\n\
     #[test]
     fn type_candidates_include_recursive_label_alias_and_generated_heads() {
         let src = "module pkg/main;\n\
-rec labels Tree[A] = { leaf: A } | { branch: Tree[A] & Tree[A] };\n";
-        let candidates = type_candidates(&parse(src), offset_after(src, "branch: "));
+rec type Tree[A] = { Leaf[A]: A; } | { Branch[A]: Tree[A] & Tree[A]; };\n";
+        let candidates = type_candidates(&parse(src), offset_after(src, "Branch[A]: "));
         let names = labels(&candidates);
         for expected in ["A", "Tree", "Leaf", "Branch"] {
             assert!(
@@ -1217,15 +1169,32 @@ rec labels Tree[A] = { leaf: A } | { branch: Tree[A] & Tree[A] };\n";
     }
 
     #[test]
-    fn type_candidates_include_only_earlier_unmarked_label_heads_inside_the_declaration() {
+    fn compact_entry_scope_keeps_owner_binders_in_ordinary_rhs_leaves() {
+        let src = "module pkg/main; type Pair[Owner] = ([Leaf] Leaf -> Leaf) & { Entry[Own]<Hidden>: Own & Hidden; };";
+        let module = parse(src);
+        let leaf = type_candidates(&module, offset_after(src, "Leaf -> "));
+        let leaf_names = labels(&leaf);
+        assert!(leaf_names.contains(&"Leaf"));
+        assert!(leaf_names.contains(&"Owner"));
+        assert!(!leaf_names.contains(&"Own"));
+        let entry = type_candidates(&module, offset_after(src, "Own & "));
+        let entry_names = labels(&entry);
+        assert!(entry_names.contains(&"Own"));
+        assert!(entry_names.contains(&"Hidden"));
+        assert!(!entry_names.contains(&"Owner"));
+        assert!(!entry_names.contains(&"Leaf"));
+    }
+
+    #[test]
+    fn type_candidates_include_only_earlier_unmarked_nominal_heads_inside_the_declaration() {
         let src = "module pkg/main;\n\
-labels Tree = { leaf: . } | { branch: Leaf & Tree };\n\
+type Tree = { Leaf: .; } | { Branch: Leaf & Tree; };\n\
 type After = Leaf;\n";
-        let inside = type_candidates(&parse(src), offset_after(src, "branch: "));
+        let inside = type_candidates(&parse(src), offset_after(src, "Branch: "));
         let inside_names = labels(&inside);
         assert!(
             inside_names.contains(&"Leaf"),
-            "missing prior generated label head; got: {inside_names:?}"
+            "missing prior nominal head; got: {inside_names:?}"
         );
         for excluded in ["Tree", "Branch", "After"] {
             assert!(
@@ -1252,33 +1221,32 @@ type After = Leaf;\n";
 
     #[test]
     fn lexical_type_candidates_recover_explicit_recursive_scope() {
-        let source =
-            "module pkg/main; rec { type A = B; newtype B : A { constructor mk; projector un; };";
+        let source = "module pkg/main; rec { type A = B; type { B: A { mk; get; }; };";
         let cursor = source.find("A = ").unwrap() as u32 + 4;
         let candidates = lexical_type_candidates(source, cursor);
         assert_eq!(labels(&candidates), vec!["A", "B"]);
     }
 
     #[test]
-    fn lexical_type_candidates_recover_complete_recursive_label_scope_without_payload_leaks() {
+    fn lexical_type_candidates_recover_recursive_nominal_scope_without_payload_leaks() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; import pkg/dep(Imported); rec labels { list[A] <U> : Pair[A][bogus[B]: ",
+                "module pkg/main; import pkg/dep(Imported); rec type { List[A] <U> : Pair[A][bogus[B]: ",
                 vec!["A", "U", "List", "Imported"],
                 vec!["B", "Bogus"],
             ),
             (
-                "module pkg/main; import pkg/dep(Imported); import pkg/other as other; rec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: ",
-                vec!["A", "B", "U", "Tree", "List", "Imported"],
-                vec!["C", "Bogus", "other"],
+                "module pkg/main; import pkg/dep(Imported); import pkg/other as other; rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: ",
+                vec!["B", "U", "Tree", "List", "Imported"],
+                vec!["A", "C", "Bogus", "other"],
             ),
             (
-                "module pkg/main; rec labels { list[*F][A][B]: ",
+                "module pkg/main; rec type { List[*F][A][B]: ",
                 vec!["F", "A", "B", "List"],
                 vec![],
             ),
             (
-                "module pkg/main; rec labels { first[A]: [X, bogus[B]: ",
+                "module pkg/main; rec type { First[A]: [X, bogus[B]: ",
                 vec!["A", "First"],
                 vec!["X", "B", "Bogus"],
             ),
@@ -1299,28 +1267,28 @@ type After = Leaf;\n";
             }
         }
 
-        let malformed = "module pkg/main; rec labels { malformed[A B]: ";
+        let malformed = "module pkg/main; rec type { Malformed[A B]: ";
         assert!(lexical_type_candidates(malformed, malformed.len() as u32).is_empty());
     }
 
     #[test]
-    fn lexical_type_candidates_partition_label_entries_across_broken_payloads() {
+    fn lexical_type_candidates_partition_nominal_entries_across_broken_payloads() {
         for (source, marker, expected, excluded) in [
             (
-                "module pkg/main; rec labels { first[A]: 123, second[B]: . };",
-                "first[A]: ",
+                "module pkg/main; rec type { First[A]: 123; Second[B]: .; };",
+                "First[A]: ",
                 vec!["A", "First", "Second"],
                 vec!["B"],
             ),
             (
-                "module pkg/main; rec labels { first[A]: ., second[B]: 123 };",
-                "second[B]: ",
+                "module pkg/main; rec type { First[A]: .; Second[B]: 123; };",
+                "Second[B]: ",
                 vec!["B", "First", "Second"],
                 vec!["A"],
             ),
             (
-                "module pkg/main; labels { first[A]: ., second[B]: 123 };",
-                "second[B]: ",
+                "module pkg/main; type { First[A]: .; Second[B]: 123; };",
+                "Second[B]: ",
                 vec!["B", "First"],
                 vec!["A", "Second"],
             ),
@@ -1344,16 +1312,16 @@ type After = Leaf;\n";
     }
 
     #[test]
-    fn lexical_type_candidates_preserve_reuse_and_shadowing_semantics() {
+    fn lexical_type_candidates_do_not_invent_rhs_reference_declarations() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; labels { first: _, second[A]: ",
+                "module pkg/main; type Row = First & { Second[A]: ",
                 vec!["A"],
-                vec!["First", "Second"],
+                vec!["First", "Second", "Row"],
             ),
             (
-                "module pkg/main; rec labels { first: _, second[A]: ",
-                vec!["A", "Second"],
+                "module pkg/main; rec type Row = First & { Second[A]: ",
+                vec!["A", "Second", "Row"],
                 vec!["First"],
             ),
         ] {
@@ -1367,7 +1335,7 @@ type After = Leaf;\n";
             }
         }
 
-        let shadowed = "module pkg/main; rec labels Tree[A] = { list[A]: ";
+        let shadowed = "module pkg/main; rec type Tree[A] = { List[A]: ";
         let candidates = lexical_type_candidates(shadowed, shadowed.len() as u32);
         assert_eq!(
             candidates
@@ -1375,15 +1343,15 @@ type After = Leaf;\n";
                 .filter(|candidate| candidate.label == "A")
                 .count(),
             1,
-            "the active entry binder shadows the alias binder"
+            "only the independently bound entry parameter is active"
         );
 
-        let active_reuse = "module pkg/main; rec labels { first: _";
-        let candidates = lexical_type_candidates(active_reuse, active_reuse.len() as u32);
+        let active_reference = "module pkg/main; rec type Row = First";
+        let candidates = lexical_type_candidates(active_reference, active_reference.len() as u32);
         let names = labels(&candidates);
         assert!(
             !names.contains(&"First"),
-            "an active reuse marker became a fresh generated head: {names:?}"
+            "an ordinary RHS reference became a declaration: {names:?}"
         );
     }
 
@@ -1393,17 +1361,17 @@ type After = Leaf;\n";
             (
                 concat!(
                     "module pkg/main; type Earlier = .; ",
-                    "rec newtype Box[A] : 123 { constructor make; projector un; }; ",
+                    "rec type { Box[A]: 123 { mk; get; }; }; ",
                     "type Broken = 123;",
                 ),
-                "Box[A] : ",
+                "Box[A]: ",
                 vec!["A", "Box", "Earlier"],
             ),
             (
                 concat!(
                     "module pkg/main; type Earlier = .; rec { ",
                     "type A[X] = 123; ",
-                    "newtype B : A(.) { constructor make; projector un; }; ",
+                    "type { B: A(.) { mk; get; }; }; ",
                     "} type Broken = 123;",
                 ),
                 "A[X] = ",
@@ -1427,11 +1395,11 @@ type After = Leaf;\n";
     fn lexical_type_candidates_remove_item_shaped_broken_group_payload_text() {
         let source = concat!(
             "module pkg/main; rec { ",
-            "newtype A[X] : type Fake = .; ",
-            "newtype B : . { constructor mk; projector un; }; ",
+            "type { A[X]: type Fake = .; }; ",
+            "type { B: . { mk; get; }; }; ",
             "}",
         );
-        let cursor = offset_after(source, "newtype A[X] : ");
+        let cursor = offset_after(source, "A[X]: ");
         let candidates = lexical_type_candidates(source, cursor);
         let names = labels(&candidates);
         for expected in ["X", "A", "B"] {
@@ -1447,17 +1415,17 @@ type After = Leaf;\n";
     fn lexical_type_candidates_preserve_unmarked_source_order_and_active_binders() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; import pkg/dep(Imported); type Earlier = .; newtype Box[A] <E> : ",
+                "module pkg/main; import pkg/dep(Imported); type Earlier = .; type { Box[A] <E> : ",
                 vec!["A", "E", "Earlier", "Imported"],
                 vec!["Box"],
             ),
             (
-                "module pkg/main; import pkg/dep(Imported); labels Tree[A] = { first[X]: ., list[B] <E> : ",
-                vec!["A", "B", "E", "First", "Imported"],
-                vec!["Tree", "List", "X"],
+                "module pkg/main; import pkg/dep(Imported); type Tree[A] = { First[X]: .; List[B] <E> : ",
+                vec!["B", "E", "First", "Imported"],
+                vec!["A", "Tree", "List", "X"],
             ),
             (
-                "module pkg/main; type Earlier = .; newtype Box[A]<E>:",
+                "module pkg/main; type Earlier = .; type { Box[A]<E>:",
                 vec!["A", "E", "Earlier"],
                 vec!["Box"],
             ),
@@ -1467,14 +1435,14 @@ type After = Leaf;\n";
                 vec!["Box"],
             ),
             (
-                "module pkg/main; type Earlier = .; rec newtype Box[A]<E>:",
+                "module pkg/main; type Earlier = .; rec type { Box[A]<E>:",
                 vec!["A", "E", "Box", "Earlier"],
                 vec![],
             ),
             (
-                "module pkg/main; type Earlier = .; labels Tree[A]={first[X]: .,list[B]<E>:",
-                vec!["A", "B", "E", "First", "Earlier"],
-                vec!["Tree", "List", "X"],
+                "module pkg/main; type Earlier = .; type Tree[A]={First[X]: .;List[B]<E>:",
+                vec!["B", "E", "First", "Earlier"],
+                vec!["A", "Tree", "List", "X"],
             ),
         ] {
             let candidates = lexical_type_candidates(source, source.len() as u32);
@@ -1498,9 +1466,9 @@ type After = Leaf;\n";
     fn lexical_type_candidates_repair_payload_before_an_unclosed_newtype_body() {
         let source = concat!(
             "module pkg/main; type Earlier = .; ",
-            "newtype Box[A] : Pair { constructor make; projector",
+            "type { Box[A]: Pair { mk; get",
         );
-        let cursor = offset_after(source, "Box[A] : ");
+        let cursor = offset_after(source, "Box[A]: ");
         let candidates = lexical_type_candidates(source, cursor);
         let names = labels(&candidates);
         for expected in ["A", "Earlier"] {
@@ -1511,7 +1479,7 @@ type After = Leaf;\n";
 
     #[test]
     fn lexical_type_candidates_recover_comptime_imports_and_group_member_binders() {
-        let source = "module pkg/main; import __comptime__; type Earlier = .; rec { type A = B; newtype B[X] <E> : ";
+        let source = "module pkg/main; import __comptime__; type Earlier = .; rec { type A = B; type { B[X] <E> : ";
         let candidates = lexical_type_candidates(source, source.len() as u32);
         let names = labels(&candidates);
         for expected in ["X", "E", "A", "B", "Earlier", "Comptime_bool"] {

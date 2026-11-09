@@ -33,16 +33,16 @@ import list/core(List);
 // The two arms are labeled so `match` can tell them apart — a bare `. | .`
 // has no labels to branch on.
 /// Defines the two labels that make the module-local boolean shape matchable.
-pub labels { btrue: ., bfalse: . };
+pub type { Btrue: .; Bfalse: . }
 
 /// Boolean-like result type used by pure predicates in this module.
 pub type Bool = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum({btrue=})[Btrue | Bfalse] }
+pub fn yes() -> Bool { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum({bfalse=})[Btrue | Bfalse] }
+pub fn no() -> Bool { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
 
 /// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
 /// labels inside this module — a consumer never names `Btrue` /
@@ -84,20 +84,20 @@ fn list_is_empty[A](xs: List[A]) -> Bool {
 // product reorder. Callers of `mk_unchecked` must preserve the front/back
 // invariant; the loop-driven API restores it through its smart constructor.
 /// Two-list FIFO queue whose front is empty only when the back is empty.
-pub newtype Queue[A] : List[A] & List[A] { pub constructor mk_unchecked; pub projector un_queue }
+pub type { Queue[A]: List[A] & List[A] { pub mk; pub get } }
 
 /// `front(q)` / `back(q)` project the two spines out of a queue. They are
 /// the pure reads the loop-driven layer in `queue.kio` threads through
 /// `mkq` / `enqueue` / `dequeue`.
 pub fn front[A](q: Queue[A]) -> List[A] {
-  match(q.>Queue.un_queue) {
+  match(q.>Queue.get) {
     .(f: List[A], _b: List[A]) { f }
   }
 }
 
 /// Projects the reversed back spine from a queue.
 pub fn back[A](q: Queue[A]) -> List[A] {
-  match(q.>Queue.un_queue) {
+  match(q.>Queue.get) {
     .(_f: List[A], b: List[A]) { b }
   }
 }
@@ -107,12 +107,12 @@ pub fn back[A](q: Queue[A]) -> List[A] {
 // =====================================================================
 /// `empty(A)` is the canonical empty queue: both spines `nil`. It
 /// trivially satisfies the invariant (front empty, back empty).
-pub fn empty[A] -> Queue[A] { Queue.mk_unchecked((nil[A], nil[A])) }
+pub fn empty[A] -> Queue[A] { Queue.mk((nil[A], nil[A])) }
 
 /// `singleton(x)` is the one-element queue. The element lives at the
 /// front so the invariant ("front empty only when back empty") holds
 /// directly, with no reversal — hence `singleton` stays pure.
-pub fn singleton[A](x: A) -> Queue[A] { Queue.mk_unchecked((cons(x, nil[A]), nil[A])) }
+pub fn singleton[A](x: A) -> Queue[A] { Queue.mk((cons(x, nil[A]), nil[A])) }
 
 /// `is_empty(q)` reads the front head in O(1). The invariant guarantees a
 /// non-empty queue has a non-empty front, so an empty front means an
@@ -131,8 +131,8 @@ pub fn peek[A](q: Queue[A]) -> A | . { head(front(q)) }
 /// is paired with a `mkq` re-canonicalization in the loop-driven layer;
 /// the raw swap itself is the pure O(1) core.)
 pub fn swap_spines[A](q: Queue[A]) -> Queue[A] {
-  match(q.>Queue.un_queue) {
-    .(f: List[A], b: List[A]) { Queue.mk_unchecked((b, f)) }
+  match(q.>Queue.get) {
+    .(f: List[A], b: List[A]) { Queue.mk((b, f)) }
   }
 }
 
@@ -162,8 +162,8 @@ pub fn count_step[A][N](succ: N -> N, carry: N, _x: A) -> N { succ(carry) }
 /// the invariant. Pure; the only non-pure part of enqueue is the `mkq`
 /// reversal when the front is empty.
 pub fn snoc_into_back[A](x: A, q: Queue[A]) -> Queue[A] {
-  match(q.>Queue.un_queue) {
-    .(f: List[A], b: List[A]) { Queue.mk_unchecked((f, cons(x, b))) }
+  match(q.>Queue.get) {
+    .(f: List[A], b: List[A]) { Queue.mk((f, cons(x, b))) }
   }
 }
 
@@ -173,13 +173,13 @@ pub fn snoc_into_back[A](x: A, q: Queue[A]) -> Queue[A] {
 /// front tail emptied); that re-canonicalization is the loop-driven part
 /// in `queue.kio`. This pure step does the O(1) head split.
 pub fn pop_front[A](q: Queue[A]) -> (A & Queue[A]) | . {
-  match(q.>Queue.un_queue) {
+  match(q.>Queue.get) {
     .(f: List[A], b: List[A]) {
       match(uncons(f)) {
         (
         , .(pair: A & List[A]) {
             match(pair) {
-              .(h: A, t: List[A]) { present((h, Queue.mk_unchecked((t, b)))) }
+              .(h: A, t: List[A]) { present((h, Queue.mk((t, b)))) }
             }
           }
         , .(_empty: .) { absent[A & Queue[A]] }
@@ -234,14 +234,14 @@ equiv peek_singleton[A](x: A) {
 // Stated on a concrete two-element front spine so the projector /
 // constructor round-trips reduce without walking an opaque queue.
 equiv swap_spines_involution[A](f0: A, f1: A, b0: A) {
-  swap_spines(swap_spines(Queue.mk_unchecked((cons(f0, cons(f1, nil[A])), cons(b0, nil[A])))));
-  Queue.mk_unchecked((cons(f0, cons(f1, nil[A])), cons(b0, nil[A])))
+  swap_spines(swap_spines(Queue.mk((cons(f0, cons(f1, nil[A])), cons(b0, nil[A])))));
+  Queue.mk((cons(f0, cons(f1, nil[A])), cons(b0, nil[A])))
 }
 
 // ---- pop_front splits the head off a populated front (O(1), no loop) ----
 equiv pop_front_singleton[A](x: A) {
   pop_front(singleton(x));
-  present((x, Queue.mk_unchecked((nil[A], nil[A]))))
+  present((x, Queue.mk((nil[A], nil[A]))))
 }
 
 equiv pop_front_empty_is_none[A]() {

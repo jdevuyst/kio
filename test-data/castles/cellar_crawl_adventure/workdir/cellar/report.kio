@@ -12,6 +12,7 @@ import cellar/state as state;
 import cellar/world as world;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(div);
 import testapi/fmt(int_to_string);
@@ -116,14 +117,24 @@ pub fn echo_line(c: command.Command) -> String {
   let words =
     match(c) {
       (
-      , .(x: command.Go_cmd) { cat2("go ", x.?{command.go_cmd}) }
-      , .(x: command.Take_cmd) { cat2("take ", x.?{command.take_cmd}) }
-      , .(x: command.Drop_cmd) { cat2("drop ", x.?{command.drop_cmd}) }
-      , .(x: command.Unlock_cmd) { cat2("unlock ", x.?{command.unlock_cmd}) }
+      , .(x: command.Go_cmd) {
+          cat2("go ", x.>select { command.Go_cmd.get })
+        }
+      , .(x: command.Take_cmd) {
+          cat2("take ", x.>select { command.Take_cmd.get })
+        }
+      , .(x: command.Drop_cmd) {
+          cat2("drop ", x.>select { command.Drop_cmd.get })
+        }
+      , .(x: command.Unlock_cmd) {
+          cat2("unlock ", x.>select { command.Unlock_cmd.get })
+        }
       , .(_l: command.Look_cmd) { "look" }
       , .(_b: command.Bag_cmd) { "inventory" }
       , .(_q: command.Quit_cmd) { "quit" }
-      , .(x: command.Unknown_cmd) { x.?{command.unknown_cmd} }
+      , .(x: command.Unknown_cmd) {
+          x.>select { command.Unknown_cmd.get }
+        }
       )
     };
   cat3("\n> ", words, "\n")
@@ -138,29 +149,47 @@ pub fn reply_text(g: state.Game, o: outcome.Outcome) -> String {
         line("It is pitch dark that way. You will not go in without a light.")
       }
     , .(x: outcome.Way_locked) {
-        line(cat3("That way is locked. You need ", the_item(x.?{outcome.way_locked}), "."))
+        line(cat3(
+        , "That way is locked. You need "
+        , the_item(x.>select { outcome.Way_locked.get })
+        , "."
+        ))
       }
     , .(_d: outcome.No_exit) { line("You cannot go that way.") }
     , .(x: outcome.Not_a_direction) {
-        line(cat3("\"", x.?{outcome.not_a_direction}, "\" is not a direction."))
+        line(cat3("\"", x.>select { outcome.Not_a_direction.get }, "\" is not a direction."))
       }
-    , .(x: outcome.Took) { line(cat2("Taken: ", an_item(x.?{outcome.took}))) }
+    , .(x: outcome.Took) {
+        line(cat2("Taken: ", an_item(x.>select { outcome.Took.get })))
+      }
     , .(x: outcome.Already_held) {
-        line(cat3("You are already carrying ", the_item(x.?{outcome.already_held}), "."))
+        line(cat3(
+        , "You are already carrying "
+        , the_item(x.>select { outcome.Already_held.get })
+        , "."
+        ))
       }
     , .(x: outcome.Nothing_named) {
-        line(cat3("There is no ", x.?{outcome.nothing_named}, " here."))
+        line(cat3("There is no ", x.>select { outcome.Nothing_named.get }, " here."))
       }
-    , .(x: outcome.Dropped) { line(cat2("Dropped: ", an_item(x.?{outcome.dropped}))) }
-    , .(x: outcome.Not_held) { line(cat3("You are not carrying a ", x.?{outcome.not_held}, ".")) }
+    , .(x: outcome.Dropped) {
+        line(cat2("Dropped: ", an_item(x.>select { outcome.Dropped.get })))
+      }
+    , .(x: outcome.Not_held) {
+        line(cat3("You are not carrying a ", x.>select { outcome.Not_held.get }, "."))
+      }
     , .(_e: outcome.Lock_opened) { line("The lock turns. The way is open.") }
     , .(_f: outcome.Nothing_to_unlock) { line("There is nothing to unlock that way.") }
     , .(x: outcome.Lock_needs) {
-        line(cat3("The lock will not turn without ", the_item(x.?{outcome.lock_needs}), "."))
+        line(cat3(
+        , "The lock will not turn without "
+        , the_item(x.>select { outcome.Lock_needs.get })
+        , "."
+        ))
       }
     , .(_g: outcome.Held_items) { carrying_line(g) }
     , .(x: outcome.Unknown_verb) {
-        line(cat3("You do not know how to \"", x.?{outcome.unknown_verb}, "\"."))
+        line(cat3("You do not know how to \"", x.>select { outcome.Unknown_verb.get }, "\"."))
       }
     , .(_h: outcome.Left_cellar) { line("You climb the stairs and step out into the daylight.") }
     )

@@ -19,7 +19,7 @@
 ///     so compaction has to move every survivor except the first.
 module gc/fixture;
 
-import gc/heap(Image, field_addr, tag_box, tag_frame, tag_pair, tag_vec, {heap_cells}, {heap_roots});
+import gc/heap(Heap_cells, Heap_roots, Image, field_addr, tag_box, tag_frame, tag_pair, tag_vec);
 import gc/slot(imm_cell, ptr_cell);
 import testapi(Array, I32);
 import testapi/array(array_len, array_make_empty, array_push, array_set);
@@ -83,5 +83,5 @@ pub fn build_image() -> Image {
   let roots = array_make_empty[I32](());
   array_push(roots, active);
   array_push(roots, temp);
-  {heap_cells = cells, heap_roots = roots}
+  (Heap_cells.mk(cells), Heap_roots.mk(roots))
 }

@@ -1,0 +1,9 @@
+module main;
+
+import conversion(macro convert_alias);
+import runtime(Text);
+
+equiv converted_alias(value: Text) {
+  convert_alias(value);
+  value
+}

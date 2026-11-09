@@ -10,4 +10,4 @@ pub pure fn capture_impl(
 , value: __Checked_term__
 ) -> __Checked_term__ { value }
 
-pub macro demo : . -> . { captures p.Box.make; impl capture_impl }
+pub macro demo : . -> . { captures p.Box.mk; impl capture_impl }

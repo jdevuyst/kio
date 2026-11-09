@@ -1,4 +1,4 @@
 module pkg;
 
 /// See [`missing`].
-pub newtype Wrapped : . { constructor make; projector read; };
+pub type { Wrapped: . { mk; get; }; };

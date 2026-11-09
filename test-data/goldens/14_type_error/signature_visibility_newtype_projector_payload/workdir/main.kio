@@ -1,5 +1,5 @@
 module main;
 
-newtype Hidden : . { constructor mk; projector un }
+type { Hidden: . { mk; get } }
 
-pub newtype Public_box : Hidden { constructor mk; pub projector un }
+pub type { Public_box: Hidden { mk; pub get } }

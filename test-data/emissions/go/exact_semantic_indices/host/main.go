@@ -26,9 +26,9 @@ func check(ok bool, subject string) {
 
 func main() {
 	pkg := p.New[int, int, string](host{})
-	box := p.CallExp_Api__Box_make(pkg.Api.KioType_Box, p.PrepareHost_api_Number(pkg, 11))
+	box := p.CallExp_Api__Box_mk(pkg.Api.KioType_Box, p.PrepareHost_api_Number(pkg, 11))
 	check(pkg.Api.ReadNumber(box) == 11, "generic constructor binds its input index")
-	check(pkg.Api.ReadCount(p.CallExp_Api__Box_make(pkg.Api.KioType_Box, p.PrepareHost_api_Count(pkg, 13))) == 13, "same Go type retains Count adapter")
+	check(pkg.Api.ReadCount(p.CallExp_Api__Box_mk(pkg.Api.KioType_Box, p.PrepareHost_api_Count(pkg, 13))) == 13, "same Go type retains Count adapter")
 	check(pkg.Api.ReadNumber(pkg.Api.Number(17)) == 17, "Kio constructor preserves Number")
 	check(pkg.Api.ReadCount(pkg.Api.Count(19)) == 19, "Kio constructor preserves Count")
 
@@ -36,9 +36,9 @@ func main() {
 	vault := p.UnsafeKioHostType_api__VaultFromNative[numberIndex](raw)
 	crate := p.UnsafeKioHostType_api__CrateFromNative[numberIndex](raw)
 	partial := p.UnsafeKioHostType_api__BiFromNative[textIndex, numberIndex](raw)
-	fromVault := p.CallExp_Api__Applied_make(pkg.Api.KioType_Applied, p.PrepareHost_api_Vault(pkg, vault))
-	fromCrate := p.CallExp_Api__Applied_make(pkg.Api.KioType_Applied, p.PrepareHost_api_Crate(pkg, crate))
-	fromPartial := p.CallExp_Api__Applied_make(pkg.Api.KioType_Applied, p.PrepareHost_api_Bi(pkg, partial))
+	fromVault := p.CallExp_Api__Applied_mk(pkg.Api.KioType_Applied, p.PrepareHost_api_Vault(pkg, vault))
+	fromCrate := p.CallExp_Api__Applied_mk(pkg.Api.KioType_Applied, p.PrepareHost_api_Crate(pkg, crate))
+	fromPartial := p.CallExp_Api__Applied_mk(pkg.Api.KioType_Applied, p.PrepareHost_api_Bi(pkg, partial))
 	for _, recovered := range []any{
 		pkg.Api.ReadVault(fromVault).UnsafeNative(),
 		pkg.Api.ReadCrate(fromCrate).UnsafeNative(),
@@ -51,12 +51,12 @@ func main() {
 		check(p.NativeExp_Api__number_arg0(pkg, recovered.(*storage).value) == 23, "host-owned extraction preserves payload")
 	}
 
-	empty := p.CallExp_Api__List_make(pkg.Api.KioType_List, p.NewExp_Api__List_make_arg0_0[int, int, string, numberIndex](p.Unit{}))
-	list := p.CallExp_Api__List_make(pkg.Api.KioType_List, p.NewExp_Api__List_make_arg0_1[int, int, string, numberIndex](p.Exp_Api__List_make_arg0_1_value[int, int, string, numberIndex]{p.PrepareHost_api_Number(pkg, 31), empty}))
-	opened := p.CallExp_Api__List_open(pkg.Api.KioType_List, list)
-	cons := opened.Case().(p.Exp_Api__List_open_ret_1[int, int, string, numberIndex]).Value()
-	check(pkg.Api.ReadNumber(p.CallExp_Api__Box_make(pkg.Api.KioType_Box, cons.F0)) == 31, "generic recursive projection preserves index")
-	_, nilTail := p.CallExp_Api__List_open(pkg.Api.KioType_List, cons.List).Case().(p.Exp_Api__List_open_ret_0[int, int, string, numberIndex])
+	empty := p.CallExp_Api__List_mk(pkg.Api.KioType_List, p.NewExp_Api__List_mk_arg0_0[int, int, string, numberIndex](p.Unit{}))
+	list := p.CallExp_Api__List_mk(pkg.Api.KioType_List, p.NewExp_Api__List_mk_arg0_1[int, int, string, numberIndex](p.Exp_Api__List_mk_arg0_1_value[int, int, string, numberIndex]{p.PrepareHost_api_Number(pkg, 31), empty}))
+	opened := p.CallExp_Api__List_get(pkg.Api.KioType_List, list)
+	cons := opened.Case().(p.Exp_Api__List_get_ret_1[int, int, string, numberIndex]).Value()
+	check(pkg.Api.ReadNumber(p.CallExp_Api__Box_mk(pkg.Api.KioType_Box, cons.F0)) == 31, "generic recursive projection preserves index")
+	_, nilTail := p.CallExp_Api__List_get(pkg.Api.KioType_List, cons.List).Case().(p.Exp_Api__List_get_ret_0[int, int, string, numberIndex])
 	check(nilTail, "generic recursive tail")
 	check(pkg.Api.ReadList(list).Case().(p.Exp_Api__readList_ret_1[int, int, string]).Value().F0 == 31, "generic recursive value reaches concrete Kio projector")
 	kioList := pkg.Api.List(p.NewExp_Api__list_arg0_1[int, int, string](p.Exp_Api__list_arg0_1_value[int, int, string]{37, empty}))
@@ -76,10 +76,10 @@ func main() {
 	check(first.F0 == 41, "nonregular recursive first head")
 	second := pkg.Api.ReadNestPair(first.Nest).Case().(p.Exp_Api__readNestPair_ret_1[int, int, string]).Value()
 	check(second.F0.F0 == 43 && second.F0.F1 == 47, "nonregular recursive changed argument")
-	regenerated := p.CallExp_Api__Nest_make(pkg.Api.KioType_Nest, p.CallExp_Api__Nest_open(pkg.Api.KioType_Nest, nest))
+	regenerated := p.CallExp_Api__Nest_mk(pkg.Api.KioType_Nest, p.CallExp_Api__Nest_get(pkg.Api.KioType_Nest, nest))
 	check(pkg.Api.ReadNest(regenerated).Case().(p.Exp_Api__readNest_ret_1[int, int, string]).Value().F0 == 41, "generic nonregular public members")
 	check(pkg.Api.ReadWrap(pkg.Api.Wrap(53)) == 53, "ignored Const argument is finite")
-	check(pkg.Api.ReadWrap(pkg.Api.KioType_Wrap.Make(59)) == 59, "ignored Const argument keeps native constructor")
+	check(pkg.Api.ReadWrap(pkg.Api.KioType_Wrap.Mk(59)) == 59, "ignored Const argument keeps native constructor")
 	check(pkg.Api.Reveal(pkg.Api.Hide(61)) == 61, "hidden existential stays behind public operations")
 	stages, projections := 0, 0
 	continuation := func() func(p.Product[p.Prepared[numberIndex], p.Value]) p.Value {
@@ -90,7 +90,7 @@ func main() {
 		}
 	}
 	for _, number := range []int{67, 71} {
-		projected := p.CallExp_Api__Hidden_open(pkg.Api.KioType_Hidden, pkg.Api.Hide(number), continuation)
+		projected := p.CallExp_Api__Hidden_get(pkg.Api.KioType_Hidden, pkg.Api.Hide(number), continuation)
 		check(p.NativeExp_Api__number_arg0(pkg, projected) == number, "native existential continuation retains public index")
 	}
 	check(stages == 2 && projections == 2, "existential projection executes exactly one hidden stage and continuation")

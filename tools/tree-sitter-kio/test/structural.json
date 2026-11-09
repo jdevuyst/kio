@@ -3600,31 +3600,22 @@
     "absent": []
   },
   {
-    "name": "label_and_call",
-    "source": "module source;\nfn run() { id([ { field = let(x) }, call[[*F] F[.] -> F[.]] ]) }\n",
+    "name": "call_and_forall",
+    "source": "module source;\nfn run() { id([ let(x), call[[*F] F[.] -> F[.]] ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 33,
-        "end": 38,
-        "text": "field",
-        "kind": "entity.name.label",
-        "owners": [
-          "label_value_expr"
-        ]
-      },
-      {
-        "start": 41,
-        "end": 44,
+        "start": 31,
+        "end": 34,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
-          "label_value_expr"
+          "call_expr"
         ]
       },
       {
-        "start": 58,
-        "end": 59,
+        "start": 46,
+        "end": 47,
         "text": "F",
         "kind": "variable.parameter",
         "owners": [
@@ -4244,44 +4235,53 @@
     "absent": []
   },
   {
-    "name": "newtype_members",
-    "source": "module source; newtype Box : . { pub constructor constructor; pub projector projector; }; fn run() { constructor(x) }",
+    "name": "nominal_members",
+    "source": "module source; type { Box: . { pub mk; pub get; }; }; fn run() { mk(x) }",
     "partial": false,
     "targets": [
       {
-        "start": 37,
-        "end": 48,
-        "text": "constructor",
+        "text": "type",
+        "start": 15,
+        "end": 19,
         "kind": "keyword.declaration",
         "owners": [
-          "newtype_member"
+          "nominal_decl_head"
         ]
       },
       {
-        "start": 49,
-        "end": 60,
-        "text": "constructor",
+        "text": "Box",
+        "start": 22,
+        "end": 25,
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ]
+      },
+      {
+        "text": "mk",
+        "start": 35,
+        "end": 37,
         "kind": "entity.name.function",
         "owners": [
-          "newtype_member"
+          "nominal_member"
         ]
       },
       {
-        "start": 66,
-        "end": 75,
-        "text": "projector",
-        "kind": "keyword.declaration",
-        "owners": [
-          "newtype_member"
-        ]
-      },
-      {
-        "start": 101,
-        "end": 112,
-        "text": "constructor",
+        "text": "get",
+        "start": 43,
+        "end": 46,
         "kind": "entity.name.function",
         "owners": [
-          "call_expr"
+          "nominal_member"
+        ]
+      },
+      {
+        "text": "mk",
+        "start": 65,
+        "end": 67,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
         ]
       }
     ],
@@ -4385,7 +4385,7 @@
   },
   {
     "name": "all_expression_forms",
-    "source": "module source;\nfn run() { id([ do (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply(x), .x. { x1 }, (x, y) ]) }\n",
+    "source": "module source;\nfn run() { id([ do (f) { let x <- get(); x }, recur next(x), read(x), write(x, let(x)), apply(x), .x. { x1 }, (x, y) ]) }\n",
     "partial": false,
     "targets": [
       {
@@ -4407,12 +4407,12 @@
         ]
       },
       {
-        "start": 100,
-        "end": 103,
+        "start": 94,
+        "end": 97,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
-          "field_expression"
+          "call_expr"
         ]
       }
     ],
@@ -6211,87 +6211,50 @@
     "absent": []
   },
   {
-    "name": "review_label_unit_payload",
-    "source": "module app; import ops(varop [ ]); fn run() { [ { tag= }, { if=value } ] }",
+    "name": "review_nominal_existentials",
+    "source": "module app; type { Tag<A>: A; If<B>: B; };",
     "partial": false,
     "targets": [
       {
-        "text": "tag",
-        "start": 50,
-        "end": 53,
-        "kind": "entity.name.label",
-        "owners": [
-          "label_value_label",
-          "variadic_element"
-        ]
-      },
-      {
-        "text": "if",
-        "start": 60,
-        "end": 62,
-        "kind": "entity.name.label",
-        "owners": [
-          "label_value_label",
-          "variadic_element"
-        ]
-      },
-      {
-        "text": "value",
-        "start": 63,
-        "end": 68,
-        "kind": "identifier",
-        "owners": [
-          "expression_path"
-        ]
-      }
-    ],
-    "absent": []
-  },
-  {
-    "name": "review_label_existentials",
-    "source": "module app; labels { tag<A>: A, if<B>: B };",
-    "partial": false,
-    "targets": [
-      {
-        "text": "labels",
+        "text": "type",
         "start": 12,
-        "end": 18,
+        "end": 16,
         "kind": "keyword.declaration",
         "owners": [
-          "labels_decl_head"
+          "nominal_decl_head"
         ]
       },
       {
-        "text": "tag",
-        "start": 21,
-        "end": 24,
-        "kind": "entity.name.label",
+        "text": "Tag",
+        "start": 19,
+        "end": 22,
+        "kind": "entity.name.type",
         "owners": [
-          "label_entry"
+          "nominal_entry"
         ]
       },
       {
         "text": "A",
-        "start": 25,
-        "end": 26,
+        "start": 23,
+        "end": 24,
         "kind": "variable.parameter",
         "owners": [
           "existential_binder"
         ]
       },
       {
-        "text": "if",
-        "start": 32,
-        "end": 34,
-        "kind": "entity.name.label",
+        "text": "If",
+        "start": 30,
+        "end": 32,
+        "kind": "entity.name.type",
         "owners": [
-          "label_entry"
+          "nominal_entry"
         ]
       },
       {
         "text": "B",
-        "start": 35,
-        "end": 36,
+        "start": 33,
+        "end": 34,
         "kind": "variable.parameter",
         "owners": [
           "existential_binder"
@@ -11544,8 +11507,8 @@
     ]
   },
   {
-    "name": "let_explicit_row_and_existential",
-    "source": "module m; fn run() { let .({field as x, other}) = row; let .(<A> packed) = value; packed }",
+    "name": "let_explicit_existential",
+    "source": "module m; fn run() { let .(<A> packed) = value; packed }",
     "targets": [
       {
         "text": "let",
@@ -11553,58 +11516,13 @@
         "end": 24,
         "kind": "keyword.declaration",
         "owners": [
-          "row_let_stmt"
-        ]
-      },
-      {
-        "text": "field",
-        "start": 28,
-        "end": 33,
-        "kind": "entity.name.label",
-        "owners": [
-          "row_let_entry"
-        ]
-      },
-      {
-        "text": "as",
-        "start": 34,
-        "end": 36,
-        "kind": "keyword.declaration",
-        "owners": [
-          "row_let_entry"
-        ]
-      },
-      {
-        "text": "x",
-        "start": 37,
-        "end": 38,
-        "kind": "variable.parameter",
-        "owners": [
-          "row_let_entry"
-        ]
-      },
-      {
-        "text": "other",
-        "start": 40,
-        "end": 45,
-        "kind": "variable.parameter",
-        "owners": [
-          "row_let_entry"
-        ]
-      },
-      {
-        "text": "let",
-        "start": 55,
-        "end": 58,
-        "kind": "keyword.declaration",
-        "owners": [
           "let_statement"
         ]
       },
       {
         "text": "A",
-        "start": 62,
-        "end": 63,
+        "start": 28,
+        "end": 29,
         "kind": "variable.parameter",
         "owners": [
           "grouped_existential_pattern"
@@ -11612,8 +11530,8 @@
       },
       {
         "text": "packed",
-        "start": 65,
-        "end": 71,
+        "start": 31,
+        "end": 37,
         "kind": "identifier",
         "owners": [
           "grouped_existential_pattern"
@@ -11668,8 +11586,7 @@
     "name": "let_call_before_binding_arrow_is_expression",
     "source": "module m; fn run() { let(f) <- x }",
     "absent": [
-      "let_statement",
-      "row_let_stmt"
+      "let_statement"
     ],
     "targets": [
       {
@@ -11815,14 +11732,14 @@
     ]
   },
   {
-    "name": "neutral_pure_row_let",
-    "source": "module m; fn run() { do (bind) { let .({field as x}) = row; x } } fn neighbor() { () }",
+    "name": "neutral_pure_value_let",
+    "source": "module m; fn run() { do (bind) { let x = row; x } } fn neighbor() { () }",
     "partial": false,
     "targets": [
       {
         "text": "neighbor",
-        "start": 69,
-        "end": 77,
+        "start": 55,
+        "end": 63,
         "kind": "entity.name.function",
         "owners": [
           "function_definition"
@@ -13818,34 +13735,36 @@
     ]
   },
   {
-    "name": "semicolons_newtype_runs",
-    "source": "module source; newtype Box: . { ;; constructor box;; projector unbox;; }",
+    "name": "semicolons_nominal_runs",
+    "source": "module source; type { Box: . { ;; mk;; get;; }; }",
     "targets": [
       {
-        "text": "projector",
-        "start": 53,
-        "end": 62,
-        "kind": "keyword.declaration",
+        "text": "get",
+        "start": 39,
+        "end": 42,
+        "kind": "entity.name.function",
         "owners": [
-          "newtype_member"
+          "nominal_member"
         ]
       }
     ]
   },
   {
-    "name": "semicolons_newtype_empty_runs",
-    "source": "module source; newtype Box: . { ;; }",
+    "name": "semicolons_nominal_empty_runs",
+    "source": "module source; type { Box: . { ;; }; }",
     "targets": [
       {
-        "text": "newtype",
+        "text": "type",
         "start": 15,
-        "end": 22,
+        "end": 19,
         "kind": "keyword.declaration",
         "owners": [
-          "newtype_decl_head"
+          "nominal_decl_head"
         ]
       }
-    ]
+    ],
+    "partial": true,
+    "error": true
   },
   {
     "name": "semicolons_bridge_edges",
@@ -13954,7 +13873,7 @@
   },
   {
     "name": "semicolons_rec_type_edges",
-    "source": "module source; rec { ; type A = .; newtype B: . { ; constructor b; }; };",
+    "source": "module source; rec { ; type A = .; type { B: . { ; mk; }; }; };",
     "targets": [
       {
         "text": "rec",
@@ -13999,27 +13918,27 @@
   },
   {
     "name": "semicolons_signature_nested_last_declarations",
-    "source": "signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub newtype Box: . {pub constructor box; pub projector unbox} } } } }",
+    "source": "signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub type { Box: . { pub mk; pub get }; } } } } }",
     "targets": [
       {
-        "text": "newtype",
+        "text": "type",
         "start": 90,
-        "end": 97,
+        "end": 94,
         "kind": "keyword.declaration",
         "owners": [
-          "newtype_decl_head"
+          "nominal_decl_head"
         ]
       }
     ]
   },
   {
-    "name": "semicolons_outer_same_line_newtype",
-    "source": "module source;\nnewtype Box: . { constructor box } fn after() { () }",
+    "name": "semicolons_outer_same_line_nominal",
+    "source": "module source;\ntype { Box: . { mk }; } fn after() { () }",
     "targets": [
       {
         "text": "after",
-        "start": 53,
-        "end": 58,
+        "start": 42,
+        "end": 47,
         "kind": "entity.name.function",
         "owners": [
           "fn_decl_head"
@@ -14064,16 +13983,16 @@
     ]
   },
   {
-    "name": "semicolons_nonbraced_labels_terminator",
-    "source": "module source; labels L = {left: .} | {right: .};",
+    "name": "semicolons_compact_nominal_terminator",
+    "source": "module source; type L = { Left: .; } | { Right: .; };",
     "targets": [
       {
         "text": ";",
-        "start": 48,
-        "end": 49,
+        "start": 33,
+        "end": 34,
         "kind": "punctuation.separator",
         "owners": [
-          "labels_decl_head"
+          "type_alias_decl_head"
         ]
       }
     ]
@@ -14170,7 +14089,7 @@
   },
   {
     "name": "semicolons_rec_type_missing",
-    "source": "module source; rec { newtype A: . {constructor a} newtype B: . {constructor b} }",
+    "source": "module source; rec { type { A: . { mk }; } type { B: . { mk }; } }",
     "partial": true,
     "error": true,
     "targets": []
@@ -14219,7 +14138,7 @@
   },
   {
     "name": "semicolons_signature_module_missing",
-    "source": "signature app v(1); v(1) { breaking { add { module api { newtype A: . {constructor a} newtype B: . {constructor b} } } } }",
+    "source": "signature app v(1); v(1) { breaking { add { module api { type { A: . { mk }; } type { B: . { mk }; } } } } }",
     "partial": true,
     "error": true,
     "targets": []

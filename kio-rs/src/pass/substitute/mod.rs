@@ -41,8 +41,8 @@ mod pre_prime;
 mod walk;
 
 use crate::ast::{
-    CallArg, ElaboratorCall, Equiv, Expr, FnDef, Import, ImportItem, ImportKind, Item, Lowered,
-    Meta, Module, ModulePath, Never, PackageFile, Param, PathSegment, Phase, Prime, Signature,
+    CallArg, Equiv, Expr, FnDef, Import, ImportItem, ImportKind, Item, Lowered, Meta, Module,
+    ModulePath, Never, PackageFile, Param, PathSegment, Phase, Prime, Signature,
     SignatureGroupKind, SignatureParam, Type, TypeParam, UncheckedPrime, convert_expr,
     convert_meta, convert_signature,
 };
@@ -74,8 +74,6 @@ impl Phase for PrePrime {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = Never;
     type ExprRecCall = Never;
     type ExprRecOrder = Never;
@@ -84,7 +82,6 @@ impl Phase for PrePrime {
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = Never;
     type TypeInfer = Never;
     type TypeGoal = Never;
     type ItemLabels = Never;
@@ -976,31 +973,53 @@ enum ComptimeEraseKind {
     Unit,
 }
 
-fn type_is_comptime_proof(ty: &Type<Lowered>) -> bool {
-    matches!(
-        ty,
-        Type::Path { segments, args, .. }
-            if args.is_empty()
-                && matches!(
-                    comptime_erased_path_kind(segments, false),
-                    Some(ComptimeEraseKind::Bottom)
-                )
-                && segments[0].as_str() == "__Comptime__"
-    )
-}
-
 fn proof_param_name(d: &FnDef<Lowered>) -> Option<&str> {
     for param in &d.sig.params {
         match param {
             crate::ast::SignatureParam::Type(_) => {}
             crate::ast::SignatureParam::Value(value) => {
-                if value.ty.as_ref().is_some_and(type_is_comptime_proof) {
+                if value
+                    .ty
+                    .as_ref()
+                    .is_some_and(crate::comptime::type_is_comptime_proof)
+                {
                     return Some(value.name.as_str());
                 }
             }
         }
     }
     None
+}
+
+fn erased_proof_body(
+    sig: &crate::ast::Signature<PrePrime>,
+    proof_name: String,
+    ret: Type<PrePrime>,
+    span: Span,
+) -> Expr<PrePrime> {
+    assert!(
+        sig.value_params()
+            .any(|param| param.name == proof_name && matches!(param.ty, Some(Type::Bottom { .. }))),
+        "a direct compile-time proof parameter must erase to Bottom"
+    );
+    Expr::synth_call(
+        Expr::Path {
+            occurrence: Default::default(),
+            segments: vec![PathSegment::new("__absurd__".to_owned(), span)],
+            meta: Meta::new(span),
+            ext: (),
+        },
+        vec![
+            CallArg::Type(ret),
+            CallArg::Value(Expr::Path {
+                occurrence: Default::default(),
+                segments: vec![PathSegment::new(proof_name, span)],
+                meta: Meta::new(span),
+                ext: (),
+            }),
+        ],
+        span,
+    )
 }
 
 fn type_is_unit(ty: &Type<PrePrime>) -> bool {
@@ -1169,7 +1188,7 @@ impl<'a> SubstituteVisitor<'a> {
                     .iter()
                     .filter(|item| match item {
                         ImportItem::Name { macro_span, .. } => macro_span.is_none(),
-                        ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => true,
+                        ImportItem::OperatorPattern { .. } => true,
                     })
                     .cloned()
                     .collect();
@@ -1607,29 +1626,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             .then(|| proof_param_name(d).map(str::to_owned))
             .flatten();
             let body = if let Some(proof_name) = proof_name {
-                assert!(
-                    sig.value_params().any(|param| param.name == proof_name
-                        && matches!(param.ty, Some(Type::Bottom { .. }))),
-                    "a direct compile-time proof parameter must erase to Bottom"
-                );
-                Expr::synth_call(
-                    Expr::Path {
-                        occurrence: Default::default(),
-                        segments: vec![PathSegment::new("__absurd__".to_owned(), d.body.span())],
-                        meta: Meta::new(d.body.span()),
-                        ext: (),
-                    },
-                    vec![
-                        CallArg::Type(ret.clone()),
-                        CallArg::Value(Expr::Path {
-                            occurrence: Default::default(),
-                            segments: vec![PathSegment::new(proof_name, d.body.span())],
-                            meta: Meta::new(d.body.span()),
-                            ext: (),
-                        }),
-                    ],
-                    d.body.span(),
-                )
+                erased_proof_body(&sig, proof_name, ret.clone(), d.body.span())
             } else {
                 self.walk_expr(&d.body)?
             };
@@ -1725,6 +1722,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         let binder_mark = self.type_binders.len();
         let result = (|| {
             let mut value_index = 0usize;
+            let mut proof_name = None;
             let mut params = Vec::with_capacity(sig.params.len());
             for p in &sig.params {
                 match p {
@@ -1733,6 +1731,25 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                         params.push(crate::ast::SignatureParam::Type(tp.clone()));
                     }
                     crate::ast::SignatureParam::Value(v) => {
+                        let recorded = occurrence.and_then(|id| {
+                            self.elabs
+                                .fn_param_type_for(&self.module_path, id, value_index)
+                        });
+                        if proof_name.is_none()
+                            && matches!(
+                                self.comptime_lowering_mode,
+                                ComptimeLoweringMode::RuntimeErase
+                            )
+                            && (v
+                                .ty
+                                .as_ref()
+                                .is_some_and(crate::comptime::type_is_comptime_proof)
+                                || recorded.is_some_and(|ty| {
+                                    crate::comptime::type_is_comptime_proof(&ty.resolved)
+                                }))
+                        {
+                            proof_name = Some(v.name.clone());
+                        }
                         let ty = match &v.ty {
                             Some(t) if !crate::pass::typecheck_core::type_contains_infer(t) => {
                                 Some(self.walk_type(t)?)
@@ -1762,11 +1779,25 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                 }
                 _ => None,
             };
+            let sig = crate::ast::Signature::from_parts(params, sig.groups.clone());
+            let body = if let Some(proof_name) = proof_name {
+                let result = match &ret_ty {
+                    Some(ret) => ret.clone(),
+                    None => {
+                        let recorded = occurrence.and_then(|id| self.elabs.proof_fn_body_type_for(&self.module_path, id))
+                            .expect("a checked proof-gated lambda must retain its body type for erasure");
+                        self.walk_recorded_type(recorded)?
+                    }
+                };
+                erased_proof_body(&sig, proof_name, result, body.span())
+            } else {
+                self.walk_expr(body)?
+            };
             Ok(Expr::FnExpr {
                 occurrence: Default::default(),
-                sig: crate::ast::Signature::from_parts(params, sig.groups.clone()),
+                sig,
                 ret_ty,
-                body: Box::new(self.walk_expr(body)?),
+                body: Box::new(body),
                 meta: convert_meta(meta),
                 caps: (),
             })
@@ -1780,28 +1811,6 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
     }
 
     // ---- Elaboration substitutions ----------------------------------
-
-    fn rewrite_expr_elaborator(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
-        let Expr::Elaborator { call, .. } = e else {
-            unreachable!()
-        };
-        if let Some(elab) = self.elabs.elaboration_for(&self.module_path, e) {
-            return self.walk_recorded_elaboration(elab);
-        }
-        // No recorded elaboration means the field-syntax elaboration
-        // table never recorded a rewrite for this node — a typer bug,
-        // since field access / update always elaborate.
-        match call {
-            ElaboratorCall::FieldAccess { .. } => self.missing_elaboration_expr(
-                e,
-                "field access reached substitution without a recorded elaboration — typer bug",
-            ),
-            ElaboratorCall::FieldUpdate { .. } => self.missing_elaboration_expr(
-                e,
-                "field update reached substitution without a recorded elaboration — typer bug",
-            ),
-        }
-    }
 
     fn rewrite_expr_rec_order(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         if let Some((replacement, binding_type)) =
@@ -2573,8 +2582,6 @@ mod tests {
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
-            ExprLabelValue = Never,
-            ExprRowLet = Never,
             ExprElab = Never,
             ExprBlockSyntax = Never,
             ExprRecCall = Never,
@@ -2624,11 +2631,7 @@ mod tests {
             | Expr::BoolLit { .. } => false,
             Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
-
-            | Expr::Elaborator { ext, .. }
-            | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
+                | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
 
 
@@ -2658,16 +2661,44 @@ mod tests {
         }
     }
 
+    fn recursive_generated_binder_fixture() -> &'static str {
+        "module x/main; \
+         host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+         rec(loop) { fn update(value: .) -> . { recur update(value) }; }"
+    }
+
+    fn assert_recursive_fixture_generates_value_binders(source: &str) {
+        use crate::pass::visit_mut::TypecheckVisitMut;
+
+        #[derive(Default)]
+        struct GeneratedBinders(usize);
+        impl TypecheckVisitMut<Lowered> for GeneratedBinders {
+            fn enter_value_binder(&mut self, name: &mut String, _: Span, _: Span) {
+                self.0 += usize::from(name.starts_with("__rec"));
+            }
+        }
+        let mut lowered = lowered_one("x/main", source);
+        let mut generated = GeneratedBinders::default();
+        let update = lowered
+            .items
+            .iter_mut()
+            .find_map(|item| match item {
+                Item::FnDef(def) if def.name == "update" => Some(def),
+                _ => None,
+            })
+            .expect("lowered recursive wrapper");
+        generated.visit_expr(&mut update.body);
+        assert!(
+            generated.0 > 0,
+            "recursive lowering must create value binders"
+        );
+    }
+
     #[test]
     fn substitution_never_constructs_prime_with_reserved_value_binders() {
-        let module = substitute_one(
-            "x/main",
-            "module x/main; \
-             host type I32 role(i32); \
-             labels Pair_fields = { first: I32, second: I32 }; \
-             type Pair = First & Second; \
-             fn update(row: Pair, value: I32) -> Pair { row.!{first = value} }",
-        );
+        let source = recursive_generated_binder_fixture();
+        assert_recursive_fixture_generates_value_binders(source);
+        let module = substitute_one("x/main", source);
         let update = module
             .items
             .iter()
@@ -2686,15 +2717,9 @@ mod tests {
 
     #[test]
     fn eval_fn_substitution_materializes_generated_value_binders() {
-        let update = substitute_eval_fn(
-            "x/main",
-            "module x/main; \
-             host type I32 role(i32); \
-             labels Pair_fields = { first: I32, second: I32 }; \
-             type Pair = First & Second; \
-             fn update(row: Pair, value: I32) -> Pair { row.!{first = value} }",
-            "update",
-        );
+        let source = recursive_generated_binder_fixture();
+        assert_recursive_fixture_generates_value_binders(source);
+        let update = substitute_eval_fn("x/main", source, "update");
 
         assert!(
             !has_reserved_value_binder(&update.body),
@@ -3596,7 +3621,7 @@ mod tests {
         let module = substitute_one(
             "x",
             "module x; \
-             newtype Box[A] : A { pub constructor mk; pub projector un; }; \
+             type { Box[A]: A { pub mk; pub get; }; }; \
              fn f[A](y: A) -> . { let .(h: Box[_]) = Box.mk[A](y); () }",
         );
         let f = module
@@ -3754,9 +3779,7 @@ mod tests {
     #[test]
     fn existentials_threaded_through_substitute() {
         let src = "module x/main; \
-                   newtype Pack[A] <U> : A & U { \
-                     pub constructor mk_pack; pub projector un_pack; \
-                   };";
+                   type { Pack[A]<U>: A & U { pub mk; pub get; }; };";
         let module = substitute_one("x/main", src);
         let Item::Newtype(d) = module
             .items
@@ -3807,7 +3830,7 @@ mod tests {
                 "x/util",
                 "module x/util; \
                  import __comptime__; \
-                 pub newtype Refl_box : __Type__ { pub constructor mk_box; pub projector un_box; };",
+                 pub type { Refl_box: __Type__ { pub mk; pub get; }; };",
             ),
             (
                 "x/main",
@@ -4344,7 +4367,7 @@ mod tests {
         let nominal = substitute_one(
             "x/main",
             "module x/main; \
-             newtype Comptime_bool : . { constructor make; projector read; }; \
+             type { Comptime_bool: . { mk; get; }; }; \
              fn keep(value: Comptime_bool) -> Comptime_bool { value }",
         );
         let keep = prime_fn(&nominal, "keep");
@@ -4373,14 +4396,10 @@ mod tests {
             "module x/main; \
              import __comptime__; \
              type Keep_alias[Comptime_bool] = Comptime_bool; \
-             newtype Keep_newtype[Comptime_str] : Comptime_str { \
-               constructor make; projector read; \
-             }; \
+             type { Keep_newtype[Comptime_str]: Comptime_str { mk; get; }; }; \
              rec { \
                type Keep_group_alias[Comptime_bool] = Keep_group_newtype[Comptime_bool]; \
-               newtype Keep_group_newtype[Comptime_str] : Keep_group_alias[Comptime_str] { \
-                 constructor make_group; projector read_group; \
-               }; \
+               type { Keep_group_newtype[Comptime_str]: Keep_group_alias[Comptime_str] { mk; get; }; }; \
              } \
              host fn keep_host[Comptime_bool](value: Comptime_bool) -> Comptime_bool;",
         );
@@ -4665,6 +4684,131 @@ mod tests {
     }
 
     #[test]
+    fn proof_gated_lambdas_erase_checked_bodies_and_preserve_eval() {
+        for lambda in [
+            ".(ct: __Comptime__) -> __Type__ { __type_unit__(ct) }",
+            ".(ct: __Comptime__) { __type_unit__(ct) }",
+            ".(ct: __Comptime__) -> _ { __type_unit__(ct) }",
+            ".(ct) { __type_unit__(ct) }",
+        ] {
+            let source = format!(
+                "module x/main; import __comptime__; pure fn factory() -> __Comptime__ -> __Type__ {{ {lambda} }}"
+            );
+            let module = substitute_one("x/main", &source);
+            let runtime = prime_fn(&module, "factory");
+            let Expr::FnExpr { sig, body, .. } = &runtime.body else {
+                panic!("the helper must still construct a lambda");
+            };
+            assert_bottom_type(sig.value_params().next().unwrap().ty.as_ref().unwrap());
+            assert!(contains_call_to(body, "__absurd__"), "{lambda}");
+            assert!(!contains_call_to(body, "__type_unit__"), "{lambda}");
+            let preserved = substitute_eval_fn("x/main", &source, "factory");
+            assert!(
+                contains_call_to(&preserved.body, "__type_unit__"),
+                "{lambda}"
+            );
+            assert!(!contains_call_to(&preserved.body, "__absurd__"), "{lambda}");
+        }
+    }
+
+    #[test]
+    fn proof_lambda_synthesis_and_retained_calls_record_erased_result() {
+        for body in [
+            "let value = .(ct: __Comptime__) { __type_unit__(ct) }; value",
+            "keep(.(ct: __Comptime__) { __type_unit__(ct) })",
+            "keep(.(ct) { __type_unit__(ct) })",
+        ] {
+            let source = format!(
+                "module x/main; import __comptime__; pure fn keep[A](value: A) -> A {{ value }} pure fn factory() -> __Comptime__ -> __Type__ {{ {body} }}"
+            );
+            let module = substitute_one("x/main", &source);
+            let runtime = prime_fn(&module, "factory");
+            assert!(contains_call_to(&runtime.body, "__absurd__"), "{body}");
+            assert!(!contains_call_to(&runtime.body, "__type_unit__"), "{body}");
+            let preserved = substitute_eval_fn("x/main", &source, "factory");
+            assert!(contains_call_to(&preserved.body, "__type_unit__"), "{body}");
+            assert!(!contains_call_to(&preserved.body, "__absurd__"), "{body}");
+        }
+    }
+
+    #[test]
+    fn retained_polymorphic_proof_lambda_keeps_its_local_result_binder() {
+        let source = "module x/main; import __comptime__; pure fn keep[F](value: F) -> F { value } \
+            pure fn factory() -> [A] __Comptime__ -> A -> A { keep(.[A](ct: __Comptime__)(value: A) { value }) }";
+        let module = substitute_one("x/main", source);
+        let runtime = prime_fn(&module, "factory");
+        assert!(contains_call_to(&runtime.body, "__absurd__"));
+        let preserved = substitute_eval_fn("x/main", source, "factory");
+        assert!(!contains_call_to(&preserved.body, "__absurd__"));
+    }
+
+    #[test]
+    fn retained_lambda_proof_parameter_uses_its_completed_equations() {
+        let source = "module x/main; import __comptime__; host fn proof() -> __Comptime__; \
+            fn select[A](f: A -> __Type__, value: A) -> A -> __Type__ { f } \
+            fn factory() -> . { let result = select(.(ct) { __type_unit__(ct) }, proof()); () }";
+        let module = substitute_one("x/main", source);
+        let runtime = prime_fn(&module, "factory");
+        assert!(contains_call_to(&runtime.body, "__absurd__"));
+        assert!(!contains_call_to(&runtime.body, "__type_unit__"));
+        assert!(contains_call_to(&runtime.body, "proof"));
+        let preserved = substitute_eval_fn("x/main", source, "factory");
+        assert!(contains_call_to(&preserved.body, "__type_unit__"));
+        assert!(!contains_call_to(&preserved.body, "__absurd__"));
+    }
+
+    #[test]
+    fn later_lambda_proof_preserves_generic_result_and_creation_effects() {
+        let source = "module x/main; import __comptime__; host fn effect() -> .; \
+            fn factory() -> . -> [A] __Comptime__ -> A -> A { effect(); \
+            .(first: .)[A](ct: __Comptime__)(last: A) { last } }";
+        let module = substitute_one("x/main", source);
+        let runtime = prime_fn(&module, "factory");
+        assert!(contains_call_to(&runtime.body, "effect"));
+        let Expr::Seq { body, .. } = &runtime.body else {
+            panic!("creation effect retained")
+        };
+        let Expr::FnExpr { sig, body, .. } = body.as_ref() else {
+            panic!("lambda retained")
+        };
+        let params = sig.value_params().collect::<Vec<_>>();
+        assert_eq!(
+            params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["first", "ct", "last"]
+        );
+        assert_unit_type(params[0].ty.as_ref().unwrap());
+        assert_bottom_type(params[1].ty.as_ref().unwrap());
+        assert_path_type(params[2].ty.as_ref().unwrap(), "A");
+        let Expr::Call { args, .. } = body.as_ref() else {
+            panic!("absurd application")
+        };
+        let CallArg::Type(result) = &args[0] else {
+            panic!("explicit result type")
+        };
+        assert_path_type(result, "A");
+        let CallArg::Value(Expr::Path { segments, .. }) = &args[1] else {
+            panic!("proof argument")
+        };
+        assert_eq!(segments[0].as_str(), "ct");
+    }
+
+    #[test]
+    fn nonproof_lambda_keeps_its_runtime_body() {
+        let module = substitute_one(
+            "x/main",
+            "module x/main; fn factory() -> . -> . { .(value: .) { value } }",
+        );
+        let runtime = prime_fn(&module, "factory");
+        let Expr::FnExpr { body, .. } = &runtime.body else {
+            panic!("lambda retained")
+        };
+        assert!(
+            matches!(body.as_ref(), Expr::Path { segments, .. } if segments[0].as_str() == "value")
+        );
+        assert!(!contains_call_to(&runtime.body, "__absurd__"));
+    }
+
+    #[test]
     fn user_macro_capture_replay_injects_generated_qualified_import() {
         let prime = substitute_many(vec![
             (
@@ -4675,8 +4819,8 @@ mod tests {
                    __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
                  } \
                  pub type Rep_payload = .; \
-                 pub newtype Rep : Rep_payload { pub constructor mk_rep; pub projector un_rep; }; \
-                 pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
+                 pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
+                 pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; \
                  fn keep() -> . { () }",
             ),
             (
@@ -4718,11 +4862,7 @@ mod tests {
             "the substituted package scope must index its generated qualified import"
         );
         assert!(
-            contains_qualified_call_to(
-                &prime_fn(main, "main").body,
-                replay_alias.as_str(),
-                "mk_rep",
-            ),
+            contains_qualified_call_to(&prime_fn(main, "main").body, replay_alias.as_str(), "mk",),
             "the replayed constructor call must survive beneath any ABI-neutral source wrapper"
         );
         assert!(
@@ -4903,10 +5043,10 @@ mod tests {
     #[test]
     fn multi_layer_staged_call_substitutes_to_nested_prime_calls() {
         let src = "module main; \
-                   newtype A : . { pub constructor mk_a; pub projector un_a; }; \
-                   newtype B : . { pub constructor mk_b; pub projector un_b; }; \
+                   type { A: . { pub mk; pub get; }; }; \
+                   type { B: . { pub mk; pub get; }; }; \
                    fn foo[A](v1: A)[B](v2: B) -> . { () } \
-                   fn flat() -> . { foo[A](A.mk_a(()))[B](B.mk_b(())) }";
+                   fn flat() -> . { foo[A](A.mk(()))[B](B.mk(())) }";
         let module = substitute_one("main", src);
         let flat = prime_fn(&module, "flat");
 

@@ -1,3 +1,0 @@
-module origin;
-
-pub labels { item: . };

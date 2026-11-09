@@ -261,7 +261,7 @@ impl BuildShapeStats {
                 self.aliases += 1;
                 self.visit_type(&alias.body, 1);
             }
-            Item::LiteralAlias(_, _) | Item::LabelForward(_, _) => {}
+            Item::LiteralAlias(_, _) => {}
             Item::Newtype(newtype) => {
                 self.newtypes += 1;
                 self.visit_type(&newtype.payload, 1);
@@ -399,11 +399,6 @@ impl BuildShapeStats {
                 self.visit_expr(value, depth + 1);
                 self.visit_expr(body, depth + 1);
             }
-            Expr::RowLet { value, body, .. } => {
-                self.lets += 1;
-                self.visit_expr(value, depth + 1);
-                self.visit_expr(body, depth + 1);
-            }
             Expr::Seq { value, body, .. } => {
                 self.seqs += 1;
                 self.visit_expr(value, depth + 1);
@@ -420,27 +415,6 @@ impl BuildShapeStats {
             }
             Expr::Tuple { items, .. } => self.visit_exprs(items, depth + 1),
             Expr::FnPlaceholder { body, .. } => self.visit_expr(body, depth + 1),
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    self.visit_expr(&label.value, depth + 1);
-                }
-            }
-            Expr::Elaborator { call, .. } => {
-                self.field_syntax_calls += 1;
-                match call {
-                    crate::ast::ElaboratorCall::FieldAccess { receiver, .. } => {
-                        self.visit_expr(receiver, depth + 1);
-                    }
-                    crate::ast::ElaboratorCall::FieldUpdate { base, updates } => {
-                        if let Some(receiver) = base.receiver() {
-                            self.visit_expr(receiver, depth + 1);
-                        }
-                        for update in updates {
-                            self.visit_expr(&update.value, depth + 1);
-                        }
-                    }
-                }
-            }
             Expr::RecQuote { plan, .. } => {
                 for expression in plan.expressions() {
                     self.visit_expr(expression, depth + 1);
@@ -639,13 +613,6 @@ impl BuildShapeStats {
             } => {
                 self.visit_type(param, depth + 1);
                 self.visit_type(ret, depth + 1);
-            }
-            Type::LabelSugar { labels, .. } => {
-                for label in labels {
-                    if let Some(payload) = &label.payload {
-                        self.visit_type(payload, depth + 1);
-                    }
-                }
             }
             Type::Infer { .. } => {}
             Type::Forall { body, .. } => self.visit_type(body, depth + 1),

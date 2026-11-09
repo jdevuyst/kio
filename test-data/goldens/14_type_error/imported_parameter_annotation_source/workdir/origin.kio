@@ -1,3 +1,3 @@
 module origin;
 
-pub newtype W : . { pub constructor mk; pub projector get }
+pub type { W: . { pub mk; pub get } }

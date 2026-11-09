@@ -1,4 +1,4 @@
 /// [`@type Foo`]
 module pkg;
 
-labels { foo: . };
+type { Foo: .; };

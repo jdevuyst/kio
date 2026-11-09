@@ -5,15 +5,16 @@ import list/list as l;
 import list_host as integers;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import systems/matrix as m;
 import systems/rational as q;
 import systems/reduce as reduction;
 import testapi(Bool, I32);
 
-pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List[I32] };
+pub type Family = { Particular: m.Row; Directions: m.Matrix; Free_columns: c.List[I32] };
 
-pub labels Outcome = { solved: Family } | { inconsistent: q.Rational };
+pub type Outcome = { Solved: Family } | { Inconsistent: q.Rational };
 
 fn is_free(column: I32, pivots: c.List[I32]) -> Bool {
   if(l.elem(integers.eq_i32, column, pivots)) { .f } else { .t }
@@ -46,19 +47,19 @@ fn direction(reduced: m.Matrix, pivots: c.List[I32], variables: I32, free: I32) 
 }
 
 pub fn solve(result: reduction.Reduction, variables: I32) -> Outcome {
-  let reduced = result.?{reduction.reduced};
-  let pivots = result.?{reduction.pivots};
+  let reduced = result.>select { reduction.Reduced.get };
+  let pivots = result.>select { reduction.Pivots.get };
   match(l.find(.(row) { reduction.contradictory(row, variables) }, reduced)) {
-    .(row: m.Row) { {inconsistent = m.at(row, variables)}.>widen_sum };
+    .(row: m.Row) { Inconsistent.mk(m.at(row, variables)).>widen_sum };
     .() {
       let free_columns = l.filter(.(column) { is_free(column, pivots) }, m.indices(variables));
       let family =
-        {
-        , particular = particular(reduced, pivots, variables)
-        , directions = l.map(.(free) { direction(reduced, pivots, variables, free) }, free_columns)
-        , free_columns
-        };
-      {solved = family}.>widen_sum
+        (
+        , Particular.mk(particular(reduced, pivots, variables))
+        , Directions.mk(l.map(.(free) { direction(reduced, pivots, variables, free) }, free_columns))
+        , Free_columns.mk(free_columns)
+        );
+      Solved.mk(family).>widen_sum
     }
   }
 }

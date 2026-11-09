@@ -2,31 +2,31 @@ module main;
 
 import macros(macro identity_a, macro identity_b, macro identity_c);
 
-newtype Shape0 : . { constructor mk_shape0; projector un_shape0 }
+type { Shape0: . { mk; get } }
 
-newtype Shape1 : . { constructor mk_shape1; projector un_shape1 }
+type { Shape1: . { mk; get } }
 
-newtype Shape2 : . { constructor mk_shape2; projector un_shape2 }
+type { Shape2: . { mk; get } }
 
-newtype Shape3 : . { constructor mk_shape3; projector un_shape3 }
+type { Shape3: . { mk; get } }
 
-newtype Shape4 : . { constructor mk_shape4; projector un_shape4 }
+type { Shape4: . { mk; get } }
 
-newtype Shape5 : . { constructor mk_shape5; projector un_shape5 }
+type { Shape5: . { mk; get } }
 
-newtype Shape6 : . { constructor mk_shape6; projector un_shape6 }
+type { Shape6: . { mk; get } }
 
-newtype Shape7 : . { constructor mk_shape7; projector un_shape7 }
+type { Shape7: . { mk; get } }
 
-newtype Shape8 : . { constructor mk_shape8; projector un_shape8 }
+type { Shape8: . { mk; get } }
 
-newtype Shape9 : . { constructor mk_shape9; projector un_shape9 }
+type { Shape9: . { mk; get } }
 
-newtype Shape10 : . { constructor mk_shape10; projector un_shape10 }
+type { Shape10: . { mk; get } }
 
-newtype Shape11 : . { constructor mk_shape11; projector un_shape11 }
+type { Shape11: . { mk; get } }
 
-newtype Shape12 : . { constructor mk_shape12; projector un_shape12 }
+type { Shape12: . { mk; get } }
 
 fn keep_a0(value: Shape0) -> Shape0 { identity_a(value) }
 

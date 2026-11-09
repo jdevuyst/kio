@@ -352,7 +352,7 @@ fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
     package.write(
         "provider.kio",
         &format!(
-            "{}\npub macro prefixed : (. & .) -> . -> . -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+            "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
             include_str!("fixtures/trailing-blocks/provider.kio")
         ),
     );
@@ -417,7 +417,7 @@ fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
         2,
         "{output}"
     );
-    assert!(output.lines().any(|line| line == "Box.box(())"), "{output}");
+    assert!(output.lines().any(|line| line == "Box.mk(())"), "{output}");
     assert!(!output.contains("error"), "{output}");
 }
 
@@ -914,7 +914,7 @@ fn repl_doc_renders_doc_comment() {
 fn repl_recursive_group_doc_preserves_context_and_selected_prose() {
     let pkg = TempPackage::new("recursive-group-doc");
     pkg.write("demo.pkg.kio", "package demo; bridge { demo/**; }\n");
-    pkg.write("demo/main.kio", "module demo/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  newtype Node : . | Chain { constructor make; projector read; };\n}\n");
+    pkg.write("demo/main.kio", "module demo/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n");
     for command in [
         ":doc Node",
         ":doc demo/main.Node",
@@ -924,7 +924,7 @@ fn repl_recursive_group_doc_preserves_context_and_selected_prose() {
         let out = run_repl(pkg.path(), &[":load demo/main", command, ":quit"]);
         assert!(out.contains("rec {"), "{command}: {out}");
         assert!(out.contains("type Chain = Node;"), "{command}: {out}");
-        assert!(out.contains("newtype Node : . | Chain"), "{command}: {out}");
+        assert!(out.contains("type { Node: . | Chain"), "{command}: {out}");
         assert!(!out.contains("Alias prose."), "{command}: {out}");
         assert!(!out.contains("Group prose."), "{command}: {out}");
         if command.starts_with(":doc") {
@@ -934,13 +934,13 @@ fn repl_recursive_group_doc_preserves_context_and_selected_prose() {
 }
 
 #[test]
-fn repl_recursive_label_nominal_docs_show_their_source_owner() {
+fn repl_recursive_nominal_docs_show_their_source_owner() {
     let pkg = TempPackage::new("recursive-label-doc");
     pkg.write("demo.pkg.kio", "package demo; bridge { demo/**; }\n");
-    pkg.write("demo/main.kio", "module demo/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  labels { twig: . | Tree };\n}\n/// List prose.\nrec labels { list: . | List };\n");
+    pkg.write("demo/main.kio", "module demo/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\n");
     for (name, context, prose) in [
         ("Twig", "rec {", "Twig prose."),
-        ("List", "rec labels", "List prose."),
+        ("List", "rec type", "List prose."),
     ] {
         let command = format!(":doc {name}");
         let out = run_repl(pkg.path(), &[":load demo/main", &command, ":quit"]);
@@ -1176,8 +1176,8 @@ fn repl_reference_ownership() {
             ":refs second.truth",
             ":refs first.proof",
             ":refs build",
-            ":refs {field}",
-            ":refs second.{field}",
+            ":refs Field",
+            ":refs second.Field",
             ":refs field",
             ":refs proof",
             ":refs first.field",
@@ -1375,18 +1375,16 @@ fn repl_which_finds_private_item() {
 }
 
 #[test]
-fn repl_ls_does_not_leak_internal_labels_braces() {
-    // Regression: an anonymous `labels { ... };` block used to render
-    // as the literal `labels { … }` entry in `:ls` output — an internal
-    // structural fragment leaking through. The fix expands the
-    // anonymous form into one entry per declared label.
+fn repl_ls_does_not_leak_internal_nominal_braces() {
+    // An anonymous nominal block must list each declared type rather than
+    // exposing its structural fragment as an item.
     let pkg = TempPackage::new("lsanonlabels");
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
         "module demo/main;\n\
          pub fn run() -> . { () }\n\
-         labels { red: ., green: . };\n",
+         type { Red: .; Green: .; };\n",
     );
     let out = run_repl(pkg.path(), &[":load demo/main", ":ls demo/main", ":quit"]);
     assert!(
@@ -1394,12 +1392,12 @@ fn repl_ls_does_not_leak_internal_labels_braces() {
         "literal `{{ … }}` should not appear in :ls output, got:\n{out}"
     );
     assert!(
-        !out.contains("labels {"),
-        "literal `labels {{...}}` should not appear in :ls output, got:\n{out}"
+        !out.contains("type {"),
+        "literal `type {{...}}` should not appear in :ls output, got:\n{out}"
     );
-    // Each label entry surfaces as its own line.
-    assert!(out.contains("label red"), "got:\n{out}");
-    assert!(out.contains("label green"), "got:\n{out}");
+    // Each nominal entry surfaces as its own line.
+    assert!(out.contains("type Red"), "got:\n{out}");
+    assert!(out.contains("type Green"), "got:\n{out}");
 }
 
 #[test]

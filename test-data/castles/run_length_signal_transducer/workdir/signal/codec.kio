@@ -5,65 +5,86 @@ import list/list as traversal;
 import list_host as numbers;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 
-pub labels Run = { sample: I32, count: I32 };
+pub type Run = { Sample: I32; Count: I32 };
 
-pub labels Encoder = {
-, pending: Run | .
-, packets_rev: lists.List[Run]
-, samples: I32
-, transitions: I32
-, splits: I32
+pub type Encoder = {
+  Pending: Run | .;
+  Packets_rev: lists.List[Run];
+  Samples: I32;
+  Transitions: I32;
+  Splits: I32
 };
 
 pub fn cap() -> I32 { 4 }
 
 pub fn empty() -> Encoder {
-  {
-  , pending = (().>widen_sum)[Run | .]
-  , packets_rev = lists.nil[Run]
-  , samples = 0
-  , transitions = 0
-  , splits = 0
-  }
+  (
+  , Pending.mk((().>widen_sum)[Run | .])
+  , Packets_rev.mk(lists.nil[Run])
+  , Samples.mk(0)
+  , Transitions.mk(0)
+  , Splits.mk(0)
+  )
 }
 
 pub fn accept(state: Encoder, value: I32) -> Encoder {
-  let next = ({sample = value, count = 1}.>widen_sum)[Run | .];
-  let total = arith.add_i32(state.?{samples}, 1);
-  match(state.?{pending}) {
+  let next = ((Sample.mk(value), Count.mk(1)).>widen_sum)[Run | .];
+  let total = arith.add_i32(state.>select { Samples.get }, 1);
+  match(state.>select { Pending.get }) {
     .(run: Run) {
-      if(numbers.eq_i32(run.?{sample}, value)) {
-        if(arith.lt_i32(run.?{count}, cap())) {
-          let extended = {sample = value, count = arith.add_i32(run.?{count}, 1)};
-          state.!{pending = (extended.>widen_sum)[Run | .], samples = total}
+      if(numbers.eq_i32(run.>select { Sample.get }, value)) {
+        if(arith.lt_i32(run.>select { Count.get }, cap())) {
+          let extended = (Sample.mk(value), Count.mk(arith.add_i32(run.>select { Count.get }, 1)));
+          (
+          , Pending.mk((extended.>widen_sum)[Run | .])
+          , Packets_rev.mk(state.>select { Packets_rev.get })
+          , Samples.mk(total)
+          , Transitions.mk(state.>select { Transitions.get })
+          , Splits.mk(state.>select { Splits.get })
+          )
         } else {
-          state.!{
-          , pending = next
-          , packets_rev = lists.cons(run, state.?{packets_rev})
-          , samples = total
-          , splits = arith.add_i32(state.?{splits}, 1)
-          }
+          (
+          , Pending.mk(next)
+          , Packets_rev.mk(lists.cons(run, state.>select { Packets_rev.get }))
+          , Samples.mk(total)
+          , Transitions.mk(state.>select { Transitions.get })
+          , Splits.mk(arith.add_i32(state.>select { Splits.get }, 1))
+          )
         }
       } else {
-        state.!{
-        , pending = next
-        , packets_rev = lists.cons(run, state.?{packets_rev})
-        , samples = total
-        , transitions = arith.add_i32(state.?{transitions}, 1)
-        }
+        (
+        , Pending.mk(next)
+        , Packets_rev.mk(lists.cons(run, state.>select { Packets_rev.get }))
+        , Samples.mk(total)
+        , Transitions.mk(arith.add_i32(state.>select { Transitions.get }, 1))
+        , Splits.mk(state.>select { Splits.get })
+        )
       }
     };
-    .() { state.!{pending = next, samples = total} }
+    .() {
+      (
+      , Pending.mk(next)
+      , Packets_rev.mk(state.>select { Packets_rev.get })
+      , Samples.mk(total)
+      , Transitions.mk(state.>select { Transitions.get })
+      , Splits.mk(state.>select { Splits.get })
+      )
+    }
   }
 }
 
 pub fn finish(state: Encoder) -> lists.List[Run] {
-  match(state.?{pending}) {
-    .(run: Run) { traversal.reverse(lists.cons(run, state.?{packets_rev})) };
-    .() { traversal.reverse(state.?{packets_rev}) }
+  match(state.>select { Pending.get }) {
+    .(run: Run) {
+      traversal.reverse(lists.cons(run, state.>select { Packets_rev.get }))
+    };
+    .() {
+      traversal.reverse(state.>select { Packets_rev.get })
+    }
   }
 }

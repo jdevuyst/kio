@@ -279,11 +279,11 @@ fn recursive_type_group_openers_conserve_comments() {
     for (filename, source) in [
         (
             "m.kio",
-            "module m; rec // kio_fmt_raw_1\n{ type A = B; newtype B : A { constructor make; projector take }; // kio_fmt_raw_2\n}",
+            "module m; rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n}",
         ),
         (
             "m.sig.kio",
-            "signature m v(1); v(1) { with { module m { rec // kio_fmt_raw_1\n{ type A = B; newtype B : A { constructor make; projector take }; // kio_fmt_raw_2\n} } }; nonbreaking { add { m.A; m.B; } } }",
+            "signature m v(1); v(1) { with { module m { rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n} } }; nonbreaking { add { m.A; m.B; } } }",
         ),
     ] {
         assert_conserved(filename, source, &[1, 2], true);
@@ -296,13 +296,12 @@ fn rewriting_boundaries_conserve_locally_ordered_comments() {
         "rec(loop // kio_fmt_raw_1\n) fn f() { // kio_fmt_raw_2\n() }",
         "fn f() -> (// kio_fmt_raw_1\n. // kio_fmt_raw_2\n) { () }",
         "host fn f() -> (// kio_fmt_raw_1\n. // kio_fmt_raw_2\n);",
-        "fn f() { {ready = (// kio_fmt_raw_1\nready // kio_fmt_raw_2\n)} }",
-        "fn f() { {ready = (// kio_fmt_raw_1\n) // kio_fmt_raw_2\n} }",
-        "fn f() { row.!{ready = (// kio_fmt_raw_1\nother // kio_fmt_raw_2\n)} }",
-        "fn f() { row.!{ready = (// kio_fmt_raw_1\n) // kio_fmt_raw_2\n} }",
-        "fn f() { (row.?{ // kio_fmt_raw_1\n} // kio_fmt_raw_2\n).?{ready} }",
-        "fn f() { (row.!{ // kio_fmt_raw_1\n} // kio_fmt_raw_2\n).?{ready} }",
-        "fn f() { let .({ // kio_fmt_raw_1\nready // kio_fmt_raw_2\n}) = row; ready }",
+        "fn f() { record_ { Ready.mk((// kio_fmt_raw_1\nready // kio_fmt_raw_2\n)) } }",
+        "fn f() { record_ { Ready.mk((// kio_fmt_raw_1\n) // kio_fmt_raw_2\n) } }",
+        "fn f() { row.>with_ { Ready.mk((// kio_fmt_raw_1\nother // kio_fmt_raw_2\n)) } }",
+        "fn f() { row.>with_ { Ready.mk((// kio_fmt_raw_1\n) // kio_fmt_raw_2\n) } }",
+        "fn f() { (row.>select { // kio_fmt_raw_1\n} // kio_fmt_raw_2\n).>select { Ready.get } }",
+        "fn f() { (row.>with_ { // kio_fmt_raw_1\n} // kio_fmt_raw_2\n).>select { Ready.get } }",
         "fn f() { let .(// kio_fmt_raw_1\nx // kio_fmt_raw_2\n) = (); x }",
         "fn f((x: . // kio_fmt_raw_1\n, y: . // kio_fmt_raw_2\n)) { x }",
         "fn f() { .((x: . // kio_fmt_raw_1\n, y: . // kio_fmt_raw_2\n)) { x } }",

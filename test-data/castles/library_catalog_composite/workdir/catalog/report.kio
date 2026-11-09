@@ -13,8 +13,8 @@ import catalog/domain(
 , Report
 , Return
 );
+import catalog/domain(Copies_out, Copies_total, Fines, Title);
 import catalog/domain(cat, istr, pad2, pad3);
-import catalog/domain({checkout}, {copies_out}, {copies_total}, {fines}, {hold}, {return}, {title});
 import catalog/ledger as ledger;
 import catalog/shelf as shelf;
 import dict/dict as dict;
@@ -22,6 +22,7 @@ import list/core as lcore;
 import list/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/fmt(bool_to_string);
 
@@ -29,11 +30,11 @@ fn op_text(op: Op) -> String {
   match(op) {
     (
     , .(step: Checkout) {
-        let .(id: I32, call: I32) = step.?{checkout};
+        let .(id: I32, call: I32) = step.>select { Checkout.get };
         "CHECKOUT m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
       }
     , .(step: Return) {
-        let .(id: I32, call: I32, days_late: I32) = step.?{return};
+        let .(id: I32, call: I32, days_late: I32) = step.>select { Return.get };
         "RETURN   m="
           .>cat(istr(id))
           .>cat(" call=")
@@ -42,7 +43,7 @@ fn op_text(op: Op) -> String {
           .>cat(istr(days_late))
       }
     , .(step: Hold) {
-        let .(id: I32, call: I32) = step.?{hold};
+        let .(id: I32, call: I32) = step.>select { Hold.get };
         "HOLD     m=".>cat(istr(id)).>cat(" call=").>cat(istr(call))
       }
     , .(_step: Report) { "REPORT" }
@@ -68,14 +69,14 @@ fn shelf_row(call: I32, entry: Book, holds: Hold_list) -> String {
   "call "
     .>cat(istr(call))
     .>cat("  out ")
-    .>cat(istr(entry.?{copies_out}))
+    .>cat(istr(entry.>select { Copies_out.get }))
     .>cat("/")
-    .>cat(istr(entry.?{copies_total}))
+    .>cat(istr(entry.>select { Copies_total.get }))
     .>cat("  holds ")
     .>cat(istr(shelf.hold_count(holds, call)))
     .>cat("  shelf ")
     .>cat(avail_cell(shelf.is_available(entry)))
-    .>cat(entry.?{title})
+    .>cat(entry.>select { Title.get })
 }
 
 pub fn shelf_lines(books: Book_index, holds: Hold_list) -> Line_list {
@@ -95,7 +96,7 @@ fn fines_row(id: I32, who: Member) -> String {
   "member "
     .>cat(istr(id))
     .>cat("  fines ")
-    .>cat(pad3(who.?{fines}))
+    .>cat(pad3(who.>select { Fines.get }))
     .>cat("  on loan ")
     .>cat(istr(ledger.held_count(who)))
 }

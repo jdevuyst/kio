@@ -2,9 +2,9 @@ module main;
 
 import macros/match(macro match);
 
-newtype Foo : . { pub constructor mk_foo; pub projector un_foo }
+type { Foo: . { pub mk; pub get } }
 
-newtype Bar : . { pub constructor mk_bar; pub projector un_bar }
+type { Bar: . { pub mk; pub get } }
 
 fn handle(p: Foo | Bar) {
   let _r =

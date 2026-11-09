@@ -22,61 +22,63 @@ import catalog/shelf as shelf;
 import list/core as lcore;
 import list/list as list;
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import result/result as result;
 import testapi(I32, String);
 import testapi/arith(add_i32);
 import testapi/io(print);
 import testapi/iter(loop);
 
-labels State = {
-, books: Book_index
-, members: Member_index
-, holds: Hold_list
-, log: Line_list
-, failures: Audit_list
-, step: I32
+type State = {
+  Books: Book_index;
+  Members: Member_index;
+  Holds: Hold_list;
+  Log: Line_list;
+  Failures: Audit_list;
+  Step: I32
 };
 
 fn initial() -> State {
-  {
-  , books = fixtures.books()
-  , members = fixtures.members()
-  , holds = lcore.nil[Hold_rec]
-  , log = lcore.nil[String]
-  , failures = lcore.nil[Failure]
-  , step = 0
-  }
+  (
+  , Books.mk(fixtures.books())
+  , Members.mk(fixtures.members())
+  , Holds.mk(lcore.nil[Hold_rec])
+  , Log.mk(lcore.nil[String])
+  , Failures.mk(lcore.nil[Failure])
+  , Step.mk(0)
+  )
 }
 
 /// One desk operation: the outcome is folded back into the same state
 /// whether it succeeded or failed, so a failure never stops the day.
 fn step_op(state: State, op: Op) -> State {
-  let .({books, members, holds, log, failures, step}) = state;
+  let .(books, members, holds, log, failures, step) =
+    state.>select { Books.get; Members.get; Holds.get; Log.get; Failures.get; Step.get };
   let .(index: I32) = add_i32(step, 1);
   result.fold(
   , .(applied: Applied) {
       let .(shelved: Book_index, roster: Member_index, booked: Hold_list, note: String) = applied;
-      {
-      , books = shelved
-      , members = roster
-      , holds = booked
-      , log = lcore.cons(report.transcript_line(index, op, "ok:  ".>cat(note)), log)
-      , failures
-      , step = index
-      }
+      (
+      , Books.mk(shelved)
+      , Members.mk(roster)
+      , Holds.mk(booked)
+      , Log.mk(lcore.cons(report.transcript_line(index, op, "ok:  ".>cat(note)), log))
+      , Failures.mk(failures)
+      , Step.mk(index)
+      )
     }
   , .(reason: Failure) {
-      {
-      , books
-      , members
-      , holds
-      , log = lcore.cons(
+      (
+      , Books.mk(books)
+      , Members.mk(members)
+      , Holds.mk(holds)
+      , Log.mk(lcore.cons(
         , report.transcript_line(index, op, "err: ".>cat(audit.failure_text(reason)))
         , log
-        )
-      , failures = lcore.cons(reason, failures)
-      , step = index
-      }
+        ))
+      , Failures.mk(lcore.cons(reason, failures))
+      , Step.mk(index)
+      )
     }
   , circulation.apply(op, books, members, holds)
   )
@@ -99,7 +101,8 @@ rec(loop) fn print_lines(lines: Line_list) {
 
 pub fn run() {
   let .(final: State) = drive(initial(), fixtures.ops());
-  let .({books, members, holds, log, failures, step}) = final;
+  let .(books, members, holds, log, failures, step) =
+    final.>select { Books.get; Members.get; Holds.get; Log.get; Failures.get; Step.get };
   print("branch library circulation: "
     .>cat(istr(shelf.title_count(books)))
     .>cat(" titles, ")

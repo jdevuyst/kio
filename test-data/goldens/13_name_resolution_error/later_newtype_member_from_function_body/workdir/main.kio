@@ -1,5 +1,5 @@
 module main;
 
-fn before() { Later.un(Later.mk(())) }
+fn before() { Later.get(Later.mk(())) }
 
-newtype Later : . { constructor mk; projector un }
+type { Later: . { mk; get } }

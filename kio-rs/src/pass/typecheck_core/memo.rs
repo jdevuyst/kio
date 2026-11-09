@@ -265,7 +265,7 @@ where
             compute,
             "user macro memo lock poisoned",
             verify,
-            UserMacroMemoKey::presentation_matches,
+            UserMacroMemoKey::reuse_matches,
         )
     }
 
@@ -371,6 +371,8 @@ pub struct UserMacroMemoKey {
     macro_name: String,
     inputs: Vec<UserMacroMemoInputKey>,
     result_type: Option<PresentedTypeMemoKey>,
+    // Exact reference guards share the existing semantic-key collision slot.
+    reflection_guards: Vec<UserMacroReflectionGuard>,
 }
 
 #[cfg(feature = "surface")]
@@ -378,11 +380,28 @@ pub struct UserMacroMemoKey {
 pub(crate) enum UserMacroMemoInputKey {
     ComptimeProof,
     Type(PresentedTypeMemoKey),
-    OptionalTypeKnown(PresentedTypeMemoKey),
-    OptionalTypeInfer,
+    NaturalResult,
     Term(PresentedTypeMemoKey),
     ResidualShape(PresentedTypeMemoKey),
     CapturedTerm(PresentedTypeMemoKey),
+}
+
+#[cfg(feature = "surface")]
+#[derive(Clone)]
+enum UserMacroReflectionGuard {
+    Type(crate::normalization::ReflectedSnapshotKey),
+    CapturedTerm(crate::normalization::CheckedSnapshotKey),
+}
+
+#[cfg(feature = "surface")]
+impl UserMacroReflectionGuard {
+    fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Type(a), Self::Type(b)) => a == b && a.presentation_matches(b),
+            (Self::CapturedTerm(a), Self::CapturedTerm(b)) => a == b && a.presentation_matches(b),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(feature = "surface")]
@@ -390,9 +409,8 @@ impl UserMacroMemoInputKey {
     fn presentation_matches(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::ComptimeProof, Self::ComptimeProof)
-            | (Self::OptionalTypeInfer, Self::OptionalTypeInfer) => true,
+            | (Self::NaturalResult, Self::NaturalResult) => true,
             (Self::Type(a), Self::Type(b))
-            | (Self::OptionalTypeKnown(a), Self::OptionalTypeKnown(b))
             | (Self::Term(a), Self::Term(b))
             | (Self::ResidualShape(a), Self::ResidualShape(b))
             | (Self::CapturedTerm(a), Self::CapturedTerm(b)) => a.presentation_matches(b),
@@ -432,7 +450,24 @@ impl UserMacroMemoKey {
             macro_name,
             inputs,
             result_type: None,
+            reflection_guards: Vec::new(),
         }
+    }
+
+    pub(crate) fn push_type_reflection_guard(
+        &mut self,
+        guard: crate::normalization::ReflectedSnapshotKey,
+    ) {
+        self.reflection_guards
+            .push(UserMacroReflectionGuard::Type(guard));
+    }
+
+    pub(crate) fn push_captured_reflection_guard(
+        &mut self,
+        guard: crate::normalization::CheckedSnapshotKey,
+    ) {
+        self.reflection_guards
+            .push(UserMacroReflectionGuard::CapturedTerm(guard));
     }
 
     pub(crate) fn with_result_type(mut self, result_type: Option<PresentedTypeMemoKey>) -> Self {
@@ -440,8 +475,14 @@ impl UserMacroMemoKey {
         self
     }
 
-    pub(crate) fn presentation_matches(&self, other: &Self) -> bool {
-        self.inputs.len() == other.inputs.len()
+    pub(crate) fn reuse_matches(&self, other: &Self) -> bool {
+        self.reflection_guards.len() == other.reflection_guards.len()
+            && self
+                .reflection_guards
+                .iter()
+                .zip(&other.reflection_guards)
+                .all(|(a, b)| a.matches(b))
+            && self.inputs.len() == other.inputs.len()
             && self
                 .inputs
                 .iter()
@@ -1004,9 +1045,54 @@ mod tests {
             "id".to_owned(),
             vec![
                 UserMacroMemoInputKey::Type(ty_key.clone()),
-                UserMacroMemoInputKey::OptionalTypeKnown(ty_key),
+                UserMacroMemoInputKey::NaturalResult,
             ],
         )
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn reflection_guards_keep_one_collision_slot_and_reuse_exact_handles() {
+        use crate::normalization::{ReflectedSnapshotKey, ReflectedType, ReflectedVariable};
+        let ty = Type::<UncheckedPrime>::synth_path(vec!["A".into()], Vec::new(), Span::new(0, 1));
+        let reference = ReflectedVariable::live("A".into(), 0);
+        let first = ReflectedType::new(ty.clone(), "closed input")
+            .unwrap()
+            .with_lexical_bindings([("A".into(), reference)]);
+        let other = ReflectedType::new(ty, "closed input")
+            .unwrap()
+            .with_lexical_bindings([("A".into(), ReflectedVariable::live("A".into(), 0))]);
+        let memo = MemoCtx::<crate::ast::Lowered>::default();
+        for (value, expected) in [(&first, "first"), (&other, "other"), (&first, "first")] {
+            let mut key = UserMacroMemoKey::new(
+                "provider".into(),
+                "entry".into(),
+                vec![UserMacroMemoInputKey::Type(
+                    PresentedTypeMemoKey::from_type(value.as_type()),
+                )],
+            );
+            let mut budget = crate::normalization::EXACT_CALL_MEMO_KEY_BUDGET;
+            key.push_type_reflection_guard(
+                ReflectedSnapshotKey::new(value, &mut budget).expect("small key"),
+            );
+            let result = memo
+                .user_macro_template_or_compute(
+                    key,
+                    || Ok::<_, ()>(Err(expected.to_owned())),
+                    |_| {},
+                )
+                .unwrap();
+            assert_eq!(result.unwrap_err(), expected);
+        }
+        assert_eq!(
+            memo.snapshot().user_macro,
+            CacheSnapshot {
+                misses: 2,
+                hits: 1,
+                first_writes: 1
+            }
+        );
+        assert_eq!(memo.user_macro.state.lock().unwrap().values.len(), 1);
     }
 
     #[cfg(feature = "surface")]

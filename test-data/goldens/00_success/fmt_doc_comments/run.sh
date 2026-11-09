@@ -1,6 +1,6 @@
 #!/bin/sh
 # Tests that `kio fmt` round-trips doc-comments (`///`) on every
-# attachment point: fn, type, alias, newtype, labels, op (module body),
+# attachment point: fn, alias, explicit nominal, named nominal RHS, op (module body),
 # host type, host fn (root module), plus the module-level form. A
 # regular `//` line comment passes through unchanged (`////` and longer
 # are now a lex error, not a ruler).

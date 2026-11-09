@@ -101,7 +101,7 @@ fn contextual_control_names_remain_values_before_varop_close() {
 
 #[test]
 fn recursive_type_group_retains_headers_after_invalid_payload() {
-    let source = "module source; rec { type Alias[A] = ; newtype Later[B]: . { constructor mk; projector get; }; }";
+    let source = "module source; rec { type Alias[A] = ; type { Later[B]: . { mk; get; }; }; }";
     let offset = source.find("= ;").unwrap() as u32 + 2;
     let probe = probe_tooling(
         source,
@@ -258,7 +258,7 @@ fn compact_frames_fix_marker_identity_before_binding_lookup() {
 #[test]
 fn frame_elements_stay_values_while_call_type_stages_accept_types() {
     for imports in ["", "import ops(varop [], varop [* *], op | _ |);"] {
-        for value in ["A", "(A)", "F[A]", "A.>f", "A.?{field}", "owner.A"] {
+        for value in ["A", "(A)", "F[A]", "A.>f", "owner.A"] {
             for frame in [format!("[({value})]"), format!("[* ({value}) *]")] {
                 for expression in [frame.clone(), format!("keep({frame})")] {
                     let source = format!("module source; {imports} fn run() {{ {expression} }}");
@@ -307,9 +307,6 @@ fn frame_formatting_converges_with_structural_edge_grouping() {
         ("[,|x|,]", "[(| x |)]"),
         ("[*x?,*]", "[* (x ?) *]"),
         ("[x?]", "[x ?]"),
-        ("[* (<|x|>.?{foo}) *]", "[* (<| x |>.?{foo}) *]"),
-        ("[(<|x|>.?{foo})]", "[(<| x |>.?{foo})]"),
-        ("[* (<|x|>.!{foo = y}) *]", "[* (<| x |>.!{foo = y}) *]"),
     ] {
         let module = parse(&format!("{imports} fn run() {{ {source} }}")).unwrap();
         let formatted = crate::pretty::pretty_module(&module);
@@ -363,7 +360,7 @@ fn brackets_are_excluded_from_fixed_operators_and_placeholder_stems() {
 #[test]
 fn ordinary_type_lambda_placeholder_and_value_elements_roundtrip() {
     for expr in [
-        "[* f[[*F] .], .[*F](x: F[.]) -> F[.] { x }, .x. { x1 }, (a, b), {field = x}, [% y %] *]",
+        "[* f[[*F] .], .[*F](x: F[.]) -> F[.] { x }, .x. { x1 }, (a, b), Field.mk(x), [% y %] *]",
         "[* , a, b, *]",
         "[* *]",
         "[* .x. { x1 } *]",

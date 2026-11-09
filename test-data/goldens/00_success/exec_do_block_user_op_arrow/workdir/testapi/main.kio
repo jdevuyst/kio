@@ -14,11 +14,11 @@ fn arrow[A][B](x: A, y: B) -> B { y }
 
 op _ <- _ { impl arrow }
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get(m)) }
 
 // Inside a do-block the `let x <- e;` form parses as a bind
 // statement. A bare `a <- b` expression — without the `let`
@@ -34,4 +34,4 @@ fn run() -> Box[String] {
 // Outside any do-block, `<-` is purely the user-defined operator.
 fn outside_do() -> String { "left"[String] <- "arrow-op outside do\n" }
 
-pub fn main() { print(outside_do()); print(Box.un_box(run())) }
+pub fn main() { print(outside_do()); print(Box.get(run())) }

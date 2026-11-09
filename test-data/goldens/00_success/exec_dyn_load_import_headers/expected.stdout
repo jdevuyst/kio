@@ -11,6 +11,5 @@ missing closer: dyn_load_prime: malformed image — expected comma or closing pa
 missing semicolon: dyn_load_prime: malformed image — expected semicolon after import list at line 9, column 1
 missing alias: dyn_load_prime: malformed image — expected a value-shaped alias after `as` at line 8, column 26
 selective intrinsics: dyn_load_prime: malformed image — expected semicolon after import __intrinsics__ at line 8, column 22
-label entry: dyn_load_prime: malformed image — braced label imports are not in Kio' at line 8, column 23
 operator entry: dyn_load_prime: malformed image — operator imports are not in Kio' at line 8, column 23
 comptime import: dyn_load_prime: malformed image — import __comptime__ is not in Kio' at line 8, column 8

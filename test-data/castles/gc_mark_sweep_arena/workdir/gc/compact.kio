@@ -15,15 +15,16 @@ module gc/compact;
 
 import gc/heap(field_addr, field_slot, fold_fields, fold_objects, object_size, top);
 import gc/num(int_lt);
-import gc/slot(Imm, Ptr, ptr_cell, {ptr});
+import gc/slot(Imm, Ptr, ptr_cell);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len, array_make_filled, array_pop_back, array_set);
 import testapi/iter(loop);
 
-pub labels Plan = { forward_table: Array[I32], plan_top: I32 };
+pub type Plan = { Forward_table: Array[I32]; Plan_top: I32 };
 
 /// `plan_top` is where the free space begins once every survivor has
 /// moved, so it is also the arena's length after compaction.
@@ -42,7 +43,7 @@ pub fn plan(cells: Array[I32], marks: Array[Bool]) -> Plan {
       }
     , 0[I32]
     );
-  {forward_table = forward, plan_top = new_top}
+  (Forward_table.mk(forward), Plan_top.mk(new_top))
 }
 
 rec(loop) fn copy_cells(cells: Array[I32], src: I32, dst: I32, size: I32, index: I32) {
@@ -76,7 +77,11 @@ fn relocate_fields(cells: Array[I32], forward: Array[I32], addr: I32) {
       match(field_slot(cells, addr, index)) {
         (
         , .(p: Ptr) {
-            array_set(cells, field_addr(addr, index), ptr_cell(array_get(forward, p.?{ptr})))
+            array_set(
+            , cells
+            , field_addr(addr, index)
+            , ptr_cell(array_get(forward, p.>select { Ptr.get }))
+            )
           }
         , .(_immediate: Imm) { () }
         )
@@ -108,9 +113,9 @@ rec(loop) fn shrink(cells: Array[I32], new_top: I32) {
 }
 
 pub fn compact(cells: Array[I32], roots: Array[I32], marks: Array[Bool], layout: Plan) {
-  let forward = layout.?{forward_table};
+  let forward = layout.>select { Forward_table.get };
   slide(cells, marks, forward);
-  shrink(cells, layout.?{plan_top});
+  shrink(cells, layout.>select { Plan_top.get });
   fold_objects(cells, .(_unit, addr) { relocate_fields(cells, forward, addr) }, ());
   relocate_roots(roots, forward, 0)
 }

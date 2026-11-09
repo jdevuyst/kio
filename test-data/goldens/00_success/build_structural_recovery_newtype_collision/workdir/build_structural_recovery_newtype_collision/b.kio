@@ -2,6 +2,6 @@ module build_structural_recovery_newtype_collision/b;
 
 import __intrinsics__;
 
-pub newtype Foo : . { pub constructor mk_b; pub projector un_b }
+pub type { Foo: . { pub mk; pub get } }
 
-pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__[.][.](p)) }
+pub fn keep(p: . & .) -> Foo { Foo.mk(__fst__[.][.](p)) }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: Go facade aliases keep newtype and exported-function component collisions distinct.
+# SUBJECT: Go nominal member aliases retain exact declaring-owner components.
 set -eu
 
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.XXXXXX")

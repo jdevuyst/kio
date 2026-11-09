@@ -7,9 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{Elaborations, InternedType};
-use crate::ast::{
-    CallArg, ElaboratorCall, Expr, ExpressionOccurrenceId, Lowered, NodeId, RecQuotePlan,
-};
+use crate::ast::{CallArg, Expr, ExpressionOccurrenceId, Lowered, NodeId, RecQuotePlan};
 
 #[derive(Debug, Default)]
 pub(super) struct RecQuoteCaptures {
@@ -291,13 +289,6 @@ fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Exp
             pending.push(value);
             pending.push(body);
         }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                pending.extend(base.receiver());
-                pending.extend(updates.iter().map(|update| &update.value));
-            }
-        },
         Expr::RecOrder { plan, .. } => {
             pending.push(&plan.value);
             pending.push(&plan.body);
@@ -317,10 +308,8 @@ fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Exp
         | Expr::BoolLit { .. } => {}
         Expr::BlockCall { ext, .. }
         | Expr::RecCall { ext, .. }
-        | Expr::RowLet { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::EnrichedTuple { ext, .. }
         | Expr::EnrichedProject { ext, .. }

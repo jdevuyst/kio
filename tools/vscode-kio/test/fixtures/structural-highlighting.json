@@ -150,8 +150,8 @@
     ]
   },
   {
-    "name": "block_ufcs_field_uses_completed_result",
-    "source": "module source; fn run() { outer { body }.<receiver.?{field} }",
+    "name": "block_ufcs_forward_uses_completed_result",
+    "source": "module source; fn run() { outer { body }.<receiver.>project }",
     "targets": [
       {
         "text": ".<",
@@ -160,22 +160,22 @@
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr",
-          "field_expression"
+          "ufcs_expr"
         ],
         "textmate": [
           "keyword.operator.arrow.kio"
         ]
       },
       {
-        "text": ".?",
+        "text": ".>",
         "start": 50,
         "end": 52,
-        "kind": "operator.user",
+        "kind": "operator.builtin",
         "owners": [
-          "field_expression"
+          "ufcs_expr"
         ],
         "textmate": [
-          "keyword.operator.user.kio"
+          "keyword.operator.arrow.kio"
         ]
       }
     ]
@@ -519,7 +519,7 @@
   },
   {
     "name": "signature_with",
-    "source": "signature app v(1);\nv(1) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub newtype B : A { pub constructor mk_b; pub projector un_b; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n",
+    "source": "signature app v(1);\nv(1) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B: A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n",
     "targets": [
       {
         "start": 59,
@@ -628,7 +628,7 @@
   },
   {
     "name": "type_member_boundary",
-    "source": "module source;\nrec {\n  type Alias = .;\n  newtype Box : . { constructor constructor; projector projector; };\n}\nfn use(type: .) -> . { type }\n",
+    "source": "module source;\nrec {\n  type Alias = .;\n  type { Box: . { mk; get; }; };\n}\nfn use(type: .) -> . { type }\n",
     "targets": [
       {
         "start": 15,
@@ -650,68 +650,56 @@
       },
       {
         "start": 41,
-        "end": 48,
-        "text": "newtype",
+        "end": 45,
+        "text": "type",
         "kind": "keyword.declaration",
         "owners": [
           "type_rec_group"
         ]
       },
       {
-        "start": 59,
-        "end": 70,
-        "text": "constructor",
-        "kind": "keyword.declaration",
+        "start": 48,
+        "end": 51,
+        "text": "Box",
+        "kind": "entity.name.type",
         "owners": [
-          "type_rec_group"
+          "nominal_entry"
         ]
       },
       {
-        "start": 71,
-        "end": 82,
-        "text": "constructor",
+        "start": 57,
+        "end": 59,
+        "text": "mk",
         "kind": "entity.name.function",
         "owners": [
-          "type_rec_group"
+          "nominal_member"
         ]
       },
       {
-        "start": 84,
-        "end": 93,
-        "text": "projector",
-        "kind": "keyword.declaration",
-        "owners": [
-          "type_rec_group"
-        ]
-      },
-      {
-        "start": 94,
-        "end": 103,
-        "text": "projector",
+        "start": 61,
+        "end": 64,
+        "text": "get",
         "kind": "entity.name.function",
         "owners": [
-          "type_rec_group"
+          "nominal_member"
         ]
       },
       {
-        "start": 117,
-        "end": 121,
+        "start": 81,
+        "end": 85,
         "text": "type",
         "kind": "variable.parameter",
         "owners": [
-          "fn_decl_head",
-          "function_definition"
+          "fn_decl_head"
         ]
       },
       {
-        "start": 133,
-        "end": 137,
+        "start": 97,
+        "end": 101,
         "text": "type",
         "kind": "identifier",
         "owners": [
-          "expression_path",
-          "expression_block",
-          "function_definition"
+          "expression_path"
         ]
       }
     ]
@@ -991,6 +979,174 @@
         "text": "signature",
         "kind": "entity.name.function",
         "owners": [],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "nominal_compact_declaration_roles",
+    "source": "module source;\npub rec type Tree = { Leaf: .; } | ({ Branch: Tree & Tree { pub mk; pub(source) get; }; } & Existing);\ntype { Box[A] <U>: A & U { mk; get; }; Empty: .; }\n",
+    "targets": [
+      {
+        "start": 23,
+        "end": 27,
+        "text": "type",
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_alias_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 32,
+        "text": "Tree",
+        "kind": "entity.name.type",
+        "owners": [
+          "type_alias_decl_head"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      },
+      {
+        "start": 37,
+        "end": 41,
+        "text": "Leaf",
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      },
+      {
+        "start": 53,
+        "end": 59,
+        "text": "Branch",
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      },
+      {
+        "start": 79,
+        "end": 81,
+        "text": "mk",
+        "kind": "entity.name.function",
+        "owners": [
+          "nominal_member"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "start": 95,
+        "end": 98,
+        "text": "get",
+        "kind": "entity.name.function",
+        "owners": [
+          "nominal_member"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "start": 125,
+        "end": 128,
+        "text": "Box",
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      },
+      {
+        "start": 157,
+        "end": 162,
+        "text": "Empty",
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "signature_nominal_roles",
+    "source": "signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }",
+    "targets": [
+      {
+        "text": "rec",
+        "start": 55,
+        "end": 58,
+        "kind": "keyword.declaration",
+        "owners": [
+          "nominal_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "type",
+        "start": 59,
+        "end": 63,
+        "kind": "keyword.declaration",
+        "owners": [
+          "nominal_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "Cell",
+        "start": 66,
+        "end": 70,
+        "kind": "entity.name.type",
+        "owners": [
+          "nominal_entry"
+        ],
+        "textmate": [
+          "entity.name.type.kio"
+        ]
+      },
+      {
+        "text": "mk",
+        "start": 87,
+        "end": 89,
+        "kind": "entity.name.function",
+        "owners": [
+          "nominal_member"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "text": "get",
+        "start": 95,
+        "end": 98,
+        "kind": "entity.name.function",
+        "owners": [
+          "nominal_member"
+        ],
         "textmate": [
           "entity.name.function.kio"
         ]

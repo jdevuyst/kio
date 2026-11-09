@@ -68,7 +68,7 @@ fn metric_row(index: I32, w: Word, field: I32) -> String {
 }
 
 rec(loop) fn metrics_onto(xs: Words, index: I32, field: I32, acc: String) -> String {
-  match(xs.>List.unpack) {
+  match(xs.>List.get) {
     (
     , .(w: Word, rest: Words) {
         recur metrics_onto(rest, add_i32(index, 1), field, cat(acc, metric_row(index, w, field)))
@@ -85,7 +85,7 @@ pub fn metrics(xs: Words) -> String { metrics_onto(xs, 0, widest(xs), "") }
 rec(loop) fn join_onto(xs: Words, cursor: I32, from: I32, to: I32, acc: String) -> String {
   if(leq_i32(to, cursor)) {
     acc
-  } else match(xs.>List.unpack) {
+  } else match(xs.>List.get) {
     (
     , .(w: Word, rest: Words) {
         if(lt_i32(cursor, from)) {
@@ -118,7 +118,7 @@ fn line_row(xs: Words, l: Line) -> String {
 }
 
 rec(loop) fn layout_onto(xs: Words, ls: List[Line], acc: String) -> String {
-  match(ls.>List.unpack) {
+  match(ls.>List.get) {
     (
     , .(l: Line, rest: List[Line]) { recur layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
     , .(_empty: .) { acc }
@@ -133,7 +133,7 @@ pub fn layout(xs: Words, column: I32, ls: List[Line]) -> String {
 }
 
 rec(loop) fn breaks_onto(bs: List[I32], sep: String, acc: String) -> String {
-  match(bs.>List.unpack) {
+  match(bs.>List.get) {
     (
     , .(b: I32, rest: List[I32]) { recur breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
     , .(_empty: .) { acc }
@@ -148,7 +148,7 @@ fn table_row(j: I32, best: I32, back: I32, fits: I32) -> String {
 }
 
 rec(loop) fn rows_onto(j: I32, best: List[I32], back: List[I32], fits: List[I32], acc: String) -> String {
-  match(best.>List.unpack) {
+  match(best.>List.get) {
     (
     , .(b: I32, rest: List[I32]) {
         let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));

@@ -43,4 +43,4 @@ pub type Both18[A][B] = Both17[A][B];
 
 pub type Both19[A][B] = Both18[A][B];
 
-pub newtype Pair[A][B] : Both19[A][B] { pub constructor mk_pair; pub projector un_pair }
+pub type { Pair[A][B]: Both19[A][B] { pub mk; pub get } }

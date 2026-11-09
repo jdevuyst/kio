@@ -1,7 +1,7 @@
 module demo/main;
 
 import demo/a as first;
-import demo/a(Num, Original, macro build, truth, {field});
+import demo/a(Field, Num, Original, macro build, truth);
 import demo/b as second;
 
 fn literal_use() -> Num { truth[Num] }
@@ -12,14 +12,14 @@ fn bang() { build(()) }
 
 fn splice() { ().>build }
 
-fn label_use() -> Original { {field=} }
+fn alias_use() -> Original { Field.mk(()) }
 
-fn qualified() -> second.Original { {second.field=} }
+fn qualified() -> second.Original { second.Field.mk(()) }
 
 fn value_use() { first.field() }
 
-fn update(row: Original) -> Original { row.!{field=} }
+fn update(row: Original) -> Original { let _ = Field.get(row); Field.mk(()) }
 
-fn access(row: Original) { row.?{field} }
+fn access(row: Original) { Field.get(row) }
 
-fn row_let(row: Original) { let .({field as payload}) = row; payload }
+fn binding(row: Original) { let payload = Field.get(row); payload }

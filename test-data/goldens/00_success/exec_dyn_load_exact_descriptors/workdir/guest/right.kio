@@ -2,7 +2,7 @@ module right;
 
 import host/b(Value, ping);
 
-pub newtype Box : Value { pub constructor mk_box; pub projector un_box }
+pub type { Box: Value { pub mk; pub get } }
 
 pub type Box_alias = Box;
 

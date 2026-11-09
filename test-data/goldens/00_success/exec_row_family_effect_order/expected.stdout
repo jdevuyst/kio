@@ -1,0 +1,31 @@
+record A
+record B
+B
+A
+receiver
+patch A
+patch B
+B
+A
+receiver
+factory B
+factory A
+call B
+call A
+old B
+old A
+receiver
+factory A
+factory A
+call A
+call A
+old A
+old A
+receiver
+receiver
+empty selectors
+receiver
+empty updates
+old A
+old B
+empty record

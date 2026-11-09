@@ -1,5 +1,5 @@
 #!/bin/sh
-# Import-style selectors keep operator and label identities distinct from values.
+# Import-style selectors keep operator and type alias identities distinct from values.
 set -eu
 cd workdir || exit
 printf '%s\n' \
@@ -14,9 +14,9 @@ printf '%s\n' \
     ':which choose' \
     ':refs arithmetic.(op _ + _)' \
     ':refs varop [* *]' \
-    ':sig arithmetic.{field}' \
+    ':sig arithmetic.Field' \
     ':sig arithmetic.field' \
-    ':refs arithmetic.{field}' \
+    ':refs arithmetic.Field' \
     ':refs demo/ops.fn' \
     ':refs demo/ops.pub' \
     ':sig demo/ops.op' \

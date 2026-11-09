@@ -8,9 +8,10 @@ module gc/mark;
 
 import gc/heap(field_slot, fold_fields, top);
 import gc/num(int_lt);
-import gc/slot(Imm, Ptr, {ptr});
+import gc/slot(Imm, Ptr);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32);
 import testapi/arith(add_i32);
 import testapi/array(
@@ -27,9 +28,9 @@ import testapi/iter(loop);
 /// What the worklist did. The counters make the traversal auditable
 /// from the outside: `pushes` must come out as the roots plus the
 /// pointer fields of live objects, and `pops` as `marked + revisits`.
-pub labels Trace = { pushes: I32, pops: I32, revisits: I32, marked: I32 };
+pub type Trace = { Pushes: I32; Pops: I32; Revisits: I32; Marked: I32 };
 
-pub labels Marking = { mark_bits: Array[Bool], mark_trace: Trace };
+pub type Marking = { Mark_bits: Array[Bool]; Mark_trace: Trace };
 
 /// An immediate is not an edge, so only pointer fields are pushed.
 fn push_fields(cells: Array[I32], work: Array[I32], addr: I32, pushed: I32) -> I32 {
@@ -38,7 +39,13 @@ fn push_fields(cells: Array[I32], work: Array[I32], addr: I32, pushed: I32) -> I
   , addr
   , .(count, index) {
       match(field_slot(cells, addr, index)) {
-        (.(p: Ptr) { array_push(work, p.?{ptr}); add_i32(count, 1) }, .(_immediate: Imm) { count })
+        (
+        , .(p: Ptr) {
+            array_push(work, p.>select { Ptr.get });
+            add_i32(count, 1)
+          }
+        , .(_immediate: Imm) { count }
+        )
       }
     }
   , pushed
@@ -60,17 +67,38 @@ rec(loop) fn drain(cells: Array[I32], work: Array[I32], marks: Array[Bool], trac
   match(array_pop_back(work)) {
     (
     , .(addr: I32) {
-        let .(popped: Trace) = trace.!{pops = add_i32(trace.?{pops}, 1)};
+        let .(popped: Trace) =
+          (
+          , Pushes.mk(trace.>select { Pushes.get })
+          , Pops.mk(add_i32(trace.>select { Pops.get }, 1))
+          , Revisits.mk(trace.>select { Revisits.get })
+          , Marked.mk(trace.>select { Marked.get })
+          );
         if(array_get(marks, addr)) {
-          recur drain(cells, work, marks, popped.!{revisits = add_i32(popped.?{revisits}, 1)})
-        } else {
-          array_set(marks, addr, .t);
-          let grown = push_fields(cells, work, addr, popped.?{pushes});
           recur drain(
           , cells
           , work
           , marks
-          , popped.!{pushes = grown, marked = add_i32(popped.?{marked}, 1)}
+          , (
+            , Pushes.mk(popped.>select { Pushes.get })
+            , Pops.mk(popped.>select { Pops.get })
+            , Revisits.mk(add_i32(popped.>select { Revisits.get }, 1))
+            , Marked.mk(popped.>select { Marked.get })
+            )
+          )
+        } else {
+          array_set(marks, addr, .t);
+          let grown = push_fields(cells, work, addr, popped.>select { Pushes.get });
+          recur drain(
+          , cells
+          , work
+          , marks
+          , (
+            , Pushes.mk(grown)
+            , Pops.mk(popped.>select { Pops.get })
+            , Revisits.mk(popped.>select { Revisits.get })
+            , Marked.mk(add_i32(popped.>select { Marked.get }, 1))
+            )
           )
         }
       }
@@ -83,6 +111,7 @@ pub fn mark_heap(cells: Array[I32], roots: Array[I32]) -> Marking {
   let .(marks: Array[Bool]) = array_make_filled(top(cells), .f);
   let work = array_make_empty[I32](());
   let seeded = seed_roots(roots, work, 0, 0);
-  let trace = drain(cells, work, marks, {pushes = seeded, pops = 0, revisits = 0, marked = 0});
-  {mark_bits = marks, mark_trace = trace}
+  let trace =
+    drain(cells, work, marks, (Pushes.mk(seeded), Pops.mk(0), Revisits.mk(0), Marked.mk(0)));
+  (Mark_bits.mk(marks), Mark_trace.mk(trace))
 }

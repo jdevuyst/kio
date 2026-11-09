@@ -22,11 +22,11 @@ host fn echo_flag(value: Flag) -> Flag;
 
 host fn make_choice(value: Text) -> Text | Token;
 
-pub newtype Bundle : Text & Token { pub constructor bundle; pub projector unbundle }
+pub type { Bundle: Text & Token { pub mk; pub get } }
 
-pub newtype A_b : Text & Token { pub constructor c; projector un_a_b }
+pub type { A_b: Text & Token { pub mk; get } }
 
-pub newtype A : Text & Token { pub constructor b_c; projector un_a }
+pub type { A: Text & Token { pub mk; get } }
 
 pub fn roundtrip_text(value: Text) -> Text { echo_text(value) }
 

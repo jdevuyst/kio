@@ -1,6 +1,6 @@
 module main;
 
-pub newtype A : . { pub constructor mk_a; pub projector un_a }
+pub type { A: . { pub mk; pub get } }
 
 fn cat(a: A, b: A) -> A { a }
 

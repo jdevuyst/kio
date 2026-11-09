@@ -1,5 +1,5 @@
 module main;
 
-newtype Hidden : . { constructor mk; projector un }
+type { Hidden: . { mk; get } }
 
 pub fn expose(value: Hidden & .) -> Hidden & . { value }

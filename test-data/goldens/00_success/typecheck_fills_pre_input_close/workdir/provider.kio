@@ -1,0 +1,15 @@
+module provider;
+
+import __comptime__;
+
+pure fn relay_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _input: __Type__
+, value: __Checked_term__
+, result: __Type__
+) -> __Checked_term__ & __Fill_ctx__ {
+  (value, __fill__(ct, fills, result, __term_type__(ct, value)))
+}
+
+pub macro relay : [Input] Input -> [Result] Result { trailing product; impl(fills) relay_checked }

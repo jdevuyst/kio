@@ -3,14 +3,14 @@
 use ffi_rust_function_newtype_facades::ffi;
 use ffi_rust_function_newtype_facades::ffi::exp::main__Polymorphic as poly;
 use ffi_rust_function_newtype_facades::ffi::exp::main__Polymorphic::{
-    makePolymorphic_arg0_impl as MakePolymorphic,
-    makePolymorphic_arg0_type_ret_impl as MakePolymorphicResult,
-    readPolymorphic_ret_impl as ProjectPolymorphic,
-    readPolymorphic_ret_type_ret_impl as ProjectPolymorphicResult,
+    mk_arg0_impl as MakePolymorphic,
+    mk_arg0_type_ret_impl as MakePolymorphicResult,
+    get_ret_impl as ProjectPolymorphic,
+    get_ret_type_ret_impl as ProjectPolymorphicResult,
 };
-use ffi_rust_function_newtype_facades::ffi::exp::main__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_impl as ProjectExistential;
+use ffi_rust_function_newtype_facades::ffi::exp::main__RecursiveExistentialFunction::get_continuation_impl as ProjectExistential;
 use ffi_rust_function_newtype_facades::ffi::exp::main__RecursivePoly::{
-    makeRecursivePoly_arg0_impl as MakeRecursive, readRecursivePoly_ret_impl as ProjectRecursive,
+    mk_arg0_impl as MakeRecursive, get_ret_impl as ProjectRecursive,
 };
 use ffi_rust_function_newtype_facades::host::FfiRustFunctionNewtypeFacadesHost;
 use ffi_rust_function_newtype_facades::shapes::nominal::main::{
@@ -93,8 +93,8 @@ struct PolymorphicIdentity;
 impl MakePolymorphic<Host, IdentityConstructor> for PolymorphicIdentity {
     fn specialize<A: KioType>(
         &self,
-    ) -> poly::makePolymorphic_arg0_type_ret<Host, IdentityConstructor, A> {
-        poly::makePolymorphic_arg0_type_ret::new(IdentityAt::<A>(PhantomData))
+    ) -> poly::mk_arg0_type_ret<Host, IdentityConstructor, A> {
+        poly::mk_arg0_type_ret::new(IdentityAt::<A>(PhantomData))
     }
 }
 
@@ -103,27 +103,27 @@ struct IdentityAt<A: KioType>(PhantomData<A>);
 impl<A: KioType> MakePolymorphicResult<Host, IdentityConstructor, A> for IdentityAt<A> {
     fn specialize<B: KioType>(
         &self,
-    ) -> poly::makePolymorphic_arg0_type_ret_type_ret<IdentityConstructor, A, B> {
-        poly::makePolymorphic_arg0_type_ret_type_ret::<IdentityConstructor, A, B>::new(|args| {
+    ) -> poly::mk_arg0_type_ret_type_ret<IdentityConstructor, A, B> {
+        poly::mk_arg0_type_ret_type_ret::<IdentityConstructor, A, B>::new(|args| {
             let Product {
                 _0: step,
                 _1: value,
             } = args;
             let value = <IdentityConstructor as KioTypeConstructor1>::project::<A>(value);
-            let value = IdentityValue::<Host, A>::readIdentity(value);
-            let value = IdentityValue::<Host, B>::makeIdentity(step.call(value));
+            let value = IdentityValue::<Host, A>::get(value);
+            let value = IdentityValue::<Host, B>::mk(step.call(value));
             <IdentityConstructor as KioTypeConstructor1>::lift::<B>(value)
         })
     }
 }
 
 fn map_list<A: KioType, B: KioType>(step: &KioFn1<A, B>, value: List<Host, A>) -> List<Host, B> {
-    match List::<Host, A>::readList(value) {
-        ffi::exp::main__List::readList_ret::<Host, A>::Left(()) => {
-            List::<Host, B>::makeList(ffi::exp::main__List::makeList_arg0::<Host, B>::Left(()))
+    match List::<Host, A>::get(value) {
+        ffi::exp::main__List::get_ret::<Host, A>::Left(()) => {
+            List::<Host, B>::mk(ffi::exp::main__List::mk_arg0::<Host, B>::Left(()))
         }
-        ffi::exp::main__List::readList_ret::<Host, A>::Right(cell) => List::<Host, B>::makeList(
-            ffi::exp::main__List::makeList_arg0::<Host, B>::Right(Product {
+        ffi::exp::main__List::get_ret::<Host, A>::Right(cell) => List::<Host, B>::mk(
+            ffi::exp::main__List::mk_arg0::<Host, B>::Right(Product {
                 _0: step.call(cell._0),
                 _1: map_list(step, cell._1),
             }),
@@ -136,8 +136,8 @@ struct PolymorphicList;
 impl MakePolymorphic<Host, ListConstructor> for PolymorphicList {
     fn specialize<A: KioType>(
         &self,
-    ) -> poly::makePolymorphic_arg0_type_ret<Host, ListConstructor, A> {
-        poly::makePolymorphic_arg0_type_ret::new(ListAt::<A>(PhantomData))
+    ) -> poly::mk_arg0_type_ret<Host, ListConstructor, A> {
+        poly::mk_arg0_type_ret::new(ListAt::<A>(PhantomData))
     }
 }
 
@@ -146,8 +146,8 @@ struct ListAt<A: KioType>(PhantomData<A>);
 impl<A: KioType> MakePolymorphicResult<Host, ListConstructor, A> for ListAt<A> {
     fn specialize<B: KioType>(
         &self,
-    ) -> poly::makePolymorphic_arg0_type_ret_type_ret<ListConstructor, A, B> {
-        poly::makePolymorphic_arg0_type_ret_type_ret::<ListConstructor, A, B>::new(|args| {
+    ) -> poly::mk_arg0_type_ret_type_ret<ListConstructor, A, B> {
+        poly::mk_arg0_type_ret_type_ret::<ListConstructor, A, B>::new(|args| {
             let Product {
                 _0: step,
                 _1: value,
@@ -162,8 +162,8 @@ impl<A: KioType> MakePolymorphicResult<Host, ListConstructor, A> for ListAt<A> {
 struct PolymorphicNativeOption;
 
 impl MakePolymorphic<Host, NativeOption> for PolymorphicNativeOption {
-    fn specialize<A: KioType>(&self) -> poly::makePolymorphic_arg0_type_ret<Host, NativeOption, A> {
-        poly::makePolymorphic_arg0_type_ret::new(OptionAt::<A>(PhantomData))
+    fn specialize<A: KioType>(&self) -> poly::mk_arg0_type_ret<Host, NativeOption, A> {
+        poly::mk_arg0_type_ret::new(OptionAt::<A>(PhantomData))
     }
 }
 
@@ -172,8 +172,8 @@ struct OptionAt<A: KioType>(PhantomData<A>);
 impl<A: KioType> MakePolymorphicResult<Host, NativeOption, A> for OptionAt<A> {
     fn specialize<B: KioType>(
         &self,
-    ) -> poly::makePolymorphic_arg0_type_ret_type_ret<NativeOption, A, B> {
-        poly::makePolymorphic_arg0_type_ret_type_ret::<NativeOption, A, B>::new(|args| {
+    ) -> poly::mk_arg0_type_ret_type_ret<NativeOption, A, B> {
+        poly::mk_arg0_type_ret_type_ret::<NativeOption, A, B>::new(|args| {
             let Product {
                 _0: step,
                 _1: value,
@@ -186,19 +186,19 @@ impl<A: KioType> MakePolymorphicResult<Host, NativeOption, A> for OptionAt<A> {
 }
 
 fn empty_list<A: KioType>() -> List<Host, A> {
-    List::<Host, A>::makeList(ffi::exp::main__List::makeList_arg0::<Host, A>::Left(()))
+    List::<Host, A>::mk(ffi::exp::main__List::mk_arg0::<Host, A>::Left(()))
 }
 
 fn prepend<A: KioType>(head: A::Facade, tail: List<Host, A>) -> List<Host, A> {
-    List::<Host, A>::makeList(ffi::exp::main__List::makeList_arg0::<Host, A>::Right(
+    List::<Host, A>::mk(ffi::exp::main__List::mk_arg0::<Host, A>::Right(
         Product { _0: head, _1: tail },
     ))
 }
 
 fn list_values(value: List<Host, KioNative<i32>>) -> Vec<i32> {
-    match List::<Host, KioNative<i32>>::readList(value) {
-        ffi::exp::main__List::readList_ret::<Host, KioNative<i32>>::Left(()) => Vec::new(),
-        ffi::exp::main__List::readList_ret::<Host, KioNative<i32>>::Right(cell) => {
+    match List::<Host, KioNative<i32>>::get(value) {
+        ffi::exp::main__List::get_ret::<Host, KioNative<i32>>::Left(()) => Vec::new(),
+        ffi::exp::main__List::get_ret::<Host, KioNative<i32>>::Right(cell) => {
             let mut values = vec![cell._0];
             values.extend(list_values(cell._1));
             values
@@ -216,10 +216,10 @@ struct RecursiveLoop {
 impl MakeRecursive<Host> for RecursiveLoop {
     fn specialize<A: KioType>(
         &self,
-    ) -> ffi::exp::main__RecursivePoly::makeRecursivePoly_arg0_type_ret<Host, A> {
+    ) -> ffi::exp::main__RecursivePoly::mk_arg0_type_ret<Host, A> {
         let calls = self.calls.clone();
         let value = self.value.clone();
-        ffi::exp::main__RecursivePoly::makeRecursivePoly_arg0_type_ret::<Host, A>::new(
+        ffi::exp::main__RecursivePoly::mk_arg0_type_ret::<Host, A>::new(
             move |_value| {
                 calls.set(calls.get() + 1);
                 value
@@ -237,8 +237,8 @@ type RecursiveExistential = RecursiveExistentialFunction<Host>;
 struct Return42;
 
 impl ProjectExistential<Host, KioNative<i32>> for Return42 {
-    fn specialize<Hidden: KioType>(&self) -> ffi::exp::main__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_type_ret<Host, KioNative<i32>, Hidden>{
-        ffi::exp::main__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_type_ret::<Host, KioNative<i32>, Hidden>::new(|_step| 42)
+    fn specialize<Hidden: KioType>(&self) -> ffi::exp::main__RecursiveExistentialFunction::get_continuation_type_ret<Host, KioNative<i32>, Hidden>{
+        ffi::exp::main__RecursiveExistentialFunction::get_continuation_type_ret::<Host, KioNative<i32>, Hidden>::new(|_step| 42)
     }
 }
 
@@ -278,12 +278,12 @@ fn main() {
         };
         assert_eq!(observed, (arm, [11, 22, 33][arm]));
     }
-    let packed = PackedTriple::<Host>::makePackedTriple(
-        ffi::exp::main__PackedTriple::makePackedTriple_arg0::<Host>::new(|args| {
+    let packed = PackedTriple::<Host>::mk(
+        ffi::exp::main__PackedTriple::mk_arg0::<Host>::new(|args| {
             args._0 + args._1._0 + args._1._1
         }),
     );
-    let packed = PackedTriple::<Host>::readPackedTriple(packed);
+    let packed = PackedTriple::<Host>::get(packed);
     assert_eq!(
         packed.call(Product {
             _0: 10,
@@ -292,30 +292,30 @@ fn main() {
         42
     );
 
-    let higher_parameter = HigherOrderParameter::<Host>::makeHigherOrderParameter(
-        ffi::exp::main__HigherOrderParameter::makeHigherOrderParameter_arg0::<Host>::new(|step| {
+    let higher_parameter = HigherOrderParameter::<Host>::mk(
+        ffi::exp::main__HigherOrderParameter::mk_arg0::<Host>::new(|step| {
             step.call(41)
         }),
     );
-    let higher_parameter = HigherOrderParameter::<Host>::readHigherOrderParameter(higher_parameter);
+    let higher_parameter = HigherOrderParameter::<Host>::get(higher_parameter);
     assert_eq!(higher_parameter.call(KioFn1::new(|value| value + 1)), 42);
 
-    let higher_return = HigherOrderReturn::<Host>::makeHigherOrderReturn(
-        ffi::exp::main__HigherOrderReturn::makeHigherOrderReturn_arg0::<Host>::new(|delta| {
+    let higher_return = HigherOrderReturn::<Host>::mk(
+        ffi::exp::main__HigherOrderReturn::mk_arg0::<Host>::new(|delta| {
             KioFn1::new(move |value| value + delta)
         }),
     );
-    let higher_return = HigherOrderReturn::<Host>::readHigherOrderReturn(higher_return);
+    let higher_return = HigherOrderReturn::<Host>::get(higher_return);
     assert_eq!(higher_return.call(2).call(40), 42);
 
-    let identity = IdentityValue::<Host, KioNative<i32>>::makeIdentity(41);
+    let identity = IdentityValue::<Host, KioNative<i32>>::mk(41);
     let identity = <IdentityConstructor as KioTypeConstructor1>::lift::<KioNative<i32>>(identity);
-    let polymorphic = Polymorphic::<Host, IdentityConstructor>::makePolymorphic(
-        ffi::exp::main__Polymorphic::makePolymorphic_arg0::<Host, IdentityConstructor>::new(
+    let polymorphic = Polymorphic::<Host, IdentityConstructor>::mk(
+        ffi::exp::main__Polymorphic::mk_arg0::<Host, IdentityConstructor>::new(
             PolymorphicIdentity,
         ),
     );
-    let polymorphic = Polymorphic::<Host, IdentityConstructor>::readPolymorphic(polymorphic);
+    let polymorphic = Polymorphic::<Host, IdentityConstructor>::get(polymorphic);
     let output = polymorphic
         .specialize::<KioNative<i32>>()
         .specialize::<KioNative<i32>>()
@@ -324,7 +324,7 @@ fn main() {
             _1: identity,
         });
     let output = <IdentityConstructor as KioTypeConstructor1>::project::<KioNative<i32>>(output);
-    let output = IdentityValue::<Host, KioNative<i32>>::readIdentity(output);
+    let output = IdentityValue::<Host, KioNative<i32>>::get(output);
     assert_eq!(output, 42);
 
     let list = prepend::<KioNative<i32>>(
@@ -332,12 +332,12 @@ fn main() {
         prepend::<KioNative<i32>>(41, empty_list::<KioNative<i32>>()),
     );
     let list = <ListConstructor as KioTypeConstructor1>::lift::<KioNative<i32>>(list);
-    let polymorphic = Polymorphic::<Host, ListConstructor>::makePolymorphic(
-        ffi::exp::main__Polymorphic::makePolymorphic_arg0::<Host, ListConstructor>::new(
+    let polymorphic = Polymorphic::<Host, ListConstructor>::mk(
+        ffi::exp::main__Polymorphic::mk_arg0::<Host, ListConstructor>::new(
             PolymorphicList,
         ),
     );
-    let polymorphic = Polymorphic::<Host, ListConstructor>::readPolymorphic(polymorphic);
+    let polymorphic = Polymorphic::<Host, ListConstructor>::get(polymorphic);
     let output = polymorphic
         .specialize::<KioNative<i32>>()
         .specialize::<KioNative<i32>>()
@@ -350,12 +350,12 @@ fn main() {
 
     let input: KioApply1<NativeOption, KioNative<i32>> =
         <NativeOption as KioTypeConstructor1>::lift::<KioNative<i32>>(Some(41_i32));
-    let polymorphic = Polymorphic::<Host, NativeOption>::makePolymorphic(
-        ffi::exp::main__Polymorphic::makePolymorphic_arg0::<Host, NativeOption>::new(
+    let polymorphic = Polymorphic::<Host, NativeOption>::mk(
+        ffi::exp::main__Polymorphic::mk_arg0::<Host, NativeOption>::new(
             PolymorphicNativeOption,
         ),
     );
-    let polymorphic = Polymorphic::<Host, NativeOption>::readPolymorphic(polymorphic);
+    let polymorphic = Polymorphic::<Host, NativeOption>::get(polymorphic);
     let output: KioApply1<NativeOption, KioNative<String>> = polymorphic
         .specialize::<KioNative<i32>>()
         .specialize::<KioNative<String>>()
@@ -408,17 +408,17 @@ fn main() {
 
     let recursive_slot = Rc::new(RefCell::new(None));
     let recursive_calls = Rc::new(Cell::new(0));
-    let recursive = Recursive::makeRecursivePoly(
-        ffi::exp::main__RecursivePoly::makeRecursivePoly_arg0::<Host>::new(RecursiveLoop {
+    let recursive = Recursive::mk(
+        ffi::exp::main__RecursivePoly::mk_arg0::<Host>::new(RecursiveLoop {
             value: recursive_slot.clone(),
             calls: recursive_calls.clone(),
         }),
     );
     recursive_slot.borrow_mut().replace(recursive.clone());
-    let recursive = Recursive::readRecursivePoly(recursive);
+    let recursive = Recursive::get(recursive);
     let recursive = recursive.specialize::<KioNative<i32>>().call(42_i32);
     assert_eq!(recursive_calls.get(), 1);
-    let recursive = Recursive::readRecursivePoly(recursive);
+    let recursive = Recursive::get(recursive);
     let _recursive = recursive.specialize::<KioUnit>().call(());
     assert_eq!(recursive_calls.get(), 2);
 
@@ -426,7 +426,7 @@ fn main() {
     let existential_calls = Rc::new(Cell::new(0));
     let slot = existential_slot.clone();
     let calls = existential_calls.clone();
-    let recursive_existential = RecursiveExistential::makeRecursiveExistentialFunction(KioFn1::<
+    let recursive_existential = RecursiveExistential::mk(KioFn1::<
         KioNative<i32>,
         KioNewtypeMarker_main__RecursiveExistentialFunction<Host>,
     >::new(
@@ -441,9 +441,9 @@ fn main() {
     existential_slot
         .borrow_mut()
         .replace(recursive_existential.clone());
-    let output = RecursiveExistential::readRecursiveExistentialFunction::<KioNative<i32>>(
+    let output = RecursiveExistential::get::<KioNative<i32>>(
         recursive_existential,
-        ffi::exp::main__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation::<
+        ffi::exp::main__RecursiveExistentialFunction::get_continuation::<
             Host,
             KioNative<i32>,
         >::new(Return42),

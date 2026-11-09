@@ -1,15 +1,16 @@
 module regex/result;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import regex/format(join4);
 import testapi(String);
 
-pub labels Verdict = { span: String } | { miss: String };
+pub type Verdict = { Span: String } | { Miss: String };
 
-pub fn hit(span: String) -> Verdict { ({span}.>widen_sum)[Verdict] }
+pub fn hit(span: String) -> Verdict { (Span.mk(span).>widen_sum)[Verdict] }
 
-pub fn fail(reason: String) -> Verdict { ({miss = reason}.>widen_sum)[Verdict] }
+pub fn fail(reason: String) -> Verdict { (Miss.mk(reason).>widen_sum)[Verdict] }
 
 fn heading(pattern: String, candidate: String) -> String {
   join4("pattern ", pattern, " / ", candidate)
@@ -26,8 +27,12 @@ fn render_miss(pattern: String, candidate: String, reason: String) -> String {
 pub fn render(pattern: String, candidate: String, verdict: Verdict) -> String {
   match(verdict) {
     (
-    , .(s: Span) { render_hit(pattern, candidate, s.?{span}) }
-    , .(m: Miss) { render_miss(pattern, candidate, m.?{miss}) }
+    , .(s: Span) {
+        render_hit(pattern, candidate, s.>select { Span.get })
+      }
+    , .(m: Miss) {
+        render_miss(pattern, candidate, m.>select { Miss.get })
+      }
     )
   }
 }

@@ -1,20 +1,24 @@
 module calendar_blackout_planner/scoring;
 
-import calendar_blackout_planner/model(Window, {frozen}, {priority}, {support_load});
+import calendar_blackout_planner/model(Frozen, Priority, Support_load, Window);
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {
-  if(window.?{frozen}) {
+  if(window.>select { Frozen.get }) {
     0
   } else {
-    arith.sub_i32(arith.mul_i32(window.?{priority}, 9), arith.mul_i32(window.?{support_load}, 2))
+    arith.sub_i32(
+    , arith.mul_i32(window.>select { Priority.get }, 9)
+    , arith.mul_i32(window.>select { Support_load.get }, 2)
+    )
   }
 }
 
 pub fn status(window: Window) -> String {
-  if(window.?{frozen}) { "frozen" } else { "release" }
+  if(window.>select { Frozen.get }) { "frozen" } else { "release" }
 }
 
 pub fn better(left: Window, right: Window) -> Window {

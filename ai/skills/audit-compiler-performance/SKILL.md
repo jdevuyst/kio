@@ -564,7 +564,8 @@ retain the measurement's stated limits.
 - **Shared Enriched peephole catalog** (`pass/optimize.rs`) —
   `optimize_expr_in_mode` owns `project_after_tuple`,
   `compose_recovered_tail_access`, `let_bound_tuple_projection`,
-  `inject_then_match`, `absurd_propagate`, `match_fusion`, `let_fuse`,
+  `let_tuple_reconstruction`, `propagate_bound_tuple_slots`,
+  `recover_bound_conditional`, `inject_then_match`, `absurd_propagate`, `match_fusion`, `let_fuse`,
   `beta_reduce_unary_iife`, `beta_reduce_nullary_iife`,
   `dead_code_elimination`, `newtype_identity_elision`, and `constant_fold`.
   Package, per-module, and package-file entry points reach this same catalog;
@@ -572,6 +573,11 @@ retain the measurement's stated limits.
   miss and disabled paths. Purity checks delegate to `pass/purity.rs`.
   Each rule preserves language behavior and is perf-only; discharge its
   firing/no-op coverage and recorded measured win at the truthful layer.
+  For tuple-let recovery, check exact typed grouping, capture/escape and literal
+  boundary no-ops, and runtime evidence that a retained factory executes once
+  before branch selection. Output-size bounds do not establish scan-cost scaling;
+  inspect both wide firing and nested no-op inputs in the
+  [bounded cost record](../../../evidence/compiler-performance.md#bounded-tuple-let-recovery).
 - **Shared callable-purity proof** (`pass/purity.rs`, `pass/structural_recovery.rs`, `pass/optimize.rs`, `cache/enriched.rs`) — inspect both conditional and either recovery plus let fusion/DCE for reuse of the same conservative proof. A declaration marker alone does not establish effect-free invocation: supplied values must be capability-free, lexical shadows must mask declaration facts, and unknown factories retain eager source order. Imported markers enter each consumer's enriched-cache key; declaration purity survives Prime, Enriched, and Routed without a new source-level type rule or package-wide effect solver.
   `pure_handler_factories_delay_into_both_dispatch_kinds` pins private recovery firing;
   `pure_declaration_cannot_hide_an_unknown_callback_effect` and

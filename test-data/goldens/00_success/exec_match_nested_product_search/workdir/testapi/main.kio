@@ -1,21 +1,24 @@
 module testapi/main;
 
 import macros/match(macro match);
+import macros/row_macros(macro record_, macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(String);
 import testapi/io as io;
 
-labels Version = { value: String, stamp: String };
+type Version = { Value: String; Stamp: String };
 
-labels { tail: String, other: String };
+type { Tail: String; Other: String }
 
 fn handle(input: . | Other | (Version & Tail)) {
   match(input) {
-    .(unrelated: Other) { io.print(unrelated.?{other}) };
+    .(unrelated: Other) {
+      io.print(unrelated.>select { Other.get })
+    };
     .(head: Version, rest: Tail) {
-      io.print(head.?{value});
-      io.print(head.?{stamp});
-      io.print(rest.?{tail})
+      io.print(head.>select { Value.get });
+      io.print(head.>select { Stamp.get });
+      io.print(rest.>select { Tail.get })
     };
     .(_empty: .) { io.print("empty\n") }
   }
@@ -23,8 +26,8 @@ fn handle(input: . | Other | (Version & Tail)) {
 
 pub fn main() {
   handle(widen_sum(())[. | Other | (Version & Tail)]);
-  handle(widen_sum({other = "other\n"})[. | Other | (Version & Tail)]);
-  handle(widen_sum(({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"}))[| .
+  handle(widen_sum(Other.mk("other\n"))[. | Other | (Version & Tail)]);
+  handle(widen_sum((record_ { Value.mk("value\n"); Stamp.mk("stamp\n") }, Tail.mk("tail\n")))[| .
   | Other
   | (Version & Tail)])
 }

@@ -9,62 +9,55 @@ import testapi(String);
 import testapi/iter(loop);
 import testapi/text as text;
 
-newtype Crumb : String & lists.List[tree.Node] & lists.List[tree.Node] {
-  constructor make;
-  projector open
-  }
+type { Crumb: String & lists.List[tree.Node] & lists.List[tree.Node] { mk; get } }
 
-pub newtype Cursor : tree.Node & lists.List[Crumb] { constructor make; projector open }
+pub type { Cursor: tree.Node & lists.List[Crumb] { mk; get } }
 
-pub fn start(root: tree.Node) -> Cursor { Cursor.make((root, lists.nil[_])) }
+pub fn start(root: tree.Node) -> Cursor { Cursor.mk((root, lists.nil[_])) }
 
-pub fn focus(cursor: Cursor) -> tree.Node { let .(node, _crumbs) = Cursor.open(cursor); node }
+pub fn focus(cursor: Cursor) -> tree.Node { let .(node, _crumbs) = Cursor.get(cursor); node }
 
 fn rebuild(node: tree.Node, crumb: Crumb) -> tree.Node {
-  let .(title, left_rev, right) = Crumb.open(crumb);
+  let .(title, left_rev, right) = Crumb.get(crumb);
   tree.branch(title, traversal.append(traversal.reverse(left_rev), lists.cons(node, right)))
 }
 
 pub fn parent(cursor: Cursor) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List[Crumb]) {
-      Cursor.make((rebuild(node, crumb), rest)).>widen_sum
-    };
+    .(crumb: Crumb, rest: lists.List[Crumb]) { Cursor.mk((rebuild(node, crumb), rest)).>widen_sum };
     .() { "root has no parent"[String].>widen_sum }
   }
 }
 
 pub rec(loop) fn root(cursor: Cursor) -> Cursor {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List[Crumb]) {
-      recur root(Cursor.make((rebuild(node, crumb), rest)))
-    };
+    .(crumb: Crumb, rest: lists.List[Crumb]) { recur root(Cursor.mk((rebuild(node, crumb), rest))) };
     .() { cursor }
   }
 }
 
 pub fn child(cursor: Cursor) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(tree.children(node))) {
     .(first: tree.Node, rest: lists.List[tree.Node]) {
-      let crumb = Crumb.make((tree.name(node), lists.nil[_], rest));
-      Cursor.make((first, lists.cons(crumb, crumbs))).>widen_sum
+      let crumb = Crumb.mk((tree.name(node), lists.nil[_], rest));
+      Cursor.mk((first, lists.cons(crumb, crumbs))).>widen_sum
     };
     .() { "focus has no children"[String].>widen_sum }
   }
 }
 
 pub fn next(cursor: Cursor) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(title, left_rev, right) = Crumb.open(crumb);
+      let .(title, left_rev, right) = Crumb.get(crumb);
       match(lists.uncons(right)) {
         .(sibling: tree.Node, tail: lists.List[tree.Node]) {
-          let context = Crumb.make((title, lists.cons(node, left_rev), tail));
-          Cursor.make((sibling, lists.cons(context, rest))).>widen_sum
+          let context = Crumb.mk((title, lists.cons(node, left_rev), tail));
+          Cursor.mk((sibling, lists.cons(context, rest))).>widen_sum
         };
         .() { "no next sibling"[String].>widen_sum }
       }
@@ -74,14 +67,14 @@ pub fn next(cursor: Cursor) -> Cursor | String {
 }
 
 pub fn previous(cursor: Cursor) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(title, left_rev, right) = Crumb.open(crumb);
+      let .(title, left_rev, right) = Crumb.get(crumb);
       match(lists.uncons(left_rev)) {
         .(sibling: tree.Node, tail: lists.List[tree.Node]) {
-          let context = Crumb.make((title, tail, lists.cons(node, right)));
-          Cursor.make((sibling, lists.cons(context, rest))).>widen_sum
+          let context = Crumb.mk((title, tail, lists.cons(node, right)));
+          Cursor.mk((sibling, lists.cons(context, rest))).>widen_sum
         };
         .() { "no previous sibling"[String].>widen_sum }
       }
@@ -91,46 +84,46 @@ pub fn previous(cursor: Cursor) -> Cursor | String {
 }
 
 pub fn rename(cursor: Cursor, title: String) -> Cursor {
-  let .(node, crumbs) = Cursor.open(cursor);
-  Cursor.make((tree.rename(node, title), crumbs))
+  let .(node, crumbs) = Cursor.get(cursor);
+  Cursor.mk((tree.rename(node, title), crumbs))
 }
 
 pub fn append_child(cursor: Cursor, title: String) -> Cursor {
-  let .(node, crumbs) = Cursor.open(cursor);
-  Cursor.make((tree.append(node, tree.leaf(title)), crumbs))
+  let .(node, crumbs) = Cursor.get(cursor);
+  Cursor.mk((tree.append(node, tree.leaf(title)), crumbs))
 }
 
 pub fn insert_before(cursor: Cursor, title: String) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(parent_title, left_rev, right) = Crumb.open(crumb);
-      let context = Crumb.make((parent_title, lists.cons(tree.leaf(title), left_rev), right));
-      Cursor.make((node, lists.cons(context, rest))).>widen_sum
+      let .(parent_title, left_rev, right) = Crumb.get(crumb);
+      let context = Crumb.mk((parent_title, lists.cons(tree.leaf(title), left_rev), right));
+      Cursor.mk((node, lists.cons(context, rest))).>widen_sum
     };
     .() { "cannot insert a sibling of the root"[String].>widen_sum }
   }
 }
 
 pub fn insert_after(cursor: Cursor, title: String) -> Cursor | String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(parent_title, left_rev, right) = Crumb.open(crumb);
-      let context = Crumb.make((parent_title, left_rev, lists.cons(tree.leaf(title), right)));
-      Cursor.make((node, lists.cons(context, rest))).>widen_sum
+      let .(parent_title, left_rev, right) = Crumb.get(crumb);
+      let context = Crumb.mk((parent_title, left_rev, lists.cons(tree.leaf(title), right)));
+      Cursor.mk((node, lists.cons(context, rest))).>widen_sum
     };
     .() { "cannot insert a sibling of the root"[String].>widen_sum }
   }
 }
 
 pub fn delete(cursor: Cursor) -> Cursor | String {
-  let .(_node, crumbs) = Cursor.open(cursor);
+  let .(_node, crumbs) = Cursor.get(cursor);
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(title, left_rev, right) = Crumb.open(crumb);
+      let .(title, left_rev, right) = Crumb.get(crumb);
       let surviving = traversal.append(traversal.reverse(left_rev), right);
-      Cursor.make((tree.branch(title, surviving), rest)).>widen_sum
+      Cursor.mk((tree.branch(title, surviving), rest)).>widen_sum
     };
     .() { "cannot delete the root"[String].>widen_sum }
   }
@@ -139,7 +132,7 @@ pub fn delete(cursor: Cursor) -> Cursor | String {
 rec(loop) fn path_ancestors(crumbs: lists.List[Crumb], suffix: String) -> String {
   match(lists.uncons(crumbs)) {
     .(crumb: Crumb, rest: lists.List[Crumb]) {
-      let .(title, _left, _right) = Crumb.open(crumb);
+      let .(title, _left, _right) = Crumb.get(crumb);
       recur path_ancestors(rest, text.string_concat("/", text.string_concat(title, suffix)))
     };
     .() { suffix }
@@ -147,6 +140,6 @@ rec(loop) fn path_ancestors(crumbs: lists.List[Crumb], suffix: String) -> String
 }
 
 pub fn path(cursor: Cursor) -> String {
-  let .(node, crumbs) = Cursor.open(cursor);
+  let .(node, crumbs) = Cursor.get(cursor);
   path_ancestors(crumbs, text.string_concat("/", tree.name(node)))
 }

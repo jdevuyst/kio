@@ -96,7 +96,7 @@ rec(loop) {
   /// quietly encoding as some other valid glyph.
   pub fn glyph_of(value: I32) -> String { recur by_value(table(), value) };
   fn by_value(entries: list.List[Entry], value: I32) -> String {
-    match(entries.>list.List.un_list) {
+    match(entries.>list.List.get) {
       (
       , .(head: Entry, rest: list.List[Entry]) {
           let .(carried: I32, glyph: String) = head;
@@ -113,7 +113,7 @@ rec(loop) {
   /// in the alphabet at all — the corruption the decoder reports.
   pub fn value_of(glyph: String) -> I32 | . { recur by_glyph(table(), glyph) };
   fn by_glyph(entries: list.List[Entry], glyph: String) -> I32 | . {
-    match(entries.>list.List.un_list) {
+    match(entries.>list.List.get) {
       (
       , .(head: Entry, rest: list.List[Entry]) {
           let .(carried: I32, spelling: String) = head;

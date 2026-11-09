@@ -7,7 +7,7 @@ import testapi/arith as boxes;
 import testapi/fmt as fmt;
 import testapi/io as io;
 
-labels { first: api.I32, second: api.I32, last: api.String };
+type { First: api.I32; Second: api.I32; Last: api.String }
 
 type Choice = First | Second | Last;
 
@@ -62,27 +62,27 @@ pub fn main() {
   print_pair(product_tail[api.I32][api.I32 & api.String](relay[api.Box][api.I32][& api.I32
   & api.String](boxes.box_make((11, 22, "tail")))));
   print_product(boxes.box_get(product_box[api.I32][api.I32 & api.String](11, (33, "back"))));
-  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum({first = 11})[Choice]))));
-  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum({second = 22})[Choice]))));
-  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum({last = "whole"})[Choice]))));
-  let fallback = widen_sum({second = 99})[Second | Last];
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum(First.mk(11))[Choice]))));
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum(Second.mk(22))[Choice]))));
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum(Last.mk("whole"))[Choice]))));
+  let fallback = widen_sum(Second.mk(99))[Second | Last];
   print_choice(widen_sum(sum_tail[First][Second | Last](
-  , boxes.box_make(widen_sum({first = 11})[Choice])
+  , boxes.box_make(widen_sum(First.mk(11))[Choice])
   , fallback
   ))[Choice]);
   print_choice(widen_sum(sum_tail[First][Second | Last](
-  , boxes.box_make(widen_sum({second = 22})[Choice])
+  , boxes.box_make(widen_sum(Second.mk(22))[Choice])
   , fallback
   ))[Choice]);
   print_choice(widen_sum(sum_tail[First][Second | Last](
-  , boxes.box_make(widen_sum({last = "tail"})[Choice])
+  , boxes.box_make(widen_sum(Last.mk("tail"))[Choice])
   , fallback
   ))[Choice]);
-  print_choice(boxes.box_get(sum_box[First][Second | Last](widen_sum({second = 33})[Second | Last])));
-  print_choice(boxes.box_get(sum_box[First][Second | Last](widen_sum({last = "back"})[Second | Last])));
+  print_choice(boxes.box_get(sum_box[First][Second | Last](widen_sum(Second.mk(33))[Second | Last])));
+  print_choice(boxes.box_get(sum_box[First][Second | Last](widen_sum(Last.mk("back"))[Second | Last])));
   io.print(boxes.box_get(boxes.box_get(keep(boxes.box_make(boxes.box_make("nested"))))));
   io.print("\n");
-  let nominal = product_tail[api.I32][Last](boxes.box_make((11, {last = "nominal"})));
+  let nominal = product_tail[api.I32][Last](boxes.box_make((11, Last.mk("nominal"))));
   io.print(nominal.>Last.get);
   io.print("\n")
 }

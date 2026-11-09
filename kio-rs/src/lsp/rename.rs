@@ -42,22 +42,18 @@
 //!   reference and is not rewritten. Users fix mentions manually.
 //! - Sound shadowing-aware rename: the conflict check is conservative
 //!   (refuse on collision rather than reorder).
-//! - Label declarations and reuse markers: rename is refused because one
-//!   surface label spans lowercase construction/access/import spellings and a
-//!   case-derived generated type name. Editing only the declaration/markers
-//!   would leave those other references stale.
+//! - Native label syntax: its import, construction, and access spellings
+//!   do not participate in ordinary identifier renaming.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use lsp_types::{Position, PrepareRenameResponse, Range, TextEdit, Uri, WorkspaceEdit};
 
-use crate::ast::{
-    ElaboratorCall, Expr, FnDef, ImportKind, Item, Module, Signature, SignatureParam, Surface,
-};
+use crate::ast::{Expr, FnDef, ImportKind, Item, Module, Signature, SignatureParam, Surface};
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::diagnostics::path_to_uri;
-use crate::lsp::label_reuse::{LabelReuseSnapshot, snapshot_for};
+use crate::lsp::live_syntax::{LiveSyntaxSnapshot, snapshot_for};
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::lsp::references::{binder_key_pub, binder_matches_key_pub};
 use crate::lsp::util::{smallest_containing_span, uri_to_canonical, workspace_edit_from_changes};
@@ -80,7 +76,7 @@ pub fn handle_prepare_rename(
     uri: &Uri,
     position: &Position,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
 ) -> Option<PrepareRenameResponse> {
     handle_prepare_rename_with_module(uri, position, analysis, overlay, None)
 }
@@ -89,7 +85,7 @@ pub(crate) fn handle_prepare_rename_with_module(
     uri: &Uri,
     position: &Position,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     current_module: Option<&Module<Surface>>,
 ) -> Option<PrepareRenameResponse> {
     let canonical = uri_to_canonical(uri)?;
@@ -128,13 +124,6 @@ pub(crate) fn handle_prepare_rename_with_module(
         });
     }
 
-    if syntax
-        .index
-        .is_some_and(|index| index.label_at(byte_offset).is_some())
-    {
-        return None;
-    }
-
     // Find the binder at the cursor.
     let cursor = smallest_containing_span(
         byte_offset,
@@ -145,18 +134,7 @@ pub(crate) fn handle_prepare_rename_with_module(
             .map(|((_, span), binder)| (*span, binder)),
     );
 
-    let Some((cursor_span, cursor_binder)) = cursor else {
-        let row_let_decl = if let Some(module) = current_module {
-            row_let_decl_at_offset_in_module(module, byte_offset)
-        } else {
-            row_let_decl_at_offset(source, byte_offset)
-        }?;
-        let range = to_lsp_range(line_index.to_range(row_let_decl.local_span));
-        return Some(PrepareRenameResponse::RangeWithPlaceholder {
-            range,
-            placeholder: row_let_decl.name,
-        });
-    };
+    let (cursor_span, cursor_binder) = cursor?;
 
     // Only renameable binder kinds. Refuse on pub-item and op binders
     // whose rename would cross the package boundary or affect parsing.
@@ -187,7 +165,7 @@ pub fn handle_rename(
     position: &Position,
     new_name: &str,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     package_root: &std::path::Path,
 ) -> Result<Option<WorkspaceEdit>, String> {
     handle_rename_inner(
@@ -213,7 +191,7 @@ pub fn handle_rename_versioned(
     position: &Position,
     new_name: &str,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     package_root: &std::path::Path,
     snapshot_versions: &BTreeMap<Uri, i32>,
 ) -> Result<Option<WorkspaceEdit>, String> {
@@ -236,7 +214,7 @@ pub(crate) fn handle_rename_versioned_with_context(
     position: &Position,
     new_name: &str,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     parse_context: RenameParseContext<'_>,
     snapshot_versions: &BTreeMap<Uri, i32>,
 ) -> Result<Option<WorkspaceEdit>, String> {
@@ -256,7 +234,7 @@ fn handle_rename_inner(
     position: &Position,
     new_name: &str,
     analysis: &LspAnalysis,
-    overlay: Option<LabelReuseSnapshot<'_>>,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
     parse_context: RenameParseContext<'_>,
     snapshot_versions: Option<&BTreeMap<Uri, i32>>,
 ) -> Result<Option<WorkspaceEdit>, String> {
@@ -281,13 +259,6 @@ fn handle_rename_inner(
         character: position.character,
     };
     let byte_offset = line_index.position_to_offset(lsp_pos);
-
-    if syntax
-        .index
-        .is_some_and(|index| index.label_at(byte_offset).is_some())
-    {
-        return Err("label syntax cannot be renamed safely".to_owned());
-    }
 
     let parsed_modules = parse_analysis_modules(analysis);
 
@@ -376,31 +347,8 @@ fn handle_rename_inner(
             .map(|((_, span), binder)| (*span, binder)),
     );
 
-    let fallback_row_let_decl = if cursor.is_none() {
-        Some(
-            if let Some(module) = current_module {
-                row_let_decl_at_offset_in_module(module, byte_offset)
-            } else {
-                row_let_decl_at_offset(source, byte_offset)
-            }
-            .ok_or_else(|| "no renameable identifier at cursor".to_owned())?,
-        )
-    } else {
-        None
-    };
-    let fallback_binder;
-    let cursor_binder = if let Some((_, binder)) = cursor {
-        binder
-    } else {
-        let decl = fallback_row_let_decl
-            .as_ref()
-            .expect("fallback row-let declaration created above");
-        fallback_binder = ResolvedBinder::Local {
-            name: decl.name.clone(),
-            decl_span: Some(decl.local_span),
-        };
-        &fallback_binder
-    };
+    let (_, cursor_binder) =
+        cursor.ok_or_else(|| "no renameable identifier at cursor".to_owned())?;
 
     if !is_renameable(cursor_binder, analysis) {
         return Err("the identifier at the cursor cannot be renamed".to_owned());
@@ -411,11 +359,6 @@ fn handle_rename_inner(
     if block_label_name_conflicts(cursor_binder, new_name, analysis) {
         return Err(format!(
             "rename to `{new_name}` would conflict with another trailing label of the same macro"
-        ));
-    }
-    if newtype_member_name_conflicts(cursor_binder, new_name, analysis) {
-        return Err(format!(
-            "rename to `{new_name}` would conflict with another member of the same newtype"
         ));
     }
 
@@ -452,23 +395,6 @@ fn handle_rename_inner(
     for spans in value_path_qualifier_spans.values_mut() {
         spans.sort_unstable_by_key(|span| span.end);
         spans.dedup();
-    }
-
-    let row_let_decl = fallback_row_let_decl.or_else(|| {
-        let ResolvedBinder::Local {
-            name,
-            decl_span: Some(decl_span),
-        } = cursor_binder
-        else {
-            return None;
-        };
-        let module = current_module.or_else(|| parsed_modules.get(canonical.as_path()))?;
-        row_let_decl_at_offset_in_module(module, decl_span.start)
-            .filter(|decl| decl.local_span == *decl_span && decl.name == *name)
-    });
-    if let Some(decl) = row_let_decl {
-        locations.retain(|(file, span)| file != &canonical || *span != decl.local_span);
-        locations.push((canonical.clone(), decl.edit_span()));
     }
 
     // Sort for stable output: file path then span start.
@@ -554,11 +480,7 @@ fn handle_rename_inner(
         let file_li = LineIndex::new(file_source);
         let lsp_range = file_li.to_range(span);
         let range = to_lsp_range(lsp_range);
-        let new_text = if span.start == span.end {
-            format!(" as {new_name}")
-        } else {
-            new_name.to_owned()
-        };
+        let new_text = new_name.to_owned();
         let edit = TextEdit { range, new_text };
         if let Some(uri) = path_to_uri(&file_path, package_root) {
             changes.entry(uri).or_default().push(edit);
@@ -699,28 +621,19 @@ fn validate_new_name_for_binder(name: &str, binder: &ResolvedBinder) -> Result<(
 /// - `Intrinsic` — built-in, no source span.
 /// - `HostFn` — supplied by the host, not declared in
 ///   module source.
-/// - Label-generated members — their editable declaration is the coupled
-///   lowercase label spelling, not the generated identifier.
+/// - Nominal members — `mk` and `get` are fixed declaration roles.
 /// - Qualified variants — these are module-alias paths; the alias name
 ///   is local to the import site and renaming it would require
 ///   re-analyzing import scopes.
-fn is_renameable(binder: &ResolvedBinder, analysis: &LspAnalysis) -> bool {
+fn is_renameable(binder: &ResolvedBinder, _analysis: &LspAnalysis) -> bool {
     match binder {
         ResolvedBinder::BlockLabel { .. } => true,
         ResolvedBinder::Fn { .. } => true,
         ResolvedBinder::Local { .. } => true,
         ResolvedBinder::TypeParam { .. } => true,
         ResolvedBinder::TypeAlias { .. } => true,
-        ResolvedBinder::Newtype { module_path, name } => !analysis
-            .generated_label_nominals
-            .contains(&(module_path.clone(), name.clone())),
-        ResolvedBinder::NewtypeMember {
-            module_path,
-            newtype,
-            ..
-        } => !analysis
-            .generated_label_nominals
-            .contains(&(module_path.clone(), newtype.clone())),
+        ResolvedBinder::Newtype { .. } => true,
+        ResolvedBinder::NewtypeMember { .. } => false,
         // HostFn, Intrinsic, and qualified imports: refuse.
         ResolvedBinder::HostEnvFn { .. } => false,
         ResolvedBinder::HostType { .. } => false,
@@ -749,33 +662,6 @@ fn block_label_name_conflicts(
             module_path: owner, macro_name: head, ordinal: index, name, ..
         } if owner == module_path && head == macro_name && index != ordinal && name == new_name)
     })
-}
-
-fn newtype_member_name_conflicts(
-    binder: &ResolvedBinder,
-    new_name: &str,
-    analysis: &LspAnalysis,
-) -> bool {
-    let ResolvedBinder::NewtypeMember {
-        module_path,
-        newtype,
-        member,
-    } = binder
-    else {
-        return false;
-    };
-    if member == new_name {
-        return false;
-    }
-    let Some(entry) = analysis.root_package_lowered.module(module_path) else {
-        return false;
-    };
-    entry
-        .scope
-        .lookup(newtype)
-        .and_then(|id| crate::pass::resolve::declaration_by_id(&entry.module, id))
-        .and_then(crate::pass::resolve::TopLevelDeclaration::newtype)
-        .is_some_and(|owner| owner.constructor.name == new_name || owner.projector.name == new_name)
 }
 
 /// Returns `true` when `new_name` appears in scope at `byte_offset`
@@ -870,6 +756,7 @@ fn collect_module_scope(module: &Module<Surface>, byte_offset: u32, out: &mut Ve
             Item::LiteralAlias(l, _) => l.name.clone(),
             Item::Newtype(n) => n.name.clone(),
             Item::Labels(t, _) => {
+                out.extend(t.entries.iter().map(|entry| entry.name.clone()));
                 if let Some(n) = &t.type_alias_name {
                     n.clone()
                 } else {
@@ -883,16 +770,23 @@ fn collect_module_scope(module: &Module<Surface>, byte_offset: u32, out: &mut Ve
                 continue;
             }
             Item::TypeRecGroup(group) => {
-                out.extend(group.members.iter().filter_map(|member| match member {
-                    crate::ast::TypeRecMember::TypeAlias(alias) => Some(alias.name.clone()),
-                    crate::ast::TypeRecMember::Newtype(newtype) => Some(newtype.name.clone()),
-                    crate::ast::TypeRecMember::Labels(labels, _) => labels.type_alias_name.clone(),
-                }));
+                for member in &group.members {
+                    match member {
+                        crate::ast::TypeRecMember::TypeAlias(alias) => out.push(alias.name.clone()),
+                        crate::ast::TypeRecMember::Newtype(newtype) => {
+                            out.push(newtype.name.clone())
+                        }
+                        crate::ast::TypeRecMember::Labels(labels, _) => {
+                            out.extend(labels.type_alias_name.iter().cloned());
+                            out.extend(labels.entries.iter().map(|entry| entry.name.clone()));
+                        }
+                    }
+                }
                 continue;
             }
             Item::HostType(h) => h.name.clone(),
             Item::HostFn(h) => h.name.clone(),
-            Item::LabelForward(_, _) | Item::Op(_, _) | Item::VariadicOperator(_, _) => continue,
+            Item::Op(_, _) | Item::VariadicOperator(_, _) => continue,
         };
         out.push(name);
     }
@@ -953,14 +847,6 @@ fn collect_expr_scope(expr: &Expr<Surface>, byte_offset: u32, out: &mut Vec<Stri
                                 out.push(name.clone());
                             }
                         }
-                        crate::ast::NeutralItem::RowBinding { entries, .. } => {
-                            out.extend(
-                                entries
-                                    .iter()
-                                    .filter(|entry| entry.local != "_")
-                                    .map(|entry| entry.local.clone()),
-                            );
-                        }
                         crate::ast::NeutralItem::Expression { .. } => {}
                     }
                 }
@@ -982,29 +868,6 @@ fn collect_expr_scope(expr: &Expr<Surface>, byte_offset: u32, out: &mut Vec<Stri
                 collect_expr_scope(body, byte_offset, out);
                 if name != "_" {
                     out.push(name.clone());
-                }
-            } else {
-                collect_expr_scope(value, byte_offset, out);
-            }
-        }
-        Expr::RowLet {
-            entries,
-            value,
-            body,
-            meta,
-            ..
-        } => {
-            let span = meta.span;
-            if !(span.start <= byte_offset && byte_offset <= span.end) {
-                return;
-            }
-            let in_body = body.span().start <= byte_offset && byte_offset <= body.span().end;
-            if in_body {
-                collect_expr_scope(body, byte_offset, out);
-                for entry in entries {
-                    if entry.local != "_" {
-                        out.push(entry.local.clone());
-                    }
                 }
             } else {
                 collect_expr_scope(value, byte_offset, out);
@@ -1089,23 +952,6 @@ fn add_sig_params(sig: &Signature<Surface>, out: &mut Vec<String>) {
     }
 }
 
-#[derive(Debug, Clone)]
-struct RowLetDecl {
-    name: String,
-    local_span: Span,
-    alias_explicit: bool,
-}
-
-impl RowLetDecl {
-    fn edit_span(&self) -> Span {
-        if self.alias_explicit {
-            self.local_span
-        } else {
-            Span::new(self.local_span.end, self.local_span.end)
-        }
-    }
-}
-
 /// A family rename changes only the written stem, preserving every slot index.
 /// Reclassifying the edited source tree checks both directions of capture:
 /// renamed references must remain owned and ordinary references must stay ordinary.
@@ -1133,29 +979,6 @@ impl PlaceholderRename {
         {
             return Err("a placeholder stem must end in a letter".to_owned());
         }
-        let mut shorthand_payloads = std::collections::HashSet::new();
-        let mut record_shorthand = |label_span: Span, value: &Expr<Surface>| {
-            let span = value.span();
-            if label_span.start <= span.start && span.end == label_span.end {
-                shorthand_payloads.insert(span);
-            }
-        };
-        walk_rename_expr(&self.body, &mut |expr| match expr {
-            Expr::LabelValue { labels, .. } => {
-                for label in labels {
-                    record_shorthand(label.label_span, &label.value);
-                }
-            }
-            Expr::Elaborator {
-                call: ElaboratorCall::FieldUpdate { updates, .. },
-                ..
-            } => {
-                for update in updates {
-                    record_shorthand(update.label_span, &update.value);
-                }
-            }
-            _ => {}
-        });
         let owned = crate::pass::placeholder::classify(&self.stem.name, &mut self.body, self.owner)
             .map_err(|_| "cannot rename an invalid placeholder family".to_owned())?;
         for (reference, slot) in owned.occurrences {
@@ -1178,24 +1001,12 @@ impl PlaceholderRename {
             range: to_lsp_range(line_index.to_range(self.stem.span)),
             new_text: new_name.to_owned(),
         }];
-        edits.extend(self.references.iter().map(|(span, slot)| {
-            // A shorthand shares its label token with the implicit payload.
-            // Materialize the payload so the label's identity stays unchanged.
-            let (edit_span, new_text) = if shorthand_payloads.contains(span) {
-                (
-                    Span::new(span.end, span.end),
-                    format!(" = {new_name}{slot}"),
-                )
-            } else {
-                (
-                    Span::new(span.start, span.start + self.stem.name.len() as u32),
-                    new_name.to_owned(),
-                )
-            };
-            TextEdit {
-                range: to_lsp_range(line_index.to_range(edit_span)),
-                new_text,
-            }
+        edits.extend(self.references.iter().map(|(span, _)| TextEdit {
+            range: to_lsp_range(line_index.to_range(Span::new(
+                span.start,
+                span.start + self.stem.name.len() as u32,
+            ))),
+            new_text: new_name.to_owned(),
         }));
         Ok(edits)
     }
@@ -1294,72 +1105,10 @@ fn placeholder_family_at(module: &Module<Surface>, offset: u32) -> Option<Placeh
         })
 }
 
-fn row_let_decl_at_offset(source: &str, byte_offset: u32) -> Option<RowLetDecl> {
-    let module = parse_surface_module(source)?;
-    row_let_decl_at_offset_in_module(&module, byte_offset)
-}
-
 fn parse_surface_module(source: &str) -> Option<Module<Surface>> {
     crate::pass::parser::parse_module_file(source)
         .map(|module_file| module_file.module)
         .ok()
-}
-
-fn row_let_decl_at_offset_in_module(
-    module: &Module<Surface>,
-    byte_offset: u32,
-) -> Option<RowLetDecl> {
-    module.items.iter().find_map(|item| match item {
-        Item::FnDef(fn_def) => row_let_decl_at_offset_in_expr(&fn_def.body, byte_offset),
-        Item::RecGroup(group, _) => group
-            .members
-            .iter()
-            .find_map(|member| row_let_decl_at_offset_in_expr(&member.body, byte_offset)),
-        Item::Equiv(equiv, _) => equiv
-            .terms
-            .iter()
-            .find_map(|arm| row_let_decl_at_offset_in_expr(&arm.body, byte_offset)),
-        _ => None,
-    })
-}
-
-fn row_let_decl_at_offset_in_expr(expr: &Expr<Surface>, byte_offset: u32) -> Option<RowLetDecl> {
-    let mut found = None;
-    walk_row_let_decls(expr, &mut |decl| {
-        if decl.local_span.start <= byte_offset && byte_offset <= decl.local_span.end {
-            found = Some(decl);
-        }
-    });
-    found
-}
-
-fn walk_row_let_decls(expr: &Expr<Surface>, visit: &mut impl FnMut(RowLetDecl)) {
-    walk_rename_expr(expr, &mut |expr| {
-        let groups: Vec<&[crate::ast::RowLetEntry]> = match expr {
-            Expr::RowLet { entries, .. } => vec![entries],
-            Expr::BlockCall { blocks, .. } => blocks
-                .iter()
-                .flat_map(|block| {
-                    block.items.iter().filter_map(|item| match item {
-                        crate::ast::NeutralItem::RowBinding { entries, .. } => {
-                            Some(entries.as_slice())
-                        }
-                        _ => None,
-                    })
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        for entries in groups {
-            for entry in entries {
-                visit(RowLetDecl {
-                    name: entry.local.clone(),
-                    local_span: entry.local_span,
-                    alias_explicit: entry.alias_explicit,
-                });
-            }
-        }
-    });
 }
 
 fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr<Surface>)) {
@@ -1377,9 +1126,7 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
                 }
             }
         }
-        Expr::RowLet { value, body, .. }
-        | Expr::Let { value, body, .. }
-        | Expr::Seq { value, body, .. } => {
+        Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
             walk_rename_expr(value, visit);
             walk_rename_expr(body, visit);
         }
@@ -1399,22 +1146,6 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
                 walk_rename_expr(item, visit);
             }
         }
-        Expr::LabelValue { labels, .. } => {
-            for label in labels {
-                walk_rename_expr(&label.value, visit);
-            }
-        }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => walk_rename_expr(receiver, visit),
-            ElaboratorCall::FieldUpdate { base, updates } => {
-                if let Some(receiver) = base.receiver() {
-                    walk_rename_expr(receiver, visit);
-                }
-                for update in updates {
-                    walk_rename_expr(&update.value, visit);
-                }
-            }
-        },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { stages, .. } | Expr::RecCall { stages, .. } => {
             for arg in stages.iter().flat_map(|stage| &stage.args) {
@@ -1489,7 +1220,7 @@ mod tests {
     #[test]
     fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
         let root = test_file_path("/virtual/selective-alias-tooling");
-        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
+        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub type { Box: . { pub mk; pub get }; } pub type { Foo: .; }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
         let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count[Number] }";
         let main_file = root.join("main.kio");
         let provider_file = root.join("provider.kio");
@@ -1706,36 +1437,6 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_family_rename_preserves_shorthand_labels_in_actual_edits() {
-        for (body, expected) in [
-            ("{x1}", "{x1 = arg1}"),
-            ("{m.x1}", "{m.x1 = arg1}"),
-            ("record.!{x1}", "record.!{x1 = arg1}"),
-            ("record.!{m.x1}", "record.!{m.x1 = arg1}"),
-            ("{x1 = x1}", "{x1 = arg1}"),
-        ] {
-            let source = format!("module main; fn run() {{ .x. {{ {body} }} }}");
-            let module = parse_surface_module(&source).unwrap();
-            let stem_offset = source.find(".x.").unwrap() as u32 + 1;
-            let family = placeholder_family_at(&module, stem_offset).unwrap();
-            let mut edits = family.rename("arg", &LineIndex::new(&source)).unwrap();
-            edits.sort_by_key(|edit| std::cmp::Reverse(edit.range.start.character));
-            let mut changed = source.clone();
-            for edit in edits {
-                changed.replace_range(
-                    edit.range.start.character as usize..edit.range.end.character as usize,
-                    &edit.new_text,
-                );
-            }
-            assert_eq!(
-                changed,
-                format!("module main; fn run() {{ .arg. {{ {expected} }} }}")
-            );
-            assert!(parse_surface_module(&changed).is_some());
-        }
-    }
-
-    #[test]
     fn placeholder_typed_navigation_keeps_numbered_slots_distinct() {
         let root = test_file_path("/virtual/placeholder-tooling");
         for (source, slots) in [
@@ -1890,10 +1591,8 @@ mod tests {
         LspAnalysis {
             position_index: index,
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,
@@ -1923,10 +1622,8 @@ mod tests {
         LspAnalysis {
             position_index,
             file_to_module,
-            label_reuse_indexes: HashMap::new(),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
             warnings: Vec::new(),
         }
@@ -2051,24 +1748,23 @@ rec(loop) {\n\
     // --- prepare_rename tests ---
 
     #[test]
-    fn ordinary_rename_conflict_scope_excludes_forwarded_label_names() {
-        let source =
-            "module source; labels { foo: . }; type {field} = {foo}; fn keep() -> . { () }";
-        let module = crate::pass::parser::parse(source).expect("forwarding source");
+    fn ordinary_rename_conflict_scope_includes_nominal_and_alias_names() {
+        let source = "module source; type { Foo: .; }; type Field = Foo; fn keep() -> . { () }";
+        let module = crate::pass::parser::parse(source).expect("alias source");
         let mut names = Vec::new();
         collect_module_scope(&module, source.len() as u32, &mut names);
-        assert_eq!(names, ["keep"]);
+        assert_eq!(names, ["Foo", "Field", "keep"]);
 
         let source = format!("{source} fn field() -> . {{ () }}");
         let module = crate::pass::parser::parse(&source).expect("a distinct ordinary value");
         let mut names = Vec::new();
         collect_module_scope(&module, source.len() as u32, &mut names);
-        assert_eq!(names, ["keep", "field"]);
+        assert_eq!(names, ["Foo", "Field", "keep", "field"]);
     }
 
     #[test]
-    fn ordinary_newtypes_are_renameable_but_generated_label_nominals_and_members_are_not() {
-        let mut analysis = make_analysis(Vec::new());
+    fn nominal_names_are_renameable_and_fixed_members_are_not() {
+        let analysis = make_analysis(Vec::new());
         let ordinary_head = ResolvedBinder::Newtype {
             module_path: "main".to_owned(),
             name: "Box".to_owned(),
@@ -2079,22 +1775,7 @@ rec(loop) {\n\
             member: "mk".to_owned(),
         };
         assert!(is_renameable(&ordinary_head, &analysis));
-        assert!(is_renameable(&ordinary_member, &analysis));
-
-        analysis
-            .generated_label_nominals
-            .insert(("main".to_owned(), "Field".to_owned()));
-        let generated_head = ResolvedBinder::Newtype {
-            module_path: "main".to_owned(),
-            name: "Field".to_owned(),
-        };
-        let generated_member = ResolvedBinder::NewtypeMember {
-            module_path: "main".to_owned(),
-            newtype: "Field".to_owned(),
-            member: "mk".to_owned(),
-        };
-        assert!(!is_renameable(&generated_head, &analysis));
-        assert!(!is_renameable(&generated_member, &analysis));
+        assert!(!is_renameable(&ordinary_member, &analysis));
     }
 
     #[test]
@@ -2168,34 +1849,6 @@ rec(loop) {\n\
         assert!(result.is_none(), "intrinsic is not renameable → None");
     }
 
-    #[test]
-    fn prepare_rename_refuses_label_declaration_and_reuse_marker() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let analysis = make_analysis(vec![(
-            "pkg/main",
-            Span::new(0, 1),
-            ResolvedBinder::Intrinsic {
-                name: "__absurd__".to_owned(),
-            },
-            source,
-        )]);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-
-        for position in [
-            Position {
-                line: 1,
-                character: 9,
-            },
-            Position {
-                line: 2,
-                character: 15,
-            },
-        ] {
-            assert!(handle_prepare_rename(&uri, &position, &analysis, None).is_none());
-        }
-    }
-
     // --- handle_rename tests ---
 
     #[test]
@@ -2247,43 +1900,6 @@ rec(loop) {\n\
         };
         let result = handle_rename(&uri, &pos, "____", &analysis, None, &test_file_path("/tmp"));
         assert!(result.is_err(), "____` is reserved → error");
-    }
-
-    #[test]
-    fn rename_refuses_label_declaration_and_reuse_marker() {
-        let source =
-            "module pkg/main;\nlabels { field: . };\nlabels Row = { field: _, other: . };\n";
-        let analysis = make_analysis(vec![(
-            "pkg/main",
-            Span::new(0, 1),
-            ResolvedBinder::Intrinsic {
-                name: "__absurd__".to_owned(),
-            },
-            source,
-        )]);
-        let uri = test_file_uri("/tmp/pkg/main.kio");
-
-        for position in [
-            Position {
-                line: 1,
-                character: 9,
-            },
-            Position {
-                line: 2,
-                character: 15,
-            },
-        ] {
-            let error = handle_rename(
-                &uri,
-                &position,
-                "renamed",
-                &analysis,
-                None,
-                &test_file_path("/tmp"),
-            )
-            .expect_err("label rename must be refused");
-            assert!(error.contains("cannot be renamed safely"), "got: {error}");
-        }
     }
 
     #[test]
@@ -2401,13 +2017,13 @@ rec(loop) {\n\
     }
 
     #[test]
-    fn qualified_newtype_member_rename_ignores_unrelated_local_binding() {
+    fn fixed_nominal_member_refuses_rename_in_an_operator_binding() {
         let package_root = test_file_path("/workspace");
         let provider_path = package_root.join("provider.kio");
         let consumer_path = package_root.join("consumer.kio");
         let provider = concat!(
             "module provider;\n",
-            "pub newtype Wrap : . { pub constructor mk; pub projector get; };\n",
+            "pub type { Wrap: . { pub mk; pub get; }; };\n",
         );
         let consumer = concat!(
             "module consumer;\n",
@@ -2455,7 +2071,16 @@ rec(loop) {\n\
         let cursor = LineIndex::new(consumer).to_position(member_start as u32);
         let uri = path_to_uri(&consumer_path, &package_root).expect("consumer URI");
 
-        let edit = handle_rename(
+        assert!(
+            handle_prepare_rename(
+                &uri,
+                &Position::new(cursor.line, cursor.character),
+                &analysis,
+                None,
+            )
+            .is_none()
+        );
+        let error = handle_rename(
             &uri,
             &Position {
                 line: cursor.line,
@@ -2466,18 +2091,8 @@ rec(loop) {\n\
             None,
             &package_root,
         )
-        .expect("a local cannot capture a qualified newtype member")
-        .expect("rename produces edits");
-
-        assert_eq!(
-            edit.changes
-                .expect("plain workspace changes")
-                .values()
-                .map(Vec::len)
-                .sum::<usize>(),
-            2,
-            "the provider declaration and qualified use are both renamed"
-        );
+        .expect_err("a fixed nominal role cannot be renamed");
+        assert_eq!(error, "the identifier at the cursor cannot be renamed");
     }
 
     #[test]
@@ -2632,9 +2247,9 @@ rec(loop) {\n\
             line: 1,
             character: 2,
         };
-        let overlay = Some(LabelReuseSnapshot {
+        let overlay = Some(LiveSyntaxSnapshot {
             source: overlay_source,
-            index: None,
+            parsed: false,
         });
 
         assert!(
@@ -2656,47 +2271,6 @@ rec(loop) {\n\
         .expect("indexed rename does not require a fresh Surface AST")
         .expect("indexed rename returns an edit");
         assert!(edit.document_changes.is_some());
-    }
-
-    #[test]
-    fn row_let_fallback_refuses_an_unparseable_live_overlay() {
-        let analyzed_source = concat!(
-            "module pkg/main;\n",
-            "fn run(row: A) -> A { let .({ field as value }) = row; value }\n",
-        );
-        let overlay_source = concat!(
-            "module pkg/main;\n",
-            "fn run(row: A) -> A { let .({ field as value }) = row; value } \"\n",
-        );
-        let analysis = make_package_analysis(
-            vec![(
-                test_file_path("/workspace/pkg/main.kio"),
-                "pkg/main".to_owned(),
-                analyzed_source.to_owned(),
-            )],
-            Vec::new(),
-        );
-        let uri = test_file_uri("/workspace/pkg/main.kio");
-        let position = position_of(overlay_source, "value");
-        let overlay = Some(LabelReuseSnapshot {
-            source: overlay_source,
-            index: None,
-        });
-
-        let error = handle_rename_versioned_with_context(
-            &uri,
-            &position,
-            "renamed",
-            &analysis,
-            overlay,
-            RenameParseContext {
-                package_root: &test_file_path("/workspace"),
-                current_module: None,
-            },
-            &BTreeMap::new(),
-        )
-        .expect_err("a stale row-let AST must not drive edits in an invalid live buffer");
-        assert!(error.contains("no renameable identifier"), "got: {error}");
     }
 
     #[test]
@@ -2855,83 +2429,6 @@ rec(loop) {\n\
         assert!(error.contains("would conflict"), "got: {error}");
     }
 
-    #[test]
-    fn row_let_rename_uses_current_module_written_grammar() {
-        let package_root = test_file_path("/workspace");
-        let main_path = package_root.join("pkg/main.kio");
-        let syntax_path = package_root.join("pkg/syntax.kio");
-        let main_source = concat!(
-            "module pkg/main;\n",
-            "import pkg/syntax(op ? _ : _);\n",
-            "fn run(row: A) -> A { let .({ field as value }) = row; ? value : row }\n",
-        );
-        let syntax_source = concat!(
-            "module pkg/syntax;\n",
-            "fn choose(left: A, right: A) -> A { left }\n",
-            "pub op ? _ : _ { impl choose; };\n",
-        );
-        assert!(
-            crate::pass::parser::parse_module_file(main_source).is_ok(),
-            "the written import grammar makes the fixed tail independently parseable",
-        );
-
-        let analysis = make_package_analysis(
-            vec![
-                (main_path, "pkg/main".to_owned(), main_source.to_owned()),
-                (
-                    syntax_path.clone(),
-                    "pkg/syntax".to_owned(),
-                    syntax_source.to_owned(),
-                ),
-            ],
-            Vec::new(),
-        );
-        let current_module = parse_module_file(main_source)
-            .expect("self-contained row-let module parses")
-            .module;
-        let uri = test_file_uri("/workspace/pkg/main.kio");
-        let position = position_of(main_source, "value");
-
-        let prepared = handle_prepare_rename_with_module(
-            &uri,
-            &position,
-            &analysis,
-            None,
-            Some(&current_module),
-        )
-        .expect("row-let alias remains renameable");
-        assert!(matches!(
-            prepared,
-            PrepareRenameResponse::RangeWithPlaceholder { placeholder, .. }
-                if placeholder == "value"
-        ));
-
-        let edit = handle_rename_versioned_with_context(
-            &uri,
-            &position,
-            "renamed",
-            &analysis,
-            None,
-            RenameParseContext {
-                package_root: &package_root,
-                current_module: Some(&current_module),
-            },
-            &BTreeMap::new(),
-        )
-        .expect("row-let rename succeeds")
-        .expect("row-let rename returns an edit");
-        let edit_count = match edit
-            .document_changes
-            .expect("versioned rename uses document changes")
-        {
-            lsp_types::DocumentChanges::Edits(edits) => edits
-                .into_iter()
-                .map(|edit| edit.edits.len())
-                .sum::<usize>(),
-            other => panic!("expected text document edits, got {other:?}"),
-        };
-        assert_eq!(edit_count, 1);
-    }
     #[test]
     fn numbered_family_rename_observes_whole_family_shadowing() {
         for body in [

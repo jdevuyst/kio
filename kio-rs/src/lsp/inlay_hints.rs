@@ -68,7 +68,7 @@ pub fn handle_inlay_hints(
 
 fn render_type_args<P>(tys: &[crate::ast::Type<P>]) -> String
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+    P: crate::ast::Phase,
 {
     if tys.is_empty() {
         return String::new();

@@ -139,11 +139,11 @@ polyId = pure pure
 publicRankRoundTrip :: IO Bool
 publicRankRoundTrip = do
   wrapped <-
-    P.export__api__WrappedPolyId__mkWrappedPolyId
+    P.export__api__WrappedPolyId__mk
       package
       polyId
   projected <-
-    P.export__api__WrappedPolyId__unWrappedPolyId
+    P.export__api__WrappedPolyId__get
       package
       wrapped
   identity <- projected @Bool

@@ -2,4 +2,4 @@ package main
 
 import p "driver/out/go"
 
-var wrongKind p.Exp_Api__Applied_make_ret[int, int, string, numberIndex, numberIndex]
+var wrongKind p.Exp_Api__Applied_mk_ret[int, int, string, numberIndex, numberIndex]

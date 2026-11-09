@@ -60,13 +60,13 @@ import docs_loader/testapi(I32, String);
 // environment — no host arithmetic in the evaluator's hot path, and the
 // lookup terminates by construction on a well-formed term.
 /// A de Bruijn index encoded as a unary natural: zero, or the successor of a smaller index.
-pub rec labels { nat: . | Nat };
+pub rec type { Nat: . | Nat }
 
 /// The index `0` — names the nearest enclosing binder.
-pub fn nz() -> Nat { {nat = widen_sum(())[. | Nat]} }
+pub fn nz() -> Nat { Nat.mk(widen_sum(())[. | Nat]) }
 
 /// The successor index — names one binder further out than `n`.
-pub fn ns(n: Nat) -> Nat { {nat = widen_sum(n)[. | Nat]} }
+pub fn ns(n: Nat) -> Nat { Nat.mk(widen_sum(n)[. | Nat]) }
 
 /// One-step destructor on a `Nat`: `()` at zero, or the predecessor.
 pub fn un_nat(n: Nat) -> . | Nat { Nat.get(n) }
@@ -79,14 +79,14 @@ pub fn un_nat(n: Nat) -> . | Nat { Nat.get(n) }
 /// schedule additionally interleaves one zero-slot entry per erased `forall`.
 /// Zero therefore denotes either an erased binder stage or a declared Unit
 /// group; positive counts denote declared non-Unit groups.
-pub rec labels { group_slots: . | (I32 & Group_slots) };
+pub rec type { Group_slots: . | (I32 & Group_slots) }
 
 /// No remaining application stages.
-pub fn group_slots_nil() -> Group_slots { {group_slots = widen_sum(())[. | (I32 & Group_slots)]} }
+pub fn group_slots_nil() -> Group_slots { Group_slots.mk(widen_sum(())[. | (I32 & Group_slots)]) }
 
 /// Prepends one application stage's resolved slot count.
 pub fn group_slots_cons(slots: I32, rest: Group_slots) -> Group_slots {
-  {group_slots = widen_sum((slots, rest))[. | (I32 & Group_slots)]}
+  Group_slots.mk(widen_sum((slots, rest))[. | (I32 & Group_slots)])
 }
 
 /// Splits the next application-stage slot count from the remaining stages.
@@ -154,59 +154,62 @@ pub fn lit_type(l: Lit) -> Host_type {
 //   T_lit     Lit                        a literal (raw text & exact host type)
 //   T_hostfn  Host_fn & Group_slots      an exact private-runtime-staged host-fn reference
 /// Defines the variable-reference term arm (a de Bruijn index).
-pub labels { t_var: Nat };
+pub type { T_var: Nat }
 
 /// Defines the unit-value term arm.
-pub labels { t_unit: . };
+pub type { T_unit: . }
 
 /// Defines the literal term arm (raw text & exact host-type descriptor).
-pub labels { t_lit: Lit };
+pub type { T_lit: Lit }
 
 /// Defines the host-fn-reference term arm: its exact declaration descriptor
 /// and remaining `Group_slots`.
-pub labels { t_hostfn: Host_fn & Group_slots };
+pub type { T_hostfn: Host_fn & Group_slots }
 
 rec {
   /// Defines the lambda term arm (one parameter; the payload is the body).
-  pub labels { t_lam: Term };
+  pub type { T_lam: Term };
   /// Defines the application term arm (function then argument).
-  pub labels { t_app: Term & Term };
+  pub type { T_app: Term & Term };
   /// Defines the let-binding term arm (right-hand side then body).
-  pub labels { t_let: Term & Term };
+  pub type { T_let: Term & Term };
   /// Defines the pair-construction term arm.
-  pub labels { t_pair: Term & Term };
+  pub type { T_pair: Term & Term };
   /// Defines the first-projection term arm.
-  pub labels { t_fst: Term };
+  pub type { T_fst: Term };
   /// Defines the second-projection term arm.
-  pub labels { t_snd: Term };
+  pub type { T_snd: Term };
   /// Defines the left-injection term arm.
-  pub labels { t_left: Term };
+  pub type { T_left: Term };
   /// Defines the right-injection term arm.
-  pub labels { t_right: Term };
+  pub type { T_right: Term };
   /// Defines the sum-elimination term arm (scrutinee, left handler, right handler).
-  pub labels { t_either: Term & Term & Term };
+  pub type { T_either: Term & Term & Term };
   /// Defines the branching term arm (exact Boolean `Host_type`, condition,
   /// then-branch, else-branch).
-  pub labels { t_ite: Host_type & Term & Term & Term };
+  pub type { T_ite: Host_type & Term & Term & Term };
   /// Defines the bottom-elimination term arm.
-  pub labels { t_absurd: Term };
+  pub type { T_absurd: Term };
   /// The erased Kio' term — a nominal knot over the closed sum of every
   /// runtime-bearing node family.
-  pub labels { term: | T_var
-  | T_lam
-  | T_app
-  | T_let
-  | T_pair
-  | T_fst
-  | T_snd
-  | T_left
-  | T_right
-  | T_either
-  | T_ite
-  | T_absurd
-  | T_unit
-  | T_lit
-  | T_hostfn }
+  pub type {
+    Term:
+      | T_var
+      | T_lam
+      | T_app
+      | T_let
+      | T_pair
+      | T_fst
+      | T_snd
+      | T_left
+      | T_right
+      | T_either
+      | T_ite
+      | T_absurd
+      | T_unit
+      | T_lit
+      | T_hostfn
+  }
 }
 
 /// The bare node-family sum inside a `Term` — the widen target the smart
@@ -233,19 +236,19 @@ pub type Term_node =
 pub fn un_term(t: Term) -> Term_node { Term.get(t) }
 
 /// A cons-list of `Term`s — the argument vector a host-call term applies.
-pub labels { terms: List[Term] };
+pub type { Terms: List[Term] }
 
 /// The empty term vector.
-pub fn tnil() -> Terms { {terms = nil[Term]} }
+pub fn tnil() -> Terms { Terms.mk(nil[Term]) }
 
 /// Prepends one term to a term vector.
-pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(tail))} }
+pub fn tcons(head: Term, tail: Terms) -> Terms { Terms.mk(cons(head, Terms.get(tail))) }
 
 /// One-step destructor on a term vector.
 pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
   match(uncons(Terms.get(ts))) {
     (
-    , .(h: Term, t: List[Term]) { widen_sum((h, {terms = t}))[. | (Term & Terms)] }
+    , .(h: Term, t: List[Term]) { widen_sum((h, Terms.mk(t)))[. | (Term & Terms)] }
     , .(_e: .) { widen_sum(())[. | (Term & Terms)] }
     )
   }
@@ -259,58 +262,58 @@ pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
 // construction site reads
 // `app(lam(var(nz())), unit())` rather than the raw `widen_sum` tower.
 /// Builds a variable-reference term from a de Bruijn index.
-pub fn var(i: Nat) -> Term { {term = widen_sum({t_var = i})[Term_node]} }
+pub fn var(i: Nat) -> Term { Term.mk(widen_sum(T_var.mk(i))[Term_node]) }
 
 /// Builds a lambda term from its body.
-pub fn lam(body: Term) -> Term { {term = widen_sum({t_lam = body})[Term_node]} }
+pub fn lam(body: Term) -> Term { Term.mk(widen_sum(T_lam.mk(body))[Term_node]) }
 
 /// Builds an application term from a function and an argument.
-pub fn app(f: Term, a: Term) -> Term { {term = widen_sum({t_app = (f, a)})[Term_node]} }
+pub fn app(f: Term, a: Term) -> Term { Term.mk(widen_sum(T_app.mk((f, a)))[Term_node]) }
 
 /// Builds a let-binding term from a right-hand side and a body.
-pub fn let_(rhs: Term, body: Term) -> Term { {term = widen_sum({t_let = (rhs, body)})[Term_node]} }
+pub fn let_(rhs: Term, body: Term) -> Term { Term.mk(widen_sum(T_let.mk((rhs, body)))[Term_node]) }
 
 /// Builds a pair-construction term.
-pub fn pair(a: Term, b: Term) -> Term { {term = widen_sum({t_pair = (a, b)})[Term_node]} }
+pub fn pair(a: Term, b: Term) -> Term { Term.mk(widen_sum(T_pair.mk((a, b)))[Term_node]) }
 
 /// Builds a first-projection term.
-pub fn fst(p: Term) -> Term { {term = widen_sum({t_fst = p})[Term_node]} }
+pub fn fst(p: Term) -> Term { Term.mk(widen_sum(T_fst.mk(p))[Term_node]) }
 
 /// Builds a second-projection term.
-pub fn snd(p: Term) -> Term { {term = widen_sum({t_snd = p})[Term_node]} }
+pub fn snd(p: Term) -> Term { Term.mk(widen_sum(T_snd.mk(p))[Term_node]) }
 
 /// Builds a left-injection term.
-pub fn left(a: Term) -> Term { {term = widen_sum({t_left = a})[Term_node]} }
+pub fn left(a: Term) -> Term { Term.mk(widen_sum(T_left.mk(a))[Term_node]) }
 
 /// Builds a right-injection term.
-pub fn right(b: Term) -> Term { {term = widen_sum({t_right = b})[Term_node]} }
+pub fn right(b: Term) -> Term { Term.mk(widen_sum(T_right.mk(b))[Term_node]) }
 
 /// Builds a sum-elimination term from a scrutinee and the two handlers.
 pub fn either(s: Term, f: Term, g: Term) -> Term {
-  {term = widen_sum({t_either = (s, f, g)})[Term_node]}
+  Term.mk(widen_sum(T_either.mk((s, f, g)))[Term_node])
 }
 
 /// Builds a branching term from its exact Boolean `Host_type`, condition, and
 /// two thunk expressions retained as ordinary terms.
 pub fn ite(bool_type: Host_type, c: Term, t: Term, e: Term) -> Term {
-  {term = widen_sum({t_ite = (bool_type, (c, (t, e)))})[Term_node]}
+  Term.mk(widen_sum(T_ite.mk((bool_type, (c, (t, e)))))[Term_node])
 }
 
 /// Builds a bottom-elimination term.
-pub fn absurd(x: Term) -> Term { {term = widen_sum({t_absurd = x})[Term_node]} }
+pub fn absurd(x: Term) -> Term { Term.mk(widen_sum(T_absurd.mk(x))[Term_node]) }
 
 /// The unit-value term.
-pub fn unit() -> Term { {term = widen_sum({t_unit=})[Term_node]} }
+pub fn unit() -> Term { Term.mk(widen_sum(T_unit.mk(()))[Term_node]) }
 
 /// Builds a literal term from its raw text and exact host-type descriptor.
 pub fn lit(text: String, host_type: Host_type) -> Term {
-  {term = widen_sum({t_lit = mk_lit(text, host_type)})[Term_node]}
+  Term.mk(widen_sum(T_lit.mk(mk_lit(text, host_type)))[Term_node])
 }
 
 /// Builds a host-fn-reference term from its exact declaration descriptor and
 /// remaining `Group_slots`.
 pub fn hostfn_ref(descriptor: Host_fn, groups: Group_slots) -> Term {
-  {term = widen_sum({t_hostfn = (descriptor, groups)})[Term_node]}
+  Term.mk(widen_sum(T_hostfn.mk((descriptor, groups)))[Term_node])
 }
 
 // =====================================================================
@@ -367,42 +370,42 @@ equiv lit_type_round(t: String, ty: Host_type) {
 // (`lit`), and the exact `Host_fn` host-fn-reference arm.
 equiv un_var(i: Nat) {
   un_term(var(i));
-  widen_sum({t_var = i})[Term_node]
+  widen_sum(T_var.mk(i))[Term_node]
 }
 
 equiv un_lam(b: Term) {
   un_term(lam(b));
-  widen_sum({t_lam = b})[Term_node]
+  widen_sum(T_lam.mk(b))[Term_node]
 }
 
 equiv un_app(f: Term, a: Term) {
   un_term(app(f, a));
-  widen_sum({t_app = (f, a)})[Term_node]
+  widen_sum(T_app.mk((f, a)))[Term_node]
 }
 
 equiv un_either(s: Term, f: Term, g: Term) {
   un_term(either(s, f, g));
-  widen_sum({t_either = (s, f, g)})[Term_node]
+  widen_sum(T_either.mk((s, f, g)))[Term_node]
 }
 
 equiv un_ite(ty: Host_type, c: Term, t: Term, e: Term) {
   un_term(ite(ty, c, t, e));
-  widen_sum({t_ite = (ty, (c, (t, e)))})[Term_node]
+  widen_sum(T_ite.mk((ty, (c, (t, e)))))[Term_node]
 }
 
 equiv un_unit_term() {
   un_term(unit());
-  widen_sum({t_unit=})[Term_node]
+  widen_sum(T_unit.mk(()))[Term_node]
 }
 
 equiv un_lit(t: String, ty: Host_type) {
   un_term(lit(t, ty));
-  widen_sum({t_lit = mk_lit(t, ty)})[Term_node]
+  widen_sum(T_lit.mk(mk_lit(t, ty)))[Term_node]
 }
 
 equiv un_hostfn_ref(descriptor: Host_fn, groups: Group_slots) {
   un_term(hostfn_ref(descriptor, groups));
-  widen_sum({t_hostfn = (descriptor, groups)})[Term_node]
+  widen_sum(T_hostfn.mk((descriptor, groups)))[Term_node]
 }
 
 equiv un_group_slots_cons(slots: I32, rest: Group_slots) {

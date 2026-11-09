@@ -7,17 +7,16 @@
 module datalog/report;
 
 import datalog/atom(Args, Atom, Atoms, T_const, T_var, Term, args_of, count_pred, pred_of);
-import datalog/atom({t_const});
-import datalog/atom({t_var});
 import datalog/eval as eval;
 import datalog/list as list;
 import datalog/program as program;
 import datalog/query as query;
 import datalog/subst as subst;
-import datalog/subst({some_const});
+import datalog/subst(Some_const);
 import datalog/symbols as sym;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -60,12 +59,19 @@ fn pad_int(n: I32, width: I32) -> String {
 
 fn term_text(t: Term) -> String {
   match(t) {
-    (.(k: T_const) { sym.const_name(k.?{t_const}) }, .(v: T_var) { sym.var_name(v.?{t_var}) })
+    (
+    , .(k: T_const) {
+        sym.const_name(k.>select { T_const.get })
+      }
+    , .(v: T_var) {
+        sym.var_name(v.>select { T_var.get })
+      }
+    )
   }
 }
 
 rec(loop) fn args_onto(args: Args, acc: String, first: Bool) -> String {
-  match(args.>list.List.un_list) {
+  match(args.>list.List.get) {
     (
     , .(t: Term, rest: Args) {
         if(first) {
@@ -84,7 +90,7 @@ fn atom_text(a: Atom) -> String {
 }
 
 rec(loop) fn body_onto(body: Atoms, acc: String, first: Bool) -> String {
-  match(body.>list.List.un_list) {
+  match(body.>list.List.get) {
     (
     , .(goal: Atom, rest: Atoms) {
         if(first) {
@@ -99,7 +105,7 @@ rec(loop) fn body_onto(body: Atoms, acc: String, first: Bool) -> String {
 }
 
 rec(loop) fn print_facts(facts: Atoms) {
-  match(facts.>list.List.un_list) {
+  match(facts.>list.List.get) {
     (
     , .(f: Atom, rest: Atoms) { line(cat2(atom_text(f), ".")); recur print_facts(rest) }
     , .(_empty: .) { () }
@@ -110,7 +116,7 @@ rec(loop) fn print_facts(facts: Atoms) {
 pub fn edb(facts: Atoms) { print_facts(facts); tally("facts", list.length(facts)) }
 
 rec(loop) fn print_rules(rules: program.Rules) {
-  match(rules.>list.List.un_list) {
+  match(rules.>list.List.get) {
     (
     , .(r: program.Rule, rest: program.Rules) {
         line(cat4(atom_text(program.head_of(r)), " :- ", body_onto(program.body_of(r), "", .t), "."));
@@ -124,7 +130,7 @@ rec(loop) fn print_rules(rules: program.Rules) {
 pub fn rules(rs: program.Rules) { print_rules(rs); tally("rules", list.length(rs)) }
 
 rec(loop) fn print_rounds(trace: eval.Trace) {
-  match(trace.>list.List.un_list) {
+  match(trace.>list.List.get) {
     (
     , .(r: eval.Round, rest: eval.Trace) {
         line(cat3(
@@ -162,7 +168,7 @@ pub fn agreement(semi: eval.Run, naive: eval.Run) {
 }
 
 rec(loop) fn print_tallies(db: Atoms, preds: list.List[I32]) {
-  match(preds.>list.List.un_list) {
+  match(preds.>list.List.get) {
     (
     , .(p: I32, rest: list.List[I32]) {
         tally(sym.pred_name(p), count_pred(db, p));
@@ -184,14 +190,16 @@ pub fn derived(db: Atoms, preds: list.List[I32]) {
 fn bound_text(s: subst.Subst, v: I32) -> String {
   match(subst.lookup(s, v)) {
     (
-    , .(bound: subst.Some_const) { sym.const_name(bound.?{some_const}) }
+    , .(bound: subst.Some_const) {
+        sym.const_name(bound.>select { Some_const.get })
+      }
     , .(_free: subst.No_const) { "_" }
     )
   }
 }
 
 rec(loop) fn answer_onto(vars: query.Codes, s: subst.Subst, acc: String, first: Bool) -> String {
-  match(vars.>list.List.un_list) {
+  match(vars.>list.List.get) {
     (
     , .(v: I32, rest: query.Codes) {
         let binding = cat3(sym.var_name(v), " = ", bound_text(s, v));
@@ -207,7 +215,7 @@ rec(loop) fn answer_onto(vars: query.Codes, s: subst.Subst, acc: String, first: 
 }
 
 rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) {
-  match(rows.>list.List.un_list) {
+  match(rows.>list.List.get) {
     (
     , .(s: subst.Subst, rest: subst.Substs) {
         line(cat2("  ", answer_onto(vars, s, "", .t)));
@@ -219,7 +227,7 @@ rec(loop) fn print_answers(vars: query.Codes, rows: subst.Substs) {
 }
 
 rec(loop) fn print_queries(qs: Atoms, db: Atoms) {
-  match(qs.>list.List.un_list) {
+  match(qs.>list.List.get) {
     (
     , .(q: Atom, rest: Atoms) {
         let rows = query.answers(q, db);

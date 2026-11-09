@@ -3,6 +3,7 @@ module index/analysis;
 import index/automaton as sam;
 import index/numbers as num;
 import macros/control(macro if);
+import macros/row_macros(macro select, macro with);
 import testapi(Array, Bool, I32);
 import testapi/arith as n;
 import testapi/array as a;
@@ -11,12 +12,14 @@ import testapi/iter(loop);
 rec(loop) fn collect_length(states: Array[sam.State], length: I32, state: I32) {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
-    if(num.equal(item.?{sam.longest}, length)) {
-      let parent = a.array_get(states, item.?{sam.suffix});
+    if(num.equal(item.>select { sam.Longest.get }, length)) {
+      let parent = a.array_get(states, item.>select { sam.Suffix.get });
       a.array_set(
       , states
-      , item.?{sam.suffix}
-      , parent.!{sam.ends = n.add_i32(parent.?{sam.ends}, item.?{sam.ends})}
+      , item.>select { sam.Suffix.get }
+      , parent.>with {
+          sam.Ends.mk(n.add_i32(parent.>select { sam.Ends.get }, item.>select { sam.Ends.get }))
+        }
       )
     } else {
       ()
@@ -38,8 +41,11 @@ rec(loop) fn descending_lengths(states: Array[sam.State], length: I32) {
 }
 
 pub fn finalize(index: sam.Index) {
-  let states = index.?{sam.states};
-  descending_lengths(states, a.array_get(states, index.?{sam.last}).?{sam.longest})
+  let states = index.>select { sam.States.get };
+  descending_lengths(
+  , states
+  , a.array_get(states, index.>select { sam.Last.get }).>select { sam.Longest.get }
+  )
 }
 
 rec(loop) fn walk(states: Array[sam.State], query: Array[I32], state: I32, position: I32) -> I32 {
@@ -55,39 +61,49 @@ rec(loop) fn walk(states: Array[sam.State], query: Array[I32], state: I32, posit
       0
     }
   } else {
-    a.array_get(states, state).?{sam.ends}
+    a.array_get(states, state).>select { sam.Ends.get }
   }
 }
 
 pub fn occurrences(index: sam.Index, query: Array[I32]) -> I32 {
   if(num.equal(a.array_len(query), 0)) {
-    n.add_i32(a.array_get(index.?{sam.states}, index.?{sam.last}).?{sam.longest}, 1)
+    n.add_i32(
+    , a.array_get(index.>select { sam.States.get }, index.>select { sam.Last.get }).>select {
+        sam.Longest.get
+      }
+    , 1
+    )
   } else {
-    walk(index.?{sam.states}, query, 0, 0)
+    walk(index.>select { sam.States.get }, query, 0, 0)
   }
 }
 
 rec(loop) fn distinct_from(states: Array[sam.State], state: I32, total: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
-    let parent = a.array_get(states, item.?{sam.suffix});
+    let parent = a.array_get(states, item.>select { sam.Suffix.get });
     recur distinct_from(
     , states
     , n.add_i32(state, 1)
-    , n.add_i32(total, n.sub_i32(item.?{sam.longest}, parent.?{sam.longest}))
+    , n.add_i32(
+      , total
+      , n.sub_i32(item.>select { sam.Longest.get }, parent.>select { sam.Longest.get })
+      )
     )
   } else {
     total
   }
 }
 
-pub fn distinct(index: sam.Index) -> I32 { distinct_from(index.?{sam.states}, 1, 0) }
+pub fn distinct(index: sam.Index) -> I32 {
+  distinct_from(index.>select { sam.States.get }, 1, 0)
+}
 
 rec(loop) fn longest_from(states: Array[sam.State], state: I32, best: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
-    let next = if(n.leq_i32(2, item.?{sam.ends})) {
-      num.max(best, item.?{sam.longest})
+    let next = if(n.leq_i32(2, item.>select { sam.Ends.get })) {
+      num.max(best, item.>select { sam.Longest.get })
     } else {
       best
     };
@@ -97,7 +113,9 @@ rec(loop) fn longest_from(states: Array[sam.State], state: I32, best: I32) -> I3
   }
 }
 
-pub fn longest_repeated(index: sam.Index) -> I32 { longest_from(index.?{sam.states}, 1, 0) }
+pub fn longest_repeated(index: sam.Index) -> I32 {
+  longest_from(index.>select { sam.States.get }, 1, 0)
+}
 
 rec(loop) fn rows_differ(states: Array[sam.State], left: I32, right: I32, symbol: I32) -> Bool {
   if(num.less(symbol, 3)) {
@@ -113,7 +131,7 @@ rec(loop) fn rows_differ(states: Array[sam.State], left: I32, right: I32, symbol
 
 rec(loop) fn divergent_from(states: Array[sam.State], state: I32, total: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
-    let source = a.array_get(states, state).?{sam.copied_from};
+    let source = a.array_get(states, state).>select { sam.Copied_from.get };
     let .(extra: I32) = if(num.less(source, 0)) {
       0
     } else if(rows_differ(states, source, state, 0)) {
@@ -127,4 +145,6 @@ rec(loop) fn divergent_from(states: Array[sam.State], state: I32, total: I32) ->
   }
 }
 
-pub fn divergent_clones(index: sam.Index) -> I32 { divergent_from(index.?{sam.states}, 1, 0) }
+pub fn divergent_clones(index: sam.Index) -> I32 {
+  divergent_from(index.>select { sam.States.get }, 1, 0)
+}

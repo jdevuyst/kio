@@ -7,9 +7,9 @@ import testapi/io(print);
 
 type Unit_sum = . | !;
 
-newtype Wrapped : . { constructor make_wrapped; projector read_wrapped }
+type { Wrapped: . { mk; get } }
 
-newtype Unique : . { constructor make_unique; projector read_unique }
+type { Unique: . { mk; get } }
 
 fn unit_fact() { print("unit\n") }
 
@@ -21,11 +21,11 @@ fn product_fact() -> . & . { print("product\n"); ((), ()) }
 
 fn sum_fact() -> Unit_sum { print("sum\n"); widen_sum(())[Unit_sum] }
 
-fn wrapped_fact() -> Wrapped { print("wrapped\n"); Wrapped.make_wrapped(()) }
+fn wrapped_fact() -> Wrapped { print("wrapped\n"); Wrapped.mk(()) }
 
-fn unique_base() -> Unique { print("unique base\n"); Unique.make_unique(()) }
+fn unique_base() -> Unique { print("unique base\n"); Unique.mk(()) }
 
-fn unreachable_rival(_precondition: Unit_sum) -> Unique { print("rival\n"); Unique.make_unique(()) }
+fn unreachable_rival(_precondition: Unit_sum) -> Unique { print("rival\n"); Unique.mk(()) }
 
 fn discard_int(_value: Int) { () }
 

@@ -26,24 +26,24 @@ import value(Value);
 // inside a runtime value). Final evaluator entry points still return only
 // `Eval_result`.
 /// Defines the successful-result arm.
-pub labels { ev_done: Value };
+pub type { Ev_done: Value }
 
 /// Defines the stuck-result arm, carrying the reason.
-pub labels { ev_stuck: String };
+pub type { Ev_stuck: String }
 
 /// Defines the interpreted-loop fold arm: step closure and initial state.
-pub labels { ev_fold: Value & Value };
+pub type { Ev_fold: Value & Value }
 
 /// Defines the single-application re-entry arm: the host asks the machine
 /// to apply a guest closure to an argument, and the application's result
 /// is the host call's result.
-pub labels { ev_apply: Value & Value };
+pub type { Ev_apply: Value & Value }
 
 /// Defines the apply-then re-entry arm: apply the closure to the argument,
 /// then re-dispatch the exact host descriptor with the product of the
 /// application's result and the threaded state — the defunctionalized
 /// continuation returned by a host capability.
-pub labels { ev_apply_then: Value & Value & Host_fn & Value };
+pub type { Ev_apply_then: Value & Value & Host_fn & Value }
 
 /// The outcome of a `prime_eval` run: a value, or stuck with a reason.
 pub type Eval_result = Ev_done | Ev_stuck;
@@ -52,35 +52,35 @@ pub type Eval_result = Ev_done | Ev_stuck;
 pub type Call_result = Ev_done | Ev_stuck | Ev_fold | Ev_apply | Ev_apply_then;
 
 /// Builds the successful-result value.
-pub fn ev_done(v: Value) -> Eval_result { widen_sum({ev_done = v})[Ev_done | Ev_stuck] }
+pub fn ev_done(v: Value) -> Eval_result { widen_sum(Ev_done.mk(v))[Ev_done | Ev_stuck] }
 
 /// Builds the stuck result from its reason.
 pub fn ev_stuck(reason: String) -> Eval_result {
-  widen_sum({ev_stuck = reason})[Ev_done | Ev_stuck]
+  widen_sum(Ev_stuck.mk(reason))[Ev_done | Ev_stuck]
 }
 
 /// The stuck result's reason.
 pub fn stuck_reason(s: Ev_stuck) -> String { Ev_stuck.get(s) }
 
 /// Builds a successful host-call result.
-pub fn call_done(v: Value) -> Call_result { widen_sum({ev_done = v})[Call_result] }
+pub fn call_done(v: Value) -> Call_result { widen_sum(Ev_done.mk(v))[Call_result] }
 
 /// Builds a stuck host-call result from its reason.
-pub fn call_stuck(reason: String) -> Call_result { widen_sum({ev_stuck = reason})[Call_result] }
+pub fn call_stuck(reason: String) -> Call_result { widen_sum(Ev_stuck.mk(reason))[Call_result] }
 
 /// Requests that the evaluator drive an interpreted loop step.
 pub fn call_fold(step: Value, init: Value) -> Call_result {
-  widen_sum({ev_fold = (step, init)})[Call_result]
+  widen_sum(Ev_fold.mk((step, init)))[Call_result]
 }
 
 /// Requests that the evaluator apply a guest closure once; the result is
 /// the host call's result.
 pub fn call_apply(f: Value, arg: Value) -> Call_result {
-  widen_sum({ev_apply = (f, arg)})[Call_result]
+  widen_sum(Ev_apply.mk((f, arg)))[Call_result]
 }
 
 /// Requests an application followed by a re-dispatch of `cont` with
 /// `(result & state)`.
 pub fn call_apply_then(f: Value, arg: Value, cont: Host_fn, state: Value) -> Call_result {
-  widen_sum({ev_apply_then = (f, (arg, (cont, state)))})[Call_result]
+  widen_sum(Ev_apply_then.mk((f, (arg, (cont, state)))))[Call_result]
 }

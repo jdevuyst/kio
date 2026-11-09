@@ -21,14 +21,14 @@ import value(Value);
 import value(value_to_scalar, vhost, vunit);
 
 /// The argument list one call applies, in order.
-rec labels { vargs: . | (Value & Vargs) };
+rec type { Vargs: . | (Value & Vargs) { mk; get } }
 
-fn vargs_nil() -> Vargs { {vargs = widen_sum(())[. | (Value & Vargs)]} }
+fn vargs_nil() -> Vargs { Vargs.mk(widen_sum(())[. | (Value & Vargs)]) }
 
-fn vargs_one(a: Value) -> Vargs { {vargs = widen_sum((a, vargs_nil()))[. | (Value & Vargs)]} }
+fn vargs_one(a: Value) -> Vargs { Vargs.mk(widen_sum((a, vargs_nil()))[. | (Value & Vargs)]) }
 
 fn vargs_two(a: Value, b: Value) -> Vargs {
-  {vargs = widen_sum((a, vargs_one(b)))[. | (Value & Vargs)]}
+  Vargs.mk(widen_sum((a, vargs_one(b)))[. | (Value & Vargs)])
 }
 
 fn un_vargs(v: Vargs) -> . | (Value & Vargs) { Vargs.get(v) }

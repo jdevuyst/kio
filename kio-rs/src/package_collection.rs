@@ -947,10 +947,6 @@ pub fn materialize_dependencies_filtered(
     }
 
     if let Some(modules) = retype_validation.visibility_modules.take() {
-        #[cfg(feature = "surface")]
-        let mut modules = modules;
-        #[cfg(feature = "surface")]
-        finalize_retyped_label_modules(&mut retype_validation, &mut modules, &mut outcomes, force);
         validate_retype_interface(
             &retype_validation.checks,
             &retype_validation.imports,
@@ -1024,7 +1020,7 @@ fn validate_retype_congruence(
                 error: Error::dep(
                     check.span,
                     format!(
-                        "`retype` cannot map `{}`'s `newtype {}` onto `{}`'s: their type-parameter \
+                        "`retype` cannot map `{}`'s `nominal type {}` onto `{}`'s: their type-parameter \
                          arities differ ({} universal / {} existential vs {} universal / {} \
                          existential)",
                         module_path_surface(&check.from),
@@ -1073,7 +1069,7 @@ fn validate_retype_congruence(
                 error: Error::dep(
                     check.span,
                     format!(
-                        "`retype` cannot map `{}`'s `newtype {}` onto `{}`'s: corresponding {} \
+                        "`retype` cannot map `{}`'s `nominal type {}` onto `{}`'s: corresponding {} \
                          type-parameter kinds differ at binder {} ({} vs {})",
                         module_path_surface(&check.from),
                         snapshot.declaration.name,
@@ -1092,7 +1088,7 @@ fn validate_retype_congruence(
                 error: Error::dep(
                     check.span,
                     format!(
-                        "`retype` cannot map `{}`'s `newtype {}` onto `{}`'s: their payloads \
+                        "`retype` cannot map `{}`'s `nominal type {}` onto `{}`'s: their payloads \
                          are not structurally congruent",
                         module_path_surface(&check.from),
                         snapshot.declaration.name,
@@ -1229,7 +1225,6 @@ fn validate_retype_interface(
             if let Some((counterpart, owner)) =
                 resolve_retyped_counterpart(target, &snapshot.declaration.name, &projected)
             {
-                validate_retype_label_counterpart(check, snapshot, &counterpart)?;
                 let counterpart = counterpart.declaration();
                 validate_retype_visibility_floor(
                     check,
@@ -1288,31 +1283,6 @@ fn validate_retype_interface(
             &visibility.expect("the importable head has declaration visibility"),
             &target.path,
         )?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "cli")]
-fn validate_retype_label_counterpart(
-    check: &DeferredRetypeCheck,
-    source: &RetypedNewtypeSnapshot,
-    target: &DeclaredRetypeNominal<'_>,
-) -> Result<(), LocatedError> {
-    if let Some(label) = &source.label
-        && target.label().is_none()
-    {
-        return Err(LocatedError {
-            file_path: check.dep_file_path.clone(),
-            error: Error::dep(
-                check.span,
-                format!(
-                    "`retype` of label `{label}` requires a label-generated counterpart for \
-                     `{}.{}`, not an ordinary `newtype` declaration",
-                    module_path_surface(&check.to),
-                    source.declaration.name,
-                ),
-            ),
-        });
     }
     Ok(())
 }
@@ -1524,8 +1494,7 @@ fn item_visibilities_mut<P: Phase>(item: &mut Item<P>) -> Vec<&mut crate::ast::V
         Item::FnDef(d) => vec![&mut d.vis],
         Item::TypeAlias(a) => vec![&mut a.vis],
         Item::Newtype(d) => vec![&mut d.vis, &mut d.constructor.vis, &mut d.projector.vis],
-        Item::Labels(d, _) => vec![&mut d.vis],
-        Item::LabelForward(d, _) => vec![&mut d.vis],
+        Item::Labels(d, _) => nominal_group_visibilities_mut(d),
         Item::Macro(s, _) => vec![&mut s.vis],
         Item::Op(d, _) => vec![&mut d.vis],
         Item::VariadicOperator(d, _) => vec![&mut d.vis],
@@ -1541,11 +1510,32 @@ fn item_visibilities_mut<P: Phase>(item: &mut Item<P>) -> Vec<&mut crate::ast::V
                     &mut newtype.constructor.vis,
                     &mut newtype.projector.vis,
                 ],
-                crate::ast::TypeRecMember::Labels(labels, _) => vec![&mut labels.vis],
+                crate::ast::TypeRecMember::Labels(labels, _) => {
+                    nominal_group_visibilities_mut(labels)
+                }
             })
             .collect(),
         Item::Equiv(_, _) | Item::HostType(_) | Item::HostFn(_) => Vec::new(),
     }
+}
+
+#[cfg(feature = "cli")]
+fn nominal_group_visibilities_mut<P: Phase>(
+    declaration: &mut crate::ast::Labels<P>,
+) -> Vec<&mut crate::ast::Visibility> {
+    let mut visibilities = vec![&mut declaration.vis];
+    for entry in declaration.entries.iter_mut().chain(
+        declaration
+            .type_alias_arms
+            .iter_mut()
+            .flatten()
+            .flat_map(|arm| &mut arm.entries),
+    ) {
+        if let Some(members) = &mut entry.members {
+            visibilities.extend([&mut members.constructor.vis, &mut members.projector.vis]);
+        }
+    }
+    visibilities
 }
 
 /// Prepend the dependency's local name as a new leading segment of a
@@ -1736,10 +1726,8 @@ fn fresh_provider_alias(module: &crate::ast::Module, to: &crate::ast::ModulePath
             Item::Macro(s, _) => {
                 bound.insert(s.name.as_str());
             }
-            // Label spellings, equiv, and fixed or variadic operator declarations
-            // occupy namespaces distinct from ordinary module aliases.
+            // These declarations introduce no ordinary value-shaped name.
             Item::Labels(_, _)
-            | Item::LabelForward(_, _)
             | Item::Equiv(_, _)
             | Item::Op(_, _)
             | Item::VariadicOperator(_, _) => {}
@@ -2001,6 +1989,7 @@ impl DeclaredRetypeNominal<'_> {
         }
     }
 
+    #[cfg(feature = "surface")]
     fn label(&self) -> Option<&str> {
         match self {
             Self::Newtype(_) => None,
@@ -2013,21 +2002,20 @@ impl DeclaredRetypeNominal<'_> {
         match self {
             Self::Newtype(newtype) => std::borrow::Cow::Borrowed(newtype),
             #[cfg(feature = "surface")]
-            Self::Label { owner, entry, name } => {
-                std::borrow::Cow::Owned(crate::pass::label_elab::label_nominal_declaration(
+            Self::Label { owner, entry, name } => std::borrow::Cow::Owned(
+                crate::pass::nominal_declarations::label_nominal_declaration(
                     owner,
                     entry,
                     name.clone(),
                     entry.payload.clone(),
-                ))
-            }
+                ),
+            ),
         }
     }
 
     fn snapshot(&self) -> RetypedNewtypeSnapshot {
         RetypedNewtypeSnapshot {
             declaration: self.declaration().into_owned(),
-            label: self.label().map(str::to_owned),
         }
     }
 
@@ -2078,13 +2066,11 @@ fn declared_retype_nominals(module: &Module<Surface>) -> Vec<DeclaredRetypeNomin
                     _ => return,
                 };
                 for entry in owner.arms_in_source_order().flatten() {
-                    if !entry.is_reuse_marker() {
-                        nominals.push(DeclaredRetypeNominal::Label {
-                            owner,
-                            entry,
-                            name: crate::ast::mint_label_newtype_name(&entry.name),
-                        });
-                    }
+                    nominals.push(DeclaredRetypeNominal::Label {
+                        owner,
+                        entry,
+                        name: crate::ast::mint_label_newtype_name(&entry.name),
+                    });
                 }
             }
         });
@@ -2160,7 +2146,7 @@ fn resolve_retype_selections<'decl, 'module>(
                     return Err(Error::dep(
                         declaration.span,
                         format!(
-                            "`retype` source module `{}` declares no `newtype {name}`",
+                            "`retype` source module `{}` declares no `nominal type {name}`",
                             module_path_surface(&declaration.from)
                         ),
                     ));
@@ -2402,8 +2388,6 @@ fn retype_chain_targets(
 #[cfg(feature = "cli")]
 struct RetypedNewtypeSnapshot {
     declaration: crate::ast::Newtype<Surface>,
-    /// Exact explicit label spelling in the retained written source.
-    label: Option<String>,
 }
 
 /// A `retype`'s congruence obligation, captured during materialization for
@@ -2451,145 +2435,12 @@ struct PendingRetypeMaterialization {
     local_name: String,
     source_span: Span,
     desired: BTreeMap<PathBuf, String>,
-    #[cfg(feature = "surface")]
-    label_modules: Vec<PendingLabelModule>,
-}
-
-#[cfg(all(feature = "cli", feature = "surface"))]
-struct PendingLabelModule {
-    out_path: PathBuf,
-    module: Module<Surface>,
-    forwards: Vec<LabelForwardSlot>,
-}
-
-#[cfg(all(feature = "cli", feature = "surface"))]
-#[derive(Debug)]
-struct LabelForwardSlot {
-    before_item: usize,
-    forward: retype_labels::PendingLabelForward,
 }
 
 #[cfg(feature = "cli")]
 #[derive(Debug, Default)]
 struct RetypeRewrite {
     imports: Vec<RetypeImport>,
-    #[cfg(feature = "surface")]
-    forwards: Vec<LabelForwardSlot>,
-}
-
-#[cfg(all(feature = "cli", feature = "surface"))]
-fn finalize_retyped_label_forwards(
-    module: &mut Module<Surface>,
-    forwards: Vec<LabelForwardSlot>,
-    all: &[(PathBuf, Module<Surface>)],
-) -> Vec<RetypeImport> {
-    let mut imports = Vec::new();
-    let mut finished = Vec::with_capacity(forwards.len());
-    for slot in forwards {
-        let mut forward = slot.forward;
-        let terminal = module_by_path(all, &forward.to)
-            .and_then(|target| resolve_retyped_counterpart(target, &forward.nominal_name, all))
-            .and_then(|(nominal, owner)| {
-                nominal
-                    .label()
-                    .map(|label| (owner.path.clone(), label.to_owned()))
-            });
-        // Missing counterparts keep the written target edge and reach the
-        // existing post-publication semantic check. No label is inferred
-        // from an ordinary alias or an unresolved nominal name.
-        let (provider, label) = terminal
-            .clone()
-            .unwrap_or_else(|| (forward.to.clone(), forward.declaration.name.clone()));
-        let alias = module
-            .imports
-            .iter()
-            .find_map(|import_clause| match &import_clause.kind {
-                crate::ast::ImportKind::Qualified { path, alias }
-                    if path.segments == provider.segments =>
-                {
-                    Some(alias.clone())
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| {
-                let alias = fresh_provider_alias(module, &provider);
-                module.imports.push(crate::ast::Import {
-                    kind: crate::ast::ImportKind::Qualified {
-                        path: provider.clone(),
-                        alias: alias.clone(),
-                    },
-                    span: forward.declaration.name_span,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
-                });
-                alias
-            });
-        forward.declaration.target = format!("{alias}.{label}");
-        if terminal.is_some() {
-            imports.push(RetypeImport {
-                from: module.path.clone(),
-                importer: module.path.clone(),
-                to: provider,
-                name: forward.nominal_name,
-                span: forward.retype_span,
-            });
-        }
-        finished.push((slot.before_item, forward.declaration));
-    }
-    let original = std::mem::take(&mut module.items);
-    let original_len = original.len();
-    let mut finished = finished.into_iter().peekable();
-    for (index, item) in original.into_iter().enumerate() {
-        while finished.peek().is_some_and(|(before, _)| *before == index) {
-            let (_, forward) = finished.next().expect("the pending forward exists");
-            module.items.push(Item::LabelForward(forward, ()));
-        }
-        module.items.push(item);
-    }
-    for (before, forward) in finished {
-        assert_eq!(
-            before, original_len,
-            "pending forwards retain final item boundaries"
-        );
-        module.items.push(Item::LabelForward(forward, ()));
-    }
-    imports
-}
-
-#[cfg(all(feature = "cli", feature = "surface"))]
-fn finalize_retyped_label_modules(
-    validation: &mut RetypeValidationState,
-    modules: &mut [(PathBuf, Module<Surface>)],
-    outcomes: &mut BTreeMap<String, MaterializeOutcome>,
-    force: bool,
-) {
-    for mut pending in std::mem::take(&mut validation.pending) {
-        let had_label_modules = !pending.label_modules.is_empty();
-        for mut selected in std::mem::take(&mut pending.label_modules) {
-            validation.imports.extend(finalize_retyped_label_forwards(
-                &mut selected.module,
-                selected.forwards,
-                modules,
-            ));
-            let overlay = modules
-                .iter_mut()
-                .find(|(_, module)| module.path.segments == selected.module.path.segments)
-                .expect("a deferred source module already has an overlaid type view");
-            overlay.1 = borrowed_retype_type_projection(&selected.module);
-            pending.desired.insert(
-                selected.out_path,
-                crate::pretty::pretty_module(&selected.module),
-            );
-        }
-        if had_label_modules
-            && !force
-            && materialized_tree_matches(&pending.dep_dir, &pending.desired)
-        {
-            outcomes.insert(pending.local_name, MaterializeOutcome::UpToDate);
-        } else {
-            validation.pending.push(pending);
-        }
-    }
 }
 
 /// Apply a dependency's `retype` statements to one re-rooted module,
@@ -2632,8 +2483,6 @@ fn apply_retype(
         let mut reexports = BTreeMap::new();
         #[cfg(feature = "surface")]
         let mut label_names = BTreeSet::new();
-        #[cfg(feature = "surface")]
-        let mut label_targets = BTreeMap::new();
         for target in &source_targets {
             selected_names.extend(target.newtype_names.iter().cloned());
             let public_names = declared_retype_nominals(module)
@@ -2650,7 +2499,6 @@ fn apply_retype(
             {
                 if let Some(label) = nominal.label() {
                     label_names.insert(label.to_owned());
-                    label_targets.insert(nominal.name().to_owned(), *target);
                 }
             }
             if !public_names.is_empty() {
@@ -2713,11 +2561,6 @@ fn apply_retype(
 
         #[cfg(feature = "surface")]
         let mut affected_labels = retype_labels::affected_owners(module, &label_names).into_iter();
-        #[cfg(feature = "surface")]
-        let mut forward_boundaries: BTreeMap<
-            usize,
-            Vec<retype_labels::PendingLabelForward>,
-        > = BTreeMap::new();
         let mut retained = Vec::with_capacity(module.items.len());
         for item in std::mem::take(&mut module.items) {
             match item {
@@ -2735,7 +2578,7 @@ fn apply_retype(
                         let meta = crate::ast::Meta::new(labels.meta.span);
                         let rec_span = labels.rec_span;
                         let decomposed =
-                            retype_labels::decompose_owner(labels, &label_targets, &mut reexports);
+                            retype_labels::decompose_owner(labels, &selected_names, &mut reexports);
                         if rec_span.is_some() && !decomposed.members.is_empty() {
                             retained.push(Item::TypeRecGroup(crate::ast::TypeRecGroup {
                                 members: decomposed.members,
@@ -2762,18 +2605,12 @@ fn apply_retype(
                                 },
                             ));
                         }
-                        forward_boundaries
-                            .entry(retained.len())
-                            .or_default()
-                            .extend(decomposed.forwards);
                     } else {
                         retained.push(Item::Labels(labels, ()));
                     }
                 }
                 Item::TypeRecGroup(mut group) => {
                     let mut members = Vec::with_capacity(group.members.len());
-                    #[cfg(feature = "surface")]
-                    let mut forwards = Vec::new();
                     for member in group.members {
                         match member {
                             crate::ast::TypeRecMember::Newtype(newtype)
@@ -2791,11 +2628,10 @@ fn apply_retype(
                                 {
                                     let decomposed = retype_labels::decompose_owner(
                                         labels,
-                                        &label_targets,
+                                        &selected_names,
                                         &mut reexports,
                                     );
                                     members.extend(decomposed.members);
-                                    forwards.extend(decomposed.forwards);
                                     group.source_layout = None;
                                 } else {
                                     members.push(crate::ast::TypeRecMember::Labels(labels, ()));
@@ -2808,11 +2644,6 @@ fn apply_retype(
                     if !group.members.is_empty() {
                         retained.push(Item::TypeRecGroup(group));
                     }
-                    #[cfg(feature = "surface")]
-                    forward_boundaries
-                        .entry(retained.len())
-                        .or_default()
-                        .extend(forwards);
                 }
                 item => retained.push(item),
             }
@@ -2845,18 +2676,7 @@ fn apply_retype(
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
-        for (item_index, item) in std::mem::take(&mut module.items).into_iter().enumerate() {
-            #[cfg(not(feature = "surface"))]
-            let _ = item_index;
-            #[cfg(feature = "surface")]
-            if let Some(forwards) = forward_boundaries.remove(&item_index) {
-                rewrite
-                    .forwards
-                    .extend(forwards.into_iter().map(|forward| LabelForwardSlot {
-                        before_item: partitioned.len(),
-                        forward,
-                    }));
-            }
+        for item in std::mem::take(&mut module.items) {
             let Item::TypeRecGroup(group) = item else {
                 partitioned.push(item);
                 continue;
@@ -2870,7 +2690,7 @@ fn apply_retype(
                     primary.span,
                     format!(
                         "`retype` of `{}` cannot remove grouped newtype(s) `{selected}`: a \
-                         retained indivisible `labels` declaration spans multiple recursive \
+                         retained indivisible compact declaration spans multiple recursive \
                          components",
                         module_path_surface(&primary.from),
                     ),
@@ -2906,17 +2726,6 @@ fn apply_retype(
             ));
         }
         debug_assert!(analyses.next().is_none());
-        #[cfg(feature = "surface")]
-        {
-            for forwards in forward_boundaries.into_values() {
-                rewrite
-                    .forwards
-                    .extend(forwards.into_iter().map(|forward| LabelForwardSlot {
-                        before_item: partitioned.len(),
-                        forward,
-                    }));
-            }
-        }
         module.items = partitioned;
     }
 
@@ -3103,7 +2912,7 @@ impl RetypeSemanticPackage {
                         error: Error::dep(
                             check.span,
                             format!(
-                                "`retype` target module `{}` has no `newtype {name}` to match \
+                                "`retype` target module `{}` has no `nominal type {name}` to match \
                                  `{}`'s — every retyped newtype needs a same-named counterpart",
                                 module_path_surface(&check.to),
                                 module_path_surface(&check.from),
@@ -3112,7 +2921,6 @@ impl RetypeSemanticPackage {
                     });
                 };
 
-                validate_retype_label_counterpart(check, snapshot, &counterpart)?;
                 let counterpart = counterpart.declaration();
                 let index = descriptors.len();
                 let from_alias = format!("__Retype_source{index}__");
@@ -3335,25 +3143,8 @@ fn retype_type_item(item: &Item<Surface>) -> bool {
             | Item::TypeAlias(_)
             | Item::Newtype(_)
             | Item::Labels(..)
-            | Item::LabelForward(..)
             | Item::HostType(_)
     )
-}
-
-#[cfg(all(feature = "cli", feature = "surface"))]
-fn borrowed_retype_type_projection(module: &Module<Surface>) -> Module<Surface> {
-    Module {
-        path: module.path.clone(),
-        imports: module.imports.clone(),
-        items: module
-            .items
-            .iter()
-            .filter(|item| retype_type_item(item))
-            .cloned()
-            .collect(),
-        meta: module.meta.clone(),
-        doc: module.doc.clone(),
-    }
 }
 
 /// Project the exact transitive import closure that can affect a `retype`
@@ -3703,8 +3494,6 @@ fn canonical_retype_payloads_congruent(
                 binders.pop();
                 congruent
             }
-            (Type::LabelSugar { ext, .. }, _) => match *ext {},
-            (_, Type::LabelSugar { ext, .. }) => match *ext {},
             _ => false,
         }
     }
@@ -3951,8 +3740,6 @@ fn materialize_one_dependency(
     // against disk before any write, and so the prune knows which paths to
     // keep.
     let mut desired: BTreeMap<PathBuf, String> = BTreeMap::new();
-    #[cfg(feature = "surface")]
-    let mut label_modules = Vec::new();
     if let Some(modules) = &mut retype_validation.visibility_modules {
         // Replace the selected dependency's complete old tree, including
         // removed modules. Unselected on-disk providers remain available.
@@ -4057,18 +3844,6 @@ fn materialize_one_dependency(
             .map(|s| s.name.as_str())
             .collect::<PathBuf>();
         let out_path = consumer_root.join(&rel).with_extension("kio");
-        #[cfg(feature = "surface")]
-        if !rewrite.forwards.is_empty() {
-            if let Some(modules) = &mut retype_validation.visibility_modules {
-                modules.push((out_path.clone(), borrowed_retype_type_projection(&module)));
-            }
-            label_modules.push(PendingLabelModule {
-                out_path,
-                module,
-                forwards: rewrite.forwards,
-            });
-            continue;
-        }
         let canonical_source = crate::pretty::pretty_module(&module);
         if let Some(modules) = &mut retype_validation.visibility_modules {
             modules.push((out_path.clone(), retype_type_projection(module)));
@@ -4084,11 +3859,7 @@ fn materialize_one_dependency(
     // pinned commit (resolved above with no re-resolution), so it is sound:
     // a stale lock errored before reaching here, and a partial / corrupt /
     // drifted tree mismatches and falls through to the full write below.
-    #[cfg(feature = "surface")]
-    let output_complete = label_modules.is_empty();
-    #[cfg(not(feature = "surface"))]
-    let output_complete = true;
-    if output_complete && !force && materialized_tree_matches(&dep_dir, &desired) {
+    if !force && materialized_tree_matches(&dep_dir, &desired) {
         return Ok(MaterializeOutcome::UpToDate);
     }
 
@@ -4103,8 +3874,6 @@ fn materialize_one_dependency(
                 local_name,
                 source_span,
                 desired,
-                #[cfg(feature = "surface")]
-                label_modules,
             });
     } else {
         publish_materialized_dependency(&dep_dir, &local_name, source_span, &desired)?;
@@ -4588,7 +4357,7 @@ pub fn find_package_entry<'a, P: Phase>(
 
 pub fn substitute_type<P>(ty: &Type<P>, subst: &HashMap<String, Type<P>>) -> Type<P>
 where
-    P: Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: Phase + Clone,
 {
     crate::pass::typecheck_core::subst_type(ty, subst)
 }
@@ -4696,22 +4465,22 @@ mod tests {
                 PathBuf::from("store.kio"),
                 parsed_module(
                     "module store; \
-                     pub newtype A : . { pub constructor make_a; pub projector open_a; }; \
-                     pub newtype B : . { pub constructor make_b; pub projector open_b; };",
+                     pub type { A: . { pub mk; pub get; }; }; \
+                     pub type { B: . { pub mk; pub get; }; };",
                 ),
             ),
             (
                 PathBuf::from("next/one.kio"),
                 parsed_module(
                     "module next/one; \
-                     pub newtype A : . { pub constructor make; pub projector open; };",
+                     pub type { A: . { pub mk; pub get; }; };",
                 ),
             ),
             (
                 PathBuf::from("next/two.kio"),
                 parsed_module(
                     "module next/two; \
-                     pub newtype A : . { pub constructor make; pub projector open; };",
+                     pub type { A: . { pub mk; pub get; }; };",
                 ),
             ),
         ]
@@ -4929,16 +4698,16 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_inventory_distinguishes_explicit_labels_from_reuse_and_forwarding() {
+    fn retype_inventory_distinguishes_nominal_entries_from_aliases() {
         let module = parsed_module(
             "module store; \
-             newtype Plain : . { constructor mk; projector get; }; \
-             pub labels { box[*F][A]<X>: F[A] & X }; \
-             labels Later[*G][B] = { box[*G][B]: _, flag: . }; \
-             type {forwarded} = {box}; \
+             type { Plain: . { mk; get; }; } \
+             pub type { Box[*F][A]<X>: F[A] & X; } \
+             type Later[*G][B] = Box[G][B] & { Flag: .; }; \
+             type Forwarded[*F][A] = Box[F][A]; \
              rec { \
-               newtype Node : Edge { constructor mk; projector get; }; \
-               labels { edge: Node }; \
+               type { Node: Edge { mk; get; }; }; \
+               type { Edge: Node; }; \
              }",
         );
         let nominals = declared_retype_nominals(&module);
@@ -4953,25 +4722,18 @@ mod tests {
             .iter()
             .map(DeclaredRetypeNominal::snapshot)
             .collect::<Vec<_>>();
-        assert_eq!(
-            snapshots
-                .iter()
-                .map(|snapshot| snapshot.label.as_deref())
-                .collect::<Vec<_>>(),
-            [None, Some("box"), Some("flag"), None, Some("edge")],
-        );
         assert_eq!(snapshots[1].declaration.type_params.len(), 2);
         assert_eq!(snapshots[1].declaration.existential_params.len(), 1);
         assert_eq!(snapshots[1].declaration.existential_params[0].name, "X");
         assert!(snapshots[1].declaration.vis.is_pub());
         assert!(retype_head_visibility(&module, "Box").unwrap().is_pub());
-        assert!(retype_head_visibility(&module, "Forwarded").is_none());
+        assert!(!nominals.iter().any(|nominal| nominal.name() == "Forwarded"));
     }
 
     #[cfg(feature = "surface")]
     #[test]
     fn retype_selection_retains_duplicate_source_declaration_occurrences() {
-        let module = parsed_module("module store; labels { foo: . }; labels { foo: . };");
+        let module = parsed_module("module store; type { Foo: .; } type { Foo: .; }");
         let modules = vec![(PathBuf::from("store.kio"), module)];
         let dependency = retype_dependency("retype widget/store.Foo to core/one.Foo;");
         let selections = resolve_retype_selections("widget", &dependency.retype, &modules)
@@ -4980,21 +4742,18 @@ mod tests {
         assert_eq!(selections[0].newtypes.len(), 2);
         let first = selections[0].newtypes[0].snapshot();
         let second = selections[0].newtypes[1].snapshot();
-        assert_eq!(first.label.as_deref(), Some("foo"));
-        assert_eq!(second.label.as_deref(), Some("foo"));
         assert_ne!(first.declaration.name_span, second.declaration.name_span);
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn provider_alias_allocation_keeps_forwarded_labels_in_their_own_namespace() {
-        let source = "module source; labels { foo: . }; type {core_store} = {foo};";
+    fn provider_alias_allocation_avoids_existing_ordinary_bindings() {
+        let source = "module source; type { Foo: .; } type Core_store = Foo;";
         let provider = module_path("core/store");
         assert_eq!(
             fresh_provider_alias(&parsed_module(source), &provider),
             "_rehost_gdgphcgfcphdhegphcgf"
         );
-        // Labels cannot begin with `_`; ordinary values can occupy the exact alias.
         let with_value = parsed_module(&format!(
             "{source} fn _rehost_gdgphcgfcphdhegphcgf() -> . {{ () }}"
         ));
@@ -5006,9 +4765,9 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_duplicate_selected_labels_reach_original_source_validation() {
+    fn retype_duplicate_nominals_reach_original_source_validation() {
         let original =
-            parsed_module("module widget/store; pub labels { foo: . }; pub labels { foo: . };");
+            parsed_module("module widget/store; pub type { Foo: .; } pub type { Foo: .; }");
         let source_path = PathBuf::from("widget/store.kio");
         let source_modules = BTreeMap::from([(
             module_path_surface(&original.path),
@@ -5024,39 +4783,29 @@ mod tests {
             to: module_path("core/store"),
             span: Span::new(1, 2),
         };
-        let rewrite = apply_retype(&mut source, &[target])
-            .expect("duplicate written declarations are not selector collisions");
-        assert_eq!(rewrite.forwards.len(), 2, "neither occurrence is erased");
+        apply_retype(&mut source, &[target])
+            .expect("duplicate written declarations remain in original-source validation");
         let mut materialized = vec![(
             PathBuf::from("core/store.kio"),
-            parsed_module("module core/store; pub labels { foo: . };"),
+            parsed_module("module core/store; pub type { Foo: .; }"),
         )];
-        finalize_retyped_label_forwards(&mut source, rewrite.forwards, &materialized);
         materialized.push((source_path.clone(), source));
-        let error = validate_retype_source_semantics(&source_modules, &materialized)
-            .expect_err("the ordinary original-source label check rejects both declarations");
+        let error = validate_retype_source_semantics(&source_modules, &materialized).expect_err(
+            "the ordinary original-source validation rejects the duplicate declarations",
+        );
         assert_eq!(error.file_path, source_path);
         assert!(matches!(error.error, Error::Dep(_)));
-        assert!(
-            error
-                .error
-                .diag()
-                .1
-                .contains("label `foo` is already explicitly declared in this module")
-        );
+        assert!(error.error.diag().1.contains("Foo"));
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_label_counterpart_follows_written_aliases_without_inventing_label_heads() {
-        let source = parsed_module("module source; pub labels { foo: . };");
-        let origin = parsed_module("module origin; pub labels { foo: . };");
+    fn retype_counterparts_follow_aliases_across_compact_and_explicit_nominals() {
+        let source = parsed_module("module source; pub type { Foo: .; }");
+        let origin = parsed_module("module origin; pub type { Foo: .; }");
         let relay = parsed_module("module relay; import origin as o; pub type Foo = o.Foo;");
-        let forward =
-            parsed_module("module forward; import origin as o; pub type {foo} = {o.foo};");
-        let ordinary = parsed_module(
-            "module ordinary; pub newtype Foo : . { pub constructor mk; pub projector get; };",
-        );
+        let forward = parsed_module("module forward; import origin as o; pub type Other = o.Foo;");
+        let ordinary = parsed_module("module ordinary; pub type { Foo: . { pub mk; pub get; }; }");
         let modules = [origin, relay.clone(), forward.clone(), ordinary.clone()]
             .into_iter()
             .map(|module| {
@@ -5067,50 +4816,52 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (counterpart, owner) = resolve_retyped_counterpart(&relay, "Foo", &modules)
-            .expect("ordinary identity alias reaches the explicit origin label");
+            .expect("ordinary identity alias reaches the selected nominal");
         assert_eq!(module_path_surface(&owner.path), "origin");
-        assert_eq!(counterpart.label(), Some("foo"));
+        assert_eq!(counterpart.label(), Some("Foo"));
         assert!(matches!(
             counterpart.declaration(),
             std::borrow::Cow::Owned(_)
         ));
         assert!(resolve_retyped_counterpart(&forward, "Foo", &modules).is_none());
-        let mut check = DeferredRetypeCheck {
-            dep_file_path: PathBuf::from("widget.dep.kio"),
-            span: source.meta.span,
-            from: source.path.clone(),
-            to: relay.path.clone(),
-            from_newtypes: vec![declared_retype_nominals(&source)[0].snapshot()],
-        };
-        validate_retype_label_counterpart(&check, &check.from_newtypes[0], &counterpart)
-            .expect("explicit label-to-label counterpart");
         let (counterpart, _) = resolve_retyped_counterpart(&ordinary, "Foo", &modules)
-            .expect("ordinary newtype has a declaration shape");
-        check.to = ordinary.path.clone();
-        let error =
-            validate_retype_label_counterpart(&check, &check.from_newtypes[0], &counterpart)
-                .expect_err(
-                    "equal member names and payload do not make an ordinary newtype a label",
-                );
-        assert!(matches!(error.error, Error::Dep(_)));
-        assert!(error.error.diag().1.contains("label-generated counterpart"));
+            .expect("an explicit singleton has the same nominal counterpart shape");
+        assert_eq!(counterpart.name(), "Foo");
+        assert_eq!(
+            counterpart.declaration().type_params.len(),
+            declared_retype_nominals(&source)[0]
+                .declaration()
+                .type_params
+                .len(),
+        );
+        for target in [&relay, &ordinary] {
+            let check = DeferredRetypeCheck {
+                dep_file_path: PathBuf::from("widget.dep.kio"),
+                span: source.meta.span,
+                from: source.path.clone(),
+                to: target.path.clone(),
+                from_newtypes: vec![declared_retype_nominals(&source)[0].snapshot()],
+            };
+            validate_retype_interface(&[check], &[], &modules)
+                .expect("counterpart interface checks ignore compact versus explicit spelling");
+        }
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_label_decomposition_preserves_later_owners_and_exact_terminal_edges() {
+    fn retype_decomposition_preserves_later_owners_and_exact_alias_edges() {
         let mut source = parsed_module(
             "module widget/store; \
-             pub labels { foo: . }; \
-             pub labels Later[A] = { foo: _, box[A]: A }; \
-             pub labels Still[A] = { box[A]: _ }; \
-             type {untouched} = {foo}; \
+             pub type { Foo: .; } \
+             pub type Later[A] = Foo & { Box[A]: A; }; \
+             pub type Still[A] = Box[A]; \
+             type Untouched = Foo; \
              pub fn keep(value: Foo) -> Foo { value }",
         );
         let still = source.items[2].clone();
         let untouched = source.items[3].clone();
         let body = source.items[4].clone();
-        let origin = parsed_module("module core/origin; pub labels { foo: . };");
+        let origin = parsed_module("module core/origin; pub type { Foo: .; }");
         let relay = parsed_module(
             "module core/relay; import core/origin as origin; pub type Foo = origin.Foo;",
         );
@@ -5121,7 +4872,6 @@ mod tests {
             span: Span::new(1, 2),
         };
         let rewrite = apply_retype(&mut source, &[target]).expect("source-local decomposition");
-        assert_eq!(rewrite.forwards.len(), 1);
         assert_eq!(rewrite.imports.len(), 1);
         assert_eq!(module_path_surface(&rewrite.imports[0].to), "core/relay");
         assert!(source.items.iter().any(|item| item == &still));
@@ -5131,52 +4881,47 @@ mod tests {
             (PathBuf::from("origin.kio"), origin),
             (PathBuf::from("relay.kio"), relay),
         ];
-        let imports = finalize_retyped_label_forwards(&mut source, rewrite.forwards, &all);
-        assert_eq!(imports.len(), 1);
-        assert_eq!(module_path_surface(&imports[0].to), "core/origin");
-        assert!(source.items.iter().any(|item| {
-            matches!(item, Item::LabelForward(forward, ()) if forward.name == "foo" && forward.target == "_rehost_gdgphcgfcpgphcgjghgjgo.foo")
-        }));
-        assert!(source.items.iter().any(|item| item == &untouched));
+        assert!(
+            source
+                .items
+                .iter()
+                .any(|item| { matches!(item, Item::TypeAlias(alias) if alias.name == "Foo") })
+        );
         let fresh = parsed_module(&crate::pretty::pretty_module(&source));
         let mut modules = all;
         modules.push((PathBuf::from("store.kio"), fresh));
         let lowered =
-            lower_retype_type_projection(modules).expect("fresh ordinary Surface label edges");
+            lower_retype_type_projection(modules).expect("fresh ordinary nominal aliases");
         let package = retype_projection_package(lowered).expect("ordinary nominal scopes");
         package.resolve_imports().expect("fresh exact imports");
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_label_forward_slots_survive_recursive_owner_partitioning() {
+    fn retype_nominal_aliases_survive_recursive_owner_partitioning() {
         let mut source = parsed_module(
             "module widget/store; \
-             pub labels { foo: . }; \
-             pub rec labels Later = { foo: _ } | { bar: Later }; \
-             type {untouched} = {foo}; \
+             pub rec type Later = { Foo: .; } | { Bar: Later; }; \
+             type Untouched = Foo; \
              pub fn keep(value: Later) -> Later { value }",
         );
-        let original_forward = source.items[2].clone();
-        let original_body = source.items[3].clone();
+        let original_forward = source.items[1].clone();
+        let original_body = source.items[2].clone();
         let target = RetypeTarget {
             from: source.path.clone(),
             newtype_names: ["Foo".to_owned()].into_iter().collect(),
             to: module_path("core/store"),
             span: Span::new(1, 2),
         };
-        let rewrite = apply_retype(&mut source, &[target]).expect("residual Later/Bar recursion");
+        apply_retype(&mut source, &[target]).expect("residual Later/Bar recursion");
         let all = vec![(
             PathBuf::from("core.kio"),
-            parsed_module("module core/store; pub labels { foo: . };"),
+            parsed_module("module core/store; pub type { Foo: .; }"),
         )];
-        finalize_retyped_label_forwards(&mut source, rewrite.forwards, &all);
         let generated = source
             .items
             .iter()
-            .position(
-                |item| matches!(item, Item::LabelForward(forward, ()) if forward.name == "foo"),
-            )
+            .position(|item| matches!(item, Item::TypeAlias(alias) if alias.name == "Foo"))
             .unwrap();
         let group = source
             .items
@@ -5195,7 +4940,7 @@ mod tests {
         };
         assert_eq!(group.members.len(), 2);
         assert!(group.members.iter().any(|member| {
-            matches!(member, crate::ast::TypeRecMember::Labels(labels, ()) if labels.entries[0].name == "bar")
+            matches!(member, crate::ast::TypeRecMember::Labels(labels, ()) if labels.entries[0].name == "Bar")
         }));
         assert!(group.members.iter().any(|member| {
             matches!(member, crate::ast::TypeRecMember::TypeAlias(alias) if alias.name == "Later")
@@ -5208,15 +4953,15 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_label_forward_slots_follow_resized_explicit_recursive_groups() {
+    fn retype_nominal_aliases_follow_resized_explicit_recursive_groups() {
         let mut source = parsed_module(
             "module widget/store; \
              rec { \
-               pub labels { foo: Bar }; \
-               pub newtype Bar : Foo | Link { pub constructor mk; pub projector get; }; \
-               pub newtype Link : Bar { pub constructor mk; pub projector get; }; \
+               pub type { Foo: Bar; }; \
+               pub type { Bar: Foo | Link { pub mk; pub get; }; }; \
+               pub type { Link: Bar { pub mk; pub get; }; }; \
              } \
-             type {untouched} = {foo}; \
+             type Untouched = Foo; \
              pub fn keep(value: Bar) -> Bar { value }",
         );
         let original_forward = source.items[1].clone();
@@ -5235,10 +4980,8 @@ mod tests {
             to: module_path("core/store"),
             span: Span::new(1, 2),
         };
-        let rewrite = apply_retype(&mut source, &[target])
+        apply_retype(&mut source, &[target])
             .expect("the external Foo alias separates from the retained Bar/Link SCC");
-        assert_eq!(rewrite.forwards.len(), 1);
-        assert_eq!(rewrite.forwards[0].before_item, 2);
         assert_eq!(
             source.items.len(),
             4,
@@ -5246,9 +4989,8 @@ mod tests {
         );
         let all = vec![(
             PathBuf::from("core/store.kio"),
-            parsed_module("module core/store; pub labels { foo: . };"),
+            parsed_module("module core/store; pub type { Foo: .; }"),
         )];
-        finalize_retyped_label_forwards(&mut source, rewrite.forwards, &all);
         assert!(matches!(&source.items[0], Item::TypeAlias(alias) if alias.name == "Foo"));
         let Item::TypeRecGroup(group) = &source.items[1] else {
             panic!("the residual recursive group follows the acyclic alias");
@@ -5260,18 +5002,19 @@ mod tests {
         assert!(
             matches!(&group.members[1], crate::ast::TypeRecMember::Newtype(newtype) if newtype.name == "Link")
         );
-        assert!(
-            matches!(&source.items[2], Item::LabelForward(forward, ()) if forward.name == "foo")
-        );
-        assert_eq!(source.items[3], original_forward);
-        assert_eq!(source.items[4], original_body);
+        assert_eq!(source.items[2], original_forward);
+        assert_eq!(source.items[3], original_body);
+        let fresh = parsed_module(&crate::pretty::pretty_module(&source));
+        let mut all = all;
+        all.push((PathBuf::from("store.kio"), fresh));
+        lower_retype_type_projection(all).expect("the residual group reparses without label edges");
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_private_label_forward_keeps_the_empty_owner_slot() {
+    fn retype_private_nominal_uses_only_an_ordinary_import() {
         let mut source = parsed_module(
-            "module widget/store; labels { foo: . }; fn keep(value: Foo) -> Foo { value }",
+            "module widget/store; type { Foo: .; } fn keep(value: Foo) -> Foo { value }",
         );
         let body = source.items[1].clone();
         let target = RetypeTarget {
@@ -5280,19 +5023,10 @@ mod tests {
             to: module_path("core/store"),
             span: Span::new(1, 2),
         };
-        let rewrite = apply_retype(&mut source, &[target]).unwrap();
+        apply_retype(&mut source, &[target]).unwrap();
         assert_eq!(source.items.as_slice(), std::slice::from_ref(&body));
-        assert_eq!(rewrite.forwards[0].before_item, 0);
         assert_eq!(selective_import_names(&source, "core/store"), ["Foo"]);
-        let all = vec![(
-            PathBuf::from("core.kio"),
-            parsed_module("module core/store; pub labels { foo: . };"),
-        )];
-        finalize_retyped_label_forwards(&mut source, rewrite.forwards, &all);
-        assert!(
-            matches!(&source.items[0], Item::LabelForward(forward, ()) if !forward.vis.is_pub())
-        );
-        assert_eq!(source.items[1], body);
+        assert_eq!(source.items[0], body);
         assert!(
             !source
                 .items
@@ -5481,8 +5215,8 @@ mod tests {
             "module dep/store; \
              rec { \
                pub type Link = Odd; \
-               pub newtype Even : . | Link { pub constructor mk_even; pub projector un_even; }; \
-               pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd; }; \
+               pub type { Even: . | Link { pub mk; pub get; }; }; \
+               pub type { Odd: . | Even { pub mk; pub get; }; }; \
              }",
         );
         let target_module = parsed_module("module core/store;");
@@ -5527,9 +5261,9 @@ mod tests {
         let mut module = parsed_module(
             "module dep/store; \
              fn _rehost_gdgphcgfcphdhegphcgf() -> . { () } \
-             pub newtype Box[A] <X> : A & X { pub constructor make; pub projector open; }; \
+             pub type { Box[A] <X>: A & X { pub mk; pub get; }; }; \
              pub fn keep[A](value: Box[A]) -> Box[A] { value } \
-             newtype Hidden : . { constructor make; projector open; }; \
+             type { Hidden: . { mk; get; }; }; \
              fn keep_hidden(value: Hidden) -> Hidden { value }",
         );
         let original = declared_newtype(&module, "Box").unwrap();
@@ -5537,8 +5271,8 @@ mod tests {
         let parameters = original.type_params.clone();
         let counterpart = parsed_module(
             "module core/store; \
-             pub newtype Box[A] <Y> : A & Y { pub constructor make; pub projector open; }; \
-             pub newtype Hidden : . { pub constructor make; pub projector open; };",
+             pub type { Box[A] <Y>: A & Y { pub mk; pub get; }; }; \
+             pub type { Hidden: . { pub mk; pub get; }; };",
         );
         let target = RetypeTarget {
             from: module.path.clone(),
@@ -5605,9 +5339,9 @@ mod tests {
     fn retype_reroots_and_preserves_scoped_newtype_visibility() {
         let upstream = parsed_module(
             "module store; \
-             pub(store) newtype Token : . { \
-               pub(store) constructor mk; pub(store) projector get; \
-             };",
+             pub(store) type { Token: . { \
+               pub(store) mk; pub(store) get; \
+             }; };",
         );
         let mut snapshot = declared_newtype(&upstream, "Token")
             .expect("upstream newtype")
@@ -5626,7 +5360,7 @@ mod tests {
 
         let mut materialized = parsed_module(
             "module widget/store; \
-             pub(widget/store) newtype Token : . { constructor mk; projector get; };",
+             pub(widget/store) type { Token: . { mk; get; }; };",
         );
         let target = parsed_module("module core/store;");
         let materialized_path = materialized.path.clone();
@@ -5659,15 +5393,15 @@ mod tests {
         let module = parsed_module(
             "module core/store; \
              rec { \
-               newtype Even : . | Odd { constructor mk_even; projector un_even; }; \
-               newtype Odd : . | Even { constructor mk_odd; projector un_odd; }; \
+               type { Even: . | Odd { mk; get; }; }; \
+               type { Odd: . | Even { mk; get; }; }; \
              }",
         );
         let all = vec![(PathBuf::from("store.kio"), module.clone())];
         let (counterpart, owner) = resolve_retyped_counterpart(&module, "Even", &all)
             .expect("recursive-group members are declarations of their module");
         assert_eq!(counterpart.name(), "Even");
-        assert!(counterpart.label().is_none());
+        assert!(matches!(&counterpart, DeclaredRetypeNominal::Newtype(_)));
         let std::borrow::Cow::Borrowed(declaration) = counterpart.declaration() else {
             panic!("ordinary counterparts borrow the original declaration");
         };
@@ -5702,7 +5436,6 @@ mod tests {
                 declaration: declared_newtype(&from, name)
                     .unwrap_or_else(|| panic!("missing source newtype {name}"))
                     .clone(),
-                label: None,
             })
             .collect::<Vec<_>>();
         let target = RetypeTarget {
@@ -5742,13 +5475,13 @@ mod tests {
     fn retype_source_semantics_preserve_order_and_recursive_scope() {
         let invalid = parsed_module(
             "module dep/store; \
-             pub newtype Node : Later { pub constructor mk_node; pub projector get_node; }; \
-             pub newtype Later : . { pub constructor mk_later; pub projector get_later; };",
+             pub type { Node: Later { pub mk; pub get; }; }; \
+             pub type { Later: . { pub mk; pub get; }; };",
         );
         let target = parsed_module(
             "module core/store; \
-             pub newtype Later : . { pub constructor mk_later; pub projector get_later; }; \
-             pub newtype Node : Later { pub constructor mk_node; pub projector get_node; };",
+             pub type { Later: . { pub mk; pub get; }; }; \
+             pub type { Node: Later { pub mk; pub get; }; };",
         );
         let (_, result) =
             canonical_retype_fixture_result(invalid, target.clone(), &["Node", "Later"]);
@@ -5768,8 +5501,8 @@ mod tests {
 
         let ordered = parsed_module(
             "module dep/store; \
-             pub newtype Later : . { pub constructor mk_later; pub projector get_later; }; \
-             pub newtype Node : Later { pub constructor mk_node; pub projector get_node; };",
+             pub type { Later: . { pub mk; pub get; }; }; \
+             pub type { Node: Later { pub mk; pub get; }; };",
         );
         let (_, result) = canonical_retype_fixture_result(ordered, target, &["Node", "Later"]);
         result.expect("an earlier source declaration remains visible to retype validation");
@@ -5778,14 +5511,14 @@ mod tests {
             "module dep/store; \
              rec { \
                pub type Payload = . | Node; \
-               pub newtype Node : Payload { pub constructor mk_node; pub projector get_node; }; \
+               pub type { Node: Payload { pub mk; pub get; }; }; \
              }",
         );
         let grouped_target = parsed_module(
             "module core/store; \
              rec { \
                pub type Payload = . | Node; \
-               pub newtype Node : Payload { pub constructor mk_node; pub projector get_node; }; \
+               pub type { Node: Payload { pub mk; pub get; }; }; \
              }",
         );
         let (_, result) = canonical_retype_fixture_result(grouped, grouped_target, &["Node"]);
@@ -5794,15 +5527,15 @@ mod tests {
         let importing_source = parsed_module(
             "module dep/consumer; \
              import dep/provider(Peer); \
-             pub newtype Holder : Peer { pub constructor mk_holder; pub projector get_holder; };",
+             pub type { Holder: Peer { pub mk; pub get; }; };",
         );
         let provider_source = parsed_module(
             "module dep/provider; \
-             pub newtype Peer : . { pub constructor mk_peer; pub projector get_peer; };",
+             pub type { Peer: . { pub mk; pub get; }; };",
         );
         let second_source = parsed_module(
             "module dep/second; \
-             pub newtype Other : . { pub constructor mk_other; pub projector get_other; };",
+             pub type { Other: . { pub mk; pub get; }; };",
         );
         let unrelated_invalid = parsed_module(
             "module app/broken; \
@@ -5841,15 +5574,15 @@ mod tests {
         let from = parsed_module(
             "module dep/store; \
              rec { \
-               newtype Even : . | Odd { constructor mk_even; projector un_even; }; \
-               newtype Odd : . | Even { constructor mk_odd; projector un_odd; }; \
+               type { Even: . | Odd { mk; get; }; }; \
+               type { Odd: . | Even { mk; get; }; }; \
              }",
         );
         let to = parsed_module(
             "module core/store; \
              rec { \
-               newtype Even : . | Odd { constructor mk_even; projector un_even; }; \
-               newtype Odd : . | Even { constructor mk_odd; projector un_odd; }; \
+               type { Even: . | Odd { mk; get; }; }; \
+               type { Odd: . | Even { mk; get; }; }; \
              }",
         );
         let (_, semantics) = canonical_retype_fixture(from.clone(), to.clone(), &["Even"]);
@@ -5871,14 +5604,14 @@ mod tests {
             "module dep/store; \
              rec { \
                pub type Payload = . | Node; \
-               pub newtype Node : Payload { pub constructor mk_node; pub projector un_node; }; \
+               pub type { Node: Payload { pub mk; pub get; }; }; \
              }",
         );
         let target = parsed_module(
             "module core/store; \
              rec { \
                pub type Payload = . | Node; \
-               pub newtype Node : Payload { pub constructor mk_node; pub projector un_node; }; \
+               pub type { Node: Payload { pub mk; pub get; }; }; \
              }",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Node"]);
@@ -5890,12 +5623,12 @@ mod tests {
     fn retype_congruence_rejects_header_binder_kind_mismatch() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Token[*F] : [*G] G[.] -> G[.] { pub constructor mk; pub projector get; };",
+             pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
         );
 
         let header_mismatch = parsed_module(
             "module core/store; \
-             pub newtype Token[A] : [*H] H[.] -> H[.] { pub constructor mk; pub projector get; };",
+             pub type { Token[A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, header_mismatch, &["Token"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5909,12 +5642,12 @@ mod tests {
     fn retype_congruence_rejects_nested_forall_kind_mismatch_with_identical_bodies() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Token[*F] : [*G] . -> . { pub constructor mk; pub projector get; };",
+             pub type { Token[*F]: [*G] . -> . { pub mk; pub get; }; };",
         );
 
         let nested_mismatch = parsed_module(
             "module core/store; \
-             pub newtype Token[*A] : [B] . -> . { pub constructor mk; pub projector get; };",
+             pub type { Token[*A]: [B] . -> . { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, nested_mismatch, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5925,12 +5658,12 @@ mod tests {
     fn retype_congruence_matches_same_kind_binders_alpha_equivalently() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Token[*F] : [*G] G[.] -> G[.] { pub constructor mk; pub projector get; };",
+             pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
         );
 
         let alpha_renamed = parsed_module(
             "module core/store; \
-             pub newtype Token[*A] : [*H] H[.] -> H[.] { pub constructor mk; pub projector get; };",
+             pub type { Token[*A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, alpha_renamed, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5941,11 +5674,11 @@ mod tests {
     fn retype_congruence_rejects_universal_existential_classification_mismatch() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Pack <Hidden> : Hidden { pub constructor mk; pub projector get; };",
+             pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
         );
         let target = parsed_module(
             "module core/store; \
-             pub newtype Pack[Visible] : Visible { pub constructor mk; pub projector get; };",
+             pub type { Pack[Visible]: Visible { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Pack"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5959,11 +5692,11 @@ mod tests {
     fn retype_congruence_accepts_matching_star_and_existential_binders() {
         let star_source = parsed_module(
             "module dep/store; \
-             pub newtype Box[A] : A { pub constructor mk; pub projector get; };",
+             pub type { Box[A]: A { pub mk; pub get; }; };",
         );
         let star_target = parsed_module(
             "module core/store; \
-             pub newtype Box[B] : B { pub constructor mk; pub projector get; };",
+             pub type { Box[B]: B { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(star_source, star_target, &["Box"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5971,11 +5704,11 @@ mod tests {
 
         let existential_source = parsed_module(
             "module dep/store; \
-             pub newtype Pack <Hidden> : Hidden { pub constructor mk; pub projector get; };",
+             pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
         );
         let existential_target = parsed_module(
             "module core/store; \
-             pub newtype Pack <Secret> : Secret { pub constructor mk; pub projector get; };",
+             pub type { Pack <Secret>: Secret { pub mk; pub get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(existential_source, existential_target, &["Pack"]);
@@ -5987,11 +5720,11 @@ mod tests {
     fn retype_counterpart_visibility_covers_the_rebound_surface() {
         let public_source = parsed_module(
             "module dep/store; \
-             pub newtype Token : . { pub constructor mk; pub projector get; };",
+             pub type { Token: . { pub mk; pub get; }; };",
         );
         let private_target = parsed_module(
             "module core/store; \
-             newtype Token : . { pub constructor mk; pub projector get; };",
+             type { Token: . { pub mk; pub get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(public_source.clone(), private_target, &["Token"]);
@@ -6000,13 +5733,13 @@ mod tests {
 
         let scoped_source = parsed_module(
             "module core/client; \
-             newtype Token : . { constructor mk; projector get; };",
+             type { Token: . { mk; get; }; };",
         );
         let scoped_target = parsed_module(
             "module core/store; \
-             pub(core) newtype Token : . { \
-               pub(core) constructor mk; pub(core) projector get; \
-             };",
+             pub(core) type { Token: . { \
+               pub(core) mk; pub(core) get; \
+             }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(scoped_source, scoped_target.clone(), &["Token"]);
@@ -6015,7 +5748,7 @@ mod tests {
 
         let public_scoped_source = parsed_module(
             "module core/client; \
-             pub newtype Token : . { constructor mk; projector get; };",
+             pub type { Token: . { mk; get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(public_scoped_source, scoped_target, &["Token"]);
@@ -6024,7 +5757,7 @@ mod tests {
 
         let public_target = parsed_module(
             "module core/store; \
-             pub newtype Token : . { pub constructor mk; pub projector get; };",
+             pub type { Token: . { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(public_source, public_target, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6041,7 +5774,6 @@ mod tests {
             to: target.path.clone(),
             from_newtypes: vec![RetypedNewtypeSnapshot {
                 declaration: declared_newtype(&source, "Token").unwrap().clone(),
-                label: None,
             }],
         };
         validate_retype_interface(
@@ -6055,58 +5787,42 @@ mod tests {
     }
 
     #[test]
-    fn retype_member_interface_checks_corresponding_roles() {
-        for role in ["constructor", "projector"] {
+    fn retype_member_interface_checks_corresponding_role_access() {
+        for (role, member, other_member) in
+            [("constructor", "mk", "get"), ("projector", "get", "mk")]
+        {
             for visibility in ["pub", "pub(widget/feature)"] {
                 let source = format!(
-                    "module widget/feature/store; pub newtype Token : . {{ \
-                     {visibility} {role} required; {} other; }};",
-                    if role == "constructor" {
-                        "projector"
-                    } else {
-                        "constructor"
-                    },
+                    "module widget/feature/store; pub type {{ Token: . {{ \
+                     {visibility} {member}; {other_member}; }}; }};",
                 );
-                for (target_roles, message) in [
-                    (
-                        "pub constructor other; pub projector required;",
-                        "constructor",
-                    ),
-                    (
-                        "pub constructor required; pub projector other;",
-                        "projector",
-                    ),
-                ] {
+                for exposed_member in [member, other_member] {
+                    let other = if exposed_member == member {
+                        other_member
+                    } else {
+                        member
+                    };
                     let result = retype_interface_fixture(
                         &source,
                         &format!(
-                            "module widget/feature/target; pub newtype Token : . {{ {target_roles} }};"
+                            "module widget/feature/target; pub type {{ Token: . {{ pub {exposed_member}; {other}; }}; }};"
                         ),
                     );
-                    if role == message {
-                        let error = result.expect_err("the opposite role cannot supply a member");
+                    if exposed_member != member {
+                        let error =
+                            result.expect_err("the opposite role cannot supply member access");
                         assert!(matches!(error.error, Error::Dep(_)));
-                        assert!(
-                            error
-                                .error
-                                .diag()
-                                .1
-                                .contains(&format!("requires {role} `required`"))
-                        );
+                        assert!(error.error.diag().1.contains(&format!("target {role}")));
+                        assert!(error.error.diag().1.contains("is not visible everywhere"));
                     } else {
-                        result.expect("the corresponding role preserves the exposed name");
+                        result.expect("the corresponding role preserves exposed access");
                     }
                 }
                 let error = retype_interface_fixture(
                     &source,
                     &format!(
-                        "module widget/feature/target; pub newtype Token : . {{ \
-                         pub(widget/feature/target) {role} required; {} other; }};",
-                        if role == "constructor" {
-                            "projector"
-                        } else {
-                            "constructor"
-                        },
+                        "module widget/feature/target; pub type {{ Token: . {{ \
+                         pub(widget/feature/target) {member}; {other_member}; }}; }};",
                     ),
                 )
                 .expect_err("a narrower target role loses source access");
@@ -6118,33 +5834,26 @@ mod tests {
 
     #[test]
     fn retype_member_interface_uses_effective_visibility() {
-        for (source_outer, source_member, target_outer, target_member, target_name) in [
-            ("pub", "", "pub", "", "renamed"),
-            ("", "pub", "pub", "", "renamed"),
-            (
-                "pub(widget/feature)",
-                "pub",
-                "pub",
-                "pub(widget/feature)",
-                "mk",
-            ),
+        for (source_outer, source_member, target_outer, target_member) in [
+            ("pub", "", "pub", ""),
+            ("", "pub", "pub", ""),
+            ("pub(widget/feature)", "pub", "pub", "pub(widget/feature)"),
             (
                 "pub(widget/feature)",
                 "pub(widget)",
                 "pub(widget)",
                 "pub(widget/feature)",
-                "mk",
             ),
-            ("pub", "pub(widget/feature)", "pub", "pub(widget)", "mk"),
+            ("pub", "pub(widget/feature)", "pub", "pub(widget)"),
         ] {
             retype_interface_fixture(
                 &format!(
-                    "module widget/feature/store; {source_outer} newtype Token : . {{ \
-                     {source_member} constructor mk; projector get; }};"
+                    "module widget/feature/store; {source_outer} type {{ Token: . {{ \
+                     {source_member} mk; get; }}; }};"
                 ),
                 &format!(
-                    "module widget/feature/target; {target_outer} newtype Token : . {{ \
-                     {target_member} constructor {target_name}; projector unwrap; }};"
+                    "module widget/feature/target; {target_outer} type {{ Token: . {{ \
+                     {target_member} mk; get; }}; }};"
                 ),
             )
             .expect("only the effective exposed source interface is required");
@@ -6153,19 +5862,14 @@ mod tests {
 
     #[test]
     fn retype_member_interface_uses_the_exact_terminal_counterpart() {
-        let source = parsed_module(
-            "module widget/store; pub newtype Token : . { pub constructor mk; projector get; };",
-        );
+        let source = parsed_module("module widget/store; pub type { Token: . { pub mk; get; }; };");
         let target = parsed_module(
             "module core/route; import core/store(Token); import core/store as origin; \
              pub type Token = origin.Token;",
         );
-        let terminal = parsed_module(
-            "module core/store; pub newtype Token : . { pub constructor renamed; projector get; };",
-        );
-        let unrelated = parsed_module(
-            "module unrelated; pub newtype Token : . { pub constructor mk; pub projector get; };",
-        );
+        let terminal = parsed_module("module core/store; pub type { Token: . { mk; get; }; };");
+        let unrelated =
+            parsed_module("module unrelated; pub type { Token: . { pub mk; pub get; }; };");
         let check = DeferredRetypeCheck {
             dep_file_path: PathBuf::from("widget.dep.kio"),
             span: Span::new(0, 1),
@@ -6173,7 +5877,6 @@ mod tests {
             to: target.path.clone(),
             from_newtypes: vec![RetypedNewtypeSnapshot {
                 declaration: declared_newtype(&source, "Token").unwrap().clone(),
-                label: None,
             }],
         };
         let error = validate_retype_interface(
@@ -6186,8 +5889,14 @@ mod tests {
                 .collect::<Vec<_>>(),
         )
         .expect_err("an unrelated compatible member cannot replace the exact terminal role");
-        assert!(error.error.diag().1.contains("target `core/store.Token`"));
-        assert!(error.error.diag().1.contains("constructor `renamed`"));
+        assert!(
+            error
+                .error
+                .diag()
+                .1
+                .contains("target constructor `core/store.Token.mk`")
+        );
+        assert!(error.error.diag().1.contains("is not visible everywhere"));
     }
 
     fn write_retype_fixture(root: &Path, path: &str, source: &str) {
@@ -6203,11 +5912,11 @@ mod tests {
             ("library/widget.pkg.kio", "package widget;"),
             (
                 "library/store.kio",
-                "module store; pub newtype Token : . { pub constructor mk; pub projector get; };",
+                "module store; pub type { Token: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer/core/store.kio",
-                "module core/store; pub newtype Token : . { pub constructor mk; pub projector get; };",
+                "module core/store; pub type { Token: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer/widget.dep.kio",
@@ -6221,16 +5930,47 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    fn label_retype_materialization_fixture() -> tempfile::TempDir {
+    fn assert_retyped_nominal_alias(source: &str, expected_provider: &str) {
+        let module = crate::pass::parser::parse(source).expect("ordinary materialized source");
+        let alias = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::TypeAlias(alias) if alias.name == "Token" => Some(alias),
+                _ => None,
+            })
+            .expect("the source nominal becomes an ordinary identity alias");
+        assert!(matches!(alias.vis, crate::ast::Visibility::Public));
+        let Type::Path { segments, args, .. } = &alias.body else {
+            panic!("the alias retains one exact counterpart path");
+        };
+        assert!(args.is_empty());
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[1].name, "Token");
+        let provider = module
+            .imports
+            .iter()
+            .find_map(|import| match &import.kind {
+                crate::ast::ImportKind::Qualified { path, alias } if alias == &segments[0].name => {
+                    Some(path)
+                }
+                _ => None,
+            })
+            .expect("the counterpart is selected through its written qualified import");
+        assert_eq!(provider.segments.join("/"), expected_provider);
+    }
+
+    #[cfg(feature = "surface")]
+    fn compact_nominal_retype_materialization_fixture() -> tempfile::TempDir {
         let dir = retype_materialization_fixture();
         for (path, source) in [
             (
                 "library/store.kio",
-                "module store; pub labels { token: . }; pub labels Later = { token: _ };",
+                "module store; pub type { Token: .; }; pub type Later = Token;",
             ),
             (
                 "consumer/core/store.kio",
-                "module core/store; pub labels { token: . };",
+                "module core/store; pub type { Token: .; };",
             ),
             (
                 "consumer/core/relay.kio",
@@ -6248,8 +5988,8 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_labels_finalize_before_unchanged_and_forced_fetch_comparison() {
-        let dir = label_retype_materialization_fixture();
+    fn retype_compact_nominals_finalize_before_unchanged_and_forced_fetch_comparison() {
+        let dir = compact_nominal_retype_materialization_fixture();
         let root = dir.path().join("consumer");
         let mut first = None;
         for (force, expected) in [
@@ -6258,22 +5998,11 @@ mod tests {
             (true, MaterializeOutcome::Fetched),
             (false, MaterializeOutcome::UpToDate),
         ] {
-            let outcomes =
-                materialize_dependencies_filtered(&root, None, force).expect("label fetch");
+            let outcomes = materialize_dependencies_filtered(&root, None, force)
+                .expect("compact nominal fetch");
             assert_eq!(outcomes["widget"], expected);
             let source = fs::read_to_string(root.join("widget/store.kio")).unwrap();
-            assert!(
-                source.contains("type {token} = {_rehost_gdgphcgfcphdhegphcgf.token};"),
-                "{source}"
-            );
-            assert!(
-                !source.contains("_rehost_gdgphcgfcphcgfgmgbhj.token"),
-                "relay exports only the uppercase alias"
-            );
-            assert!(
-                source.contains("type Token = _rehost_gdgphcgfcphcgfgmgbhj.Token;"),
-                "{source}"
-            );
+            assert_retyped_nominal_alias(&source, "core/relay");
             if let Some(first) = &first {
                 assert_eq!(&source, first);
             } else {
@@ -6284,18 +6013,15 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_labels_finalize_after_both_earlier_and_later_provider_overlays() {
-        for (provider, store_alias) in [
-            ("acore", "_rehost_gbgdgphcgfcphdhegphcgf"),
-            ("zcore", "_rehost_hkgdgphcgfcphdhegphcgf"),
-        ] {
-            let dir = label_retype_materialization_fixture();
+    fn retype_compact_nominals_finalize_after_both_earlier_and_later_provider_overlays() {
+        for provider in ["acore", "zcore"] {
+            let dir = compact_nominal_retype_materialization_fixture();
             let root = dir.path().join("consumer");
             write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
             write_retype_fixture(
                 dir.path(),
                 "target/store.kio",
-                "module store; pub labels { token: . };",
+                "module store; pub type { Token: .; };",
             );
             write_retype_fixture(
                 dir.path(),
@@ -6318,10 +6044,7 @@ mod tests {
                 .expect("complete provider overlay");
             assert_eq!(outcomes["widget"], MaterializeOutcome::Fetched);
             let source = fs::read_to_string(root.join("widget/store.kio")).unwrap();
-            assert!(
-                source.contains(&format!("type {{token}} = {{{store_alias}.token}};")),
-                "{source}"
-            );
+            assert_retyped_nominal_alias(&source, &format!("{provider}/relay"));
             assert_eq!(
                 materialize_dependencies_filtered(&root, None, false).unwrap()["widget"],
                 MaterializeOutcome::UpToDate
@@ -6331,12 +6054,12 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_labels_preserve_missing_and_cyclic_counterpart_publication_timing() {
+    fn retype_compact_nominals_preserve_missing_and_cyclic_counterpart_publication_timing() {
         for target in [
             "module core/relay;",
             "module core/relay; import core/cycle as other; pub type Token = other.Token;",
         ] {
-            let dir = label_retype_materialization_fixture();
+            let dir = compact_nominal_retype_materialization_fixture();
             let root = dir.path().join("consumer");
             write_retype_fixture(dir.path(), "consumer/core/relay.kio", target);
             write_retype_fixture(
@@ -6347,24 +6070,21 @@ mod tests {
             assert!(materialize_dependencies_filtered(&root, None, false).is_err());
             let source = fs::read_to_string(root.join("widget/store.kio"))
                 .expect("missing/cyclic counterpart failure remains after publication");
-            assert!(
-                source.contains("type {token} = {_rehost_gdgphcgfcphcgfgmgbhj.token};"),
-                "{source}"
-            );
+            assert_retyped_nominal_alias(&source, "core/relay");
         }
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_labels_keep_original_alias_head_access_before_publication() {
-        let dir = label_retype_materialization_fixture();
+    fn retype_compact_nominals_keep_original_alias_head_access_before_publication() {
+        let dir = compact_nominal_retype_materialization_fixture();
         let root = dir.path().join("consumer");
         materialize_dependencies_filtered(&root, None, false).expect("compatible first fetch");
         let before = fs::read(root.join("widget/store.kio")).unwrap();
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub labels { token: . }; pub fn added() -> . { () }",
+            "module store; pub type { Token: .; }; pub fn added() -> . { () }",
         );
         write_retype_fixture(
             dir.path(),
@@ -6378,7 +6098,7 @@ mod tests {
         }
     }
 
-    fn assert_retype_member_interface_preserves_tree(force: bool, existing: bool) {
+    fn assert_retype_member_access_preserves_tree(force: bool, existing: bool) {
         let dir = retype_materialization_fixture();
         let root = dir.path().join("consumer");
         let mut before = BTreeMap::new();
@@ -6393,14 +6113,14 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub newtype Token : . { pub constructor mk; pub projector get; }; \
+            "module store; pub type { Token: . { pub mk; pub get; }; }; \
              pub fn added() -> . { () }",
         );
         write_retype_fixture(dir.path(), "library/added.kio", "module added;");
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub newtype Token : . { pub constructor create; pub projector get; };",
+            "module core/store; pub type { Token: . { mk; pub get; }; };",
         );
         let result = materialize_dependencies_filtered(&root, None, force);
         let observed = ["store.kio", "old.kio", "added.kio"]
@@ -6413,28 +6133,31 @@ mod tests {
         );
         let error = result.expect_err("incompatible exposed constructor");
         assert!(matches!(error.error, Error::Dep(_)));
-        assert!(error.error.diag().1.contains("requires constructor `mk`"));
+        assert!(error.error.diag().1.contains(
+            "target constructor `core/store.Token.mk` is not visible everywhere source \
+             constructor `widget/store.Token.mk` is visible"
+        ));
         assert_eq!(root.join("widget").exists(), existing);
     }
 
     #[test]
-    fn retype_member_interface_preserves_existing_tree() {
-        assert_retype_member_interface_preserves_tree(false, true);
+    fn retype_member_access_preserves_existing_tree() {
+        assert_retype_member_access_preserves_tree(false, true);
     }
 
     #[test]
-    fn retype_member_interface_preserves_existing_tree_when_forced() {
-        assert_retype_member_interface_preserves_tree(true, true);
+    fn retype_member_access_preserves_existing_tree_when_forced() {
+        assert_retype_member_access_preserves_tree(true, true);
     }
 
     #[test]
-    fn retype_member_interface_preserves_absent_tree() {
-        assert_retype_member_interface_preserves_tree(false, false);
+    fn retype_member_access_preserves_absent_tree() {
+        assert_retype_member_access_preserves_tree(false, false);
     }
 
     #[test]
-    fn retype_member_interface_preserves_absent_tree_when_forced() {
-        assert_retype_member_interface_preserves_tree(true, false);
+    fn retype_member_access_preserves_absent_tree_when_forced() {
+        assert_retype_member_access_preserves_tree(true, false);
     }
 
     #[test]
@@ -6453,7 +6176,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub newtype Token : . { pub constructor mk; projector get; };",
+            "module core/store; pub type { Token: . { pub mk; get; }; };",
         );
         for force in [false, true] {
             let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
@@ -6477,14 +6200,14 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub newtype Token : . { pub constructor mk; pub projector get; }; \
+            "module store; pub type { Token: . { pub mk; pub get; }; }; \
                      pub fn added() -> . { () }",
         );
         write_retype_fixture(dir.path(), "library/added.kio", "module added;");
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; newtype Token : . { pub constructor mk; pub projector get; };",
+            "module core/store; type { Token: . { pub mk; pub get; }; };",
         );
         let error =
             materialize_dependencies_filtered(&root, None, force).expect_err("invisible target");
@@ -6543,7 +6266,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; newtype Token : . { pub constructor mk; pub projector get; };",
+            "module core/store; type { Token: . { pub mk; pub get; }; };",
         );
         for force in [false, true] {
             let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
@@ -6599,7 +6322,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "target/store.kio",
-            "module store; pub newtype Token : . { pub constructor mk; pub projector get; };",
+            "module store; pub type { Token: . { pub mk; pub get; }; };",
         );
         write_retype_fixture(
             dir.path(),
@@ -6620,17 +6343,18 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "target/store.kio",
-            "module store; newtype Token : . { pub constructor mk; pub projector get; };",
+            "module store; type { Token: . { pub mk; pub get; }; };",
         );
         let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
         assert!(error.error.diag().1.contains("is not visible everywhere"));
         // The ordinary target dependency is published immediately, even
         // though the retyped dependency is rejected later in this fetch.
-        assert!(
-            fs::read_to_string(root.join("zcore/store.kio"))
-                .unwrap()
-                .contains("\nnewtype Token")
-        );
+        let published = parsed_module(&fs::read_to_string(root.join("zcore/store.kio")).unwrap());
+        let nominal =
+            declared_newtype(&published, "Token").expect("the target nominal is published");
+        assert!(matches!(nominal.vis, crate::ast::Visibility::Private));
+        assert!(nominal.constructor.vis.is_pub());
+        assert!(nominal.projector.vis.is_pub());
     }
 
     #[test]
@@ -6640,7 +6364,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub newtype Token : . -> . { pub constructor mk; pub projector get; };",
+            "module core/store; pub type { Token: . -> . { pub mk; pub get; }; };",
         );
         let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
         assert!(error.error.diag().1.contains("not structurally congruent"));
@@ -6660,7 +6384,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/zcore/store.kio",
-            "module zcore/store; newtype Token : . { pub constructor mk; pub projector get; };",
+            "module zcore/store; type { Token: . { pub mk; pub get; }; };",
         );
         write_retype_fixture(
             dir.path(),
@@ -6680,77 +6404,77 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_congruence_resolves_generated_label_nominal_identities() {
+    fn retype_congruence_preserves_unselected_compact_nominal_identities() {
         let source = parsed_module(
             "module dep/store; \
              rec { \
-               labels { odd: Even }; \
-               newtype Even : . | Odd { constructor mk_even; projector un_even; }; \
+               type { Odd: Even; }; \
+               type { Even: . | Odd { mk; get; }; }; \
              }",
         );
         let target = parsed_module(
             "module core/store; \
              rec { \
-               labels { odd: Even }; \
-               newtype Even : . | Odd { constructor mk_even; projector un_even; }; \
+               type { Odd: Even; }; \
+               type { Even: . | Odd { mk; get; }; }; \
              }",
         );
         let (_, semantics) = canonical_retype_fixture(source, target, &["Even"]);
         let pair = &semantics.pairs[0][0];
         assert!(
             !canonical_retype_payloads_congruent(&pair.from, &pair.to, &semantics.package),
-            "unselected generated-label nominals have distinct declaring-module identities"
+            "unselected compact nominals have distinct declaring-module identities"
         );
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_congruence_expands_named_label_aliases() {
+    fn retype_congruence_expands_named_compact_nominal_aliases() {
         let source = parsed_module(
             "module dep/store; \
-             pub labels Packet = { first: ., second: . }; \
-             pub newtype Holder : Packet { pub constructor mk; pub projector get; };",
+             pub type Packet = { First: .; Second: .; }; \
+             pub type { Holder: Packet { pub mk; pub get; }; };",
         );
         let target = parsed_module(
             "module core/store; \
              import dep/store as original; \
-             pub newtype Holder : original.First & original.Second { \
-               pub constructor mk; pub projector get; \
-             };",
+             pub type { Holder: original.First & original.Second { \
+               pub mk; pub get; \
+             }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Holder"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
-            .expect("a named label alias expands to its exact generated nominal components");
+            .expect("a named compact alias expands to its exact nominal components");
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_congruence_preserves_reused_label_identity() {
+    fn retype_congruence_preserves_referenced_nominal_identity() {
         let source = parsed_module(
             "module dep/store; \
-             pub labels Reply = { item: . } | { item: _ }; \
-             pub newtype Holder : Reply { pub constructor mk; pub projector get; };",
+             pub type Reply = { Item: .; } | Item; \
+             pub type { Holder: Reply { pub mk; pub get; }; };",
         );
         let same_identity = parsed_module(
             "module core/store; \
              import dep/store as original; \
-             pub newtype Holder : original.Item | original.Item { \
-               pub constructor mk; pub projector get; \
-             };",
+             pub type { Holder: original.Item | original.Item { \
+               pub mk; pub get; \
+             }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(source.clone(), same_identity, &["Holder"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
-            .expect("a reused label denotes the first generated nominal in both sum arms");
+            .expect("an ordinary RHS reference denotes the same nominal in both sum arms");
 
         let distinct_identity = parsed_module(
             "module core/store; \
-             pub labels Reply = { item: . } | { item: _ }; \
-             pub newtype Holder : Reply { pub constructor mk; pub projector get; };",
+             pub type Reply = { Item: .; } | Item; \
+             pub type { Holder: Reply { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, distinct_identity, &["Holder"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
-            .expect_err("a different provider's reused label is still a different nominal");
+            .expect_err("a different provider's referenced nominal is still a different nominal");
         assert!(
             error
                 .error
@@ -6765,13 +6489,13 @@ mod tests {
         let source = parsed_module(
             "module dep/store; \
              pub type Payload[A] = [B] A -> B -> A; \
-             pub newtype Holder[B] : Payload[B] { pub constructor mk; pub projector get; };",
+             pub type { Holder[B]: Payload[B] { pub mk; pub get; }; };",
         );
         let alpha_renamed = parsed_module(
             "module core/store; \
-             pub newtype Holder[C] : [D] C -> D -> C { \
-               pub constructor mk; pub projector get; \
-             };",
+             pub type { Holder[C]: [D] C -> D -> C { \
+               pub mk; pub get; \
+             }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(source.clone(), alpha_renamed, &["Holder"]);
@@ -6780,9 +6504,9 @@ mod tests {
 
         let captured_shape = parsed_module(
             "module core/store; \
-             pub newtype Holder[C] : [D] D -> D -> C { \
-               pub constructor mk; pub projector get; \
-             };",
+             pub type { Holder[C]: [D] D -> D -> C { \
+               pub mk; pub get; \
+             }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, captured_shape, &["Holder"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6798,13 +6522,13 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retype_rejects_an_indivisible_labels_owner_crossing_residual_components() {
+    fn retype_rejects_an_indivisible_compact_owner_crossing_residual_components() {
         let mut module = parsed_module(
             "module dep/store; \
              rec { \
-               labels { a: B & X, c: D & X }; \
-               labels { b: A, d: C }; \
-               newtype X : A & C { constructor mk_x; projector un_x; }; \
+               type { A: B & X; C: D & X; }; \
+               type { B: A; D: C; }; \
+               type { X: A & C { mk; get; }; }; \
              }",
         );
         let target_module = parsed_module("module core/store;");
@@ -6816,10 +6540,10 @@ mod tests {
         };
 
         let error = apply_retype(&mut module, &[target])
-            .expect_err("one labels declaration cannot be split across residual SCCs");
+            .expect_err("one compact declaration cannot be split across residual SCCs");
         assert!(matches!(error, Error::Dep(_)));
         assert!(error.diag().1.contains(
-            "retained indivisible `labels` declaration spans multiple recursive components"
+            "retained indivisible compact declaration spans multiple recursive components"
         ));
     }
 
@@ -6830,7 +6554,7 @@ mod tests {
              rec { \
                type A = B; \
                type B = A | X; \
-               newtype X : A { constructor mk_x; projector un_x; }; \
+               type { X: A { mk; get; }; }; \
              }",
         );
         let target_module = parsed_module("module core/store;");
@@ -6854,12 +6578,12 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn member_retype_preserves_a_residual_labels_declaration() {
+    fn member_retype_preserves_a_residual_compact_declaration() {
         let mut module = parsed_module(
             "module dep/store; \
              rec { \
-               pub labels { a: X }; \
-               pub newtype X : A { pub constructor mk_x; pub projector un_x; }; \
+               pub type { A: X; }; \
+               pub type { X: A { pub mk; pub get; }; }; \
              }",
         );
         let target_module = parsed_module("module core/store;");
@@ -6870,7 +6594,7 @@ mod tests {
             span: Span::new(1, 2),
         };
 
-        apply_retype(&mut module, &[target]).expect("labels owner remains one legal component");
+        apply_retype(&mut module, &[target]).expect("compact owner remains one legal component");
 
         assert!(
             module

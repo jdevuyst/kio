@@ -54,7 +54,6 @@ use super::{
 /// `newtype` boundaries and `host type` opacity stop the walk —
 /// those are treated as nominal atoms.
 ///
-/// Phase-polymorphic with `P::TypeLabelSugar = Never`.
 pub fn unify_pattern<P>(
     pat: &crate::ast::Type<P>,
     target: &crate::ast::Type<P>,
@@ -577,7 +576,7 @@ where
 /// builders.
 pub fn synth_top_fn_def<P>(d: &crate::ast::FnDef<P>, span: Span) -> Synth<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let has_type_params = d.sig.has_type_params();
     let ty = d.sig.signature_ty(d.ret.clone(), span);
@@ -674,11 +673,9 @@ where
 /// signature element are aliased to the call site so diagnostics
 /// surface there when the declaring source file is unavailable.
 ///
-/// Phase-polymorphic with the same `TypeLabelSugar = Never` bound
-/// as [`clone_with_span`].
 pub fn synth_env_fn_def<P>(d: &crate::ast::HostFn<P>, span: Span) -> Synth<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let signature_params: Vec<crate::ast::SignatureParam<P>> = d
         .params
@@ -889,8 +886,6 @@ where
 ///   `let .(<U> x) = e;` sugar (which appends the continuation
 ///   automatically) or by writing the call out explicitly.
 ///
-/// Phase-polymorphic with the same `TypeLabelSugar = Never` bound
-/// as [`clone_with_span`].
 pub fn newtype_member_scheme<P>(
     d: &crate::ast::Newtype<P>,
     member: &str,
@@ -898,7 +893,7 @@ pub fn newtype_member_scheme<P>(
     span: Span,
 ) -> Result<Synth<P>, Error>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let payload = clone_with_span(&d.payload, span);
     newtype_member_scheme_with_payload(d, member, nominal_segments, payload, span)
@@ -996,7 +991,7 @@ fn newtype_member_scheme_with_payload<P>(
     span: Span,
 ) -> Result<Synth<P>, Error>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let nominal = ty_nominal_segments::<P>(nominal_segments, &d.type_params, span);
 
@@ -1149,7 +1144,7 @@ fn normalize_fn_shape_expected<P>(
     holes: Option<&ApplicationShapeHoles<'_, P>>,
 ) -> super::InternedType<P>
 where
-    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: crate::ast::Phase + Clone,
 {
     let Some(holes) = holes else {
         return expected;
@@ -1170,7 +1165,7 @@ fn check_planned_fn_shape_annotation<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     annotation.plan.require_admitted()?;
     assert!(
@@ -1214,7 +1209,7 @@ pub(crate) fn fn_shape_against_source_plan_with_holes<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(super::InternedType<P>, Vec<super::InternedType<P>>), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     fn_shape_against_source_plan(
         plan,
@@ -1238,7 +1233,7 @@ fn fn_shape_against_source_plan<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(super::InternedType<P>, Vec<super::InternedType<P>>), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let mut expected_layer = expected.clone();
     let mut binder_names = ambient_binders.clone();
@@ -1522,7 +1517,7 @@ pub(crate) fn synth_closed_fn_with_source_plan<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<Synth<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     assert_eq!(
         inferred_param_types.len(),
@@ -1627,8 +1622,14 @@ pub(crate) fn finish_synth_fn_from_body_type<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<Synth<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
+    if value_param_types
+        .iter()
+        .any(|ty| crate::comptime::type_is_comptime_proof(ty.as_type()))
+    {
+        <P::Typer as Typer<P>>::record_proof_fn_body_type(full.site(), body_ty.clone(), tcx);
+    }
     let ty = build_fn_type_from_body_type(sig, body_ty, &value_param_types, full.span(), tcx);
     if !sig.has_value_group() {
         super::types::compute_checked_kind(&ty, full.span(), tcx)?;
@@ -1650,7 +1651,7 @@ pub(crate) fn build_fn_type_from_body_type<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> crate::ast::Type<P>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     // Rebuild the `FnDef`-shaped param list with each value-param's
     // concrete type attached, then feed it through the same
@@ -1719,7 +1720,7 @@ pub fn synth_value_arg<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<crate::ast::Type<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     <P::Typer as Typer<P>>::synth_expr(e, tcx)?.into_mono()
 }
@@ -1729,7 +1730,7 @@ pub(crate) fn synth_value_arg_interned<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     <P::Typer as Typer<P>>::synth_expr(e, tcx)?.into_mono_interned()
 }
@@ -1743,6 +1744,28 @@ where
     P: crate::ast::Phase,
 {
     annotation.is_none_or(|ty| matches!(ty, crate::ast::Type::Infer { .. }))
+}
+
+pub(crate) fn statement_type_is_unit<P>(
+    ty: &super::InternedType<P>,
+    tcx: &TypeCtx<'_, '_, P>,
+) -> bool
+where
+    P: TyperPhase + Clone,
+{
+    match ty.as_type() {
+        crate::ast::Type::Unit { .. } => true,
+        crate::ast::Type::Path { .. } => {
+            let binders = tcx.in_scope_type_param_binders();
+            let (head, _) = super::aliases::unfold_and_qualify_state(
+                ty.as_type(),
+                &tcx.binder_alias_ctx(&binders),
+                ty.identity_is_canonical(),
+            );
+            matches!(head, crate::ast::Type::Unit { .. })
+        }
+        _ => false,
+    }
 }
 
 /// Synthesize the type of an `e;` expression statement followed by
@@ -1760,17 +1783,17 @@ pub fn synth_seq<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<Synth<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
-    let value_concrete = <P::Typer as Typer<P>>::synth_expr(value, tcx)?.into_mono()?;
-    if !matches!(value_concrete, crate::ast::Type::Unit { .. }) {
+    let value_concrete = <P::Typer as Typer<P>>::synth_expr(value, tcx)?.into_mono_interned()?;
+    if !statement_type_is_unit(&value_concrete, tcx) {
         return Err(Error::type_(
             value.span(),
             format!(
                 "discarded expression has type `{}`; expression statements must have type `.`. \
                  Bind the result with `let _ = e;` to discard it deliberately, or `let x = e;` \
                  to use it",
-                display_type(&value_concrete)
+                display_type(value_concrete.as_type())
             ),
         ));
     }
@@ -1799,7 +1822,7 @@ pub fn synth_path<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<Synth<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     synth_path_with_binder_recorder(
         segments,
@@ -1833,7 +1856,7 @@ pub(crate) fn synth_path_with_binder_recorder<'m, 'e, P>(
     ),
 ) -> Result<Synth<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     use crate::pass::typecheck_core::ResolvedBinderKind;
     if segments.len() == 1 {
@@ -2165,7 +2188,7 @@ fn type_name_in_value_position<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Option<Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     use crate::pass::resolve::{NominalProvider, NominalSelection};
 
@@ -2251,7 +2274,7 @@ fn require_member_head_visibility<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let owner = resolved.source_module;
     if owner.path == tcx.env.module.path {
@@ -2290,7 +2313,7 @@ fn require_member_visibility<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let Some(visibility) = newtype_member_visibility(resolved.newtype, member) else {
         return Err(cross_module_newtype_member_not_found(
@@ -2322,7 +2345,7 @@ fn record_member_resolution<P>(
     member_span: Span,
     tcx: &mut TypeCtx<'_, '_, P>,
 ) where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let source_owner = resolved.source_module;
     let source_module = module_path_string(source_owner);
@@ -2550,7 +2573,7 @@ pub fn synth_literal<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let span = site.span;
     let resolved = synth_literal_unrecorded(shape, annotation, span, numeric, tcx)?;
@@ -2570,7 +2593,7 @@ pub(crate) fn synth_literal_unrecorded<'m, P>(
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     // A written carrier is independent of the enclosing expected type.
     if let Some(annot) = annotation
@@ -2680,7 +2703,7 @@ pub fn resolve_literal_against<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let resolved =
         resolve_literal_against_unrecorded(shape, annotation, expected, site.span, numeric, tcx)?;
@@ -2698,7 +2721,7 @@ pub(crate) fn resolve_literal_against_unrecorded<'m, P>(
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     if let Some(annotation) = annotation
         && !matches!(annotation, crate::ast::Type::Infer { .. })
@@ -2784,7 +2807,7 @@ pub fn check_literal_annotation<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
     let bound = tcx.in_scope_type_param_binders();
     if shape == crate::ast::RoleShape::Str
@@ -2972,12 +2995,7 @@ where
             unit,
             ty_product(type_ty.clone(), type_ty.clone(), span),
             ty_product(type_ty.clone(), type_ty.clone(), span),
-            refl_pair3(
-                type_ty.clone(),
-                refl_type_arity_ty(span),
-                type_ty.clone(),
-                span,
-            ),
+            ty_product(type_ty.clone(), type_ty.clone(), span),
             refl_pair3(
                 refl_type_var_ty(span),
                 refl_type_arity_ty(span),
@@ -3076,11 +3094,7 @@ where
             span,
         ),
         "__type_arrow__" => refl_scheme_from_parts(
-            vec![
-                vp("params", type_ty(), span),
-                vp("arity", type_arity_ty(), span),
-                vp("result", type_ty(), span),
-            ],
+            vec![vp("domain", type_ty(), span), vp("result", type_ty(), span)],
             type_ty(),
             span,
         ),
@@ -3128,17 +3142,30 @@ where
             refl_predicate_ty(span)?,
             span,
         ),
-        "__type_product_spine_fold__"
-        | "__type_sum_spine_fold__"
-        | "__type_args_fold__"
-        | "__type_function_params_fold__" => refl_scheme_from_parts(
+        "__type_product_spine_fold__" | "__type_sum_spine_fold__" | "__type_args_fold__" => {
+            refl_scheme_from_parts(
+                vec![
+                    tp("r", span),
+                    vp("typ", type_ty(), span),
+                    vp("init", r_ty(), span),
+                    vp("step", ty_func(vec![r_ty(), type_ty()], r_ty(), span), span),
+                ],
+                r_ty(),
+                span,
+            )
+        }
+        "__type_forall_prefix_fold__" => refl_scheme_from_parts(
             vec![
                 tp("r", span),
                 vp("typ", type_ty(), span),
                 vp("init", r_ty(), span),
-                vp("step", ty_func(vec![r_ty(), type_ty()], r_ty(), span), span),
+                vp(
+                    "step",
+                    ty_func(vec![r_ty(), type_var_ty()], r_ty(), span),
+                    span,
+                ),
             ],
-            r_ty(),
+            ty_product(r_ty(), type_ty(), span),
             span,
         ),
         "__type_arity_fold__" => refl_scheme_from_parts(
@@ -3289,6 +3316,14 @@ where
                 vp("value", checked_term_ty(), span),
             ],
             checked_term_ty(),
+            span,
+        ),
+        "__fill_result__" => refl_scheme_from_parts(
+            vec![
+                vp("fills", fill_ctx_ty(span), span),
+                vp("candidate", type_ty(), span),
+            ],
+            fill_ctx_ty(span),
             span,
         ),
         "__fill__" => refl_scheme_from_parts(
@@ -3526,7 +3561,7 @@ pub(crate) fn specialize_boolean_intrinsic_from_expected<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<(Synth<P>, super::InternedType<P>), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: TyperPhase + crate::ast::Phase + Clone,
 {
     let mut bound = tcx.in_scope_type_param_binders();
     let (mut head, canonical) = super::aliases::unfold_and_qualify_state(
@@ -3918,6 +3953,14 @@ mod tests {
         assert_eq!(
             crate::pretty::pretty_type(&fill.ty),
             "(__Comptime__ & __Fill_ctx__ & __Type__ & __Type__) -> __Fill_ctx__"
+        );
+
+        let fill_result = comptime_scheme::<Surface>(ComptimeBuiltin::FillResult, span)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            crate::pretty::pretty_type(&fill_result.ty),
+            "(__Comptime__ & __Fill_ctx__ & __Type__) -> __Fill_ctx__"
         );
 
         let specialize = comptime_scheme::<Surface>(ComptimeBuiltin::TermSpecialize, span)

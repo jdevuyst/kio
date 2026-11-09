@@ -2,9 +2,9 @@ module main;
 
 import macros/sequence(macro do);
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk(x) }
 
 // Wrong-shape receiver: a single-arg function, not the
 // `[A] [B] (Box[A] & (A -> Box[B])) -> Box[B]` bind shape the

@@ -5,7 +5,7 @@ v(1) {
     add {
       module api {
         /// Public newtype documentation.
-        pub newtype T : . { pub constructor make; pub projector take }
+        pub type { T: . { pub mk; pub get } }
       }
     }
   }

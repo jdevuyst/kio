@@ -4,54 +4,26 @@ import __intrinsics__;
 
 import __comptime__;
 
-pub type Target_request = __Type__ | .;
-
-pure fn require_target(
-, ct: __Comptime__
-, target: Target_request
-, on_known: __Type__ -> __Checked_term__
-) -> __Checked_term__ {
-  __either__[__Type__][.][__Checked_term__](
-  , target
-  , on_known
-  , .() -> __Checked_term__ { __macro_error__(ct, "elaborator needs a target") }
-  )
-}
-
 pub pure fn id_impl(
-, ct: __Comptime__
+, _ct: __Comptime__
 , _source: __Type__
 , value: __Checked_term__
-, target: Target_request
-) -> __Checked_term__ {
-  require_target(ct, target, .(_target: __Type__) -> __Checked_term__ { value })
-}
+, _target: __Type__
+) -> __Checked_term__ { value }
 
 pub pure fn id_default_impl(
 , _ct: __Comptime__
 , _source: __Type__
 , value: __Checked_term__
-, target: Target_request
-) -> __Checked_term__ {
-  __either__[__Type__][.][__Checked_term__](
-  , target
-  , .(_target: __Type__) -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { value }
-  )
-}
+, _target: .
+) -> __Checked_term__ { value }
 
 pub pure fn left_impl(
 , ct: __Comptime__
 , _source: __Type__
 , value: __Checked_term__
-, target: Target_request
-) -> __Checked_term__ {
-  require_target(
-  , ct
-  , target
-  , .(target_type: __Type__) -> __Checked_term__ { __intrinsic_left__(ct, target_type, value) }
-  )
-}
+, target: __Type__
+) -> __Checked_term__ { __intrinsic_left__(ct, target, value) }
 
 pub macro id_default : [Source] Source -> [Target] Target { impl id_default_impl }
 

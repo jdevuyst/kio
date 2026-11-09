@@ -628,7 +628,6 @@ impl<'p> HaskellShapes<'p> {
             Type::Unit { .. } | Type::Bottom { .. } => {
                 self.boundary_haskell_type_scoped_in(ty, scope, module)
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -965,7 +964,6 @@ impl<'p> HaskellShapes<'p> {
                     None => Ok(format!("({} h m)", self.runtime_names.opaque)),
                 }
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
@@ -1068,7 +1066,6 @@ impl<'p> HaskellShapes<'p> {
                     }
                 }
             }
-            Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }

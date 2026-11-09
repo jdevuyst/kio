@@ -56,8 +56,8 @@ use std::collections::HashSet;
 use crate::ast::{Expr, Item, Lowered, Prime, Purity, Type};
 use crate::cmd::check::analyze_root_typed_with_overlay;
 use crate::normalization::{
-    AuthenticatedEvalCtx, Env, EvalMetrics, EvalMetricsSnapshot, Value, eval_authenticated,
-    structural_recur_stuck_message,
+    AuthenticatedEvalCtx, ComptimeFault, Env, EvalMetrics, EvalMetricsSnapshot, Value,
+    comptime_fault, eval_authenticated,
 };
 use crate::pass::lexer::{TokenKind, lex};
 use crate::pass::substitute::substitute_expr_for_eval;
@@ -579,8 +579,11 @@ fn checked_reduction_result(
     value: Value,
     ctx: &crate::normalization::EvalCtx<'_>,
 ) -> Result<Value, ReplExprQueryError> {
-    match structural_recur_stuck_message(&value, ctx) {
-        Some(message) => Err(ReplExprQueryError::Totality(message)),
+    match comptime_fault(&value, ctx) {
+        Some(ComptimeFault::Totality(message)) => Err(ReplExprQueryError::Totality(message)),
+        Some(fault @ ComptimeFault::IncompleteObservation(_)) => {
+            Err(ExprQueryError::TypeError(fault.message()).into())
+        }
         None => Ok(value),
     }
 }

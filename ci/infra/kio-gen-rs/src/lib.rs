@@ -7,10 +7,9 @@
 //!
 //! Productions cover Kio' (literals, lambdas, applications, `let`,
 //! polymorphism, the six type-form intrinsics plus
-//! `__if_then_else__`, explicitly recursive singleton newtypes and mutual type
+//! `__if_then_else__`, explicitly recursive singleton nominals and mutual type
 //! groups, multi-module
-//! packages) and the surface forms `if` blocks, tuple literals,
-//! `{label = e}` label-value sugar, `match`, the algebraic / spine
+//! packages) and the surface forms `if` blocks, tuple literals, `match`, the algebraic / spine
 //! macros, user-defined `macro` declarations/calls, and operators.
 //! `Program::uses_surface` records surface forms in the generated function body;
 //! `Program::surface_mode` controls their package-level supporting declarations.

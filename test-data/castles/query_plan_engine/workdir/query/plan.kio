@@ -7,54 +7,55 @@
 module query/plan;
 
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import query/schema as schema;
 import testapi(Bool, I32, String);
 import testapi/iter(loop);
 
-pub labels Cmp_op = { op_eq: . } | { op_lt: . } | { op_leq: . } | { op_gt: . } | { op_geq: . };
+pub type Cmp_op = { Op_eq: . } | { Op_lt: . } | { Op_leq: . } | { Op_gt: . } | { Op_geq: . };
 
-pub labels Dir = { dir_asc: . } | { dir_desc: . };
+pub type Dir = { Dir_asc: . } | { Dir_desc: . };
 
 rec {
   /// A predicate has two kinds of leaf: a column against a literal, and a
   /// column against another column - the shape a join needs when the
   /// condition relates the two sides rather than pinning one of them.
-  pub labels Pred_node =
-    { lit_col: schema.Col, lit_op: Cmp_op, lit_num: I32 }
-    | { pair_left: schema.Col, pair_op: Cmp_op, pair_right: schema.Col }
-    | { and_left: Pred, and_right: Pred }
-    | { or_left: Pred, or_right: Pred }
-    | { not_arg: Pred };
-  pub newtype Pred : Pred_node { pub constructor mk_pred; pub projector un_pred }
+  pub type Pred_node =
+    | { Lit_col: schema.Col; Lit_op: Cmp_op; Lit_num: I32 }
+    | { Pair_left: schema.Col; Pair_op: Cmp_op; Pair_right: schema.Col }
+    | { And_left: Pred; And_right: Pred }
+    | { Or_left: Pred; Or_right: Pred }
+    | { Not_arg: Pred };
+  pub type { Pred: Pred_node { pub mk; pub get } }
 }
 
 rec {
-  pub labels Plan_node =
-    { scan_table: schema.Table_id }
-    | { filter_pred: Pred, filter_src: Plan }
-    | { join_left: Plan, join_right: Plan, join_lkey: schema.Col, join_rkey: schema.Col }
-    | { project_cols: schema.Col_list, project_src: Plan }
-    | { sum_key: schema.Col, sum_val: schema.Col, sum_src: Plan }
-    | { count_key: schema.Col, count_src: Plan }
-    | { order_key: schema.Col, order_dir: Dir, order_src: Plan }
-    | { limit_n: I32, limit_src: Plan };
-  pub newtype Plan : Plan_node { pub constructor mk_plan; pub projector un_plan }
+  pub type Plan_node =
+    | { Scan_table: schema.Table_id }
+    | { Filter_pred: Pred; Filter_src: Plan }
+    | { Join_left: Plan; Join_right: Plan; Join_lkey: schema.Col; Join_rkey: schema.Col }
+    | { Project_cols: schema.Col_list; Project_src: Plan }
+    | { Sum_key: schema.Col; Sum_val: schema.Col; Sum_src: Plan }
+    | { Count_key: schema.Col; Count_src: Plan }
+    | { Order_key: schema.Col; Order_dir: Dir; Order_src: Plan }
+    | { Limit_n: I32; Limit_src: Plan };
+  pub type { Plan: Plan_node { pub mk; pub get } }
 }
 
-pub fn eq_op() -> Cmp_op { ({op_eq=}.>widen_sum)[Cmp_op] }
+pub fn eq_op() -> Cmp_op { (Op_eq.mk(()).>widen_sum)[Cmp_op] }
 
-pub fn lt_op() -> Cmp_op { ({op_lt=}.>widen_sum)[Cmp_op] }
+pub fn lt_op() -> Cmp_op { (Op_lt.mk(()).>widen_sum)[Cmp_op] }
 
-pub fn leq_op() -> Cmp_op { ({op_leq=}.>widen_sum)[Cmp_op] }
+pub fn leq_op() -> Cmp_op { (Op_leq.mk(()).>widen_sum)[Cmp_op] }
 
-pub fn gt_op() -> Cmp_op { ({op_gt=}.>widen_sum)[Cmp_op] }
+pub fn gt_op() -> Cmp_op { (Op_gt.mk(()).>widen_sum)[Cmp_op] }
 
-pub fn geq_op() -> Cmp_op { ({op_geq=}.>widen_sum)[Cmp_op] }
+pub fn geq_op() -> Cmp_op { (Op_geq.mk(()).>widen_sum)[Cmp_op] }
 
-pub fn asc() -> Dir { ({dir_asc=}.>widen_sum)[Dir] }
+pub fn asc() -> Dir { (Dir_asc.mk(()).>widen_sum)[Dir] }
 
-pub fn desc() -> Dir { ({dir_desc=}.>widen_sum)[Dir] }
+pub fn desc() -> Dir { (Dir_desc.mk(()).>widen_sum)[Dir] }
 
 pub fn op_text(o: Cmp_op) -> String {
   match(o) {
@@ -75,113 +76,173 @@ pub fn dir_text(d: Dir) -> String {
 }
 
 pub fn cmp(c: schema.Col, o: Cmp_op, n: I32) -> Pred {
-  Pred.mk_pred(({lit_col = c, lit_op = o, lit_num = n}.>widen_sum)[Pred_node])
+  Pred.mk(((Lit_col.mk(c), Lit_op.mk(o), Lit_num.mk(n)).>widen_sum)[Pred_node])
 }
 
 pub fn cmp_cols(left: schema.Col, o: Cmp_op, right: schema.Col) -> Pred {
-  Pred.mk_pred(({pair_left = left, pair_op = o, pair_right = right}.>widen_sum)[Pred_node])
+  Pred.mk(((Pair_left.mk(left), Pair_op.mk(o), Pair_right.mk(right)).>widen_sum)[Pred_node])
 }
 
 pub fn all_of(left: Pred, right: Pred) -> Pred {
-  Pred.mk_pred(({and_left = left, and_right = right}.>widen_sum)[Pred_node])
+  Pred.mk(((And_left.mk(left), And_right.mk(right)).>widen_sum)[Pred_node])
 }
 
 pub fn any_of(left: Pred, right: Pred) -> Pred {
-  Pred.mk_pred(({or_left = left, or_right = right}.>widen_sum)[Pred_node])
+  Pred.mk(((Or_left.mk(left), Or_right.mk(right)).>widen_sum)[Pred_node])
 }
 
-pub fn none_of(arg: Pred) -> Pred { Pred.mk_pred(({not_arg = arg}.>widen_sum)[Pred_node]) }
+pub fn none_of(arg: Pred) -> Pred { Pred.mk((Not_arg.mk(arg).>widen_sum)[Pred_node]) }
 
-pub fn lit_col_of(n: Lit_col) -> schema.Col { n.?{lit_col} }
+pub fn lit_col_of(n: Lit_col) -> schema.Col {
+  n.>select { Lit_col.get }
+}
 
-pub fn lit_op_of(n: Lit_op) -> Cmp_op { n.?{lit_op} }
+pub fn lit_op_of(n: Lit_op) -> Cmp_op {
+  n.>select { Lit_op.get }
+}
 
-pub fn lit_num_of(n: Lit_num) -> I32 { n.?{lit_num} }
+pub fn lit_num_of(n: Lit_num) -> I32 {
+  n.>select { Lit_num.get }
+}
 
-pub fn pair_left_of(n: Pair_left) -> schema.Col { n.?{pair_left} }
+pub fn pair_left_of(n: Pair_left) -> schema.Col {
+  n.>select { Pair_left.get }
+}
 
-pub fn pair_op_of(n: Pair_op) -> Cmp_op { n.?{pair_op} }
+pub fn pair_op_of(n: Pair_op) -> Cmp_op {
+  n.>select { Pair_op.get }
+}
 
-pub fn pair_right_of(n: Pair_right) -> schema.Col { n.?{pair_right} }
+pub fn pair_right_of(n: Pair_right) -> schema.Col {
+  n.>select { Pair_right.get }
+}
 
-pub fn and_left_of(n: And_left) -> Pred { n.?{and_left} }
+pub fn and_left_of(n: And_left) -> Pred {
+  n.>select { And_left.get }
+}
 
-pub fn and_right_of(n: And_right) -> Pred { n.?{and_right} }
+pub fn and_right_of(n: And_right) -> Pred {
+  n.>select { And_right.get }
+}
 
-pub fn or_left_of(n: Or_left) -> Pred { n.?{or_left} }
+pub fn or_left_of(n: Or_left) -> Pred {
+  n.>select { Or_left.get }
+}
 
-pub fn or_right_of(n: Or_right) -> Pred { n.?{or_right} }
+pub fn or_right_of(n: Or_right) -> Pred {
+  n.>select { Or_right.get }
+}
 
-pub fn not_arg_of(n: Not_arg) -> Pred { n.?{not_arg} }
+pub fn not_arg_of(n: Not_arg) -> Pred {
+  n.>select { Not_arg.get }
+}
 
-pub fn scan(t: schema.Table_id) -> Plan { Plan.mk_plan(({scan_table = t}.>widen_sum)[Plan_node]) }
+pub fn scan(t: schema.Table_id) -> Plan { Plan.mk((Scan_table.mk(t).>widen_sum)[Plan_node]) }
 
 pub fn filter(p: Pred, src: Plan) -> Plan {
-  Plan.mk_plan(({filter_pred = p, filter_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Filter_pred.mk(p), Filter_src.mk(src)).>widen_sum)[Plan_node])
 }
 
 pub fn join(left: Plan, right: Plan, lkey: schema.Col, rkey: schema.Col) -> Plan {
-  Plan.mk_plan(({join_left = left, join_right = right, join_lkey = lkey, join_rkey = rkey}
+  Plan.mk(((Join_left.mk(left), Join_right.mk(right), Join_lkey.mk(lkey), Join_rkey.mk(rkey))
     .>widen_sum)[Plan_node])
 }
 
 pub fn project(cols: schema.Col_list, src: Plan) -> Plan {
-  Plan.mk_plan(({project_cols = cols, project_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Project_cols.mk(cols), Project_src.mk(src)).>widen_sum)[Plan_node])
 }
 
 pub fn group_sum(key: schema.Col, val: schema.Col, src: Plan) -> Plan {
-  Plan.mk_plan(({sum_key = key, sum_val = val, sum_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Sum_key.mk(key), Sum_val.mk(val), Sum_src.mk(src)).>widen_sum)[Plan_node])
 }
 
 pub fn group_count(key: schema.Col, src: Plan) -> Plan {
-  Plan.mk_plan(({count_key = key, count_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Count_key.mk(key), Count_src.mk(src)).>widen_sum)[Plan_node])
 }
 
 pub fn order_by(key: schema.Col, d: Dir, src: Plan) -> Plan {
-  Plan.mk_plan(({order_key = key, order_dir = d, order_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Order_key.mk(key), Order_dir.mk(d), Order_src.mk(src)).>widen_sum)[Plan_node])
 }
 
 pub fn limit(n: I32, src: Plan) -> Plan {
-  Plan.mk_plan(({limit_n = n, limit_src = src}.>widen_sum)[Plan_node])
+  Plan.mk(((Limit_n.mk(n), Limit_src.mk(src)).>widen_sum)[Plan_node])
 }
 
-pub fn scan_table_of(n: Scan_table) -> schema.Table_id { n.?{scan_table} }
+pub fn scan_table_of(n: Scan_table) -> schema.Table_id {
+  n.>select { Scan_table.get }
+}
 
-pub fn filter_pred_of(n: Filter_pred) -> Pred { n.?{filter_pred} }
+pub fn filter_pred_of(n: Filter_pred) -> Pred {
+  n.>select { Filter_pred.get }
+}
 
-pub fn filter_src_of(n: Filter_src) -> Plan { n.?{filter_src} }
+pub fn filter_src_of(n: Filter_src) -> Plan {
+  n.>select { Filter_src.get }
+}
 
-pub fn join_left_of(n: Join_left) -> Plan { n.?{join_left} }
+pub fn join_left_of(n: Join_left) -> Plan {
+  n.>select { Join_left.get }
+}
 
-pub fn join_right_of(n: Join_right) -> Plan { n.?{join_right} }
+pub fn join_right_of(n: Join_right) -> Plan {
+  n.>select { Join_right.get }
+}
 
-pub fn join_lkey_of(n: Join_lkey) -> schema.Col { n.?{join_lkey} }
+pub fn join_lkey_of(n: Join_lkey) -> schema.Col {
+  n.>select { Join_lkey.get }
+}
 
-pub fn join_rkey_of(n: Join_rkey) -> schema.Col { n.?{join_rkey} }
+pub fn join_rkey_of(n: Join_rkey) -> schema.Col {
+  n.>select { Join_rkey.get }
+}
 
-pub fn project_cols_of(n: Project_cols) -> schema.Col_list { n.?{project_cols} }
+pub fn project_cols_of(n: Project_cols) -> schema.Col_list {
+  n.>select { Project_cols.get }
+}
 
-pub fn project_src_of(n: Project_src) -> Plan { n.?{project_src} }
+pub fn project_src_of(n: Project_src) -> Plan {
+  n.>select { Project_src.get }
+}
 
-pub fn sum_key_of(n: Sum_key) -> schema.Col { n.?{sum_key} }
+pub fn sum_key_of(n: Sum_key) -> schema.Col {
+  n.>select { Sum_key.get }
+}
 
-pub fn sum_val_of(n: Sum_val) -> schema.Col { n.?{sum_val} }
+pub fn sum_val_of(n: Sum_val) -> schema.Col {
+  n.>select { Sum_val.get }
+}
 
-pub fn sum_src_of(n: Sum_src) -> Plan { n.?{sum_src} }
+pub fn sum_src_of(n: Sum_src) -> Plan {
+  n.>select { Sum_src.get }
+}
 
-pub fn count_key_of(n: Count_key) -> schema.Col { n.?{count_key} }
+pub fn count_key_of(n: Count_key) -> schema.Col {
+  n.>select { Count_key.get }
+}
 
-pub fn count_src_of(n: Count_src) -> Plan { n.?{count_src} }
+pub fn count_src_of(n: Count_src) -> Plan {
+  n.>select { Count_src.get }
+}
 
-pub fn order_key_of(n: Order_key) -> schema.Col { n.?{order_key} }
+pub fn order_key_of(n: Order_key) -> schema.Col {
+  n.>select { Order_key.get }
+}
 
-pub fn order_dir_of(n: Order_dir) -> Dir { n.?{order_dir} }
+pub fn order_dir_of(n: Order_dir) -> Dir {
+  n.>select { Order_dir.get }
+}
 
-pub fn order_src_of(n: Order_src) -> Plan { n.?{order_src} }
+pub fn order_src_of(n: Order_src) -> Plan {
+  n.>select { Order_src.get }
+}
 
-pub fn limit_n_of(n: Limit_n) -> I32 { n.?{limit_n} }
+pub fn limit_n_of(n: Limit_n) -> I32 {
+  n.>select { Limit_n.get }
+}
 
-pub fn limit_src_of(n: Limit_src) -> Plan { n.?{limit_src} }
+pub fn limit_src_of(n: Limit_src) -> Plan {
+  n.>select { Limit_src.get }
+}
 
 /// Whether the rows this plan produces come out in a known order. Only
 /// `OrderBy` establishes one; a filter, a projection, and a limit pass
@@ -189,7 +250,7 @@ pub fn limit_src_of(n: Limit_src) -> Plan { n.?{limit_src} }
 /// leave the order to the engine's own bookkeeping. This is the one plan
 /// property the report prints beside the tree.
 pub rec(loop) fn plan_ordered(p: Plan) -> Bool {
-  match(p.>Plan.un_plan) {
+  match(p.>Plan.get) {
     (
     , .(_n: Scan_table) { .f }
     , .(_p: Filter_pred, src: Filter_src) { recur plan_ordered(filter_src_of(src)) }

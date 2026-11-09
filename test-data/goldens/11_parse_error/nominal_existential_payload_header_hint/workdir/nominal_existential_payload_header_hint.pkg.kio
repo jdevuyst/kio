@@ -1,0 +1,12 @@
+package nominal_existential_payload_header_hint;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

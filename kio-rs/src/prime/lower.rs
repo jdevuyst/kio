@@ -12,19 +12,14 @@
 //! - `Expr::Tuple` — n-ary tuple literal sugar.
 //! - `Expr::FnPlaceholder`, `Expr::OpChain`, and recursive-call annotations.
 //! - `Expr::BlockCall` — calls with trailing blocks.
-//! - `Expr::LabelValue` — `{f = e}` label-value sugar.
-//! - `Expr::Elaborator` — field access (`x.?{foo}`) and field update
-//!   (`x.!{foo = y}`). Any
-//!   [`crate::ast::ElaboratorKind`] is rejected.
 //! - `Expr::UserMacro` — reference palettes, `match`, `derive`, and
 //!   package-defined macro calls alike.
 //! - `Expr::Ufcs` — regular UFCS (`r.>f`) and macro-UFCS
 //!   (`r.>iso(T)`) dispatch.
-//! - `Type::LabelSugar` — `{f: T}` label-derived type sugar.
-//! - `Item::Labels` — label declarations.
+//! - `Item::Labels` — compact nominal declarations.
 //! - `Item::LiteralAlias` — `literal` declarations.
 //! - `Item::Equiv`, `Item::Op`, `Item::Fold`, term-level `Item::RecGroup`, and
-//!   user macro declarations; operator-pattern and label imports are
+//!   user macro declarations; operator-pattern imports are
 //!   rejected for the same reason. `Item::TypeRecGroup` is shared Kio' syntax
 //!   and survives this lowering.
 //!
@@ -46,8 +41,8 @@
 //! Prime check.
 
 use crate::ast::{
-    Equiv, Expr, Item, LabelSugarLabel, LabelValueLabel, Labels, LiteralAlias, Meta, Module, Op,
-    PackageFile, PathSegment, PlaceholderState, Prime, RecGroup, Surface, Type,
+    Equiv, Expr, Item, Labels, LiteralAlias, Meta, Module, Op, PackageFile, PathSegment,
+    PlaceholderState, Prime, RecGroup, Surface, Type,
 };
 use crate::error::Error;
 use crate::prime::walk::SurfaceToPrime;
@@ -176,27 +171,6 @@ impl SurfaceToPrime for PrimeLower {
         Err(prime_reject("`recur` call", meta.span))
     }
 
-    fn rewrite_expr_label_value(
-        &mut self,
-        _labels: Vec<LabelValueLabel<Surface>>,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Prime>, Error> {
-        Err(prime_reject("label-value expression", meta.span))
-    }
-
-    fn rewrite_expr_elaborator(
-        &mut self,
-        kind: crate::ast::ElaboratorKind,
-        _call: crate::ast::ElaboratorCall<Surface>,
-        meta: Meta<Surface>,
-    ) -> Result<Expr<Prime>, Error> {
-        let label = match kind {
-            crate::ast::ElaboratorKind::Access => "field access syntax",
-            crate::ast::ElaboratorKind::Filtered => "field update syntax",
-        };
-        Err(prime_reject(label, meta.span))
-    }
-
     fn rewrite_expr_user_macro(
         &mut self,
         name: String,
@@ -222,14 +196,6 @@ impl SurfaceToPrime for PrimeLower {
         Err(prime_reject(label, ufcs.meta.span))
     }
 
-    fn rewrite_type_label_sugar(
-        &mut self,
-        _labels: Vec<LabelSugarLabel<Surface>>,
-        meta: Meta<Surface>,
-    ) -> Result<Type<Prime>, Error> {
-        Err(prime_reject("braced label type form", meta.span))
-    }
-
     fn rewrite_type_infer(&mut self, meta: Meta<Surface>) -> Result<Type<Prime>, Error> {
         // The Kio' core does not admit `_` placeholders. Every type position
         // carries an explicit
@@ -239,24 +205,14 @@ impl SurfaceToPrime for PrimeLower {
     }
 
     fn rewrite_item_labels(&mut self, d: Labels<Surface>) -> Result<Item<Prime>, Error> {
-        Err(prime_reject("`labels` declaration", d.meta.span))
-    }
-
-    fn rewrite_item_label_forward(
-        &mut self,
-        forward: crate::ast::LabelForward<Surface>,
-    ) -> Result<Item<Prime>, Error> {
-        Err(prime_reject(
-            "label forwarding declaration",
-            forward.meta.span,
-        ))
+        Err(prime_reject("compact nominal declaration", d.meta.span))
     }
 
     fn rewrite_type_rec_member_labels(
         &mut self,
         d: Labels<Surface>,
     ) -> Result<crate::ast::TypeRecMember<Prime>, Error> {
-        Err(prime_reject("`labels` declaration", d.meta.span))
+        Err(prime_reject("compact nominal declaration", d.meta.span))
     }
 
     fn rewrite_item_equiv(&mut self, e: Equiv<Surface>) -> Result<Item<Prime>, Error> {
@@ -297,10 +253,6 @@ impl SurfaceToPrime for PrimeLower {
 
     fn rewrite_import_op_pattern(&mut self, span: Span) -> Result<(), Error> {
         Err(prime_reject("operator-pattern `import` item", span))
-    }
-
-    fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error> {
-        Err(prime_reject("label `import` item", span))
     }
 
     fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error> {
@@ -364,7 +316,7 @@ mod tests {
         let module = parse_module(
             "module x; rec { \
                type A = B; \
-               newtype B : A { constructor make; projector read; }; \
+               type { B: A { mk; get; }; }; \
              }",
         );
         let lowered = lower_module(module).expect("recursive type group is Kio' syntax");
@@ -394,26 +346,14 @@ mod tests {
     }
 
     #[test]
-    fn parser_rejects_braced_label_type_form_before_prime_lower() {
-        let msg = err_msg(parse("module x; type T = {f: .};").expect_err("rejects label type"));
+    fn parser_rejects_lowercase_nominal_head_before_prime_lower() {
+        let msg = err_msg(
+            parse("module x; type T = {f: .};").expect_err("rejects lowercase nominal head"),
+        );
         assert!(
-            msg.contains("label") && msg.contains("type position"),
+            msg.contains("type name `f`") && msg.contains("uppercase first letter"),
             "names form: {msg}"
         );
-    }
-
-    #[test]
-    fn lower_module_rejects_label_value() {
-        let module = parse_module("module x; fn f() -> . { {f = ()} }");
-        let msg = err_msg(lower_module(module).expect_err("rejects label-value"));
-        assert!(msg.contains("label-value"), "names form: {msg}");
-    }
-
-    #[test]
-    fn lower_module_rejects_braced_label_import() {
-        let module = parse_module("module x; import origin({field});");
-        let msg = err_msg(lower_module(module).expect_err("rejects label import"));
-        assert!(msg.contains("label `import` item"), "names form: {msg}");
     }
 
     #[test]
@@ -449,22 +389,28 @@ mod tests {
     }
 
     #[test]
-    fn lower_module_rejects_labels() {
-        let module = parse_module("module x; labels { f: . };");
-        let msg = err_msg(lower_module(module).expect_err("rejects labels"));
-        assert!(msg.contains("`labels`"), "names form: {msg}");
+    fn lower_module_rejects_compact_nominals() {
+        let module = parse_module("module x; type { F: . };");
+        let msg = err_msg(lower_module(module).expect_err("rejects compact nominal"));
+        assert!(
+            msg.contains("compact nominal declaration"),
+            "names form: {msg}"
+        );
     }
 
     #[test]
-    fn lower_module_rejects_labels_inside_recursive_type_group() {
+    fn lower_module_rejects_compact_nominals_inside_recursive_type_group() {
         let module = parse_module(
             "module x; rec { \
-               labels A = { to_b: B }; \
-               newtype B : A { constructor make; projector read; }; \
+               type A = { To_b: B }; \
+               type { B: A { mk; get; }; }; \
              }",
         );
-        let msg = err_msg(lower_module(module).expect_err("rejects grouped labels"));
-        assert!(msg.contains("`labels`"), "names form: {msg}");
+        let msg = err_msg(lower_module(module).expect_err("rejects grouped compact nominal"));
+        assert!(
+            msg.contains("compact nominal declaration"),
+            "names form: {msg}"
+        );
     }
 
     #[test]
@@ -649,10 +595,10 @@ mod tests {
     }
 
     #[test]
-    fn parser_rejects_pure_newtype() {
+    fn parser_rejects_pure_nominal_type() {
         let msg = err_msg(
-            parse("module x; pure newtype W : . { pub constructor mk; pub projector un; };")
-                .expect_err("rejects pure newtype"),
+            parse("module x; pure type { W: . { pub mk; pub get } }")
+                .expect_err("rejects pure nominal type"),
         );
         assert!(
             msg.contains("only on ordinary `fn`"),

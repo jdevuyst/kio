@@ -2,6 +2,6 @@ module api;
 
 host type Atom;
 
-pub newtype Pack <T> : T { pub constructor pack; pub projector open }
+pub type { Pack <T>: T { pub mk; pub get } }
 
-pub fn hold(value: Atom) -> Pack { Pack.pack(value) }
+pub fn hold(value: Atom) -> Pack { Pack.mk(value) }

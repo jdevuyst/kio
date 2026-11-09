@@ -1,6 +1,7 @@
 module priority_window_scheduler/report;
 
-import priority_window_scheduler/model(Window, {name}, {span});
+import macros/row_macros(macro select);
+import priority_window_scheduler/model(Name, Span, Window);
 import priority_window_scheduler/planner as planner;
 import testapi(String);
 import testapi/fmt as fmt;
@@ -12,8 +13,8 @@ fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
 pub fn window_line(window: Window) -> String {
   cat3(
-  , window.?{name}
-  , cat3(" span=", window.?{span}, " score=")
+  , window.>select { Name.get }
+  , cat3(" span=", window.>select { Span.get }, " score=")
   , cat3(fmt.int_to_string(planner.score(window)), "", "\n")
   )
 }
@@ -21,7 +22,11 @@ pub fn window_line(window: Window) -> String {
 pub fn selected_line(window: Window) -> String {
   cat3(
   , "selected="
-  , window.?{name}
-  , cat3(" span=", window.?{span}, cat3(" score=", fmt.int_to_string(planner.score(window)), "\n"))
+  , window.>select { Name.get }
+  , cat3(
+    , " span="
+    , window.>select { Span.get }
+    , cat3(" score=", fmt.int_to_string(planner.score(window)), "\n")
+    )
   )
 }

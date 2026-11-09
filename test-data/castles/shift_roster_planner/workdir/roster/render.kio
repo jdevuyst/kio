@@ -1,23 +1,24 @@
 module roster/render;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import roster/scenario as scenario;
 import roster/scoring as scoring;
 import roster/types(
+, Day
+, Demand
+, Fairness_penalty
+, Preference
+, Preference_penalty
+, Rest_conflicts
+, Same_day_conflicts
 , Scorecard
 , Shift
-, {day}
-, {demand}
-, {fairness_penalty}
-, {preference_penalty}
-, {preference}
-, {rest_conflicts}
-, {same_day_conflicts}
-, {skill_shortfalls}
-, {skill}
-, {slot}
-, {total_score}
-, {worker}
+, Skill
+, Skill_shortfalls
+, Slot
+, Total_score
+, Worker
 );
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, lt_i32);
@@ -46,17 +47,17 @@ fn shift_line(index: I32, s: Shift) -> String {
   , "  #"
   , int_to_string(index)
   , " d"
-  , int_to_string(s.?{day})
+  , int_to_string(s.>select { Day.get })
   , " "
-  , scenario.slot_name(s.?{slot})
+  , scenario.slot_name(s.>select { Slot.get })
   , cat7(
     , " -> "
-    , scenario.worker_name(s.?{worker})
+    , scenario.worker_name(s.>select { Worker.get })
     , " skill="
-    , scenario.skill_name(s.?{skill})
+    , scenario.skill_name(s.>select { Skill.get })
     , " demand="
-    , int_to_string(s.?{demand})
-    , cat3(" pref=", int_to_string(s.?{preference}), "\n")
+    , int_to_string(s.>select { Demand.get })
+    , cat3(" pref=", int_to_string(s.>select { Preference.get }), "\n")
     )
   )
 }
@@ -94,12 +95,12 @@ fn summary_line(label: String, value: I32) -> String {
 }
 
 fn print_scorecard(card: Scorecard) {
-  print(summary_line("skill shortfalls", card.?{skill_shortfalls}));
-  print(summary_line("same-day conflicts", card.?{same_day_conflicts}));
-  print(summary_line("rest conflicts", card.?{rest_conflicts}));
-  print(summary_line("fairness penalty", card.?{fairness_penalty}));
-  print(summary_line("preference penalty", card.?{preference_penalty}));
-  print(summary_line("total score", card.?{total_score}))
+  print(summary_line("skill shortfalls", card.>select { Skill_shortfalls.get }));
+  print(summary_line("same-day conflicts", card.>select { Same_day_conflicts.get }));
+  print(summary_line("rest conflicts", card.>select { Rest_conflicts.get }));
+  print(summary_line("fairness penalty", card.>select { Fairness_penalty.get }));
+  print(summary_line("preference penalty", card.>select { Preference_penalty.get }));
+  print(summary_line("total score", card.>select { Total_score.get }))
 }
 
 pub fn print_report() {

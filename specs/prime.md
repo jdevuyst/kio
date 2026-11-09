@@ -70,7 +70,7 @@ This document is a strict subset of [`language.md`](language.md); read that one 
 
 ### Type system
 
-System F + nominal existentials: functions and type parameters written as `[Name]` (universal binders), either in a declaration's parameter list or as a prefix binder run inside a function-type expression (`[A] A -> A` is `∀A. A -> A`). Each `Forall` node binds exactly one parameter; source binder runs are represented as nested unary `Forall` nodes. Rank-N is permitted; every binder is explicitly written, so type-checking stays decidable. **Existential** binders are written `<Name>` and appear only as a trailing binder run on a `newtype` declaration's header (`newtype Box[A] <U> : A & U`) — there is no standalone existential type expression. Constructor / projector pairs declared by the newtype are the introduction and elimination forms; the projector for an existential-bearing newtype carries a CPS scheme (see § The newtype primitive). Two anonymous type constructors — sum (`A | B`) and product (`A & B`) — are binary at the AST level. Product types model finite cartesian products, and tuple values are their elements, but Kio' commits to one binary representation: product type syntax uses `&`, and same-operator chains (`A & B & C`, `A | B | C`) are parse-time sugar that folds to the same right-associated tree, so `A & B & C` is `A & (B & C)` by definition. Empty product chains (`&`, `(&)`) fold to `.`, empty sum chains (`|`, `(|)`) fold to `!`, and one-item chains fold to the item; there is no one-element tuple type. Mixing `&` and `|` outside parens is a parse error — the user must write `A & (B | C)` or `(A & B) | C`. The unit type is written `.`, and the unit value is written `()`. The **bottom type** is written `!`: it has no values and no introduction form. Type equality is purely structural in Kio' — `A | !`, `A`, `(A & B) & C`, and `A & (B & C)` are distinct unless they have the same tree — with identity absorption and reassociation happening only at macro-call sites (see [`language.md` § Macros are imported, not ambient](language.md#macros-are-imported-not-ambient)).
+System F + nominal existentials: functions and type parameters written as `[Name]` (universal binders), either in a declaration's parameter list or as a prefix binder run inside a function-type expression (`[A] A -> A` is `∀A. A -> A`). Each `Forall` node binds exactly one parameter; source binder runs are represented as nested unary `Forall` nodes. Rank-N is permitted; every binder is explicitly written, so type-checking stays decidable. **Existential** binders are written `<Name>` and appear only as a trailing binder run on a nominal entry's header (`type { Box[A]<U>: A & U { mk; get; }; }`) — there is no standalone existential type expression. Constructor / projector pairs declared by the newtype are the introduction and elimination forms; the projector for an existential-bearing newtype carries a CPS scheme (see § The newtype primitive). Two anonymous type constructors — sum (`A | B`) and product (`A & B`) — are binary at the AST level. Product types model finite cartesian products, and tuple values are their elements, but Kio' commits to one binary representation: product type syntax uses `&`, and same-operator chains (`A & B & C`, `A | B | C`) are parse-time sugar that folds to the same right-associated tree, so `A & B & C` is `A & (B & C)` by definition. Empty product chains (`&`, `(&)`) fold to `.`, empty sum chains (`|`, `(|)`) fold to `!`, and one-item chains fold to the item; there is no one-element tuple type. Mixing `&` and `|` outside parens is a parse error — the user must write `A & (B | C)` or `(A & B) | C`. The unit type is written `.`, and the unit value is written `()`. The **bottom type** is written `!`: it has no values and no introduction form. Type equality is purely structural in Kio' — `A | !`, `A`, `(A & B) & C`, and `A & (B & C)` are distinct unless they have the same tree — with identity absorption and reassociation happening only at macro-call sites (see [`language.md` § Macros are imported, not ambient](language.md#macros-are-imported-not-ambient)).
 
 **Functions are unary over one domain type.** Kio''s `Function` is a strict System F arrow with one `param` and one `ret`. Product domains are written with `&`: `(A & B) -> R` is `Function(Product(A, B), R)`. Declaration signatures may have comma-separated value parameters, but those commas are signature-list syntax; the function type they synthesize still has the right-folded product domain. A bare unary arrow `A -> B` is accepted and right-associates (`A -> B -> C` is `A -> (B -> C)`). Product/sum chains on either side of a type-expression arrow require parentheses: `(A & B) -> R`, `A -> (B & C)`, and `A -> (B | C)`. A named function or lambda's own return annotation may use a bare chain; an arrow nested inside it still requires a grouped chain result, as in `fn factory() -> A -> (B & C)`. The formatter preserves these grouping rules. See [`language.md` § Type parameters](language.md#type-parameters) for the right-fold rule.
 
@@ -82,11 +82,11 @@ The marker remains in the Kio' artifact and its public function contract. Conseq
 
 **Type-expression binders are prefix-only.** A binder run scopes over the complete body to its right: `[A][B] (A & B) -> R` is `Forall(A, Forall(B, Function(Product(A, B), R)))`, and `[A] R` is `Forall(A, R)`. A binder run must have a body type; `[A] -> R` is not a type expression. Declaration signatures still use ordered type/value groups, with comma-separated value parameters inside one value group folding to that layer's product domain.
 
-Nominal types are introduced by `newtype` declarations (see [The `newtype` primitive](#the-newtype-primitive)); each declaration is itself an **iso-recursive** wrap/unwrap boundary at the nominal name (see [Explicit recursive data declarations](#explicit-recursive-data-declarations)). There is no anonymous record or label type constructor in Kio': surface `labels` declarations generate ordinary `newtype`s, described in [`language.md`](language.md). Anonymous recursive type expressions are not in Kio' either — explicit singleton or mutual declaration scopes ground every recursive cycle at a nominal `newtype` boundary.
+Nominal types are introduced by explicit singleton declarations such as `type { Token: Payload { mk; get; }; }` (see [The newtype primitive](#the-newtype-primitive)); each declaration is itself an **iso-recursive** wrap/unwrap boundary at the written nominal name (see [Explicit recursive data declarations](#explicit-recursive-data-declarations)). There is no anonymous record type constructor in Kio'. Compact multiple-entry declarations, omitted member bodies and declaration-bearing alias RHSs lower to ordinary explicit singleton nominals and aliases before this boundary. Anonymous recursive type expressions are not in Kio' either: written singleton or mutual declaration scopes ground every recursive cycle at a nominal boundary.
 
 ### Value construction and elimination
 
-Kio' has **no value-level syntax** for constructing or destructuring sums or products. Every introduction and elimination is an ordinary function call — either a compiler-provided intrinsic or a user-named constructor/projector pair declared by a `newtype`. The six type-form intrinsics listed below, together with the branching intrinsic `__if_then_else__` (see [Branching intrinsic](#branching-intrinsic)) and the bottom-elimination intrinsic `__absurd__` (see [Bottom-elimination intrinsic](#bottom-elimination-intrinsic)), are not in scope by default; the magic phrase `import __intrinsics__;` at the top of a file brings all eight in at once. There is no per-name selective form: it's all or nothing.
+Kio' has **no value-level syntax** for constructing or destructuring sums or products. Every introduction and elimination is an ordinary function call — either a compiler-provided intrinsic or the fixed `mk`/`get` pair declared by a nominal type. The six type-form intrinsics listed below, together with the branching intrinsic `__if_then_else__` (see [Branching intrinsic](#branching-intrinsic)) and the bottom-elimination intrinsic `__absurd__` (see [Bottom-elimination intrinsic](#bottom-elimination-intrinsic)), are not in scope by default; the magic phrase `import __intrinsics__;` at the top of a file brings all eight in at once. There is no per-name selective form: it's all or nothing.
 
 | Type form | Introduce | Eliminate |
 |---|---|---|
@@ -98,7 +98,7 @@ Like every value application, `__either__(s, f, g)` evaluates `s`, `f`, and
 handler selected by `s`; constructing both handler values is eager, while
 invoking the selected handler is branch-dependent.
 
-Binary only at the value-construction layer: n-ary tuple values live in [`language.md`](language.md) and lower to intrinsic calls before Kio'. Type-chain spellings are parse-time sugar only; they fold to binary `&` / `|` ASTs before later phases. Nominal types are introduced via [`newtype`](#the-newtype-primitive), which attaches a user-named constructor and projector as members of the type, reached as `Name.c(...)` and `Name.p(...)`.
+Binary only at the value-construction layer: n-ary tuple values live in [`language.md`](language.md) and lower to intrinsic calls before Kio'. Type-chain spellings are parse-time sugar only; they fold to binary `&` / `|` ASTs before later phases. A [nominal declaration](#the-newtype-primitive) attaches the fixed constructor and projector as members of its written type, reached as `Name.mk(...)` and `Name.get(...)`.
 
 Kio' uses the same spelling-based namespaces as Kio. User type names and type
 parameters match `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`: one optional
@@ -116,8 +116,8 @@ Two or more leading underscores reserve a name for compiler hygiene; a trailing 
 
 ### Bindings
 
-Top-level `fn`, `type` (nullary and parametric), and `newtype` (nullary and
-parametric); `pub` visibility modifier; dot-led anonymous functions
+Top-level `fn` and `type` declarations (nullary and parametric aliases or
+explicit singleton nominals); `pub` visibility modifier; dot-led anonymous functions
 (`.(...) { ... }` or `.[A] { ... }`). Ordinary functions and lambdas require
 one or more type or value groups; type-only groups imply no value stage.
 Thus `fn make[A] -> R { body }` and `.[A] -> R { body }` have type `[A] R`,
@@ -148,29 +148,23 @@ return annotation reads its type from the body; an absent top-level `fn` or
 signatures, `newtype` bodies, `match` clause parameters — is grammatically
 mandatory and takes no `_`.
 
-### The `newtype` primitive
+### The newtype primitive
 
-A `newtype` declaration mints a nominally-distinct type with a single payload, plus an explicit user-named constructor and projector:
+A nominal declaration mints a distinct type with a single payload and the fixed constructor `mk` and projector `get`:
 
-```
-newtype Celsius : F64 {
-  pub constructor mk_celsius;
-  pub projector to_f64;
-};
+```kio
+type { Celsius: F64 { pub mk; pub get; }; }
 
-rec newtype List[A] : . | (A & List[A]) {
-  pub constructor cons;
-  pub projector un_list;
-};
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; }
 ```
 
-The outer `pub` on `newtype` and the `pub` on `constructor` / `projector` are independent; each defaults to private when omitted. Both items are required. The block names a constructor function with scheme `Name.c : [A₁]…[Aₙ] Payload -> Name[A₁]…[Aₙ]` and a projector function whose scheme depends on whether the newtype declares existential binders (see § Existential binders below for the CPS form); both are **members of the type**, reached by dotted path (e.g., `Celsius.mk_celsius(3.14)`, not an unqualified `mk_celsius(3.14)`). They are not free top-level values in the declaring module. A top-level newtype ends at `}` with at most one optional suffix semicolon; members are separated by semicolon runs, with optional edge runs. Within a recursive type group, declarations use the group's single separators, with optional leading/trailing separators. Canonical formatting omits edge separators and redundant outer suffixes. Inside the spec block, `constructor` and `projector` are **contextual keywords** recognized only at the block's item positions; outside a `newtype` block they are ordinary identifiers.
+Kio' requires exactly one entry and a written member body. The outer visibility on `type` and the visibility on `mk` and `get` are independent; every omitted marker is private. Both roles are required, in either order, and custom member names are rejected. The constructor has scheme `Name.mk : [A₁]…[Aₙ] Payload -> Name[A₁]…[Aₙ]`; the projector's scheme depends on whether the nominal declares existential binders. Both are **members of the type**, reached by dotted path, and introduce no free top-level values. The declaration ends at the outer `}` with at most one optional suffix semicolon. The outer entry block uses single semicolon separators with optional leading/trailing separators; the member body retains semicolon runs, including optional edge runs. Canonical formatting puts `mk` before `get`, omits edge separators and omits the redundant outer suffix. `mk` and `get` are role keywords only inside a nominal member body; they remain ordinary identifiers elsewhere.
 
 A fully saturated **identity alias** may qualify those existing members. Each
 edge in such an alias chain must apply its next type head to every alias binder
 once, in order, with the same effective kind. Thus
-`type Wrapped[A] = Box[A];` admits `Wrapped.mk_box`, with exactly the member
-scheme and nominal result of `Box.mk_box`. A partial, reordered, structural,
+`type Wrapped[A] = Box[A];` admits `Wrapped.mk`, with exactly the member
+scheme and nominal result of `Box.mk`. A partial, reordered, structural,
 cyclic, or missing alias target exposes no member namespace. The alias head
 must be lexically in scope, and the terminal constructor or projector must be
 visible independently. Tooling therefore resolves the written head to the
@@ -179,21 +173,21 @@ alias does not mint a constructor, projector, nominal boundary, or reduction
 rule; this rule is identical for fresh textual Kio' and for Kio lowered from
 the surface language.
 
-**Existential binders.** A `newtype` declaration may carry an existential binder run, written as whitespace-separated `<X>` atoms trailing the universal-parameter list on the header (e.g., `newtype Pack[A] <U> : A & U`, or `newtype Pack[A] <L> <R> : A & L & R` for multi-binder runs). The names are bound inside the payload only and do not appear in the type's nominal arity — `Pack[A] <U> : A & U` is referenced as `Pack[A]`, not `Pack[A][ U]`. **Each binder must occur at least once in the payload** — a phantom existential (a binder that never appears in the payload) is information-free and rejected at declaration.
+**Existential binders.** A nominal entry may carry an existential binder run, written as whitespace-separated `<X>` atoms trailing the universal-parameter list on the header (e.g., `Pack[A]<U>: A & U`, or `Pack[A]<L><R>: A & L & R` for multi-binder runs). The names are bound inside the payload only and do not appear in the type's nominal arity — `Pack[A] <U> : A & U` is referenced as `Pack[A]`, not `Pack[A][ U]`. **Each binder must occur at least once in the payload** — a phantom existential (a binder that never appears in the payload) is information-free and rejected at declaration.
 
-The constructor scheme extends with the existentials as additional inference-driven type-params: `Name.c : [A₁]…[Aₙ][U₁]…[Uₘ] payload -> Name[A₁]…[Aₙ]`. At the construction call site the existential witnesses are recovered by structurally matching the payload against the independently synthesized value-argument type. The ordinary universal prefix remains explicit in Kio'. Standalone checking materializes the recovered witnesses as ordinary type arguments in the validated artifact.
+The constructor scheme extends with the existentials as additional inference-driven type-params: `Name.mk : [A₁]…[Aₙ][U₁]…[Uₘ] payload -> Name[A₁]…[Aₙ]`. At the construction call site the existential witnesses are recovered by structurally matching the payload against the independently synthesized value-argument type. The ordinary universal prefix remains explicit in Kio'. Standalone checking materializes the recovered witnesses as ordinary type arguments in the validated artifact.
 
 The projector scheme is **CPS-shaped** for existential-bearing newtypes:
 
 ```text
-Name.p[A₁]…[Aₙ] Name[A₁]…[Aₙ] -> [R] ([U₁]…[Uₘ] payload -> R) -> R
+Name.get[A₁]…[Aₙ] Name[A₁]…[Aₙ] -> [R] ([U₁]…[Uₘ] payload -> R) -> R
 ```
 
-— a curried form whose outer call returns the inner polymorphic CPS function. The continuation's universal binders scope the existential witnesses, so they cannot escape into the result `R` by ordinary System F scope rules. Non-existential newtypes keep the direct-return projector `Name.p[A₁]…[Aₙ] Name[A₁]…[Aₙ] -> payload`. Standalone `(<U>, body)` type expressions are not admissible anywhere in Kio'.
+— a curried form whose outer call returns the inner polymorphic CPS function. The continuation's universal binders scope the existential witnesses, so they cannot escape into the result `R` by ordinary System F scope rules. Non-existential newtypes keep the direct-return projector `Name.get[A₁]…[Aₙ] Name[A₁]…[Aₙ] -> payload`. Standalone `(<U>, body)` type expressions are not admissible anywhere in Kio'.
 
 ### Higher-kinded types
 
-Kio' expresses higher-kinded types directly, with no application primitive. A binder annotated with a kind-`*→*`-or-higher signature (`[*F]`, `[**G]`; see [`grammar.md` § Kind grammar](grammar.md#kind-grammar)) admits **direct type application**: `F[A]` is the type obtained by applying the kind-`*→*` binder `F` to the kind-`*` argument `A`, and `Either[String]` is the kind-`*→*` type obtained by partially applying the arity-2 newtype `Either` to one argument. A transparent alias reference must instead supply every parameter declared by that alias; bare and undersaturated spellings cannot retain the alias declaration's own binders. There is no `__App__`, no `__inj__`, no `__prj__`: lifting a value into and projecting it out of a kind-`*→*` position (see [`language.md`](language.md#higher-kinded-types)) is an ordinary language construct — the `newtype` constructor / projector pair at a named kind-`*→*` newtype (a *concrete type constructor*), and an explicitly-threaded instance value (an `Applicative[F]` / `Comonad[F]` argument and its `pure` / `extract` members) at a kind-`*→*` binder `[*F]` (an *abstract type constructor*).
+Kio' expresses higher-kinded types directly, with no application primitive. A binder annotated with a kind-`*→*`-or-higher signature (`[*F]`, `[**G]`; see [`grammar.md` § Kind grammar](grammar.md#kind-grammar)) admits **direct type application**: `F[A]` is the type obtained by applying the kind-`*→*` binder `F` to the kind-`*` argument `A`, and `Either[String]` is the kind-`*→*` type obtained by partially applying the arity-2 newtype `Either` to one argument. A transparent alias reference must instead supply every parameter declared by that alias; bare and undersaturated spellings cannot retain the alias declaration's own binders. There is no `__App__`, no `__inj__`, no `__prj__`: lifting a value into and projecting it out of a kind-`*→*` position (see [`language.md`](language.md#higher-kinded-types)) is an ordinary language construct — the `newtype` constructor / projector pair at a named kind-`*→*` newtype (a *concrete type constructor*), and an explicitly-threaded instance value (an `Applicative[F]` / `Comonad[F]` argument and the wrapped operation exposed through its fixed `get` member) at a kind-`*→*` binder `[*F]` (an *abstract type constructor*).
 
 The kind discipline is what keeps the fragment decidable and strongly normalizing:
 
@@ -221,20 +215,17 @@ Ordinary top-level declarations in a file, including `host type` and `host fn`, 
 
 The two capability-free recursive-data forms introduce closed, written scopes:
 
-- `rec newtype N` puts exactly `N` in scope in its payload; and
+- `rec type { N: Payload { mk; get; }; }` puts exactly `N` in scope in its payload; and
 - `rec { ... }` puts every member type head in scope throughout that one group.
 
 After either declaration closes, its names enter the ordinary source-ordered module scope. Neither form sees an unrelated later declaration. Adding declarations outside a recursive scope therefore cannot retarget any reference inside it: the candidate heads are fixed by the written singleton or braces, and imports still resolve by exact path.
 
 ### Explicit recursive data declarations
 
-A self-recursive nominal uses `rec newtype`. The declaration itself is the **iso-recursive** wrap/unwrap boundary: crossing it in values goes through the declared constructor and projector, never by implicit unfolding.
+A self-recursive nominal uses an explicit singleton `rec type`. The declaration itself is the **iso-recursive** wrap/unwrap boundary: crossing it in values goes through the declared constructor and projector, never by implicit unfolding.
 
 ```kio
-rec newtype List[A] : . | (A & List[A]) {
-  pub constructor cons;
-  pub projector un_list;
-};
+rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; }
 ```
 
 A genuinely mutual component uses one bare group, with visibility on each member rather than on the group:
@@ -242,16 +233,13 @@ A genuinely mutual component uses one bare group, with visibility on each member
 ```kio
 rec {
   pub type Tree = Branch;
-  pub newtype Branch : . | (Tree & Tree) {
-    pub constructor branch;
-    pub projector un_branch;
-  };
+  pub type { Branch: . | (Tree & Tree) { pub mk; pub get; }; };
 }
 ```
 
 The group must contain at least two declarations and denote exactly one cyclic strongly connected component: every member must reach and be reached by every other member through written type references. An acyclic group, a group containing an unrelated helper, multiple independent components, or a one-member group is rejected as non-minimal. A transparent alias may participate, but its alias-to-alias dependency subgraph must be acyclic; every cycle must cross a nominal `newtype` boundary. Thus aliases still unfold along a finite path to a nominal knot, and an alias-only cycle remains invalid.
 
-The singleton marker is required exactly when its newtype payload refers back to its own head. Omitting it leaves that reference unresolved; writing it on an acyclic newtype is rejected as redundant. There is no `rec type` singleton form. Acyclic forward dependencies stay outside a group and are written dependency-first.
+The singleton marker is required exactly when its newtype payload refers back to its own head. Omitting it leaves that reference unresolved; writing it on an acyclic newtype is rejected as redundant. A recursive transparent alias without a nominal boundary remains rejected. Acyclic forward dependencies stay outside a group and are written dependency-first.
 
 Visibility also closes over declaration signatures. Every named type reachable
 from a `fn`, `type`, or `host fn` signature must be at least as visible as the
@@ -265,8 +253,7 @@ parsed and validated independently, rather than relying on the surface
 producer.
 
 **Strict positivity.** Strict positivity is a property of the explicitly written
-recursive component, not of an unrelated module declaration. For `rec
-newtype`, its one nominal is the component. For `rec { ... }`, follow
+recursive component, not of an unrelated module declaration. For a singleton `rec type`, its one nominal is the component. For `rec { ... }`, follow
 references among the exact written member heads; the group-validity rule has
 already established one strongly connected component. A newtype's recursive
 use sites are every named type occurrence in its payload whose head reaches
@@ -288,7 +275,7 @@ A higher-kinded type variable has no declared variance for its argument slots.
 Each slot is therefore conservatively invariant when composing recursive
 occurrences through an application headed by that variable. Knowing the kind
 alone does not establish covariance. Thus
-`rec newtype N[*F] : F[N[F]] { constructor make; projector open }` is rejected.
+`rec type { N[*F]: F[N[F]] { mk; get; }; }` is rejected.
 A known nominal head instead uses its computed parameter variance, and
 transparent aliases preserve that resolved structure.
 
@@ -356,7 +343,7 @@ An eighth intrinsic, `__absurd__ : [A] ! -> A`, is gated behind the same `import
 Existentials are a `newtype`-only feature in Kio'. There are no standalone introduction or elimination intrinsics: a value of an existential-bearing newtype is constructed by its declared constructor (with the existential witnesses inferred from the value-arg's type, see [Existential binders](#the-newtype-primitive)) and consumed by its CPS projector, whose curried scheme
 
 ```text
-N.<projector> : [A₁]…[Aₙ] N[A₁]…[Aₙ] -> [R] ([U₁]…[Uₘ] payload -> R) -> R
+N.get : [A₁]…[Aₙ] N[A₁]…[Aₙ] -> [R] ([U₁]…[Uₘ] payload -> R) -> R
 ```
 
 bakes the escape-checking continuation into the projector itself. There is no separate `__pack__` / `__unpack__` pair — the surface `let .(<U> x) = e;` sugar (see [`language.md` § Existential type binders](language.md#existential-type-binders)) desugars at parse time to the projector's two-step CPS call.
@@ -374,21 +361,18 @@ These features live only in `language.md`; each one either desugars to Kio' or r
   before the Lowered → Prime boundary. Kio' has no corresponding declaration,
   type, term, import, or privilege.
 - **Source-to-target macro coercion palettes** — imported user-defined macro calls (`name(e)[T]`) that synthesize Kio' glue between a source value and a target type. The reference libraries ship an algebraic palette and a spine palette; both are surface-only, removed at the Lowered → Prime boundary, and their per-form rule sets are library content (see [`language.md` § Macros are imported, not ambient](language.md#macros-are-imported-not-ambient) for the call mechanism, and [`docs/poc/optics.md`](../docs/poc/optics.md) / [`docs/poc/macros.md`](../docs/poc/macros.md) for per-form semantics). What reaches Kio' is ordinary `__pair__` / `__left__` / `__right__` / `__either__` / `__fst__` / `__snd__` / `__absurd__` glue.
-- **Block macro calls** — `name(args) { … }` or zero-prefix `name { … }`, with optional declared labelled blocks. Neutral syntax is projected as independent product entries, an ordinary thunk, or an ordinary bind-parameterized sequence, each supplying one successive final Function layer of the resolved public type. The reference library's `if(cond) { … } else { … }` constructs ordinary `__if_then_else__` glue from its checked Boolean condition and projected thunks; `scope { … }` invokes its projected thunk once. No block descriptor, label, neutral syntax, or projection metadata reaches Kio'. The names `if`, `else`, `scope`, `do`, and `match` remain ordinary identifiers in both Kio and Kio'.
-- **`rec(loop)` recursive-function groups and annotated `recur name(...)` calls** — surface-only recursion sugar. The desugar pass lowers each group to private state-packet `newtype`s, one ordinary wrapper function per member with that member's visibility, and ordinary calls to the resolved loop function. `recur(cont)` calls carry explicit continuations in the loop state; `recur(poly)` calls select a different instantiation for the next state. `recur(escape)` captures an ordinary lexical re-entry function in a closure and invokes it with a fresh state at the escaped call's result type. No generated wrapper or step refers recursively to itself. When state packets refer back to themselves or one another, their generated declarations use the same Kio' `rec newtype` or minimal `rec { ... }` type scope as any other recursive nominal component. Kio' has no term-level fixpoint, recursive-function group, or recursive-call marker; reparsed artifacts derive their meaning from these ordinary terms, not hidden lowering state.
-- **`match`** — the imported dispatch macro, `match(value) { .(<param-list>) { <body> }; … }`. Its `product` block supplies clause values whose function parameter types are the dispatch patterns. The library selects a clause per DNF branch of the scrutinee and reconstructs its argument. It elaborates to a `let`-bound value per clause plus nested `__either__` calls and `__fst__` / `__snd__` / projector-member calls. A single product-valued entry may supply preassembled clauses. A UFCS spelling such as `value.>match { clauses }` inserts the prefix scrutinee before block projection; there is no blockless alternate. See [`language.md`](language.md#pattern-matching).
+- **Block macro calls** — `name(args) { … }` or zero-prefix `name { … }`, with optional declared labelled blocks. Neutral syntax is projected as independent product entries, an ordinary thunk, or an ordinary bind-parameterized sequence, combined with the whole final prefix value, if present, in one right-associated product for one Function layer. The reference library's `if(cond) { … } else { … }` constructs ordinary `__if_then_else__` glue from its checked Boolean condition and projected thunks; `scope { … }` invokes its projected thunk once. No block descriptor, label, neutral syntax, or projection metadata reaches Kio'. The names `if`, `else`, `scope`, `do`, and `match` remain ordinary identifiers in both Kio and Kio'.
+- **`rec(loop)` recursive-function groups and annotated `recur name(...)` calls** — surface-only recursion sugar. The desugar pass lowers each group to private state-packet `newtype`s, one ordinary wrapper function per member with that member's visibility, and ordinary calls to the resolved loop function. `recur(cont)` calls carry explicit continuations in the loop state; `recur(poly)` calls select a different instantiation for the next state. `recur(escape)` captures an ordinary lexical re-entry function in a closure and invokes it with a fresh state at the escaped call's result type. No generated wrapper or step refers recursively to itself. When state packets refer back to themselves or one another, their generated declarations use the same Kio' explicit singleton `rec type` or minimal `rec { ... }` type scope as any other recursive nominal component. Kio' has no term-level fixpoint, recursive-function group, or recursive-call marker; reparsed artifacts derive their meaning from these ordinary terms, not hidden lowering state.
+- **`match`** — the imported dispatch macro, `match(value) { .(<param-list>) { <body> }; … }`. Its `product` block supplies clause values whose function parameter types are the dispatch patterns. The library selects a clause per DNF branch of the scrutinee and reconstructs its argument. It elaborates to a once-bound combined source and clauses product, evaluated in order before dispatch, with projections and nested `__either__` calls. The selected clause body runs once, and argument reconstruction is duplication-free. A single product-valued entry may supply preassembled clauses. A UFCS spelling such as `value.>match { clauses }` inserts the prefix scrutinee before block projection; an ordinary direct call may supply the projected values. See [`language.md`](language.md#pattern-matching).
 - **`derive`** — the instance-deriving imported macro `derive(<candidates>)[<TargetType>]`. The candidate argument encodes no functions as `()`, one function directly, or multiple functions as a product tuple. The imported macro's implementation finds the unique composition of those candidate functions that produces the target type and constructs the corresponding nested call tree. The substitute pass swaps the `derive` call for that checked tree at the Lowered → Prime boundary, so what reaches Kio' is an ordinary call tree of `fn` applications — no `derive` form survives, and no new runtime machinery is added. See [`language.md`](language.md#the-derive-macro).
 - **Sequence blocks** — the reference `do(bind) { … }` applies a projected `sequence` function to the supplied bind value. The projection uses the structural type `[A][B] (F[A] & (A -> F[B])) -> F[B]` for its bind parameter. Bind statements and sequenced expressions become ordinary calls with nested continuations, ordinary lets remain lexical, and the final expression explicitly produces `F[R]`. A sequenced expression requires `F[.]`; `let _ <- e` remains a bind that may discard a non-unit payload. Only ordinary functions, applications, and lets reach Kio'. The Kio' grammar admits neither block calls nor `<-` binding statements. See [`language.md`](language.md#monadic-do-blocks).
 - **Placeholder lambdas** — surface lambda form `.stem. { expr }` with source-local numbered references such as `x1` / `x2`. Desugaring produces an explicit `.(...) { … }` with hygienic parameters. Kio' admits those identifier spellings as ordinary names, but not the `.stem.` introduction or its ownership rule. See [`language.md`](language.md#placeholder-lambdas).
 - **Numbered bindings** — `let .stem. = expr;` and sequence `let .stem. <- expr;` use a surface-owned unannotated pattern. The ordinary pattern and sequence rewrites remove the introduction and its ownership rule, leaving hygienic ordinary bindings and projections. See [`language.md`](language.md#numbered-bindings).
 - **UFCS calls `r.>f(…)`, `r.>>f(…)`, `f(…).<r`, `f(…).<<r`** — surface shorthand for inserting one value into a callable's value-argument stream. A present trailing argument list is nonempty: receiver-only calls use `r.>f` / `f.<r`, while an additional Unit is explicit as `r.>f(())` / `f(()).<r`; written empty tails are rejected before lowering. Block-call splices supply every trailing block and insert the receiver into the first prefix group forward or the last prefix group in reverse, before block projection; reverse spellings follow the complete block chain, as in `f(a) { B }.<r`. Projection produces the ordinary macro call. Other UFCS forms record an equivalent prefix call or macro call elaboration for substitution at the Lowered → Prime boundary. All use the ordinary public-type call-slot planner. Kio' retains neither UFCS nor block/splice metadata. See [`language.md`](language.md#ufcs).
 - **Existential-opening `let .(<U> x) = e;`** — surface form that binds a fresh universe of existential witnesses `U` and a value `x` from `e`'s existential-bearing newtype. Desugars at parse time to the two-step CPS call against the newtype's CPS projector (see [Existential introduction and elimination](#existential-introduction-and-elimination) above).
-- **`labels`** — surface sugar for generated `newtype`s and optional aliases. A `labels { f : X, g : Y, … }` block desugars entry-by-entry into one `newtype` per explicit payload entry, each with a compiler-minted type name (the label spelling with the first letter capitalized — `foo` -> `Foo`) and two members: a constructor `mk` and a projector `get`. Each entry `f : X` produces `pub newtype F : X { pub constructor mk; pub projector get; }` when the `labels` is `pub`, and the private form otherwise. In a later named form, an exact `f: _` marker contributes an ordinary reference to that earlier generated `F` and emits no declaration; the marker and its source-order resolution are absent from Kio'. The named form `labels T = { f : X } | { g : Y, h : Z };` also emits `type T = F | (G & H)` with the same outer visibility. An unmarked declaration lowers to source-ordered standalone declarations. `rec labels` instead gives the one surface declaration an atomic recursive scope over its generated heads and, for a named form, its alias head; lowering emits each genuine cyclic component as the minimal ordinary Kio' `rec newtype` or `rec { ... }` scope and leaves acyclic generated declarations outside it. Every cycle remains grounded at a generated nominal. A generated newtype whose name collides with an existing top-level type in the same module is a duplicate-name error by the ordinary rule.
-- **Braced selective label imports** — `import m({f});` selects only label syntax. Label lowering resolves that identity, rewrites its generated-newtype references through a collision-free qualified module binding, and removes the braced item. Kio' selective imports contain ordinary identifiers only; a Kio'-only parser rejects a braced import item.
-- **Nonminting label forwarding** — `type {local} = {source.label};` introduces only a Surface label spelling. Label elaboration follows its explicit label/import edges to the original nominal family, uses ordinary imports and member calls for actual uses, and removes the declaration. Kio' contains neither the forwarding item nor provenance describing its route. A Kio'-only parser rejects the braced declaration; ordinary uppercase positional aliases remain shared Kio/Kio' syntax.
-- **Label value construction** — the surface tuple literal `(a, b)` (and n-ary `(a, b, c)`) is sugar for `__pair__(a, b)` (resp. nested `__pair__(a, __pair__(b, c))`). Label construction `{f = e}` constructs `F.mk(e)` through the same type-directed row-update elaboration path as field update, with `()` as the receiver. `{f}` is sugar for `{f = f}`; `{m.f}` uses the last path segment and means `{m.f = f}`; `{f=}` is sugar for `{f = ()}`; `{}` is the unit value. Multi-label `{f = e, g = e'}` further desugars to `__pair__(F.mk(e), G.mk(e'))`.
-- **Field access/update** — `x.?{f}` / `x.?{f, g}` / `x.?{}` and `x.!{f = y}` / `x.!{f}` / `x.!{f=}` / `x.!{}` are type-directed surface forms. The typer records their elaboration and the substitute pass lowers them to ordinary Kio' terms using `__fst__`, `__snd__`, `__pair__`, `F.get`, and `F.mk`; conceptual `__access__` / `__filtered__` helpers are not Kio' and must not survive this boundary. In checking mode construction and update may emit a product-spine permutation when the expected type is exactly a reorder of the form's default result. Access always emits unwrapped payloads in written order. No row-form AST node survives into Kio'.
-- **Label types** — label types use generated nominal names such as `F` and `F[T]`; lowercase labels and braced label forms are not type syntax.
+- **Compact nominal declarations** — `type { F: X; G: Y; }` supplies ordinary nominal entries with their exact written type names. Omitted member bodies inherit the enclosing declaration's visibility for both `mk` and `get`; written bodies retain their independent markers. Lowering emits one explicit singleton nominal per new entry. A named RHS such as `type T = { F: X; } | (G & H);` additionally emits the ordinary alias `type T = F | (G & H);`. Product/sum grouping and ordinary type leaves retain their meaning. A named RHS consisting solely of one entry produces an identity alias, so ordinary member forwarding applies. Existing nominals occur as ordinary type references on the RHS and introduce no additional declaration. Compact `rec type` supplies one atomic recursive source scope, which lowers each genuine cyclic component to the minimal ordinary singleton or mutual Kio' type declaration and leaves acyclic declarations outside it. Duplicate written nominal and owner names are ordinary duplicate-declaration errors.
+- **Tuple values** — the surface tuple literal `(a, b)` (and n-ary `(a, b, c)`) is sugar for `__pair__(a, b)` (respectively nested `__pair__` calls). The empty braces `{}` denote the unit value.
+- **Nominal names** — compact entries use ordinary type names such as `F`, `_F` and `F[T]`; the declaration spelling introduces no additional type identity or case-derived name.
 - **`equiv`** — declarative test claim discharged by the `kio test` runner. `kio-prime` rejects `equiv` items at parse time. See [`language.md`](language.md#equivalence-claims-equiv) and [`cli.md`](cli.md#kio-test).
 - **literal aliases** — `literal name = <literal>;` is surface-only. The desugar pass expands a bare reference to the stored literal token, expands `name[Type]` to the stored literal with that annotation, and drops the declaration at the Surface → Desugared boundary. Kio' keeps only the already-expanded literal expression; a Kio'-only parser rejects `literal` items.
 - **Fixed and variadic operators** — `op <pattern> { impl <ValuePath>; };`
@@ -425,10 +409,9 @@ Kio''s grammar is the **regular-module** file shape — every `*.kio` file with 
 
 **Lexical structure.** Kio' shares Kio's maximal ordinary symbol words, structural dots and square brackets, and finite native dot compounds. The native grammar preserves `[A]`, `[*F]`, `[A][B]`, `.[*F]`, and `type A=.;`; dots and brackets never join user operator words. Native structural-prefix handling remains confined to its grammatical contexts. There is no Kio' fixed/variadic declaration, tagged operator import, or user-operator expression. The shared signed-number rule treats identifiers, literals, `)`, `}`, and `]` as expression-ending; a flush leading minus belongs to a literal only elsewhere. Comment markers `//` and `///` require following whitespace, end-of-line, or end-of-file; `////` and markers flush against non-whitespace characters are lex errors. See [the shared lexical contract](grammar.md#lexical-structure-kio).
 
-**Contextual keywords.** Every Kio' keyword (`module`, `import`, `as`, `pub`, `pure`, `type`, `host`, `fn`, `rec`, `newtype`, `let`, `constructor`, `projector`, plus the magic phrase `__intrinsics__`) lexes as an ordinary `IDENT`; the parser recognizes the keyword role only at the positions where the productions show it as a literal terminal. `pure` modifies only an ordinary `fn`, `rec` marks an explicitly recursive data declaration or mutual type group, and `host` is a host-declaration modifier only when immediately followed by `type` or `fn`. Surface-only forms have no productions in the Kio' grammar — a Kio'-only parser rejects them as syntax errors. The rejected surface set covers:
+**Contextual keywords.** Every Kio' keyword (`module`, `import`, `as`, `pub`, `pure`, `type`, `host`, `fn`, `rec`, `let`, `mk`, `get`, plus the magic phrase `__intrinsics__`) lexes as an ordinary `IDENT`; the parser recognizes the keyword role only at the positions where the productions show it as a literal terminal. `pure` modifies only an ordinary `fn`, `rec` marks an explicitly recursive data declaration or mutual type group, and `host` is a host-declaration modifier only when immediately followed by `type` or `fn`. Surface-only forms have no productions in the Kio' grammar — a Kio'-only parser rejects them as syntax errors. The rejected surface set covers:
 
-- Label declaration syntax: `labels`, including `rec labels`.
-- Braced label-forwarding declarations: `type {local} = {target};`.
+- Compact nominal declarations with multiple entries, an omitted member body, or a declaration-bearing alias RHS, including their `rec type` forms.
 - Recursive-function syntax: top-level `rec(loop)` groups and `recur name(...)` / `recur(poly, cont) name(...)` calls.
 - Placeholder-lambda introduction `.stem.` and its source-local ownership rule; numbered reference spellings remain ordinary identifiers.
 - Macro declarations, tagged macro selections and trailing-block calls. Ordinary

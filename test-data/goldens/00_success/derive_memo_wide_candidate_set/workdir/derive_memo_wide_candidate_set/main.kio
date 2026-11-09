@@ -5,54 +5,54 @@ import __intrinsics__;
 import macros/derive(macro derive);
 import testapi(String);
 
-pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
+pub type { Cell[A]: A { pub mk; pub get } }
 
-pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair }
+pub type { Pair[A][B]: A & B { pub mk; pub get } }
 
-pub newtype Render[A] : A -> String { pub constructor mk_render; pub projector render }
+pub type { Render[A]: A -> String { pub mk; pub get } }
 
-pub newtype Atom0 : String { pub constructor mk_atom0; pub projector un_atom0 }
+pub type { Atom0: String { pub mk; pub get } }
 
-pub newtype Atom1 : String { pub constructor mk_atom1; pub projector un_atom1 }
+pub type { Atom1: String { pub mk; pub get } }
 
-pub newtype Atom2 : String { pub constructor mk_atom2; pub projector un_atom2 }
+pub type { Atom2: String { pub mk; pub get } }
 
-pub newtype Atom3 : String { pub constructor mk_atom3; pub projector un_atom3 }
+pub type { Atom3: String { pub mk; pub get } }
 
-pub newtype Atom4 : String { pub constructor mk_atom4; pub projector un_atom4 }
+pub type { Atom4: String { pub mk; pub get } }
 
-pub newtype Atom5 : String { pub constructor mk_atom5; pub projector un_atom5 }
+pub type { Atom5: String { pub mk; pub get } }
 
 fn render_cell_string() -> Render[Cell[String]] {
-  Render.mk_render(.(c) { Cell.un_cell(c) })
+  Render.mk(.(c) { Cell.get(c) })
 }
 
 fn render_atom0() -> Render[Atom0] {
-  Render.mk_render(.(a) { Atom0.un_atom0(a) })
+  Render.mk(.(a) { Atom0.get(a) })
 }
 
 fn render_atom1() -> Render[Atom1] {
-  Render.mk_render(.(a) { Atom1.un_atom1(a) })
+  Render.mk(.(a) { Atom1.get(a) })
 }
 
 fn render_atom2() -> Render[Atom2] {
-  Render.mk_render(.(a) { Atom2.un_atom2(a) })
+  Render.mk(.(a) { Atom2.get(a) })
 }
 
 fn render_atom3() -> Render[Atom3] {
-  Render.mk_render(.(a) { Atom3.un_atom3(a) })
+  Render.mk(.(a) { Atom3.get(a) })
 }
 
 fn render_atom4() -> Render[Atom4] {
-  Render.mk_render(.(a) { Atom4.un_atom4(a) })
+  Render.mk(.(a) { Atom4.get(a) })
 }
 
 fn render_atom5() -> Render[Atom5] {
-  Render.mk_render(.(a) { Atom5.un_atom5(a) })
+  Render.mk(.(a) { Atom5.get(a) })
 }
 
 fn render_pair[A][B](ra: Render[A], rb: Render[B]) -> Render[Pair[A][B]] {
-  Render.mk_render(.(p) { Render.render(ra)(__fst__[A][B](Pair.un_pair[A][B](p))) })
+  Render.mk(.(p) { Render.get(ra)(__fst__[A][B](Pair.get[A][B](p))) })
 }
 
 fn derived0() -> Render[Pair[Cell[String]][Pair[Cell[String]][Pair[Cell[String]][Cell[String]]]]] {

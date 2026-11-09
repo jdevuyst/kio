@@ -9,11 +9,12 @@ import list/list as ll;
 import list/list(varop [] as [* *]);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import poly/arith as arith;
 import poly/calculus as calculus;
 import poly/core as core;
 import poly/division as division;
-import poly/division(Divided, Not_divisible, {divided}, {not_divisible});
+import poly/division(Divided, Not_divisible);
 import poly/fixtures as fx;
 import poly/render as render;
 import testapi(Bool, I32, String);
@@ -23,10 +24,10 @@ import testapi/iter(loop);
 import testapi/text(string_concat);
 
 /// One finite runtime check: its law name, fixture claim, observed value, and verdict.
-pub labels Check = { law: String, claim: String, witness: String, holds: Bool };
+pub type Check = { Law: String; Claim: String; Witness: String; Holds: Bool };
 
 fn check(law: String, claim: String, witness: String, holds: Bool) -> Check {
-  {law, claim, witness, holds}
+  (Law.mk(law), Claim.mk(claim), Witness.mk(witness), Holds.mk(holds))
 }
 
 fn same(left: I32, right: I32) -> String {
@@ -57,11 +58,13 @@ fn division_identity(claim: String, p: core.Poly, divisor: core.Poly) -> Check {
   match(division.divmod(p, divisor)) {
     (
     , .(result: Divided) {
-        let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
+        let .(quotient: core.Poly, remainder: core.Poly) = result.>select { Divided.get };
         let rebuilt = arith.add(arith.mul(quotient, divisor), remainder);
         check("division identity", claim, render.show(rebuilt), core.equal(rebuilt, p))
       }
-    , .(refused: Not_divisible) { check("division identity", claim, refused.?{not_divisible}, .f) }
+    , .(refused: Not_divisible) {
+        check("division identity", claim, refused.>select { Not_divisible.get }, .f)
+      }
     )
   }
 }
@@ -104,7 +107,7 @@ pub fn all_checks() -> lc.List[Check] {
 pub fn passes(checks: lc.List[Check]) -> I32 {
   ll.foldl(
   , .(count: I32, c: Check) -> I32 {
-      if(c.?{holds}) { add_i32(count, 1) } else { count }
+      if(c.>select { Holds.get }) { add_i32(count, 1) } else { count }
     }
   , 0
   , checks

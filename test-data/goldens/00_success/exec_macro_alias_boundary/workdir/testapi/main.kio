@@ -1,0 +1,121 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import __comptime__;
+import testapi/io(print);
+
+type { Pair[A][B]: A & B { mk; get } }
+
+type { Token: . { mk; get } }
+
+type Captured_alias = .;
+
+fn captured_target(value: Captured_alias) -> Captured_alias { value }
+
+pure fn require_same(
+, ct: __Comptime__
+, actual: __Type__
+, expected: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  __if_then_else__(
+  , __type_equal__(ct, actual, expected)
+  , .() -> __Checked_term__ { value }
+  , .() -> __Checked_term__ { __macro_error__(ct, "transparent alias reflection changed the type") }
+  )
+}
+
+pure fn inspect_impl(
+, ct: __Comptime__
+, actual: __Type__
+, expected: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  let value = require_same(ct, __term_type__(ct, value), actual, value);
+  require_same(ct, actual, expected, value)
+}
+
+macro ordinary : [A][B] A -> A { impl inspect_impl }
+
+pure fn marked_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, actual: __Type__
+, expected: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (inspect_impl(ct, actual, expected, value), fills) }
+
+macro marked : [A][B] A -> A { impl(fills) marked_impl }
+
+pure fn captured_impl(
+, ct: __Comptime__
+, alias: __Type__
+, function: __Checked_term__
+, constructor: __Checked_term__
+, actual: __Type__
+, expected: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  let unit = __type_unit__(ct);
+  let value = require_same(ct, alias, unit, value);
+  let value = require_same(ct, __term_type__(ct, function), __type_arrow__(ct, unit, unit), value);
+  let value =
+    require_same(
+    , ct
+    , __term_type__(ct, constructor)
+    , __type_arrow__(ct, unit, __reflect_type__(ct)[Token])
+    , value
+    );
+  inspect_impl(ct, actual, expected, value)
+}
+
+macro captured : [A][B] A -> A { captures (Captured_alias, captured_target, Token.mk); impl captured_impl }
+
+pure fn hkt_impl(
+, ct: __Comptime__
+, constructor: __Type__
+, argument: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  let applied = __type_apply__(ct, constructor, argument);
+  let expected = __reflect_type__(ct)[Pair[.][.]];
+  require_same(ct, applied, expected, value)
+}
+
+macro hkt : [*F][A] F[A] -> F[A] { impl hkt_impl }
+
+type Unit_alias = .;
+
+type Pair_alias[A][B] = B & A;
+
+type Constructor_alias = Pair[.];
+
+type Supplied_alias[T] = Pair[T];
+
+type Scheme_alias = [X] X -> X;
+
+type A = .;
+
+fn target(value: Unit_alias) -> Unit_alias { print("target\n"); value }
+
+fn pair_source() -> Pair_alias[Token][.] { print("quoted\n"); ((), Token.mk(())) }
+
+fn identity[T](value: T) -> T { value }
+
+fn rigid[A](value: A) -> A { ordinary[A][A](value) }
+
+pub fn main() {
+  ordinary[Unit_alias -> Unit_alias][. -> .](target)(());
+  marked[Unit_alias -> Unit_alias][. -> .](target)(());
+  let _ = ordinary[Pair_alias[Token][.]][. & Token](pair_source());
+  captured[Unit_alias][.](());
+  let _ = Pair.get(hkt[Constructor_alias][.](Pair.mk((), ())));
+  let _ = Pair.get(hkt[Supplied_alias[.]][.](Pair.mk((), ())));
+  ordinary[Scheme_alias][[Y] Y -> Y](identity)[.](());
+  marked[Scheme_alias][[Y] Y -> Y](identity)[.](());
+  Token.get(rigid(Token.mk(())));
+  ordinary[.][Unit_alias](());
+  ordinary[Unit_alias][.](());
+  print("alias reflection preserved\n")
+}

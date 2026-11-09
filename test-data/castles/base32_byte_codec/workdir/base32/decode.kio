@@ -22,7 +22,7 @@ import testapi/iter(loop);
 
 /// What a transmission decoded to: the recovered payload, or the
 /// one-based position of the first glyph outside the alphabet.
-pub labels Decoded = { ok: alphabet.Bytes } | { reject: I32 };
+pub type Decoded = { Ok: alphabet.Bytes } | { Reject: I32 };
 
 rec(loop) {
   pub fn decode(glyphs: alphabet.Glyphs) -> Decoded { recur walk(glyphs, 1, 0, 0, list.nil[I32]) };
@@ -30,7 +30,7 @@ rec(loop) {
   /// the cursor, so a refusal can say where it happened. Padding carries
   /// no bits and is stepped over.
   fn walk(glyphs: alphabet.Glyphs, position: I32, acc: I32, held: I32, done: alphabet.Bytes) -> Decoded {
-    match(glyphs.>list.List.un_list) {
+    match(glyphs.>list.List.get) {
       (
       , .(glyph: String, rest: alphabet.Glyphs) {
           if(alphabet.is_pad(glyph)) {
@@ -46,11 +46,11 @@ rec(loop) {
                 , done
                 )
               }
-            , .(_unknown: .) { widen_sum({reject = position}) }
+            , .(_unknown: .) { widen_sum(Reject.mk(position)) }
             )
           }
         }
-      , .(_empty: .) { widen_sum({ok = list.reverse(done)}) }
+      , .(_empty: .) { widen_sum(Ok.mk(list.reverse(done))) }
       )
     }
   };
@@ -68,10 +68,10 @@ rec(loop) {
 }
 
 pub rec(loop) fn bytes_eq(left: alphabet.Bytes, right: alphabet.Bytes) -> Bool {
-  match(left.>list.List.un_list) {
+  match(left.>list.List.get) {
     (
     , .(head: I32, rest: alphabet.Bytes) {
-        match(right.>list.List.un_list) {
+        match(right.>list.List.get) {
           (
           , .(other: I32, others: alphabet.Bytes) {
               if(bits.int_eq(head, other)) { recur bytes_eq(rest, others) } else { .f }
@@ -81,7 +81,7 @@ pub rec(loop) fn bytes_eq(left: alphabet.Bytes, right: alphabet.Bytes) -> Bool {
         }
       }
     , .(_empty: .) {
-        match(right.>list.List.un_list) {
+        match(right.>list.List.get) {
           (.(_head: I32, _rest: alphabet.Bytes) { .f }, .(_empty: .) { .t })
         }
       }

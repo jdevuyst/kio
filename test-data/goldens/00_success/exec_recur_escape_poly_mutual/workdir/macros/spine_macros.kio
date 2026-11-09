@@ -11,7 +11,6 @@ import macros/macro_util(
 , Maybe_matched_slot
 , Maybe_target_slot_take
 , Maybe_type_take
-, Optional_type
 , Route_list
 , Route_result
 , Slot
@@ -29,7 +28,6 @@ import macros/macro_util(
 , err
 , finish_macro_result
 , first_product_type
-, first_sum_type
 , flatten_product_to
 , flatten_sum_to
 , inject_at_suffix
@@ -63,11 +61,10 @@ import macros/macro_util(
 , type_prepend_reverse
 , type_reverse
 );
-import macros/testapi(String);
 
 type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -128,15 +125,11 @@ pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
 }
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__[__Type__][__Type_arity__ & __Type__](view)
-}
-
-fn function_arity(view: Function_view) -> __Type_arity__ {
-  __fst__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __fst__[__Type__][__Type__](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 type Adapter_result = Term_mapper | __Diagnostic_text__;
@@ -157,21 +150,18 @@ pure fn adapter_result_ok(ct: __Comptime__, result: Adapter_result) -> Comptime_
   )
 }
 
-type Fit_recur = (Type_pair & Type_pair) -> Adapter_result;
+type Fit_recur = (__Type__ & Type_pair) -> Adapter_result;
 
 type Mapper_route = __Type__ & Term_mapper;
 
-rec newtype Mapper_route_list : . | (Mapper_route & Mapper_route_list) {
-  pub constructor mk_mapper_route_list;
-  pub projector un_mapper_route_list
-  }
+rec type { Mapper_route_list: . | (Mapper_route & Mapper_route_list) { pub mk; pub get } }
 
 pure fn mapper_route_nil() -> Mapper_route_list {
-  Mapper_route_list.mk_mapper_route_list(__left__[.][Mapper_route & Mapper_route_list](()))
+  Mapper_route_list.mk(__left__[.][Mapper_route & Mapper_route_list](()))
 }
 
 pure fn mapper_route_cons(ct: __Comptime__, head: Mapper_route, tail: Mapper_route_list) -> Mapper_route_list {
-  Mapper_route_list.mk_mapper_route_list(__right__[.][Mapper_route & Mapper_route_list]((head, tail)))
+  Mapper_route_list.mk(__right__[.][Mapper_route & Mapper_route_list]((head, tail)))
 }
 
 type Mapper_route_reverse_state = Mapper_route_list & Mapper_route_list;
@@ -194,13 +184,13 @@ pure fn mapper_route_reverse_step(
 , state: Mapper_route_reverse_state
 ) -> Mapper_route_reverse_step {
   __either__[.][__Type__ & Type_list][Mapper_route_reverse_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Mapper_route_reverse_step {
       __left__[Mapper_route_list][Mapper_route_reverse_next](mapper_route_reverse_acc(state))
     }
   , .(type_cell: __Type__ & Type_list) -> Mapper_route_reverse_step {
       __either__[.][Mapper_route & Mapper_route_list][Mapper_route_reverse_step](
-      , Mapper_route_list.un_mapper_route_list(mapper_route_reverse_source(state))
+      , Mapper_route_list.get(mapper_route_reverse_source(state))
       , .(_missing: .) -> Mapper_route_reverse_step {
           __left__[Mapper_route_list][Mapper_route_reverse_next](mapper_route_reverse_acc(state))
         }
@@ -311,10 +301,10 @@ pure fn build_product_from_mapper_routes_step(
 , state: Product_mapper_state
 ) -> Product_mapper_step {
   __either__[.][__Type__ & Type_list][Product_mapper_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Product_mapper_step {
       __either__[.][Mapper_route & Mapper_route_list][Product_mapper_step](
-      , Mapper_route_list.un_mapper_route_list(product_mapper_routes(state))
+      , Mapper_route_list.get(product_mapper_routes(state))
       , .(_routes_done: .) -> Product_mapper_step {
           __left__[Macro_result][Product_mapper_next](ok(
           , ct
@@ -335,7 +325,7 @@ pure fn build_product_from_mapper_routes_step(
     }
   , .(target_cell: __Type__ & Type_list) -> Product_mapper_step {
       __either__[.][Mapper_route & Mapper_route_list][Product_mapper_step](
-      , Mapper_route_list.un_mapper_route_list(product_mapper_routes(state))
+      , Mapper_route_list.get(product_mapper_routes(state))
       , .(_missing_route: .) -> Product_mapper_step {
           __left__[Macro_result][Product_mapper_next](err(
           , ct
@@ -422,17 +412,12 @@ pure fn build_product_from_mapper_routes(
   )
 }
 
-rec newtype Mapper_list : . | (Term_mapper & Mapper_list) {
-  pub constructor mk_mapper_list;
-  pub projector un_mapper_list
-  }
+rec type { Mapper_list: . | (Term_mapper & Mapper_list) { pub mk; pub get } }
 
-pure fn mapper_nil() -> Mapper_list {
-  Mapper_list.mk_mapper_list(__left__[.][Term_mapper & Mapper_list](()))
-}
+pure fn mapper_nil() -> Mapper_list { Mapper_list.mk(__left__[.][Term_mapper & Mapper_list](())) }
 
 pure fn mapper_cons(ct: __Comptime__, head: Term_mapper, tail: Mapper_list) -> Mapper_list {
-  Mapper_list.mk_mapper_list(__right__[.][Term_mapper & Mapper_list]((head, tail)))
+  Mapper_list.mk(__right__[.][Term_mapper & Mapper_list]((head, tail)))
 }
 
 type Mapper_reverse_state = Mapper_list & Mapper_list;
@@ -451,13 +436,13 @@ type Mapper_reverse_step = Mapper_list | Mapper_reverse_next;
 
 pure fn mapper_reverse_step(ct: __Comptime__, fuel: Type_list, state: Mapper_reverse_state) -> Mapper_reverse_step {
   __either__[.][__Type__ & Type_list][Mapper_reverse_step](
-  , Type_list.un_type_list(fuel)
+  , Type_list.get(fuel)
   , .(_done: .) -> Mapper_reverse_step {
       __left__[Mapper_list][Mapper_reverse_next](mapper_reverse_acc(state))
     }
   , .(type_cell: __Type__ & Type_list) -> Mapper_reverse_step {
       __either__[.][Term_mapper & Mapper_list][Mapper_reverse_step](
-      , Mapper_list.un_mapper_list(mapper_reverse_source(state))
+      , Mapper_list.get(mapper_reverse_source(state))
       , .(_missing: .) -> Mapper_reverse_step {
           __left__[Mapper_list][Mapper_reverse_next](mapper_reverse_acc(state))
         }
@@ -567,7 +552,7 @@ pure fn extend_sum_dispatch(
 
 pure fn finish_sum_dispatch(ct: __Comptime__, state: Sum_dispatch_state) -> Sum_dispatch_result {
   __either__[.][Term_mapper & Mapper_list][Sum_dispatch_result](
-  , Mapper_list.un_mapper_list(sum_dispatch_routes(ct, state))
+  , Mapper_list.get(sum_dispatch_routes(ct, state))
   , .(_done: .) -> Sum_dispatch_result {
       sum_dispatch_ok(ct, sum_mapper_mapper(ct, sum_dispatch_state(ct, state)))
     }
@@ -584,13 +569,13 @@ pure fn build_sum_dispatcher_from_mappers(
 , routes: Mapper_list
 ) -> Sum_dispatch_result {
   __either__[.][__Type__ & Type_list][Sum_dispatch_result](
-  , Type_list.un_type_list(type_reverse(ct, source_spine))
+  , Type_list.get(type_reverse(ct, source_spine))
   , .(_no_source: .) -> Sum_dispatch_result {
       sum_dispatch_err(ct, "sum source spine is empty"[__Diagnostic_text__])
     }
   , .(source_cell: __Type__ & Type_list) -> Sum_dispatch_result {
       __either__[.][Term_mapper & Mapper_list][Sum_dispatch_result](
-      , Mapper_list.un_mapper_list(mapper_reverse_by_types(ct, source_spine, routes))
+      , Mapper_list.get(mapper_reverse_by_types(ct, source_spine, routes))
       , .(_no_route: .) -> Sum_dispatch_result {
           sum_dispatch_err(ct, "sum mapper route list is empty"[__Diagnostic_text__])
         }
@@ -612,7 +597,7 @@ pure fn build_sum_dispatcher_from_mappers(
               let loop_step_fn =
                 .(fuel: Type_list, state: Sum_dispatch_state) -> Sum_dispatch_step {
                   __either__[.][__Type__ & Type_list][Sum_dispatch_step](
-                  , Type_list.un_type_list(fuel)
+                  , Type_list.get(fuel)
                   , .(_done: .) -> Sum_dispatch_step {
                       __left__[Sum_dispatch_result][Sum_dispatch_next](finish_sum_dispatch(
                       , ct
@@ -621,7 +606,7 @@ pure fn build_sum_dispatcher_from_mappers(
                     }
                   , .(source_head: __Type__ & Type_list) -> Sum_dispatch_step {
                       __either__[.][Term_mapper & Mapper_list][Sum_dispatch_step](
-                      , Mapper_list.un_mapper_list(sum_dispatch_routes(ct, state))
+                      , Mapper_list.get(sum_dispatch_routes(ct, state))
                       , .(_missing_route: .) -> Sum_dispatch_step {
                           __left__[Sum_dispatch_result][Sum_dispatch_next](sum_dispatch_err(
                           , ct
@@ -739,7 +724,7 @@ pure fn find_recursive_product_candidate(
       let loop_step_fn =
         .(fuel: Product_candidate_fuel, prefix_rev: Product_candidate_state) -> Product_candidate_step {
           __either__[.][__Type__ & Type_list][Product_candidate_step](
-          , Type_list.un_type_list(product_candidate_sources_fuel(ct, fuel))
+          , Type_list.get(product_candidate_sources_fuel(ct, fuel))
           , .(_done: .) -> Product_candidate_step {
               __left__[Product_candidate_result][Product_candidate_next](product_candidate_err(
               , ct
@@ -750,7 +735,7 @@ pure fn find_recursive_product_candidate(
               let candidate = __fst__[__Type__][Type_list](cell);
               __either__[Term_mapper][__Diagnostic_text__][Product_candidate_step](
               , recur(
-                , (candidate, product_candidate_target_fuel(ct, fuel))
+                , __type_product__(ct, candidate, product_candidate_target_fuel(ct, fuel))
                 , (candidate, product_candidate_target_fuel(ct, fuel))
                 )
               , .(mapper: Term_mapper) -> Product_candidate_step {
@@ -837,7 +822,7 @@ pure fn select_product_routes(
           let loop_step_fn =
             .(fuel: Type_list, state: Product_route_state) -> Product_route_step {
               __either__[.][__Type__ & Type_list][Product_route_step](
-              , Type_list.un_type_list(fuel)
+              , Type_list.get(fuel)
               , .(_done: .) -> Product_route_step {
                   __left__[Product_route_result][Product_route_next](product_routes_ok(
                   , ct
@@ -964,7 +949,7 @@ pure fn find_recursive_sum_candidate(
       let loop_step_fn =
         .(fuel: Target_slot_list, prefix_rev: Target_slot_list) -> Sum_candidate_step {
           __either__[.][Target_slot & Target_slot_list][Sum_candidate_step](
-          , Target_slot_list.un_target_slot_list(fuel)
+          , Target_slot_list.get(fuel)
           , .(_done: .) -> Sum_candidate_step {
               __left__[Sum_candidate_result][Sum_candidate_next](sum_candidate_err(
               , ct
@@ -975,7 +960,7 @@ pure fn find_recursive_sum_candidate(
               let target_slot = __fst__[Target_slot][Target_slot_list](cell);
               let target = target_slot_type(ct, target_slot);
               __either__[Term_mapper][__Diagnostic_text__][Sum_candidate_step](
-              , recur((source, target), (source, target))
+              , recur(__type_product__(ct, source, target), (source, target))
               , .(mapper: Term_mapper) -> Sum_candidate_step {
                   __left__[Sum_candidate_result][Sum_candidate_next](sum_candidate_ok(
                   , ct
@@ -1050,7 +1035,7 @@ pure fn select_sum_routes(
       let loop_step_fn =
         .(fuel: Type_list, state: Sum_route_state) -> Sum_route_step {
           __either__[.][__Type__ & Type_list][Sum_route_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Sum_route_step {
               __left__[Sum_route_result][Sum_route_next](sum_routes_ok(
               , ct
@@ -1197,10 +1182,10 @@ pure fn function_mapper(
   let target_param = function_param(ct, target_view);
   let target_ret = function_result(ct, target_view);
   __either__[Term_mapper][__Diagnostic_text__][Adapter_result](
-  , recur((target_param, source_param), (target_param, source_param))
+  , recur(__type_product__(ct, target_param, source_param), (target_param, source_param))
   , .(param_mapper: Term_mapper) -> Adapter_result {
       __either__[Term_mapper][__Diagnostic_text__][Adapter_result](
-      , recur((source_ret, target_ret), (source_ret, target_ret))
+      , recur(__type_product__(ct, source_ret, target_ret), (source_ret, target_ret))
       , .(ret_mapper: Term_mapper) -> Adapter_result {
           adapter_ok(
           , ct
@@ -1229,7 +1214,7 @@ pure fn function_mapper(
   )
 }
 
-pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, _fuel: Type_pair, pair: Type_pair) -> Adapter_result {
+pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, pair: Type_pair) -> Adapter_result {
   let source = __fst__[__Type__][__Type__](pair);
   let target = __snd__[__Type__][__Type__](pair);
   __if_then_else__(
@@ -1297,11 +1282,11 @@ pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, _fuel: Type_pair, pai
 }
 
 pure fn fit_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__) -> Adapter_result {
-  __structural_recur__(ct)[Type_pair][Type_pair][Adapter_result](
+  __structural_recur__(ct)[__Type__][Type_pair][Adapter_result](
+  , __type_product__(ct, source, target)
   , (source, target)
-  , (source, target)
-  , .(recur: Fit_recur, fuel: Type_pair, state: Type_pair) -> Adapter_result {
-      fit_recur_step(ct, recur, fuel, state)
+  , .(recur: Fit_recur, _fuel: __Type__, state: Type_pair) -> Adapter_result {
+      fit_recur_step(ct, recur, state)
     }
   )
 }
@@ -1325,12 +1310,9 @@ pub pure fn fit_or_raw(
   )
 }
 
-pure fn spine_identity_impl(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, _target: __Type__
-) -> __Checked_term__ | __Diagnostic_text__ {
+pure fn spine_identity_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__) ->
+  __Checked_term__ | __Diagnostic_text__
+   {
   __if_then_else__(
   , __type_equal__(ct, right_fold_product(ct, product_spine(ct, source)), source)
   , .() -> __Checked_term__ | __Diagnostic_text__ { ok(ct, value) }
@@ -1340,26 +1322,13 @@ pure fn spine_identity_impl(
   )
 }
 
-pure fn spine_identity_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { spine_identity_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { spine_identity_impl(ct, source, value, source) }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn spine_identity_checked(
+pure fn spine_identity_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, spine_identity_result(ct, source, value, target)) }
+, _target: .
+) -> __Checked_term__ { finish_macro_result(ct, spine_identity_impl(ct, source, value)) }
 
 /// Validates the product-spine round trip and returns the original value.
 pub macro spine_identity : [Source] Source -> [Target] Target { impl spine_identity_checked }
@@ -1379,28 +1348,13 @@ pure fn reorder_prod_impl(
   )
 }
 
-pure fn reorder_prod_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { reorder_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn reorder_prod_checked(
+pure fn reorder_prod_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, reorder_prod_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, reorder_prod_impl(ct, source, value, target)) }
 
 /// Reorders product slots to match the requested target product.
 pub macro reorder_prod : [Source] Source -> [Target] Target { impl reorder_prod_checked }
@@ -1422,28 +1376,13 @@ pure fn reorder_sum_impl(
   )
 }
 
-pure fn reorder_sum_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { reorder_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn reorder_sum_checked(
+pure fn reorder_sum_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, reorder_sum_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, reorder_sum_impl(ct, source, value, target)) }
 
 /// Reorders sum arms to match the requested target sum.
 pub macro reorder_sum : [Source] Source -> [Target] Target { impl reorder_sum_checked }
@@ -1463,26 +1402,13 @@ pure fn narrow_prod_impl(
   )
 }
 
-pure fn narrow_prod_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { narrow_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { narrow_prod_impl(ct, source, value, source) }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn narrow_prod_checked(
+pure fn narrow_prod_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, narrow_prod_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, narrow_prod_impl(ct, source, value, target)) }
 
 /// Drops product slots not present in the requested target product.
 pub macro narrow_prod : [Source] Source -> [Target] Target { impl narrow_prod_checked }
@@ -1501,7 +1427,7 @@ type Unique_types_next = Type_list & Unique_types_state;
 
 type Unique_types_step = Type_list | Unique_types_next;
 
-pure fn unique_types(ct: __Comptime__, xs: Type_list) -> Type_list {
+pure fn unique_non_bottom_types(ct: __Comptime__, xs: Type_list) -> Type_list {
   __structural_recur__(ct)[Type_list][Unique_types_state][Type_list](
   , xs
   , type_nil()
@@ -1513,14 +1439,18 @@ pure fn unique_types(ct: __Comptime__, xs: Type_list) -> Type_list {
       let loop_step_fn =
         .(fuel: Type_list, acc_rev: Unique_types_state) -> Unique_types_step {
           __either__[.][__Type__ & Type_list][Unique_types_step](
-          , Type_list.un_type_list(fuel)
+          , Type_list.get(fuel)
           , .(_done: .) -> Unique_types_step {
               __left__[Type_list][Unique_types_next](type_reverse(ct, acc_rev))
             }
           , .(cell: __Type__ & Type_list) -> Unique_types_step {
               let head = __fst__[__Type__][Type_list](cell);
               __if_then_else__(
-              , type_list_contains(ct, head, acc_rev)
+              , __if_then_else__(
+                , __type_equal__(ct, head, __type_bottom__(ct))
+                , .() -> Comptime_bool { .t }
+                , .() -> Comptime_bool { type_list_contains(ct, head, acc_rev) }
+                )
               , .() -> Unique_types_step {
                   __right__[Type_list][Unique_types_next]((
                   , __snd__[__Type__][Type_list](cell)
@@ -1577,36 +1507,35 @@ pure fn narrow_sum_impl(
   )
 }
 
-pure fn narrow_sum_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { narrow_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      narrow_sum_impl(
-      , ct
-      , source
-      , value
-      , right_fold_sum(ct, unique_types(ct, sum_spine(ct, source)))
-      )
-    }
+pure fn narrow_sum_natural_result(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
+  narrow_sum_impl(
+  , ct
+  , source
+  , value
+  , right_fold_sum(ct, unique_non_bottom_types(ct, sum_spine(ct, source)))
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn narrow_sum_checked(
+pure fn narrow_sum_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, narrow_sum_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, narrow_sum_impl(ct, source, value, target)) }
 
 /// Narrows a sum to compatible target arms.
 pub macro narrow_sum : [Source] Source -> [Target] Target { impl narrow_sum_checked }
+
+pure fn narrow_sum_natural_checked(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, _target: .
+) -> __Checked_term__ { finish_macro_result(ct, narrow_sum_natural_result(ct, source, value)) }
+
+/// Removes Bottom arms and collapses duplicate arm types in first-occurrence order.
+pub macro narrow_sum_ : [Source] Source -> [Target] Target { impl narrow_sum_natural_checked }
 
 pure fn widen_prod_impl(
 , ct: __Comptime__
@@ -1622,28 +1551,13 @@ pure fn widen_prod_impl(
   )
 }
 
-pure fn widen_prod_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { widen_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn widen_prod_checked(
+pure fn widen_prod_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, widen_prod_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, widen_prod_impl(ct, source, value, target)) }
 
 /// Builds a wider product target from compatible source slots.
 pub macro widen_prod : [Source] Source -> [Target] Target { impl widen_prod_checked }
@@ -1665,26 +1579,13 @@ pure fn widen_sum_impl(
   )
 }
 
-pure fn widen_sum_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { widen_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { widen_sum_impl(ct, source, value, source) }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn widen_sum_checked(
+pure fn widen_sum_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, widen_sum_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, widen_sum_impl(ct, source, value, target)) }
 
 /// Injects a sum value into a compatible wider target sum.
 pub macro widen_sum : [Source] Source -> [Target] Target { impl widen_sum_checked }
@@ -1696,28 +1597,13 @@ pure fn flatten_prod_impl(
 , target: __Type__
 ) -> Macro_result { flatten_product_to(ct, source, target, value) }
 
-pure fn flatten_prod_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { flatten_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn flatten_prod_checked(
+pure fn flatten_prod_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, flatten_prod_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, flatten_prod_impl(ct, source, value, target)) }
 
 /// Flattens nested product structure to the requested product target.
 pub macro flatten_prod : [Source] Source -> [Target] Target { impl flatten_prod_checked }
@@ -1729,28 +1615,13 @@ pure fn flatten_sum_impl(
 , target: __Type__
 ) -> Macro_result { flatten_sum_to(ct, source, target, value) }
 
-pure fn flatten_sum_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { flatten_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn flatten_sum_checked(
+pure fn flatten_sum_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, flatten_sum_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, flatten_sum_impl(ct, source, value, target)) }
 
 /// Flattens nested sum structure to the requested sum target.
 pub macro flatten_sum : [Source] Source -> [Target] Target { impl flatten_sum_checked }
@@ -1759,28 +1630,10 @@ pure fn fit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, ta
   mapper_result_to_macro(ct, fit_mapper_result(ct, source, target), value)
 }
 
-pure fn fit_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { fit_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      err(ct, "macro needs an explicit or expected target type"[__Diagnostic_text__])
-    }
-  )
-}
-
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn fit_checked(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, fit_result(ct, source, value, target)) }
+pure fn fit_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
+  finish_macro_result(ct, fit_impl(ct, source, value, target))
+}
 
 /// Composes compatible structural adaptations across product, sum, and function boundaries.
 pub macro fit : [Source] Source -> [Target] Target { impl fit_checked }
@@ -1789,35 +1642,34 @@ pure fn one_prod_impl(ct: __Comptime__, source: __Type__, value: __Checked_term_
   pick_first_slot(ct, target, product_spine(ct, source), product_slots(ct, source, value))
 }
 
-pure fn one_prod_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
+pure fn one_prod_natural_result(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[__Type__][.][Macro_result](
-  , target
+  , first_product_type(ct, source, value)
   , .(target_type: __Type__) -> Macro_result { one_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      __either__[__Type__][.][Macro_result](
-      , first_product_type(ct, source, value)
-      , .(target_type: __Type__) -> Macro_result { one_prod_impl(ct, source, value, target_type) }
-      , .() -> Macro_result { err(ct, "macro could not infer a target type"[__Diagnostic_text__]) }
-      )
-    }
+  , .() -> Macro_result { err(ct, "macro could not infer a target type"[__Diagnostic_text__]) }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn one_prod_checked(
+pure fn one_prod_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, one_prod_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, one_prod_impl(ct, source, value, target)) }
 
-/// Extracts one product slot, inferring the slot type when possible.
+/// Extracts a product slot of the requested target type.
 pub macro one_prod : [Source] Source -> [Target] Target { impl one_prod_checked }
+
+pure fn one_prod_natural_checked(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, _target: .
+) -> __Checked_term__ { finish_macro_result(ct, one_prod_natural_result(ct, source, value)) }
+
+/// Selects the first source product slot.
+pub macro one_prod_ : [Source] Source -> [Target] Target { impl one_prod_natural_checked }
 
 pure fn one_sum_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
   let source_spine = sum_spine(ct, source);
@@ -1839,32 +1691,39 @@ pure fn one_sum_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__
   )
 }
 
-pure fn one_sum_result(
-, ct: __Comptime__
-, source: __Type__
-, value: __Checked_term__
-, target: Optional_type
-) -> Macro_result {
-  __either__[__Type__][.][Macro_result](
-  , target
-  , .(target_type: __Type__) -> Macro_result { one_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result {
-      __either__[__Type__][.][Macro_result](
-      , first_sum_type(ct, source, value)
-      , .(target_type: __Type__) -> Macro_result { one_sum_impl(ct, source, value, target_type) }
-      , .() -> Macro_result { err(ct, "macro could not infer a target type"[__Diagnostic_text__]) }
-      )
-    }
-  )
+pure fn one_sum_natural_result(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
+  let target =
+    __type_sum_spine_fold__(ct)[__Type__](
+    , source
+    , __type_bottom__(ct)
+    , .(selected: __Type__, arm: __Type__) -> __Type__ {
+        __if_then_else__(
+        , __type_equal__(ct, selected, __type_bottom__(ct))
+        , .() -> __Type__ { arm }
+        , .() -> __Type__ { selected }
+        )
+      }
+    );
+  one_sum_impl(ct, source, value, target)
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn one_sum_checked(
+pure fn one_sum_checked(
 , ct: __Comptime__
 , source: __Type__
 , value: __Checked_term__
-, target: Optional_type
-) -> __Checked_term__ { finish_macro_result(ct, one_sum_result(ct, source, value, target)) }
+, target: __Type__
+) -> __Checked_term__ { finish_macro_result(ct, one_sum_impl(ct, source, value, target)) }
 
-/// Extracts one non-sum branch from a sum, inferring the branch type when possible.
+/// Extracts the requested non-sum type from a sum.
 pub macro one_sum : [Source] Source -> [Target] Target { impl one_sum_checked }
+
+pure fn one_sum_natural_checked(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, _target: .
+) -> __Checked_term__ { finish_macro_result(ct, one_sum_natural_result(ct, source, value)) }
+
+/// Collapses equal non-Bottom spine arms, yielding Bottom when all arms are Bottom.
+pub macro one_sum_ : [Source] Source -> [Target] Target { impl one_sum_natural_checked }

@@ -1,6 +1,7 @@
 module testapi/main;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(
@@ -19,36 +20,42 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
-labels Event = { event_key: String, event_value: I32, event_deleted: Bool, event_seq: I32 };
+type Event = { Event_key: String; Event_value: I32; Event_deleted: Bool; Event_seq: I32 };
 
-labels Compact = {
-, compacted_log: Array[Event]
-, kept_count: I32
-, dropped_count: I32
-, superseded_count: I32
-, delete_count: I32
-, original_count: I32
+type Compact = {
+  Compacted_log: Array[Event];
+  Kept_count: I32;
+  Dropped_count: I32;
+  Superseded_count: I32;
+  Delete_count: I32;
+  Original_count: I32
 };
 
 fn put(seq: I32, key: String, value: I32) -> Event {
-  {event_key = key, event_value = value, event_deleted = .f, event_seq = seq}
+  (Event_key.mk(key), Event_value.mk(value), Event_deleted.mk(.f), Event_seq.mk(seq))
 }
 
 fn delete_event(seq: I32, key: String) -> Event {
-  {event_key = key, event_value = 0, event_deleted = .t, event_seq = seq}
+  (Event_key.mk(key), Event_value.mk(0), Event_deleted.mk(.t), Event_seq.mk(seq))
 }
 
-fn same_key(left: Event, right: Event) -> Bool { string_eq(left.?{event_key}, right.?{event_key}) }
+fn same_key(left: Event, right: Event) -> Bool {
+  string_eq(left.>select { Event_key.get }, right.>select { Event_key.get })
+}
 
-fn is_deleted(item: Event) -> Bool { item.?{event_deleted} }
+fn is_deleted(item: Event) -> Bool {
+  item.>select { Event_deleted.get }
+}
 
-fn score(item: Event) -> I32 { mul_i32(item.?{event_value}, item.?{event_seq}) }
+fn score(item: Event) -> I32 {
+  mul_i32(item.>select { Event_value.get }, item.>select { Event_seq.get })
+}
 
 fn render(index: I32, item: Event) -> String {
   let index_text = int_to_string(index);
-  let key_text = item.?{event_key};
-  let value_text = int_to_string(item.?{event_value});
-  let seq_text = int_to_string(item.?{event_seq});
+  let key_text = item.>select { Event_key.get };
+  let value_text = int_to_string(item.>select { Event_value.get });
+  let seq_text = int_to_string(item.>select { Event_seq.get });
   seq_text
     .>string_concat("\n")
     .>>string_concat(" seq ")
@@ -90,14 +97,14 @@ rec(loop) fn has_later_key(log: Array[Event], item: Event, index: I32, last: I32
 }
 
 fn result(log: Array[Event], kept: I32, dropped: I32, superseded: I32, deletes: I32, original: I32) -> Compact {
-  {
-  , compacted_log = log
-  , kept_count = kept
-  , dropped_count = dropped
-  , superseded_count = superseded
-  , delete_count = deletes
-  , original_count = original
-  }
+  (
+  , Compacted_log.mk(log)
+  , Kept_count.mk(kept)
+  , Dropped_count.mk(dropped)
+  , Superseded_count.mk(superseded)
+  , Delete_count.mk(deletes)
+  , Original_count.mk(original)
+  )
 }
 
 rec(loop) fn compact_loop(
@@ -190,14 +197,14 @@ rec(loop) fn print_rows(log: Array[Event], index: I32, last: I32) {
 }
 
 fn print_summary(summary: Compact) {
-  let log = summary.?{compacted_log};
-  let kept = summary.?{kept_count};
+  let log = summary.>select { Compacted_log.get };
+  let kept = summary.>select { Kept_count.get };
   print("array_log_compactor\n");
-  print_count("original records: ", summary.?{original_count});
+  print_count("original records: ", summary.>select { Original_count.get });
   print_count("kept live records: ", kept);
-  print_count("removed records: ", summary.?{dropped_count});
-  print_count("removed superseded records: ", summary.?{superseded_count});
-  print_count("removed tombstones: ", summary.?{delete_count});
+  print_count("removed records: ", summary.>select { Dropped_count.get });
+  print_count("removed superseded records: ", summary.>select { Superseded_count.get });
+  print_count("removed tombstones: ", summary.>select { Delete_count.get });
   print_count("checksum: ", checksum(log, kept));
   print("compacted live records:\n");
   print_rows(log, 0, sub_i32(kept, 1))

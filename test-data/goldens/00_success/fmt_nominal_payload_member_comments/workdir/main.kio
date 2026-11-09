@@ -1,0 +1,4 @@
+module main;
+
+type { Token: . // payload boundary
+{ mk; get; }; };

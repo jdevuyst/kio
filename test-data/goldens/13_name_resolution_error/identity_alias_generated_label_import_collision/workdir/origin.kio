@@ -1,3 +1,3 @@
 module origin;
 
-pub labels { item: ., wrap[A]: A };
+pub type { Item: .; Wrap[A]: A }

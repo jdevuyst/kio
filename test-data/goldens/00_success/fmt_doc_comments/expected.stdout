@@ -15,10 +15,10 @@ fn hello(s: String) { print(s) }
 type Alias = String;
 
 /// Docs for newtype.
-newtype Wrapped : String { constructor mk_wrapped; projector un_wrapped }
+type { Wrapped: String { mk; get } }
 
 /// Docs for labels — named form.
-labels T = { f: String };
+type T = { F: String };
 
 /// Pub fn with doc.
 pub fn greet(s: String) { print(s) }
@@ -65,10 +65,10 @@ fn hello(s: String) { print(s) }
 type Alias = String;
 
 /// Docs for newtype.
-newtype Wrapped : String { constructor mk_wrapped; projector un_wrapped }
+type { Wrapped: String { mk; get } }
 
 /// Docs for labels — named form.
-labels T = { f: String };
+type T = { F: String };
 
 /// Pub fn with doc.
 pub fn greet(s: String) { print(s) }

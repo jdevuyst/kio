@@ -2851,11 +2851,11 @@ mod tests {
         let package = build_package(
             &["module api; \
                host type Str role(str); \
-               pub newtype Red : . { pub constructor red; pub projector un_red; }; \
-               pub newtype Black : . { pub constructor black; pub projector un_black; }; \
-               pub newtype Nested : . | ((Red | Black) & Str) { \
-                 pub constructor nest; pub projector un_nest; \
-               };"],
+               pub type { Red: . { pub mk; pub get; }; }; \
+               pub type { Black: . { pub mk; pub get; }; }; \
+               pub type { Nested: . | ((Red | Black) & Str) { \
+                 pub mk; pub get; \
+               }; };"],
             "bridge { api; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -2866,7 +2866,7 @@ mod tests {
                 matches!(
                     site.site().owner(),
                     BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member }
-                        if newtype == "Nested" && member == "nest"
+                        if newtype == "Nested" && member == "mk"
                 )
             })
             .expect("nested public-sum constructor site");
@@ -3118,7 +3118,7 @@ mod tests {
             /// HOST-FN-DOC\n\
             host fn effect() -> .;\n\
             /// OPAQUE-DOC\n\
-            pub newtype Token : . { pub constructor make; projector read; };\n\
+            pub type { Token: . { pub mk; get; }; };\n\
             /// EXPORT-DOC\n\
             pub fn call() -> . { effect() }\n\
             /// PRIVATE-DOC\n\
@@ -3150,9 +3150,9 @@ mod tests {
     ) -> String {
         let source = format!(
             "module api; host type Text role(str); \
-             pub newtype Inner : Text & Text {{ \
-               pub constructor inner; pub projector un_inner; \
-             }}; host fn receive() -> {return_type};"
+             pub type {{ Inner: Text & Text {{ \
+               pub mk; pub get; \
+             }}; }}; host fn receive() -> {return_type};"
         );
         let package = build_package(&[&source], "bridge { api; }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -3248,8 +3248,8 @@ mod tests {
     }
     fn polymorphic_payload_source(payload: &str) -> JavaPackage {
         let source = format!(
-            "module api; pub newtype Dictionary[*F] : {payload} {{ \
-             pub constructor make; pub projector read; }};"
+            "module api; pub type {{ Dictionary[*F]: {payload} {{ \
+             pub mk; pub get; }}; }};"
         );
         let package = build_package(&[&source], "bridge { api; }");
         lower_package(&package, "pkg", None).expect("canonical polymorphic payload")
@@ -3348,8 +3348,8 @@ mod tests {
 
     fn direct_payload_member_conversions(existentials: &str, payload: &str) -> Vec<String> {
         let source = format!(
-            "module api; pub newtype Dictionary[*F] {existentials} : {payload} {{ \
-             pub constructor make; pub projector read; }};"
+            "module api; pub type {{ Dictionary[*F] {existentials}: {payload} {{ \
+             pub mk; pub get; }}; }};"
         );
         let package = build_package(&[&source], "bridge { api; }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -3451,11 +3451,7 @@ mod tests {
         width: usize,
     ) -> super::super::skin::JavaPayloadOwnerIndexMeasurement {
         let declarations = (0..width)
-            .map(|index| {
-                format!(
-                    "pub newtype N{index:02} : [A] A -> A {{ pub constructor make_n{index:02}; pub projector read_n{index:02}; }};"
-                )
-            })
+            .map(|index| format!("pub type {{ N{index:02}: [A] A -> A {{ pub mk; pub get; }}; }};"))
             .collect::<Vec<_>>()
             .join("\n");
         let parameters = (0..width)
@@ -3510,9 +3506,7 @@ mod tests {
     #[test]
     fn recursive_nominal_transport_uses_the_exact_factory_without_a_type_walk() {
         let package = build_package(
-            &[
-                "module api; pub rec newtype Chain : . | Chain { pub constructor make; pub projector read; };",
-            ],
+            &["module api; pub rec type { Chain: . | Chain { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("recursive nominal");
@@ -3541,7 +3535,7 @@ mod tests {
         let package = build_package(
             &[
                 "module api; pub fn unit() -> . { () }",
-                "module internal; newtype Hidden[A] : . { constructor make; projector read; };",
+                "module internal; type { Hidden[A]: . { mk; get; }; };",
             ],
             "bridge { api; }",
         );
@@ -3574,9 +3568,7 @@ mod tests {
     #[test]
     fn public_existential_newtype_transport_never_exposes_its_payload() {
         let package = build_package(
-            &[
-                "module api; pub newtype Pack <U> : U { pub constructor make; pub projector read; };",
-            ],
+            &["module api; pub type { Pack <U>: U { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("existential nominal");
@@ -3600,14 +3592,14 @@ mod tests {
             !carrier.contains("public ") && !carrier.contains(" value()"),
             "{carrier}"
         );
-        assert!(emitted.handle_java.contains(" make(") && emitted.handle_java.contains(" read("));
+        assert!(emitted.handle_java.contains(" mk(") && emitted.handle_java.contains(" get("));
     }
     #[test]
     fn exact_existential_newtype_factories_preserve_the_payload_without_conversion() {
         let package = build_package(
             &["module api; \
-               pub newtype Pack <U> : U { pub constructor mk; pub projector get; }; \
-               pub newtype Loaded <U> : U & U { pub constructor mk_loaded; pub projector get_loaded; };"],
+               pub type { Pack <U>: U { pub mk; pub get; }; }; \
+               pub type { Loaded <U>: U & U { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -3629,31 +3621,37 @@ mod tests {
             assert!(!emitted.shapes_java.contains(&format!("public {name}(")));
         }
         assert!(!emitted.handle_java.contains("__newtype_body_"));
+        let loaded = emitted
+            .handle_java
+            .split_once("class NtH_M_api__T_Loaded")
+            .expect("Loaded owner")
+            .1
+            .split_once("\n  }")
+            .expect("Loaded class end")
+            .0;
         assert!(
-            emitted
-                .handle_java
+            loaded
                 .lines()
-                .any(|line| line.contains(" getLoaded(") && line.contains("Shapes.KioForall_"))
+                .any(|line| line.contains(" get(") && line.contains("Shapes.KioForall_"))
         );
     }
     #[test]
     fn existential_projector_retains_result_binder_after_head_binders() {
         let package = build_package(
-            &["module api; pub newtype Packed[A] <U> : U & A { \
-               pub constructor make; pub projector read; };"],
+            &["module api; pub type { Packed[A] <U>: U & A { \
+               pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
         let declaration = emitted
             .handle_java
             .lines()
-            .find(|line| line.contains(" read("))
+            .find(|line| line.contains(" get("))
             .expect("public projector method");
         assert!(
             declaration.contains("public <KioCallType_0> Shapes.KioForall_")
-                && declaration.contains(
-                    " read(Shapes.Apply1<Shapes.KioModule_api.Packed, KioCallType_0> p0)"
-                ),
+                && declaration
+                    .contains(" get(Shapes.Apply1<Shapes.KioModule_api.Packed, KioCallType_0> p0)"),
             "{declaration}"
         );
         assert!(!declaration.contains("Object"), "{declaration}");
@@ -3846,7 +3844,7 @@ mod tests {
             &package,
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             newtype Token[A] : A { pub constructor make_token; projector read_token; };\n        \
+             type { Token[A]: A { pub mk; get; }; };\n        \
              host fn archived(value: Token[.]) -> .;\n        \
              pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
@@ -3873,8 +3871,7 @@ mod tests {
             emitted.host_java
         );
         assert!(
-            !emitted.handle_java.contains("makeToken")
-                && !emitted.handle_java.contains("readToken"),
+            !emitted.handle_java.contains(" mk(") && !emitted.handle_java.contains(" get("),
             "{}",
             emitted.handle_java
         );
@@ -3890,12 +3887,12 @@ mod tests {
             &package,
             "signature pkg v(4);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             newtype Box[A] : [T] T -> A { pub constructor make; pub projector read; };\n        \
+             type { Box[A]: [T] T -> A { pub mk; pub get; }; };\n        \
              host fn first(value: Box[.]) -> .;\n        \
              pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  breaking {\n    add {\n      module api {\n        \
              host fn second(value: Box[.]) -> .;\n      }\n    };\n    modify {\n      module api {\n        \
-             newtype Box[A] : [T] T -> A { pub constructor make; pub projector read; };\n      }\n    };\n    remove {\n      module api {\n        first;\n      }\n    }\n  }\n}\n\
+             type { Box[A]: [T] T -> A { pub mk; pub get; }; };\n      }\n    };\n    remove {\n      module api {\n        first;\n      }\n    }\n  }\n}\n\
              v(3) {\n  nonbreaking {\n    remove {\n      module api {\n        Box;\n        second;\n      }\n    }\n  }\n}\n",
         );
         assert_eq!(
@@ -4072,7 +4069,7 @@ mod tests {
     fn live_newtype_payload_dominates_retained_same_identity() {
         let package = build_package(
             &[
-                "module api; host type Str role(str); pub newtype Token : Str { pub constructor make_token; pub projector read_token; }; host fn current(value: Token) -> .; pub fn unit() -> . { () }",
+                "module api; host type Str role(str); pub type { Token: Str { pub mk; pub get; }; }; host fn current(value: Token) -> .; pub fn unit() -> . { () }",
             ],
             "bridge { api; }",
         );
@@ -4080,7 +4077,7 @@ mod tests {
             &package,
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type I32 role(i32);\n        newtype Token : I32 { pub constructor make_token; pub projector read_token; };\n        \
+             host type I32 role(i32);\n        type { Token: I32 { pub mk; pub get; }; };\n        \
              host fn old(value: Token) -> .;\n        pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        I32;\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
         );
@@ -4215,7 +4212,7 @@ mod tests {
         let package = build_package(
             &["module main; \
                host type Str role(str); \
-               pub newtype T : Str { pub constructor make_t; pub projector un_t; }; \
+               pub type { T: Str { pub mk; pub get; }; }; \
                host fn apply_poly(f: [T] T -> T) -> Str; \
                pub fn ordered(value: T)[T](later: T) -> T { later }"],
             "bridge { main; }",
@@ -4396,8 +4393,8 @@ mod tests {
     fn unsaturated_and_saturated_nominals_share_the_exact_application_index() {
         let package = build_package(
             &["module api; \
-               pub newtype Box[A] : A { pub constructor make_box; pub projector read_box; }; \
-               pub newtype Functor[*F] : [A] F[A] -> F[A] { pub constructor make_functor; pub projector read_functor; }; \
+               pub type { Box[A]: A { pub mk; pub get; }; }; \
+               pub type { Functor[*F]: [A] F[A] -> F[A] { pub mk; pub get; }; }; \
                host fn round(value: Functor[Box]) -> Functor[Box];"],
             "bridge { api; }",
         );
@@ -4430,7 +4427,7 @@ mod tests {
         assert!(
             emitted
                 .handle_java
-                .contains("Shapes.Apply1<Shapes.KioModule_api.Box, KioCallType_0> makeBox("),
+                .contains("Shapes.Apply1<Shapes.KioModule_api.Box, KioCallType_0> mk("),
             "{}",
             emitted.handle_java
         );
@@ -4439,12 +4436,20 @@ mod tests {
     fn nominal_application_indices_do_not_grant_generic_payload_access() {
         let package = build_package(
             &["module api; \
-               pub newtype Box[A] : A & . { pub constructor make; pub projector read; }; \
-               pub newtype Hidden[A] : A & . { constructor make; projector read; };"],
+               pub type { Box[A]: A & . { pub mk; pub get; }; }; \
+               pub type { Hidden[A]: A & . { mk; get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-        assert!(emitted.handle_java.contains(" make(") && emitted.handle_java.contains(" read("));
+        let visible = emitted
+            .handle_java
+            .split_once("class NtH_M_api__T_Box")
+            .expect("Box owner")
+            .1
+            .split_once("\n  }")
+            .expect("Box class end")
+            .0;
+        assert!(visible.contains(" mk(") && visible.contains(" get("));
         let hidden = emitted
             .handle_java
             .split_once("class NtH_M_api__T_Hidden")
@@ -4454,7 +4459,7 @@ mod tests {
             .unwrap()
             .0;
         assert!(
-            !hidden.contains(" make(") && !hidden.contains(" read("),
+            !hidden.contains(" mk(") && !hidden.contains(" get("),
             "{hidden}"
         );
         assert!(
@@ -4540,28 +4545,28 @@ mod tests {
     fn public_opaque_newtypes_are_nameable_without_public_payload_access() {
         let package = build_package(
             &["module api; import __comptime__; \
-               newtype Hidden_payload : . { constructor mk_hidden; projector un_hidden; }; \
-               pub newtype Opaque_a : Hidden_payload { constructor mk_opaque_a; projector un_opaque_a; }; \
-               pub newtype Opaque_b : Hidden_payload { constructor mk_opaque_b; projector un_opaque_b; }; \
-               pub newtype Constructor_only[A] : A { pub constructor make_constructor; projector read_constructor; }; \
-               pub newtype Projector_only[A] : A { constructor make_projector; pub projector read_projector; }; \
-               pub newtype Existential <U> : U { constructor make_existential; pub projector read_existential; }; \
-               pub newtype Transparent_both : . { pub constructor make_transparent; pub projector read_transparent; }; \
+               type { Hidden_payload: . { mk; get; }; }; \
+               pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
+               pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
+               pub type { Constructor_only[A]: A { pub mk; get; }; }; \
+               pub type { Projector_only[A]: A { mk; pub get; }; }; \
+               pub type { Existential <U>: U { mk; pub get; }; }; \
+               pub type { Transparent_both: . { pub mk; pub get; }; }; \
                pub type Unit_alias = .; \
-               pub newtype Constructor_unit_alias : Unit_alias { pub constructor make_constructor_unit_alias; projector read_constructor_unit_alias; }; \
-               pub newtype Unit : . { constructor make_unit; projector read_unit; }; \
+               pub type { Constructor_unit_alias: Unit_alias { pub mk; get; }; }; \
+               pub type { Unit: . { mk; get; }; }; \
                rec { \
-                 pub newtype Outer : Hidden { pub constructor make_outer; pub projector read_outer; }; \
-                 pub newtype Hidden : Outer { constructor make_hidden_cycle; projector read_hidden_cycle; }; \
+                 pub type { Outer: Hidden { pub mk; pub get; }; }; \
+                 pub type { Hidden: Outer { mk; get; }; }; \
                } \
-               pub rec newtype Direct_recursive : . | Direct_recursive { pub constructor make_direct; pub projector read_direct; }; \
-               pub rec newtype Recursive_constructor : . | Recursive_constructor { pub constructor make_recursive; projector read_recursive_hidden; }; \
-               pub rec newtype Recursive_projector : . | Recursive_projector { constructor make_recursive_hidden; pub projector read_recursive; }; \
-               pub newtype Comptime_both : __Type__ { pub constructor make_comptime_both; pub projector read_comptime_both; }; \
-               pub newtype Comptime_opaque : __Type__ { constructor make_comptime_opaque; projector read_comptime_opaque; }; \
-               pub newtype Comptime_constructor : __Type__ { pub constructor make_comptime_constructor; projector read_comptime_constructor; }; \
-               pub newtype Packed_function : (Opaque_a & Projector_only[.]) -> Opaque_a { pub constructor make_packed_function; pub projector read_packed_function; }; \
-               pub newtype Spread_function : [A] (Opaque_a & A) -> Opaque_a { pub constructor make_spread_function; pub projector read_spread_function; }; \
+               pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
+               pub rec type { Recursive_constructor: . | Recursive_constructor { pub mk; get; }; }; \
+               pub rec type { Recursive_projector: . | Recursive_projector { mk; pub get; }; }; \
+               pub type { Comptime_both: __Type__ { pub mk; pub get; }; }; \
+               pub type { Comptime_opaque: __Type__ { mk; get; }; }; \
+               pub type { Comptime_constructor: __Type__ { pub mk; get; }; }; \
+               pub type { Packed_function: (Opaque_a & Projector_only[.]) -> Opaque_a { pub mk; pub get; }; }; \
+               pub type { Spread_function: [A] (Opaque_a & A) -> Opaque_a { pub mk; pub get; }; }; \
                pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
                pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
                host fn echo_outer(value: Outer) -> Outer; \
@@ -4635,14 +4640,28 @@ mod tests {
             assert!(!emitted.shapes_java.contains(&format!("class {name}<")));
         }
         assert!(emitted.shapes_java.contains("public record Unit() {}"));
-        assert!(
-            emitted.handle_java.contains("makeConstructor(")
-                && !emitted.handle_java.contains("readConstructor(")
-                && !emitted.handle_java.contains("makeProjector(")
-                && emitted.handle_java.contains("readProjector(")
-                && emitted.handle_java.contains("readExistential(")
-        );
-        assert!(emitted.handle_java.contains("makeConstructorUnitAlias()"));
+        let handle_body = |name: &str| {
+            let class = super::newtype_handle_class(
+                &[crate::backends::public_names::FacadeSelector::Module(
+                    "api".to_owned(),
+                )],
+                name,
+            );
+            emitted
+                .handle_java
+                .split_once(&format!("class {class}"))
+                .unwrap_or_else(|| panic!("missing handle for {name}"))
+                .1
+                .split_once("\n  }")
+                .expect("handle class end")
+                .0
+        };
+        let constructor_only = handle_body("Constructor_only");
+        let projector_only = handle_body("Projector_only");
+        assert!(constructor_only.contains(" mk(") && !constructor_only.contains(" get("));
+        assert!(!projector_only.contains(" mk(") && projector_only.contains(" get("));
+        assert!(handle_body("Existential").contains(" get("));
+        assert!(handle_body("Constructor_unit_alias").contains(" mk()"));
         assert!(emitted.handle_java.contains("class NtH_M_api__T_Opaque_ua"));
         assert!(
             emitted.host_java.contains(
@@ -4654,15 +4673,13 @@ mod tests {
                 "Shapes.KioModule_api.Direct_recursive api__echoDirect(Shapes.KioModule_api.Direct_recursive p0)"
             )
         );
-        let constructor = emitted
-            .handle_java
+        let constructor = handle_body("Recursive_constructor")
             .lines()
-            .find(|line| line.contains(" makeRecursive("))
+            .find(|line| line.contains(" mk("))
             .unwrap();
-        let projector = emitted
-            .handle_java
+        let projector = handle_body("Recursive_projector")
             .lines()
-            .find(|line| line.contains(" readRecursive("))
+            .find(|line| line.contains(" get("))
             .unwrap();
         assert!(
             constructor
@@ -4704,23 +4721,23 @@ mod tests {
             &[
                 "module visible; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   pub constructor make_bool; pub projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
                 "module hidden; \
                  host type I32 role(i32); \
-                 pub newtype Comptime_bool : I32 { \
-                   constructor make_bool; projector read_bool; \
-                 }; \
+                 pub type { Comptime_bool: I32 { \
+                   mk; get; \
+                 }; }; \
                  pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
                 "module generic; \
                  pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
                 "module hostish; \
                  host type Comptime_bool role(i32); \
-                 pub newtype Wrapped : Comptime_bool { \
-                   pub constructor make_wrapped; pub projector read_wrapped; \
-                 }; \
+                 pub type { Wrapped: Comptime_bool { \
+                   pub mk; pub get; \
+                 }; }; \
                  pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } \
                  pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
                 "module aliasing; \
@@ -4813,10 +4830,10 @@ mod tests {
         let package = build_package(
             &[
                 "module left; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round_token(value: Token) -> Token;",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round_token(value: Token) -> Token;",
             ],
             "bridge { left; right; }",
@@ -4856,13 +4873,13 @@ mod tests {
     #[test]
     fn partial_carrier_name_is_stable_when_an_unrelated_host_surface_claims_its_readable_base() {
         let target = "module zed; \
-            pub newtype Token : . { constructor make_token; projector read_token; }; \
+            pub type { Token: . { mk; get; }; }; \
             host fn round_token(value: Token) -> Token;";
         let baseline = build_package(&[target], "bridge { zed; }");
         let with_earlier_shape = build_package(
             &[
                 "module aaa; \
-                 pub newtype Token : . { pub constructor make_token; pub projector read_token; }; \
+                 pub type { Token: . { pub mk; pub get; }; }; \
                  host fn unrelated(value: Token) -> Token;",
                 target,
             ],

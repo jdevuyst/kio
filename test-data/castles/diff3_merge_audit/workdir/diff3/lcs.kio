@@ -18,6 +18,7 @@ import diff3/list as list;
 import diff3/prim as prim;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro record, macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32);
 import testapi/iter(loop);
@@ -40,19 +41,19 @@ pub fn other_at(pair: Match) -> I32 {
 }
 
 /// A solved alignment: both documents, the table, and the two lengths.
-pub labels Dp = {
-, left: list.List[String]
-, right: list.List[String]
-, table: list.List[list.List[I32]]
-, left_len: I32
-, right_len: I32
+pub type Dp = {
+  Left: list.List[String];
+  Right: list.List[String];
+  Table: list.List[list.List[I32]];
+  Left_len: I32;
+  Right_len: I32
 };
 
 /// Row `i` of the table, given row `i + 1` (`below`) as a suffix starting
 /// at the current column. Recursing to the right first means `rest` is the
 /// part of row `i` this cell depends on.
 rec(loop) fn build_row(line: String, right: list.List[String], below: list.List[I32]) -> list.List[I32] {
-  match(list.List.unpack(right)) {
+  match(list.List.get(right)) {
     (
     , .(other: String, right_rest: list.List[String]) {
         let below_rest = list.tail(below);
@@ -72,7 +73,7 @@ rec(loop) fn build_row(line: String, right: list.List[String], below: list.List[
 }
 
 rec(loop) fn build_rows(left: list.List[String], right: list.List[String], floor: list.List[I32]) -> list.List[list.List[I32]] {
-  match(list.List.unpack(left)) {
+  match(list.List.get(left)) {
     (
     , .(line: String, left_rest: list.List[String]) {
         let below = recur(cont) build_rows(left_rest, right, floor);
@@ -85,17 +86,17 @@ rec(loop) fn build_rows(left: list.List[String], right: list.List[String], floor
 
 pub fn align(left: list.List[String], right: list.List[String]) -> Dp {
   let cols = list.len(right);
-  {
-  , left
-  , right
-  , table = build_rows(left, right, list.zeros(add_i32(cols, 1)))
-  , left_len = list.len(left)
-  , right_len = cols
+  record {
+    Left.mk(left);
+    Right.mk(right);
+    Table.mk(build_rows(left, right, list.zeros(add_i32(cols, 1))));
+    Left_len.mk(list.len(left));
+    Right_len.mk(cols)
   }
 }
 
 fn cell(dp: Dp, row: I32, col: I32) -> I32 {
-  list.nth_or(list.nth_or(dp.?{table}, row, list.nil[I32]), col, 0)
+  list.nth_or(list.nth_or(dp.>select { Table.get }, row, list.nil[I32]), col, 0)
 }
 
 pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
@@ -105,9 +106,12 @@ pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
 /// optimal solution that takes the match, so the traceback never needs to
 /// look back.
 rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List[Match]) -> list.List[Match] {
-  if(prim.or(leq_i32(dp.?{left_len}, row), leq_i32(dp.?{right_len}, col))) {
+  if(prim.or(leq_i32(dp.>select { Left_len.get }, row), leq_i32(dp.>select { Right_len.get }, col))) {
     list.reverse(acc)
-  } else if(string_eq(list.nth_or(dp.?{left}, row, ""), list.nth_or(dp.?{right}, col, ""))) {
+  } else if(string_eq(
+  , list.nth_or(dp.>select { Left.get }, row, "")
+  , list.nth_or(dp.>select { Right.get }, col, "")
+  )) {
     recur trace(dp, add_i32(row, 1), add_i32(col, 1), list.cons((row, col), acc))
   } else if(leq_i32(cell(dp, row, add_i32(col, 1)), cell(dp, add_i32(row, 1), col))) {
     recur trace(dp, add_i32(row, 1), col, acc)

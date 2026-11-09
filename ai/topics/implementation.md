@@ -35,14 +35,12 @@ The macro-specific purity, immutable-fill, retained-source, and cache
 boundaries are collected in [`macros.md`](macros.md). The rules below
 place those constraints in the complete compiler pipeline.
 
-The forms whose removal needs completed typing information — imported macro calls (including `if`, `scope`, `do`, and `match`), and field access/update — use the boundary-local `typecheck_full::Elaborations` table and are swapped into the AST by the Lowered → Prime substitute pass. That pass also materializes inferred literal annotations, call arguments, implicit Unit slots, and checked lambda parameter types. Earlier front-end passes remove other surface syntax: `op_fold` rewrites operator chains; package-scoped `block_projection` normalizes UFCS into its written ordinary application stages and projects generic trailing blocks according to the resolved ordinary macro declaration's product, thunk, or sequence descriptors before `desugar`; `desugar` removes tuples, placeholder lambdas, recursive-call syntax, and literal aliases, using its boundary-local `RecOrder` carrier where recursive continuation ordering needs checking; label elaboration removes label declarations and label-value/type sugar. Sequence projection builds ordinary nested bind calls inside a function; the imported `do` macro calls that function with the receiver, evaluating the receiver expression exactly once. Neither the projection nor typing grants a primitive by the spelling of an ordinary library declaration. `RecOrder` and recorded elaborations are consumed before Prime. The standalone Prime checker uses its narrower `PrimeElaborations` table for Kio'-admitted call/lambda completion and already-checked intrinsic-value schemes, then bakes those records before returning. Post-typecheck passes that stay inside strict Kio' (`prime::canonical`, `structural_recovery`, `route`, the `capabilities::annotate_*` suite) introduce no surface forms and don't bear on the boundary rule. Scheduled cache misses run `prime::canonical` after completion baking and before storing a typed module; the assembled package then runs standalone Prime validation and the idempotent canonicalizer again. Package-level typecheck and defensive Kio' emission likewise leave both direct compilation and emitted/reparsed Kio' with the same capture-safe statement spine.
+The forms whose removal needs completed typing information — imported macro calls (including `if`, `scope`, `do`, and `match`) — use the boundary-local `typecheck_full::Elaborations` table and are swapped into the AST by the Lowered → Prime substitute pass. That pass also materializes inferred literal annotations, call arguments, implicit Unit slots, and checked lambda parameter types. Earlier front-end passes remove other surface syntax: `op_fold` rewrites operator chains; package-scoped `block_projection` normalizes UFCS into its written ordinary application stages and projects generic trailing blocks according to the resolved ordinary macro declaration's product, thunk, or sequence descriptors before `desugar`; `desugar` removes tuples, placeholder lambdas, recursive-call syntax, and literal aliases, using its boundary-local `RecOrder` carrier where recursive continuation ordering needs checking. The Desugared → Lowered conversion expands compact nominal groups into ordinary nominal declarations and aliases while preserving exact member identities. Sequence projection builds ordinary nested bind calls inside a function; the imported `do` macro calls that function with the receiver, evaluating the receiver expression exactly once. Neither the projection nor typing grants a primitive by the spelling of an ordinary library declaration. `RecOrder` and recorded elaborations are consumed before Prime. The standalone Prime checker uses its narrower `PrimeElaborations` table for Kio'-admitted call/lambda completion and already-checked intrinsic-value schemes, then bakes those records before returning. Post-typecheck passes that stay inside strict Kio' (`prime::canonical`, `structural_recovery`, `route`, the `capabilities::annotate_*` suite) introduce no surface forms and don't bear on the boundary rule. Scheduled cache misses run `prime::canonical` after completion baking and before storing a typed module; the assembled package then runs standalone Prime validation and the idempotent canonicalizer again. Package-level typecheck and defensive Kio' emission likewise leave both direct compilation and emitted/reparsed Kio' with the same capture-safe statement spine.
 
 Trailing-block UFCS is composed in that source-aware projection pass: the
 Surface block call retains its splice direction for formatting until the
-receiver is arranged first/last among the selected value-only prefix group. `block_projection` appends the projected
-blocks and produces the ordinary user-macro call. Its spelling metadata does
-not reach Lowered typing or create another call planner. The macro expansion
-still follows the ordinary Lowered → Prime substitution boundary above.
+receiver is arranged first/last among the selected value-only prefix group. `block_projection` combines the whole final prefix value and projected
+block values in one right-associated product and produces the ordinary user-macro call. A syntax-derived `UserMacroCallForm::TrailingBlocks { has_final_prefix }` marker reaches Lowered typing solely to validate sequence projection at the exact checked subtree after the ordinary public call plan is fixed. It does not let source spelling, a library name, or the private ABI choose that plan. Macro substitution consumes the marker at the Lowered → Prime boundary.
 
 Intrinsic values use the same standalone checking boundary. A bare intrinsic or
 a completed type-only application records its exact checked scheme; a saturated
@@ -54,27 +52,26 @@ map is consumed before returning Prime; emitted, cached and reparsed artifacts
 contain only ordinary functions and explicit types. Revalidation introduces no
 additional wrappers.
 
-### Label identity across the Surface boundary
+### Nominal identity across the Surface boundary
 
-An explicit label entry introduces two linked Surface facts but only one nominal
-identity. For `labels { foo: P };`, `Foo` is the generated nominal type and
-`{foo}` is a separate label-namespace binding that points to that exact nominal;
-the lowercase binding is neither a value alias nor another nominal. Label
-elaboration resolves braced construction, access, update, and imports through
-that explicit binding, lowers them to ordinary uses of `Foo` and its `mk` / `get`
-members, and removes the binding before Kio'.
+Unified `type` declarations introduce ordinary nominal entries with fixed `mk`
+and `get` members. A named declaration may also introduce a transparent alias
+of its written type expression. Preserve each nominal's exact declaring
+identity, member visibility, parameter kinds, and written payload through
+lowering and dependency materialization. A transparent alias can forward a
+member namespace only under the ordinary alias rules; matching names or shapes
+never establish a different identity or bypass visibility.
 
-Do not reconstruct a label binding from capitalization, a same-named transparent
-alias, member spellings, or producer provenance. Conversely, do not treat the
-fact that `labels` is sugar for generated newtypes as making every ordinary
-`newtype` a label declaration. A transformation that promises to preserve a
-module's Surface export contract must preserve both an exported label binding
-and the exact nominal identity it targets without minting a replacement. If the
-ordinary Surface representation cannot express that result, stop at the design
-boundary rather than using a hidden sidecar or a compiler-generated privilege.
-The language contract and lowering inventory are in
-[`specs/language.md` § Labels](../../specs/language.md#labels) and
-[`specs/prime.md` § What's not in Kio'](../../specs/prime.md#whats-not-in-kio).
+Native label declarations, label forwarding, and native row construction,
+selection, update, and row-let forms are rejected. Imported `record`, `with`,
+and `select` macros are ordinary declarations resolved through written imports;
+their explicit operands and checked types determine their expansions. Do not
+reconstruct an ambient field namespace or grant a library declaration compiler
+privilege. An omitted member body inherits the entry's visibility; a written
+body requires both fixed members and gives each its own visibility under the
+ordinary intersection rule. Apply ordinary checking before emitting Kio'. See
+[Nominal fields and row-typed records](../../specs/language.md#nominal-fields-and-row-typed-records)
+and [Type declarations](../../specs/language.md#type-declarations).
 
 Recursive CPS lowering uses one narrow boundary-local `Expr::RecOrder` carrier. `desugar` creates it only at `Desugared` and `Lowered` through `Phase::ExprRecOrder`, with one pending value and one already-built continuation body. The `Ordered` disposition retains three flows: `ExpectedFromBody` checks the continuation body first and obtains the pending value's exact type from the generated binder's classified use; `SynthesizedValue` synthesizes the pending value first, validates any partial source `let` annotation against that exact type, and exposes the type while checking the body; and `ElaboratedValue` checks the pending value at its ordinary source type while exposing its separately validated elaborated runtime type to the continuation binding. An exact compiler-generated `ExpectedFromBody` shape carries an annotation `(_input) -> runtime_ty`: after structural preflight, the ordinary driver reserves one input goal in that carrier's live owner delta and exposes the resulting function shell as a normal local value while checking the body. If the original continuation is an already-bound lexical path, its exact retained type is transported to that owner; a goal-free ordinary function header constrains the shell before the body starts. Open headers, function schemes, and incomplete lambda continuations retain body-first inference. Direct calls and ordinary value occurrences of the local constrain that one goal through normal typing. The input goal must be closed when the body completes; after its scope unwinds, the driver checks the sole original continuation against the same now-concrete shell. Other `ExpectedFromBody` annotations are an internal invariant failure; the legacy annotation-free pending-binding path is unchanged. Continuations with a fully concrete parameter type remain ordinary calls; in particular, expression sequencing gives its generated parameter the exact Unit type.
 
@@ -158,8 +155,33 @@ The schedule is fixed and one-shot:
 4. Propagate completed closed types through the finite domain. An unresolved
    literal must close at the existing local boundary or report an error; there
    is no fallback or visible-role candidate search.
-5. After marked source recipes are snapshotted, run the `impl(fills)` source
-   eligibility preflight before its action. Traverse every declared source and
+5. After the complete linked-header pass, select computed non-lambda inputs
+   whose public types remain open. Complete their retained ordinary producers
+   through the existing modes before freezing the marked input recipes. Re-zonk
+   before each visit so a root closed by another public equation keeps its
+   existing deferred-body order. A local action policy keeps nested marked
+   actions pending until Final without replacing ordinary completion demand.
+   Within this pre-input cohort, ordinary preflight rejects known independent
+   mismatches and locally unsolved required type slots. A completed macro call
+   whose required input depends only on an existing strict-ancestor goal retains
+   its unconsumed action and waits on that authenticated owner; it scans the
+   remaining required inputs for independent local errors before waiting. A
+   changed blocker permits rechecking the retained inputs, not retyping their
+   sources or retrying a failed expansion. A continuation awaiting an inner
+   Final action remains pending until that action actually determines its type;
+   no enclosing macro prepares inputs on the assumption that it will close.
+   After producer completion, select any newly usable, still-unselected direct
+   lambda headers once; retain their bodies and the original sealed recipes.
+   Reuse existing producer acceptance and authored-order physical closure;
+   do not replay a source, snapshot an invocation twice, or ask the outer action
+   to supply information required by its input. The selected ordinal cursor is
+   bounded by the written producer tree. Existing acceptance traverses pair
+   wrappers, so P completions over S source nodes may cost O(P*S), in addition
+   to ordinary typing and equation work. Required-result checks can repeat the
+   signature-plan traversal on continuation reentry; nested pair-context refresh
+   retains its existing wrapper-depth traversal cost.
+   After marked source recipes are snapshotted, run the `impl(fills)` source
+   eligibility check before its action. Traverse every declared source and
    recipe in structural order, including ignored private slots and explicit
    product components. Every computed leaf must have a closed type, regardless
    of retained-producer state. Available expected/sibling public constraints
@@ -169,16 +191,21 @@ The schedule is fixed and one-shot:
    signature peel proves a complete `forall` and value-parameter prefix, no
    `Infer`, and all remaining `Goal` occurrences confined to the final body
    result. Reject the first other open value source at its source
-   span before action execution, body resumption, or publication. This check is
-   a linear staged-to-recipe zip and does not execute or solve through a recipe.
+   span before the enclosing action or publication. Direct lambda bodies stay
+   suspended through this check. The check is
+   a staged-to-recipe zip that visits each source node once; live zonking also
+   traverses the corresponding type trees. It does not execute or solve through
+   a recipe.
    Before snapshotting an ordinary call, its existing driver may contribute a
    callback's complete written signature to the already-selected expectation.
    This header-only pass suspends bodies, immediate-lambda callees, statement
    prefixes and nested macro actions. A goal-free pending call result may
    use the existing exact-parent header export without closing its child or
    publishing facts; every retained body still finishes in the ordinary pass.
-6. Run a final preflight that proves every remaining slot and terminal state
-   can close, without executing a retained source action.
+6. Run a final preflight that checks remaining slots and terminal states
+   without executing a retained source action. A required input blocked on an
+   authenticated strict ancestor remains pending until that blocker changes;
+   a local or root boundary rejects a wait that cannot escape it.
 7. Run the final pass left to right, reuse completed derivations, consume each
    remaining action at most once, and require every owner-scoped goal to close.
 
@@ -219,7 +246,8 @@ immediately preceding outermost value application. A trailing type application
 ends that selection: `f(a)[B].<r` plans `f(a)[B](r)`, not `f(a,r)[B]`.
 Whole-expression grouping is transparent; `(f(a).<r)(b)` explicitly selects an
 earlier stage. Block splices use first/last prefix groups and never enter a
-projected block; every descriptor supplies its own successive Function layer.
+projected block; the final prefix value and whole projected block values supply
+one product to one Function layer, with earlier prefix stages preserved.
 Do not recover old flat curry crossing or receiver-relative type reservation
 from inferred types, declaration groups, callee identity or private ABI.
 Here, resolved call slots are the semantic public type after ordinary alias
@@ -229,8 +257,9 @@ private implementation ABI are not call-selection inputs. They may bind
 definition bodies, adapt a runtime calling convention, or decide when an
 already-selected macro action is ready, but they cannot change call completion,
 grouping, residualization, or UFCS placement. Counterfactual tests must give
-ordinary functions and Required/Optional macros with the same
-public type the same call result.
+ordinary functions and required-result/natural-result macros with the same
+public type the same call result. Apply the same separation to
+[semantic function reflection](macros.md#semantic-function-reflection).
 
 A maximal direct-macro application chain is one public inference/admission
 unit through transparent grouping. Plan its written stages and gather finite
@@ -287,16 +316,20 @@ tree are finite inputs fixed before application. Adding another declaration
 cannot alter either input, so it cannot change Unit completion, receiver
 placement, or the resulting type.
 
-A macro is evaluated only after every dependency visible through
-its reflected ABI is closed. An optional `__Type__ | .` slot receives unit
-only when that exact declaration binder occurs in the result and has no value
-dependency. A phantom binder, or one shadowed before the result occurrence,
-does not qualify. Reflection, memo lookup, and evaluation use those same
-closed dependencies. The implementation has one semantic evaluation request;
-its returned checked term may solve only result goals allocated before
-evaluation, and the term and its inferred type publish atomically. Optional
-absence is an action-readiness rule only: it never turns an unsolved written
-`_` into a new residual `Forall` or otherwise changes the public call plan.
+A macro's private result transport is selected after its public call plan.
+A natural-result `.` slot always receives Unit, even when the surrounding
+context determines the result. It is eligible only when that exact declaration
+binder occurs in the result and has no value dependency. A phantom binder, or
+one shadowed before the result occurrence, does not qualify. A required-result
+`__Type__` slot must be determined before evaluation. Input-related type slots
+remain ordinary reflected inputs; their permitted observations follow the
+[macro observation boundary](macros.md#observation-and-scheduling-boundary).
+
+The implementation has one semantic evaluation request. Its checked term and
+any explicitly returned fill relations are validated and published atomically
+through the existing call-local constraints. Private result transport never
+turns an unsolved written `_` into a new residual `Forall` or otherwise changes
+the public call plan.
 
 Every goal and retained action is consumed before Lowered becomes Prime. The
 resulting calls carry explicit type arguments, inferred lambda annotations are
@@ -389,7 +422,7 @@ Compile-time evaluation follows the same rule. `equiv`, the REPL `:normalize` co
 
 ### Function purity versus phase-boundary purity
 
-The language's `pure` marker is a declaration-reference contract for an ordinary `fn`; it is not the phase-boundary property named by this section. Only an ordinary function admits the modifier. The checker examines resolved executable value references in its body, including references nested under lambdas, and admits locals, intrinsics, newtype members, and functions whose own contracts carry `pure`. It does not classify types: signatures, reflected type arguments, and local type annotations may mention host types or any other well-formed type. Do not add purity fields to type, newtype, labels, macro, operator, fold, literal, equivalence, host, or recursive-group representations.
+The language's `pure` marker is a declaration-reference contract for an ordinary `fn`; it is not the phase-boundary property named by this section. Only an ordinary function admits the modifier. The checker examines resolved executable value references in its body, including references nested under lambdas, and admits locals, intrinsics, newtype members, and functions whose own contracts carry `pure`. It does not classify types: signatures, reflected type arguments, and local type annotations may mention host types or any other well-formed type. Do not add purity fields to type, newtype, macro, operator, fold, literal, equivalence, host, or recursive-group representations.
 
 A user-defined macro has no purity bit. Its implementation always executes in the compile-time pure environment. A named implementation and each ordinary function in its transitive helper closure must be a `pure fn`. An implementation declared in the macro's defining module may remain private, and private helpers may appear in any implementation's transitive call closure when ordinary same-module visibility permits them. A cross-module target must be ordinarily importable into the macro's defining module, but need not meet the macro's outward visibility. Captures are different: they are explicitly quoted `__Type__` or `__Checked_term__` runtime dependencies, may name host items, and carry that outward visibility floor because the generated term may retain them. Capturing a host function does not call it during elaboration.
 
@@ -577,6 +610,7 @@ copy it into every applicable backend.
 | Package-scoped signature identity index | One complete package-signature check shares an existing exact package-owned typecheck scope across its module checks, so the scope's lazy identity-alias index is built once. The scope is fresh for each invocation; individual-module checks keep fresh scopes, and package/module pointer assertions and execution policy remain unchanged. This is the same invocation-local ownership mechanism used by ordinary package typechecking, with no cross-package or persistent reuse | `kio-rs/src/pass/typecheck_core/modules.rs`; actual index-item/build counts, the restored per-module-scope causal, equivalence controls and recorded operation counts in [the measurement record](../../evidence/compiler-performance.md#package-scoped-signature-identity-index) |
 | Direct recursive-component classification | Label expansion, projected declaration emission, split fixes, and recursive-group diagnostics classify each existing SCC from its size or singleton self-edge instead of rescanning the complete cyclic-component list. Classification examines at most the existing components and graph edges, retains projected owner self-edges, and adds no index or phase state | `kio-rs/src/pass/resolve.rs`, `kio-rs/src/pass/resolve/type_rec_classification_tests.rs`, `kio-rs/src/pass/label_elab/mod.rs`; actual-query, examined-edge, complete-output, mixed/projection, scan-restoration, and measured evidence in [the measurement record](../../evidence/compiler-performance.md#direct-recursive-component-classification) |
 | Ordered recursive-group recovery correspondence | `route` pairs each source recursive-type member with its phase-rebranded member through the converter's one-for-one order rather than rescanning the source group by name for every newtype. Cardinality, variant, name, and binder equality are checked as phase contracts before declaration-owned binders protect payload alias unfolding. The pass retains no index or cache state | `kio-rs/src/pass/route.rs`; collision-sensitive wide-group firing, mutation, and measured evidence in [the measurement record](../../evidence/compiler-performance.md#ordered-recursive-group-recovery-correspondence) |
+| Bounded tuple-let recovery | The shared Enriched optimizer removes exact ordered product reconstruction and propagates complete typed slot projections without fresh binders. At most one computed or repeated slot keeps the original binding; capture, escape, unsupported-layout and eager literal-conversion boundaries decline propagation. Nested candidate scans can overlap | `kio-rs/src/pass/optimize.rs`; private firing/no-op and effect/capture guards, public packet-effect runtime cases, and [runtime and bounded compiler-cost evidence](../../evidence/compiler-performance.md#bounded-tuple-let-recovery) |
 | Shared callable-purity proof | Structural conditional/either recovery and optimizer let fusion/DCE reuse validated declaration purity retained through Prime, Enriched, and Routed. A conservative expression walk distinguishes effect-free evaluation from capability-free values, checks supplied callbacks, and respects lexical shadowing; unknown factories retain eager evaluation order. Per-consumer facts follow exact local and imported declarations, without callee-body traversal or a package-wide effect solver | `kio-rs/src/pass/purity.rs`, `kio-rs/src/pass/structural_recovery.rs`, `kio-rs/src/pass/optimize.rs`; firing, negative controls, cache invalidation, and measured avoided factory calls are recorded in [the measurement record](../../evidence/backend-performance.md#callable-purity-dispatch-recovery); that record also carries bounded compiler cost observations |
 | Enriched-IR cache | `kio build` structural recovery + optimization reuse. Newtype inputs retain each consumer's written local, selective, or qualified lexical head plus the exact canonical owner/declaration identity; same-provider aliases share inverse-pair semantics without admitting unrelated same-spelled declarations. Keys also include each consumer's visible declared-pure function facts, including imported markers. Reload validates the exact key and encoded-module digest; a following store atomically repairs an invalid entry | `kio-rs/src/cache/enriched.rs`, `kio-rs/src/pass/resolve.rs`, `kio-rs/src/pass/structural_recovery.rs`, `kio-rs/src/pass/optimize.rs`, `kio-rs/src/cmd/build.rs` |
 | Emit and artifact caches | `kio build` backend output reuse. Reload validates every exact semantic header/key field and the emitted-text or deterministic content-tree digest before accepting an entry. A following store atomically repairs an invalid entry, and publication accepts only an exact validated concurrent winner. Disabled caches take the ordinary uncached emit path without artifact fingerprint rendering or emit-key context rendering / serialization; semantic target validation, signature handling, and backend preparation still run | `kio-rs/src/cache/emit.rs`, `kio-rs/src/cache/artifact.rs`, `kio-rs/src/cmd/build.rs`, `kio-rs/src/backends/` |

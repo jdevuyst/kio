@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use super::{
     Env, EvalAstExpr, EvalCtx, EvalMetrics, EvalPackage, EvalPhase, EvalPrimitiveEnv,
-    EvalSourceGeneration, FnMap, QualifiedFnMap, SharedEvalFunctionCache, SharedExactCallMemoCache,
-    SharedFnClosureCache, SharedTypeViewCache, Value, eval_fn_tables, eval_with_compile_scope,
+    EvalSourceGeneration, EvalTypeBinding, FnMap, QualifiedFnMap, SharedEvalFunctionCache,
+    SharedExactCallMemoCache, SharedFnClosureCache, SharedTypeViewCache, Value, eval_fn_tables,
+    eval_with_compile_scope,
 };
 use crate::ast::{Expr, Module, UncheckedPrime};
 #[cfg(test)]
@@ -279,7 +280,23 @@ pub(crate) fn eval_authenticated(
     env: &Env,
     ctx: &AuthenticatedEvalCtx<'_>,
 ) -> Value {
-    eval_with_compile_scope(expr, env, ctx, ctx.source_generation.clone(), true)
+    eval_authenticated_in_type_scope(expr, env, &[], ctx)
+}
+
+pub(crate) fn eval_authenticated_in_type_scope(
+    expr: &Expr<EvalPhase>,
+    env: &Env,
+    type_bindings: &[EvalTypeBinding],
+    ctx: &AuthenticatedEvalCtx<'_>,
+) -> Value {
+    eval_with_compile_scope(
+        expr,
+        env,
+        type_bindings,
+        ctx,
+        ctx.source_generation.clone(),
+        true,
+    )
 }
 
 #[cfg(test)]

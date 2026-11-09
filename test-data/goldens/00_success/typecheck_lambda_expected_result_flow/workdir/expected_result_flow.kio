@@ -1,6 +1,6 @@
 module expected_result_flow;
 
-newtype Tag[E] : . { constructor mk; projector un }
+type { Tag[E]: . { mk; get } }
 
 type Out = . & Tag[.];
 

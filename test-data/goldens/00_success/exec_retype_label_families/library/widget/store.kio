@@ -1,11 +1,19 @@
 module store;
 
+import macros/row_macros(macro select);
+
 host type String role(str);
 
-pub labels Family[A] = { item[A]: A, pack[A] <U> : A & U & (U -> String) };
+pub type { Item[A]: A { pub mk; pub get }; Pack[A] <U>: A & U & (U -> String) { pub mk; pub get } }
 
-pub labels Later[A] = { item[A]: _, pack[A]: _ };
+pub type Family[A] = Item[A] & Pack[A];
 
-pub fn family_item[A](row: Family[A]) -> A { row.?{item} }
+pub type Later[A] = Item[A] & Pack[A];
 
-pub fn later_item[A](row: Later[A]) -> A { row.?{item} }
+pub fn family_item[A](row: Family[A]) -> A {
+  row.>select { Item.get[A] }
+}
+
+pub fn later_item[A](row: Later[A]) -> A {
+  row.>select { Item.get[A] }
+}

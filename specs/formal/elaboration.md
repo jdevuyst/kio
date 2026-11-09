@@ -4,7 +4,7 @@ Companion to the prose page [`../language.md`](../language.md) § Type system. T
 
 The elaborator is the **surface-to-core boundary**. Its contract:
 
-- **Input** — a resolved `Lowered` Kio module. Earlier passes have folded operators, removed tuple, placeholder-lambda, and recursive-call sugar, and elaborated labels. Generic block calls project neutral blocks according to the resolved macro descriptors and public type. Forms that need typing information remain; UFCS receiver insertion likewise depends on the resolved callee's type slots.
+- **Input** — a resolved `Lowered` Kio module. Earlier passes have folded operators, removed tuple, placeholder-lambda, and recursive-call sugar, and normalized nominal declarations. Generic block calls project neutral blocks according to the resolved macro descriptors, after written UFCS receiver insertion. Forms that need typing information remain.
 - **Output** — a checked `Lowered` tree plus boundary-local completion records. The Lowered → Prime substitute pass consumes those records to materialize inferred annotations and arguments, normalize UFCS calls, and replace every type-directed surface form. The assembled Kio'-shaped package is then checked by the standalone Prime checker; no side channel crosses that boundary.
 - **Discipline** — bidirectional type inference for arbitrary-rank types, following Peyton Jones, Vytiniotis, Weirich, and Shields (2007), *Practical type inference for arbitrary-rank types* (henceforth **PJ-V-W-S**). Source-bounded exact type-argument inference; shallow skolemization; no let-generalization; no backward type flow across a `let` or expression-statement prefix; no expression-level `e : T` annotations.
 - **Decidability** — every quantifier the program needs is written somewhere in the source (signature, type-argument slot, declaration header), so rank-N inference is decidable. See § 10.
@@ -111,7 +111,7 @@ than assigning one whole goal. A user-written explicit polytype argument keeps
 the same structural checking behavior. This restricted whole-tree assignment
 is not general impredicative inference; § 10 gives the decidability argument.
 
-**No `e : T` form.** Kio's surface grammar has no expression-level type-annotation form. The only annotations are at signatures, local binding patterns, type-argument positions in calls, and declaration headers (`fn`, `host fn`, `newtype`, `type`, parametric `labels`). The PJ-V-W-S paper's `e :: σ` annotation form has no Kio analogue; whenever the paper uses it, Kio relies on an alternative source of the expected type (the signature of the enclosing binder, a fully concrete local binding pattern, the receiving parameter slot, or a return-type annotation on the enclosing `fn`). § 4 makes this concrete for `fn`-against-polytype checking.
+**No `e : T` form.** Kio's surface grammar has no expression-level type-annotation form. The only annotations are at signatures, local binding patterns, type-argument positions in calls, and declaration headers (`fn`, `host fn`, and `type`, including nominal entries). The PJ-V-W-S paper's `e :: σ` annotation form has no Kio analogue; whenever the paper uses it, Kio relies on an alternative source of the expected type (the signature of the enclosing binder, a fully concrete local binding pattern, the receiving parameter slot, or a return-type annotation on the enclosing `fn`). § 4 makes this concrete for `fn`-against-polytype checking.
 
 ## 3. Variables, paths, and the named-callable registry
 
@@ -157,7 +157,7 @@ Higher-kinded type application (`F[A]`, `Either[String]`) is a **type form**,
 not a callable: it has no scheme entry in the registry and does not participate
 in E-App. Binder kinds are always explicit. Kind validation is a
 phase-polymorphic structural operation applied whenever a declared or completed
-type crosses its boundary: named `fn`, `host`, `newtype`, alias, and `macro`
+type crosses its boundary: named `fn`, `host`, nominal type, alias, and `macro`
 signatures are checked as module declarations are processed, and completed
 expression types are checked before they enter Kio'. While an
 application-local type goal is open, first-order unification also records its
@@ -543,7 +543,8 @@ application. First forms `.>` / `.<<` prepend and `.>>` / `.<` append.
 Whole-left-expression grouping is transparent. A final type application is
 a boundary: `f(a)[B].<r` plans `f(a)[B](r)` without searching backward.
 For a block invocation, forward selects its first prefix group and reverse
-its last; absent prefixes create a receiver-only stage before block projection.
+its last; absent prefixes create a receiver-only prefix group before block
+projection combines it with the projected block values.
 Receivers never enter a projected block. Explicit-empty selected UFCS groups
 reject, while ordinary earlier Unit stages remain intact. No rule inspects
 callee provenance, declaration groups, receiver type or implementation ABI to
@@ -610,7 +611,7 @@ already-polymorphic RHS to one of its monomorphic instances.
 **Kio has no such ambiguity.** Every type-binder in the language is user-written:
 
 - Universal binders (`[A]`) at top-level `fn` signatures, prefix-binder type expressions, and `fn`-literal headers.
-- Existential binders (`<U>`) at `newtype` payload positions.
+- Existential binders (`<U>`) in nominal declaration headers.
 
 Any polytype the elaborator synthesizes traces back to a declared binder in the source. The typer never invents a `∀`. By § 4.2 (E-FnSynth), a lambda literal in synthesizing position synthesizes a polytype only when the user wrote the `[ᾱ]` binder list; a monomorphic `.(x: Int) { … }` synthesizes the monomorphic `(Int) → R′`. By § 5.2, an inferred type-argument slot may copy an exact complete polytype already supplied by finite application-local evidence, but cannot generalize, invent, or rearrange its binders.
 
@@ -736,14 +737,24 @@ Evaluation proceeds as follows:
 4. Close every dependency according to the declaration's implementation mode.
    For ordinary `impl f`, the types reflected for captures and checked value
    slots contain no inference goal before they become `__Type__` or
-   `__Checked_term__` values. A type slot represented by `__Type__ | .` may
-   receive unit only when that exact declaration binder occurs in the declared
-   result and has no remaining value dependency. For `impl(fills) f`, captures
-   still close, every declared type slot is an exact `__Type__` handle, and the
-   typer advances every declared value operand through its complete structural
+   `__Checked_term__` values. An exact binder that occurs in the terminal
+   result but in no later value domain, after alias expansion and lexical
+   shadowing, may use a natural `.` ABI slot. That slot receives unit whether
+   or not the public result is already known. A required `__Type__` slot for
+   such a binder must close before either implementation mode runs, including
+   when unused. Other ordinary type slots also close. For `impl(fills) f`,
+   captures still close and other declared type slots retain exact authenticated
+   `__Type__` handles. The typer advances every declared value operand through its complete structural
    header frontier in declared-slot and written-source order. A pending body is
    represented by a provisional checked recipe and is not evaluated by the
-   compile-time implementation. After those recipes are snapshotted and before
+   compile-time implementation. Before snapshotting, complete a computed
+   non-lambda source whose type remains open through its retained ordinary
+   derivation, using already available public type information. This may
+   complete an inner call, callback body, or ready inner macro invocation once.
+   A source already closed by public header constraints retains its pending
+   body schedule. No input receives information that only the enclosing macro's
+   action can supply, and no source derivation or action is replayed.
+   After those recipes are snapshotted and before
    the implementation request is built or evaluated, traverse every declared
    source and its recipe in structural source order, including sources whose
    private ABI value is ignored. Traverse explicit product components
@@ -769,8 +780,8 @@ Evaluation proceeds as follows:
    subtree. The ordinary signature grouping and ABI arity determine that
    prefix; in particular, one product-valued parameter remains one slot rather
    than being flattened. Reject the first other open value source as
-   a type error at that source before the implementation action, retained-body
-   resumption, or publication. A lambda literal with explicit type binders may
+   a type error at that source before the enclosing implementation action or
+   publication. Direct lambda bodies remain pending through this check. A lambda literal with explicit type binders may
    obtain this frontier from E-FnCheck or a concrete return annotation. When
    marked staging instead synthesizes an omitted or `_` return with a complete
    written binder and parameter prefix, reserve its provisional final result
@@ -806,16 +817,22 @@ Evaluation proceeds as follows:
    both. Ordinary mode yields one checked term. Marked mode yields one
    provisional checked recipe and the final immutable fill context. The
    implementation cannot inspect or solve through that context while it runs.
-   Reflected operands are authenticated before reduction. After aliases
-   unfold, folding a type's applied arguments and applying one argument to a
-   type head reduce only when that outer type or head, respectively, is
-   determined; otherwise the operation remains residual rather than returning
-   the fold initializer or the unchanged head.
+   Reflected operands are authenticated before reduction. An observation
+   requires exactly the information its result reports: known outer structure
+   may expose opaque children, whereas a complete-type operation requires the
+   complete operand. A rigid generic is known, not an inference goal.
+   After alias unfolding, an unresolved required head or child raises an
+   uncatchable macro error. Evaluating such an observation records an
+   operation-wide failure before any recoverable branch or successful cache
+   insertion. Discarding the value or returning another error cannot hide it;
+   an unevaluated branch creates no failure. This does not change structural
+   fuel measurements or the retained-body schedule.
 7. In ordinary mode, match the returned checked term's actual type against the
    declaration result as before; it may solve only result goals allocated in
    step 1. In marked mode, flatten the returned context to its ordered
-   transcript `F = [(d₁, c₁), ..., (dₙ, cₙ)]`, authenticate every entry,
-   and partition the entries by live destination equivalence class before
+   transcript `F = [(d₁, c₁), ..., (dₙ, cₙ)]`. Resolve each whole-result
+   endpoint to the invocation's terminal body result in its exact residual
+   lexical scope, authenticate every entry, and partition the entries by live destination equivalence class before
    solving any of them. An externally closed destination contributes checks
    only. For an open destination `d` with candidates `c₁, ..., cₖ`, register
    the bounded equation set `d = c₁, ..., d = cₖ` as one symmetric relation.
@@ -827,9 +844,11 @@ Evaluation proceeds as follows:
    that conflict produce a non-directional common-result mismatch. Register the
    complete relation set before any retained body resumes.
 8. Resume each retained source body at most once under the ordinary bounded
-   typing modes. Validate the returned recipe against the declared result;
-   unlike ordinary mode, that validation cannot implicitly solve an open
-   marked result. The transcript relations, retained-body writes, and
+   typing modes. After all producers finish, a natural result may be related
+   to the returned recipe's complete type through the existing result equation.
+   This cannot supply a missing expectation to a producer that has not finished.
+   Validate the returned recipe against the declared result. The transcript
+   relations, retained-body writes, and
    elaboration output become visible atomically, or none does on failure.
    Record the closed Kio' term in the side channel for substitution at the
    Lowered → Prime boundary.
@@ -840,8 +859,8 @@ Evaluation proceeds as follows:
    ordinary function. No trust in the macro declaration, evaluator, or
    side channel replaces that check.
 
-For a blockless macro declaration without trailing descriptors,
-applying only a type prefix of its declared call type produces the
+For an ordinary direct macro call, applying only a type prefix of its declared
+call type produces the
 same residual value function as applying that prefix to an ordinary function.
 Because macro calls cannot survive into Kio', the front-end represents that
 residual as an ordinary typed Kio' function whose symbolic value parameters
@@ -879,6 +898,20 @@ types do not acquire that authority.
 `__Fill_ctx__` has no source constructor and no conversion to or from
 `__Comptime__`, so ordinary implementations cannot obtain fill authority.
 
+The additive whole-result primitive
+
+```text
+__fill_result__ :
+  (__Comptime__ & __Fill_ctx__ & __Type__) -> __Fill_ctx__
+```
+
+appends a candidate with a terminal-result endpoint instead of a reflected
+destination. Adoption resolves that endpoint in the retained body's scope,
+including any residual rigid binders, and preserves the candidate's producer
+set. It uses the same authentication, equation batch, and atomic publication
+as destination-specific fills. Evaluation neither queries the endpoint nor
+solves an equation; discarding the descendant context discards the relation.
+
 The primitive
 
 ```text
@@ -891,9 +924,58 @@ relates a term's explicit leading `forall` binders to a pattern and target by
 exact structural specialization, not subtyping or containment, in an isolated
 finite goal domain. Success returns the corresponding binder-order
 type applications whose term type is the fully instantiated whole scheme, an
-ordinary structural mismatch returns unit, and malformed
-or underdetermined input returns diagnostic text. No temporary goal or fill
+ordinary structural mismatch of known inputs returns unit, and malformed
+or underdetermined specialization of complete inputs returns diagnostic text.
+The pattern and target must be complete; the term's leading forall prefix and
+end head must be known, though a known function's children may remain opaque.
+An attempted observation of missing inference information is an uncatchable
+macro error instead of either recoverable arm. No temporary goal or fill
 authority escapes.
+
+Reflected binders opened from equivalent complete quantified types correspond
+by binder position, kind, structure and exact free lexical environment, up to
+ordinary binder renaming and transparent-alias equivalence. Repeated viewing,
+sharing and pure reconstruction of the same semantic type give equal
+corresponding variable handles. Different free environments or positions remain
+distinct. Conversion through `__type_var__` preserves this correspondence.
+Comparing an opened variable, directly or as a Type, fails with the ordinary
+uncatchable missing-information macro error if the comparison needs an
+unresolved part of its containing type. Inspection and transport that do not
+need that information remain permitted.
+
+The fixed result of `__type_forall__` or `__term_type_fn__` may not contain a
+free variable opened from another quantified type. The test concerns actual
+free occurrences in the result, including types within a checked term, rather
+than unused stored context. The constructor's own variable, live enclosing
+constructor variables, genuine caller-free variables and variables bound in
+intact nested schemes remain valid. An opened fragment remains valid for
+inspection and storage outside these construction results. To use an opened
+body under a newly chosen binder, instantiate the original type with that
+binder. Ordinary generic helper application performs capture-avoiding type
+substitution; passing an opened variable through such a helper preserves that
+free reference and does not waive this fixed-result condition. An unresolved region must be
+proved free of forbidden occurrences from its explicit environment or the
+construction fails for missing information. No arbitrary accumulator or
+closure is subject to this constructor-result check.
+
+The finite-prefix helper
+
+```text
+__type_forall_prefix_fold__ : __Comptime__ -> [R]
+  (__Type__ & R & ((R & __Type_var__) -> R)) -> (R & __Type__)
+```
+
+unfolds aliases and traverses only the input's immutable leading Forall spine.
+Each traversed head, including the stopping non-Forall head, must be determined;
+an unknown next head raises an uncatchable macro error. A Function whose result
+is opaque is a determined stopping head. The finite prefix is established
+before callbacks run. For that prefix, `step` runs once per binder, outermost
+first, threading one accumulator of type `R`; the result pairs that accumulator
+with the remaining Type. A zero-length prefix returns the initial accumulator
+and original semantic Type. Binders retain the identity and scope of repeated
+ordinary Type views. Callback results cannot extend the traversed prefix, and
+evaluated faults remain sticky. Termination follows from the finite input spine
+and termination of each callback; no recursive incomplete-Type measure is used.
 
 The dedicated `__structural_recur__` compile-time helper uses ordinary call
 syntax, the fixed `__comptime__` helper scheme, and the evaluator's
@@ -907,14 +989,16 @@ children use the corresponding semantic carrier children. For the initial
 root, a `Goal` or `Infer` at the carrier root
 is unmeasurable; a known outer constructor instead has a conservative
 structural lower bound in which nested `Goal` and `Infer` children contribute
-zero. A direct projected handle used on a recursive edge requires the complete
-measure and is unmeasurable if either form occurs anywhere in its carrier. When
-an ordinary finite data constructor contains a projected handle as a field,
-that field uses the same known-root lower bound in both initial and recursive
-measurements; a root-`Goal` or root-`Infer` field still makes the enclosing fuel
-unmeasurable. Closed projected carriers therefore retain their full structural
-measure, and a structurally complete child of an open carrier may still have
-one. Projected checked-term recipes remain atomic fuel. The evaluator retains
+zero, including the arguments of an unresolved Goal application. A direct projected handle used on a recursive edge requires the complete
+measure and is unmeasurable if either form occurs anywhere in its carrier.
+Each semantic reflected Type nested inside ordinary data instead has measure
+one, uniformly for closed, projected, and completely opaque types. The data
+measure counts its constructors and other measurable fields without inspecting
+that Type's contents. A fixed-size tuple therefore cannot decrease solely by
+shrinking a contained Type; structural type descent uses a direct Type fuel.
+Direct closed projected carriers retain their full structural measure, and a
+structurally complete child of an open carrier may still have one. Projected
+checked-term recipes remain atomic fuel. The evaluator retains
 the root measure for diagnostics. Every recursive callback computes the
 recursive measure of its next fuel and requires it to be strictly below both
 the current fuel measure and the callback's stored root measure. An
@@ -1014,20 +1098,17 @@ The `let .(<U_1> … <U_n> x) = e;` block-statement sugar (per [`language.md`](.
 ### 7.6. Block macro projection
 
 A marked block call uses source-local binding classification independently
-of provider declarations. After ordinary name
-resolution, each `trailing` descriptor selects the projection for one final
-Function layer of the resolved public call type. Each projected block is one
-value for that entire layer, never a component of another block's product. Every declared block is required
-once, in declaration order. Each written prefix value group likewise applies
-one preceding Function layer; several such groups are admitted. Zero-prefix calls omit that list, while a direct empty list
-supplies one Unit value. Prefixes are value-only, type arguments are
-inferred, and the call is complete; there is no blockless alternate for a
-declaration with descriptors. Forward UFCS inserts in the first prefix group, reverse UFCS in the last;
-without a written prefix it creates a receiver-only prefix stage. Insertion
-never enters a block. Reverse splices
-follow the complete block chain. The resulting call uses the same public-type
-application rules as its direct prefix equivalent; neither the descriptors
-nor the private implementation ABI select another insertion position.
+of provider declarations. After ordinary name resolution, descriptors select
+block projections and validate block contents and order. UFCS inserts in the
+first prefix group forward or the last in reverse; with no prefix it creates a
+receiver-only prefix. Insertion never enters a block. The final prefix value,
+if present, and the whole projected block values form one right-associated
+product for one Function application. Earlier written prefix groups remain
+separate applications. An explicit empty prefix contributes Unit; omission
+contributes no value. Block-call type arguments are inferred. After all blocks
+are supplied ordinary macro residualization applies. A direct call may supply
+values without blocks; descriptor predicates do not apply to that call, while
+ordinary public typing and macro semantic checks do.
 
 A reverse-spliced block call must have explicit braces around its own final
 labelled child. The restriction is checked from written structure before
@@ -1087,8 +1168,11 @@ searches ambient declarations, so adding unrelated declarations cannot change
 the existing call's interpretation, result, or dispatch.
 
 Runtime behavior follows ordinary expanded code: reference `if` evaluates
-its condition once and only its selected branch; `scope` invokes its thunk
-once; `do` applies the sequence to its supplied bind value. Recursive tail
+its input product once in order, including the condition and both
+thunk-producing expressions, then invokes only the selected thunk body. In
+the block spelling the thunk expressions are lambdas, so only the selected
+block body runs. `scope` invokes its thunk once; `do` applies the sequence to
+its supplied bind value. Recursive tail
 behavior follows structural use of the expanded bodies, never their names or
 descriptors. Sequence continuations remain ordinary nested functions.
 
@@ -1109,7 +1193,7 @@ The bottom type `!` has no introduction form in Kio surface (see [`language.md`]
 - Variables, `let`, function literals (`λ`/`Λ`), applications.
 - Unit, role-annotated literals.
 - References to ordinary functions and the reserved intrinsic values. A user-defined macro contributes its completed Kio' expansion, not a residual macro call node or compile-time implementation request.
-- Newtype constructor / projector members `N.c` / `N.p`.
+- Nominal constructor / projector members `N.mk` / `N.get`.
 - Host items.
 
 **No block call, trailing descriptor, neutral block, projection metadata,
@@ -1200,7 +1284,7 @@ The following concerns are deliberately not formalized on this page; the prose s
 
 - **Early surface forms.** Tuple-literal expansion, `.stem. { ... }` placeholder lambda expansion, and the existential-opening `let` sugar happen before the elaborator sees the AST. Dot-splice normalization is type-directed and happens during typing, because the receiver can only be inserted after the callee's type/value slots are known. The grammar in [`grammar.md`](../grammar.md) pins each surface shape.
 - **Order-sensitive visibility and the module-level import graph.** Top-level declaration ordering rules, `import` imports, and the cycle-prevention property of the module graph belong to the module system. The elaborator assumes a well-formed module context; the rules for constructing that context live in [`language.md`](../language.md) § Module system and [`prime.md`](prime.md) § 2.7.
-- **Surface naming and resolution.** The name-resolution rules (single-segment paths vs. qualified `m.f` paths vs. type-member `T.f` paths, the value/type namespace split, and label construction/access resolution) belong to the front-end. Once resolved, the elaborator sees a registry entry by name — the namespace and path-resolution details live in [`language.md`](../language.md) § Lexical structure and [`grammar.md`](../grammar.md).
+- **Surface naming and resolution.** The name-resolution rules (single-segment paths vs. qualified `m.f` paths vs. type-member `T.f` paths and the value/type namespace split) belong to the front-end. Once resolved, the elaborator sees a registry entry by name — the namespace and path-resolution details live in [`language.md`](../language.md) § Lexical structure and [`grammar.md`](../grammar.md).
 - **Macro call semantics.** A macro call is not an E-App registry side condition: § 7.4 resolves a user-defined macro declaration, uses its call type for ordinary per-call inference, evaluates the compile-time implementation, and records the returned Kio' tree. The rule sets, search disciplines, and soundness arguments of the reference coercion-macro libraries are library content of the POC they ship in (see [`../../docs/poc/macros.md`](../../docs/poc/macros.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not language meta-theory. This page commits only to the call-typing path and substitution contract; the open-world property of that resolution is in [`prime.md`](prime.md#7-open-world) § 7 Open-world.
 - **Invalid block contents.** A resolved `sequence` descriptor rejects an empty or statement-only block; a `product` or `thunk` descriptor has its own content rules. Library implementations may additionally reject projected operands, such as a `match` clause set that does not cover its scrutinee. These failures occur before Kio' emission; [`language.md`](../language.md) specifies their categories.
 - **Codegen contracts.** The per-backend emission rules in `../backends/*.md` are outside the elaborator's contract: the elaborator's output is the Kio'-shaped tree; what each backend does with it is the backend's responsibility.

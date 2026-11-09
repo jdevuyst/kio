@@ -5,6 +5,7 @@ import list/core as core;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/fmt as fmt;
@@ -13,10 +14,10 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 fn same_pair(left: m.Pair, right: m.Pair) -> Bool {
-  if(a.leq_i32(left.?{m.left_id}, right.?{m.left_id})) {
-    if(a.leq_i32(right.?{m.left_id}, left.?{m.left_id})) {
-      if(a.leq_i32(left.?{m.right_id}, right.?{m.right_id})) {
-        a.leq_i32(right.?{m.right_id}, left.?{m.right_id})
+  if(a.leq_i32(left.>select { m.Left_id.get }, right.>select { m.Left_id.get })) {
+    if(a.leq_i32(right.>select { m.Left_id.get }, left.>select { m.Left_id.get })) {
+      if(a.leq_i32(left.>select { m.Right_id.get }, right.>select { m.Right_id.get })) {
+        a.leq_i32(right.>select { m.Right_id.get }, left.>select { m.Right_id.get })
       } else {
         .f
       }
@@ -29,12 +30,12 @@ fn same_pair(left: m.Pair, right: m.Pair) -> Bool {
 }
 
 fn before(left: m.Pair, right: m.Pair) -> Bool {
-  if(a.lt_i32(left.?{m.left_id}, right.?{m.left_id})) {
+  if(a.lt_i32(left.>select { m.Left_id.get }, right.>select { m.Left_id.get })) {
     .t
-  } else if(a.lt_i32(right.?{m.left_id}, left.?{m.left_id})) {
+  } else if(a.lt_i32(right.>select { m.Left_id.get }, left.>select { m.Left_id.get })) {
     .f
   } else {
-    a.leq_i32(left.?{m.right_id}, right.?{m.right_id})
+    a.leq_i32(left.>select { m.Right_id.get }, right.>select { m.Right_id.get })
   }
 }
 
@@ -53,8 +54,8 @@ rec(loop) fn insert(pair: m.Pair, sorted: core.List[m.Pair]) -> core.List[m.Pair
 
 fn pair_text(pair: m.Pair) -> String {
   text.string_concat(
-  , fmt.int_to_string(pair.?{m.left_id})
-  , text.string_concat("/", fmt.int_to_string(pair.?{m.right_id}))
+  , fmt.int_to_string(pair.>select { m.Left_id.get })
+  , text.string_concat("/", fmt.int_to_string(pair.>select { m.Right_id.get }))
   )
 }
 
@@ -63,7 +64,7 @@ pub fn signature(state: m.State) -> String {
     lists.foldl(
     , .(acc: core.List[m.Pair], pair: m.Pair) { insert(pair, acc) }
     , core.nil[_]
-    , state.?{m.pairs}
+    , state.>select { m.Pairs.get }
     );
   lists.to_string(pair_text, sorted)
 }
@@ -72,13 +73,13 @@ fn number(label: String, value: I32) { io.print(label); io.print(fmt.int_to_stri
 
 pub fn checkpoint(label: String, state: m.State) {
   io.print(text.string_concat("checkpoint ", label));
-  number(" wm=", state.?{m.left_watermark});
-  number("/", state.?{m.right_watermark});
-  number(" retained=", lists.length(state.?{m.left}));
-  number("/", lists.length(state.?{m.right}));
-  number(" evicted=", state.?{m.evicted_left});
-  number("/", state.?{m.evicted_right});
-  number(" pairs=", lists.length(state.?{m.pairs}));
+  number(" wm=", state.>select { m.Left_watermark.get });
+  number("/", state.>select { m.Right_watermark.get });
+  number(" retained=", lists.length(state.>select { m.Left.get }));
+  number("/", lists.length(state.>select { m.Right.get }));
+  number(" evicted=", state.>select { m.Evicted_left.get });
+  number("/", state.>select { m.Evicted_right.get });
+  number(" pairs=", lists.length(state.>select { m.Pairs.get }));
   io.print("\n")
 }
 
@@ -89,23 +90,23 @@ pub fn finish(state: m.State) {
         if(lists.elem(same_pair, pair, acc)) { acc } else { core.cons(pair, acc) }
       }
     , core.nil[_]
-    , state.?{m.pairs}
+    , state.>select { m.Pairs.get }
     );
-  number("accepted=", state.?{m.accepted_left});
-  number("/", state.?{m.accepted_right});
-  number(" late=", state.?{m.late});
-  number(" regressed-watermarks=", state.?{m.regressed});
-  number(" emitted=", lists.length(state.?{m.pairs}));
+  number("accepted=", state.>select { m.Accepted_left.get });
+  number("/", state.>select { m.Accepted_right.get });
+  number(" late=", state.>select { m.Late.get });
+  number(" regressed-watermarks=", state.>select { m.Regressed.get });
+  number(" emitted=", lists.length(state.>select { m.Pairs.get }));
   number(" distinct=", lists.length(unique));
   io.print("\n");
   io.print(signature(state).>text.string_concat("\n").>>text.string_concat("pairs "))
 }
 
 pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) {
-  if(a.lt_i32(old.?{m.late}, next.?{m.late})) {
+  if(a.lt_i32(old.>select { m.Late.get }, next.>select { m.Late.get })) {
     io.print(text.string_concat("late rejected ", side));
-    number(" id=", event.?{m.id});
-    number(" time=", event.?{m.time});
+    number(" id=", event.>select { m.Id.get });
+    number(" time=", event.>select { m.Time.get });
     io.print("\n")
   } else {
     ()
@@ -113,7 +114,7 @@ pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) {
 }
 
 pub fn watermark(side: String, value: I32, old: m.State, next: m.State) {
-  if(a.lt_i32(old.?{m.regressed}, next.?{m.regressed})) {
+  if(a.lt_i32(old.>select { m.Regressed.get }, next.>select { m.Regressed.get })) {
     io.print(text.string_concat("watermark rejected ", side));
     number(" value=", value);
     io.print("\n")

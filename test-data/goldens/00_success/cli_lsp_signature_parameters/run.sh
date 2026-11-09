@@ -123,7 +123,7 @@ try {
     ['explicit_product', '()', 1, 'packet: A'],
     ['inferred_product', '((), ())', 0, 'packet: A'],
     ['alias_product', '()', 1, 'packet: Pair'],
-    ['higher_product', ', Box.mk_box', 0, 'packet: Higher[F]'],
+    ['higher_product', ', Box.mk', 0, 'packet: Higher[F]'],
     ['returned_stage', '()', 0, '()'],
     ['returned_stage', '()', 1, '. -> .'],
     ['implicit_unit', '()', 0, 'value: .'],

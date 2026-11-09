@@ -43,10 +43,8 @@ impl Fixture {
         let analysis = LspAnalysis {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module,
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
             warnings: Vec::new(),
         };
@@ -203,21 +201,21 @@ fn duplicate_provider_declarations_are_unavailable_before_visibility_filtering()
 }
 
 #[test]
-fn provider_declaration_identity_keeps_label_and_ordinary_namespaces_distinct() {
+fn provider_declaration_identity_checks_ordinary_nominal_names() {
     let directory = tempfile::tempdir().unwrap();
     let path = std::fs::canonicalize(directory.path())
         .unwrap()
         .join("provider.kio");
     for visibility in ["pub ", ""] {
         let source = format!(
-            "module provider; pub labels {{ field: . }}; pub labels {{ other: . }}; {visibility}type {{field}} = {{other}};"
+            "module provider; pub type {{ Field: .; Other: .; }}; {visibility}type Field = Other;"
         );
         assert!(CompletionSources::parse_provider(&path, "provider", &source).is_none());
     }
     for declarations in [
-        "pub labels Original = { field: . }; pub labels Reused = { field: _ }; pub fn field() { () }",
-        "pub labels Field = { field: . };",
-        "pub labels { other: . }; pub type {field} = {other}; pub fn field() { () }",
+        "pub type Original = { Field: .; }; pub type Reused = Field; pub fn field() { () }",
+        "pub type Field = { Entry: .; };",
+        "pub type { Other: .; }; pub type Field = Other; pub fn field() { () }",
     ] {
         let source = format!("module provider; {declarations}");
         assert!(

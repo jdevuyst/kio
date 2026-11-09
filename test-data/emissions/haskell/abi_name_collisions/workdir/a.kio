@@ -1,6 +1,6 @@
 module a;
 
-pub newtype Foo : . { pub constructor bar; projector un }
+pub type { Foo: . { pub mk; get } }
 
 pub fn b_c(value: .) { value }
 

@@ -1,6 +1,7 @@
 module forest;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -8,7 +9,7 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Tree = { symbols: Array[I32], ends: Array[I32] };
+pub type Tree = { Symbols: Array[I32]; Ends: Array[I32] };
 
 pub fn equal(a: I32, b: I32) -> Bool {
   if(arith.leq_i32(a, b)) { arith.leq_i32(b, a) } else { .f }
@@ -16,25 +17,33 @@ pub fn equal(a: I32, b: I32) -> Bool {
 
 pub fn less(a: I32, b: I32) -> Bool { arith.leq_i32(a, arith.sub_i32(b, 1)) }
 
-pub fn size(tree: Tree) -> I32 { array.array_len(tree.?{symbols}) }
+pub fn size(tree: Tree) -> I32 {
+  array.array_len(tree.>select { Symbols.get })
+}
 
-pub fn symbol(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{symbols}, position) }
+pub fn symbol(tree: Tree, position: I32) -> I32 {
+  array.array_get(tree.>select { Symbols.get }, position)
+}
 
-pub fn after(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{ends}, position) }
+pub fn after(tree: Tree, position: I32) -> I32 {
+  array.array_get(tree.>select { Ends.get }, position)
+}
 
 pub fn empty() -> Tree {
-  {symbols = array.array_make_empty[I32](()), ends = array.array_make_empty[I32](())}
+  (Symbols.mk(array.array_make_empty[I32](())), Ends.mk(array.array_make_empty[I32](())))
 }
 
 // Opening and closing a node brackets its entire preorder subtree.
 pub fn open(tree: Tree, value: I32) -> I32 {
   let position = size(tree);
-  array.array_push(tree.?{symbols}, value);
-  array.array_push(tree.?{ends}, -1);
+  array.array_push(tree.>select { Symbols.get }, value);
+  array.array_push(tree.>select { Ends.get }, -1);
   position
 }
 
-pub fn close(tree: Tree, position: I32) { array.array_set(tree.?{ends}, position, size(tree)) }
+pub fn close(tree: Tree, position: I32) {
+  array.array_set(tree.>select { Ends.get }, position, size(tree))
+}
 
 pub fn leaf(tree: Tree, value: I32) { let position = open(tree, value); close(tree, position) }
 

@@ -13,7 +13,7 @@
 //! - `selectionRange`: the name identifier's span (the range an
 //!   editor reveals when the user picks the symbol from the outline).
 //!   When a precise `name_span` is not stored in the AST node (e.g.
-//!   `FnDef`, `TypeAlias`, `Newtype`), [`find_name_in_source`] searches
+//!   `FnDef`, `TypeAlias`), [`find_name_in_source`] searches
 //!   the source text within the item span to locate the name.
 //! - `children`: empty for v1 (flat outline).
 //!
@@ -34,13 +34,7 @@
 //! |             |                   | type). `TYPE_PARAMETER` is too narrow; |
 //! |             |                   | `CLASS` is too concrete.               |
 //! | `literal`   | `CONSTANT`        | A named compile-time literal value.    |
-//! | `newtype`   | `STRUCT`          | Newtype is a nominal wrapper with a    |
-//! |             |                   | constructor and projector — structurally|
-//! |             |                   | analogous to a struct.                 |
-//! | `labels`    | `ENUM`            | A `labels` block declares a family of  |
-//! |             |                   | named injections, the closest          |
-//! |             |                   | LSP analogue being an enum.            |
-//! | `type {x}`  | `ENUM_MEMBER`     | A label within a nominal family.       |
+//! | `type {T: U;}` | `STRUCT`      | Each entry declares a nominal wrapper. |
 //! | `equiv`     | `OPERATOR`        | An equivalence claim is a proof        |
 //! |             |                   | obligation / property, which has no    |
 //! |             |                   | perfect LSP match; `OPERATOR` signals  |
@@ -79,6 +73,8 @@ pub fn document_symbols(
                     tokens.as_deref(),
                 )
             }));
+        } else if let Item::Labels(labels, _) = item {
+            symbols.extend(nominal_symbols(labels, line_index));
         } else if let Item::TypeRecGroup(group) = item {
             for member in &group.members {
                 let symbol = match member {
@@ -92,31 +88,16 @@ pub fn document_symbols(
                             line_index,
                         )
                     }
-                    crate::ast::TypeRecMember::Newtype(newtype) => {
-                        let selection =
-                            find_name_in_source(source, &newtype.name, newtype.meta.span);
-                        named_symbol(
-                            newtype.name.clone(),
-                            SymbolKind::STRUCT,
-                            newtype.meta.span,
-                            selection,
-                            line_index,
-                        )
-                    }
+                    crate::ast::TypeRecMember::Newtype(newtype) => named_symbol(
+                        newtype.name.clone(),
+                        SymbolKind::STRUCT,
+                        newtype.meta.span,
+                        newtype.name_span,
+                        line_index,
+                    ),
                     crate::ast::TypeRecMember::Labels(labels, _) => {
-                        let Some(name) = &labels.type_alias_name else {
-                            continue;
-                        };
-                        let selection = labels
-                            .type_alias_span
-                            .unwrap_or_else(|| find_name_in_source(source, name, labels.meta.span));
-                        named_symbol(
-                            name.clone(),
-                            SymbolKind::ENUM,
-                            labels.meta.span,
-                            selection,
-                            line_index,
-                        )
+                        symbols.extend(nominal_symbols(labels, line_index));
+                        continue;
                     }
                 };
                 symbols.push(symbol);
@@ -125,6 +106,32 @@ pub fn document_symbols(
             symbols.push(symbol);
         }
     }
+    symbols
+}
+
+fn nominal_symbols(
+    declaration: &crate::ast::Labels<Surface>,
+    line_index: &LineIndex,
+) -> Vec<DocumentSymbol> {
+    let mut symbols = Vec::new();
+    if let Some(name) = &declaration.type_alias_name {
+        symbols.push(named_symbol(
+            name.clone(),
+            SymbolKind::INTERFACE,
+            declaration.meta.span,
+            declaration.type_alias_span.unwrap_or(declaration.meta.span),
+            line_index,
+        ));
+    }
+    symbols.extend(declaration.entries.iter().map(|entry| {
+        named_symbol(
+            entry.name.clone(),
+            SymbolKind::STRUCT,
+            entry.meta.span,
+            entry.name_span,
+            line_index,
+        )
+    }));
     symbols
 }
 
@@ -155,29 +162,8 @@ fn item_to_symbol(
             let sel = find_name_in_source(source, &l.name, l.meta.span);
             (l.name.clone(), SymbolKind::CONSTANT, l.meta.span, sel)
         }
-        Item::Newtype(n) => {
-            let sel = find_name_in_source(source, &n.name, n.meta.span);
-            (n.name.clone(), SymbolKind::STRUCT, n.meta.span, sel)
-        }
-        Item::Labels(t, _) => {
-            // Named form carries a `type_alias_span`; anonymous form
-            // uses the whole item's span as a fallback.
-            if let Some(name) = &t.type_alias_name {
-                let sel = t
-                    .type_alias_span
-                    .unwrap_or_else(|| find_name_in_source(source, name, t.meta.span));
-                (name.clone(), SymbolKind::ENUM, t.meta.span, sel)
-            } else {
-                // Anonymous `labels { … };` — no declared name, skip.
-                return None;
-            }
-        }
-        Item::LabelForward(forward, _) => (
-            format!("{{{}}}", forward.name),
-            SymbolKind::ENUM_MEMBER,
-            forward.meta.span,
-            forward.name_span,
-        ),
+        Item::Newtype(n) => (n.name.clone(), SymbolKind::STRUCT, n.meta.span, n.name_span),
+        Item::Labels(..) => return None,
         Item::Equiv(e, _) => (
             e.name.clone(),
             SymbolKind::OPERATOR,
@@ -435,21 +421,21 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_label_symbol_keeps_its_namespace_and_exact_name_span() {
-        let source = "module pkg;\nfn field() -> . { () }\ntype {field} = {original};\n";
+    fn alias_symbol_keeps_its_ordinary_identity_and_exact_name_span() {
+        let source = "module pkg;\nfn field() -> . { () }\ntype Field = Original;\n";
         for symbols in [symbols_for(source), lazy_symbols_for(source)] {
             assert_eq!(symbols.len(), 2);
             assert_eq!(symbols[0].name, "field");
             assert_eq!(symbols[0].kind, SymbolKind::FUNCTION);
-            assert_eq!(symbols[1].name, "{field}");
-            assert_eq!(symbols[1].kind, SymbolKind::ENUM_MEMBER);
+            assert_eq!(symbols[1].name, "Field");
+            assert_eq!(symbols[1].kind, SymbolKind::INTERFACE);
             assert_eq!(
                 symbols[1].selection_range.start,
-                lsp_types::Position::new(2, 6)
+                lsp_types::Position::new(2, 5)
             );
             assert_eq!(
                 symbols[1].selection_range.end,
-                lsp_types::Position::new(2, 11)
+                lsp_types::Position::new(2, 10)
             );
         }
     }
@@ -532,7 +518,7 @@ mod tests {
             "pub fn foo() -> . { () }\n",
             "type Bar[A] = A;\n",
             "literal answer = 42;\n",
-            "newtype Baz[A] : A { constructor mk_baz; projector un_baz }\n",
+            "type { Baz[A]: A { mk; get; }; }\n",
         );
         let syms = symbols_for(source);
         assert_eq!(syms.len(), 4);
@@ -544,6 +530,34 @@ mod tests {
         assert_eq!(syms[2].kind, SymbolKind::CONSTANT);
         assert_eq!(syms[3].name, "Baz");
         assert_eq!(syms[3].kind, SymbolKind::STRUCT);
+    }
+
+    #[test]
+    fn compact_nominals_have_individual_outline_symbols() {
+        let source = concat!(
+            "module pkg/main;\n",
+            "type { Name: .; Age: .; }\n",
+            "type Person = { Address: .; } & Name;\n",
+        );
+        let symbols = symbols_for(source);
+        let names: Vec<_> = symbols.iter().map(|symbol| symbol.name.as_str()).collect();
+        assert_eq!(names, ["Name", "Age", "Person", "Address"]);
+        assert_eq!(symbols[2].kind, SymbolKind::INTERFACE);
+        for index in [0, 1, 3] {
+            assert_eq!(symbols[index].kind, SymbolKind::STRUCT);
+        }
+        let line_index = LineIndex::new(source);
+        for symbol in &symbols {
+            let start = line_index.position_to_offset(crate::lsp::positions::LspPosition {
+                line: symbol.selection_range.start.line,
+                character: symbol.selection_range.start.character,
+            }) as usize;
+            let end = line_index.position_to_offset(crate::lsp::positions::LspPosition {
+                line: symbol.selection_range.end.line,
+                character: symbol.selection_range.end.character,
+            }) as usize;
+            assert_eq!(&source[start..end], symbol.name);
+        }
     }
 
     #[test]

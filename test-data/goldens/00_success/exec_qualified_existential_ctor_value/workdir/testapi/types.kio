@@ -2,4 +2,4 @@ module testapi/types;
 
 import testapi(String);
 
-pub newtype Box <A> : String & A { pub constructor mk_box; pub projector un_box }
+pub type { Box <A>: String & A { pub mk; pub get } }

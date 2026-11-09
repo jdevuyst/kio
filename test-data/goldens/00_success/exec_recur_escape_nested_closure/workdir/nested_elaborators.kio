@@ -14,8 +14,7 @@ pure fn invoke_then_impl(
 , _later: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
   let unit = __reflect_type__(ct)[.];
-  let zero = __type_arity_zero__(ct);
-  let callback_type = __type_arrow__(ct, unit, zero, result);
+  let callback_type = __type_arrow__(ct, unit, result);
   (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
 }
 
@@ -42,7 +41,7 @@ pure fn mixed_use_impl(
   let unit = __type_unit__(ct);
   let specialized = __term_type_app__(ct, helper, result);
   let opaque_use = __term_call__(ct, __term_type__(ct, specialized), specialized, callback);
-  let callback_type = __type_arrow__(ct, unit, __type_arity_zero__(ct), result);
+  let callback_type = __type_arrow__(ct, unit, result);
   let terminal = __term_call__(ct, callback_type, callback, __term_unit__(ct));
   (__term_let__(ct, unit, opaque_use, .(_bound: __Checked_term__) { terminal }), fills)
 }

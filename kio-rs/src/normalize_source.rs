@@ -52,8 +52,8 @@
 use crate::ast::Item;
 use crate::error::Error;
 use crate::normalization::{
-    AuthenticatedEvalCtx, Env, EvalMetrics, EvalMetricsSnapshot, eval_authenticated,
-    structural_recur_stuck_message, value_to_string,
+    AuthenticatedEvalCtx, Env, EvalMetrics, EvalMetricsSnapshot, comptime_fault,
+    eval_authenticated, value_to_string,
 };
 use crate::pass::full::FullPipeline;
 use crate::pass::resolve::{Package, PackageFileEntry};
@@ -159,8 +159,8 @@ pub fn normalize_source(package_src: &str, module_src: &str) -> Result<String, E
     if let Some(metrics) = metrics {
         log_eval_timing_line("eval-source", metrics.snapshot());
     }
-    if let Some(message) = structural_recur_stuck_message(&value, &ctx) {
-        return Err(Error::totality(main_def.body.span(), message));
+    if let Some(fault) = comptime_fault(&value, &ctx) {
+        return Err(fault.into_error(main_def.body.span()));
     }
     Ok(value_to_string(&value))
 }
@@ -252,8 +252,7 @@ host fn effect() -> .;
 
 pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ {
   let unit = __type_unit__(ct);
-  let one = __type_arity_succ__(ct, __type_arity_zero__(ct));
-  let effect_type = __type_arrow__(ct, unit, one, unit);
+  let effect_type = __type_arrow__(ct, unit, unit);
   __term_call__(ct, effect_type, effect_term, __term_unit__(ct))
 }
 
@@ -292,13 +291,13 @@ pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_ter
   __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct))
 }
 
-newtype Rep : . { constructor mk_rep; projector un_rep; };
+type { Rep: . { mk; get; }; };
 
-macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; };
+macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; };
 
 pure fn main() -> . {
   let rep = make_rep[.](());
-  rep.>Rep.un_rep
+  rep.>Rep.get
 }
 ";
         (package, module)

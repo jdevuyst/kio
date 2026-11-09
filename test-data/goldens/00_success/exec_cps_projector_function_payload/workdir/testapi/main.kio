@@ -7,7 +7,7 @@ import testapi/io(print);
 
 type Step = I32 -> I32;
 
-labels { pack <U> : Step & U };
+type { Pack <U>: Step & U { mk; get } }
 
 fn make_pack(n: I32) -> Pack {
   Pack.mk((.(x: I32) -> I32 { add_i32(x, 1) }, n))

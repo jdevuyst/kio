@@ -6,27 +6,21 @@ import __intrinsics__;
 import __comptime__;
 
 /// Representation node for the unit type.
-pub newtype Rep_unit : . { pub constructor mk_rep_unit; pub projector un_rep_unit }
+pub type { Rep_unit: . { pub mk; pub get } }
 
 /// Representation node for the bottom type.
-pub newtype Rep_bottom : . { pub constructor mk_rep_bottom; pub projector un_rep_bottom }
+pub type { Rep_bottom: . { pub mk; pub get } }
 
 /// Representation node for host, nominal, or otherwise opaque type leaves.
-pub newtype Rep_opaque : . { pub constructor mk_rep_opaque; pub projector un_rep_opaque }
+pub type { Rep_opaque: . { pub mk; pub get } }
 
 rec {
   /// Representation node for a product type with left and right children.
-  pub newtype Rep_product : Type_rep & Type_rep {
-    pub constructor mk_rep_product;
-    pub projector un_rep_product
-    };
+  pub type { Rep_product: Type_rep & Type_rep { pub mk; pub get } };
   /// Representation node for a sum type with left and right children.
-  pub newtype Rep_sum : Type_rep & Type_rep { pub constructor mk_rep_sum; pub projector un_rep_sum };
+  pub type { Rep_sum: Type_rep & Type_rep { pub mk; pub get } };
   /// Representation node for a function type with parameter and result children.
-  pub newtype Rep_function : Type_rep & Type_rep {
-    pub constructor mk_rep_function;
-    pub projector un_rep_function
-    };
+  pub type { Rep_function: Type_rep & Type_rep { pub mk; pub get } };
   /// Tail of the nested representation sum containing function and opaque nodes.
   pub type Type_rep_tail4 = Rep_function | Rep_opaque;
   /// Tail of the nested representation sum containing sum, function, and opaque nodes.
@@ -36,10 +30,7 @@ rec {
   /// Tail of the nested representation sum containing bottom and compound nodes.
   pub type Type_rep_tail1 = Rep_bottom | Type_rep_tail2;
   /// First-order representation tree for reflected Kio types.
-  pub newtype Type_rep : Rep_unit | Type_rep_tail1 {
-    pub constructor mk_type_rep;
-    pub projector un_type_rep
-    }
+  pub type { Type_rep: Rep_unit | Type_rep_tail1 { pub mk; pub get } }
 }
 
 /// Complete payload sum used inside `Type_rep`.
@@ -47,7 +38,7 @@ pub type Type_rep_payload = Rep_unit | Type_rep_tail1;
 
 type Type_pair = __Type__ & __Type__;
 
-type Function_view = __Type__ & __Type_arity__ & __Type__;
+type Function_view = __Type__ & __Type__;
 
 type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
 
@@ -66,26 +57,24 @@ type Type_view_tail2 = Type_pair | Type_view_tail3;
 type Type_view_tail1 = . | Type_view_tail2;
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__[__Type__][__Type_arity__ & __Type__](view)
+  __fst__[__Type__][__Type__](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__[__Type_arity__][__Type__](__snd__[__Type__][__Type_arity__ & __Type__](view))
+  __snd__[__Type__][__Type__](view)
 }
 
 /// Builds the unit type representation.
-pub fn rep_unit() -> Type_rep {
-  Type_rep.mk_type_rep(__left__[Rep_unit][Type_rep_tail1](Rep_unit.mk_rep_unit(())))
-}
+pub fn rep_unit() -> Type_rep { Type_rep.mk(__left__[Rep_unit][Type_rep_tail1](Rep_unit.mk(()))) }
 
 /// Builds the bottom type representation.
 pub fn rep_bottom() -> Type_rep {
-  Type_rep.mk_type_rep(__right__[Rep_unit][Type_rep_tail1](__left__[Rep_bottom][Type_rep_tail2](Rep_bottom.mk_rep_bottom(()))))
+  Type_rep.mk(__right__[Rep_unit][Type_rep_tail1](__left__[Rep_bottom][Type_rep_tail2](Rep_bottom.mk(()))))
 }
 
 /// Builds a product type representation from left and right children.
 pub fn rep_product(left: Type_rep, right: Type_rep) -> Type_rep {
-  Type_rep.mk_type_rep(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__left__[Rep_product][Type_rep_tail3](Rep_product.mk_rep_product((
+  Type_rep.mk(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__left__[Rep_product][Type_rep_tail3](Rep_product.mk((
   , left
   , right
   ))))))
@@ -93,7 +82,7 @@ pub fn rep_product(left: Type_rep, right: Type_rep) -> Type_rep {
 
 /// Builds a sum type representation from left and right children.
 pub fn rep_sum(left: Type_rep, right: Type_rep) -> Type_rep {
-  Type_rep.mk_type_rep(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__left__[Rep_sum][Type_rep_tail4](Rep_sum.mk_rep_sum((
+  Type_rep.mk(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__left__[Rep_sum][Type_rep_tail4](Rep_sum.mk((
   , left
   , right
   )))))))
@@ -101,7 +90,7 @@ pub fn rep_sum(left: Type_rep, right: Type_rep) -> Type_rep {
 
 /// Builds a function type representation from parameter and result children.
 pub fn rep_function(param: Type_rep, result: Type_rep) -> Type_rep {
-  Type_rep.mk_type_rep(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__right__[Rep_sum][Type_rep_tail4](__left__[Rep_function][Rep_opaque](Rep_function.mk_rep_function((
+  Type_rep.mk(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__right__[Rep_sum][Type_rep_tail4](__left__[Rep_function][Rep_opaque](Rep_function.mk((
   , param
   , result
   ))))))))
@@ -109,7 +98,7 @@ pub fn rep_function(param: Type_rep, result: Type_rep) -> Type_rep {
 
 /// Builds the opaque type representation.
 pub fn rep_opaque() -> Type_rep {
-  Type_rep.mk_type_rep(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__right__[Rep_sum][Type_rep_tail4](__right__[Rep_function][Rep_opaque](Rep_opaque.mk_rep_opaque(())))))))
+  Type_rep.mk(__right__[Rep_unit][Type_rep_tail1](__right__[Rep_bottom][Type_rep_tail2](__right__[Rep_product][Type_rep_tail3](__right__[Rep_sum][Type_rep_tail4](__right__[Rep_function][Rep_opaque](Rep_opaque.mk(())))))))
 }
 
 pure fn type_rep_tail4_type(
@@ -631,7 +620,7 @@ pure fn build_type_rep(
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
-pub pure fn type_of_checked(
+pure fn type_of_checked(
 , ct: __Comptime__
 , _type_rep_type: __Type__
 , type_rep_ctor: __Checked_term__
@@ -669,4 +658,4 @@ pub pure fn type_of_checked(
 }
 
 /// Builds a first-order reflected representation of the type argument.
-pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, Rep_unit, Rep_unit.mk_rep_unit, Rep_bottom, Rep_bottom.mk_rep_bottom, Rep_product, Rep_product.mk_rep_product, Rep_sum, Rep_sum.mk_rep_sum, Rep_function, Rep_function.mk_rep_function, Rep_opaque, Rep_opaque.mk_rep_opaque); impl type_of_checked }
+pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk, Rep_unit, Rep_unit.mk, Rep_bottom, Rep_bottom.mk, Rep_product, Rep_product.mk, Rep_sum, Rep_sum.mk, Rep_function, Rep_function.mk, Rep_opaque, Rep_opaque.mk); impl type_of_checked }

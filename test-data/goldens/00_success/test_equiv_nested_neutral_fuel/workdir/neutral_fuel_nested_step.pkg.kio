@@ -1,0 +1,15 @@
+package neutral_fuel_nested_step;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main;
+  main/**
+}

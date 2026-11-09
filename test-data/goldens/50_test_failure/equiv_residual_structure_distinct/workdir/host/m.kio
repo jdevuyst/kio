@@ -3,7 +3,7 @@ module host/m;
 import host(T, effect);
 import macros/control(macro scope);
 
-newtype Box : T { pub constructor mk_box; pub projector un_box }
+type { Box: T { pub mk; pub get } }
 
 equiv nested_stuck_callee(f: T -> T -> T, x: T, y: T) {
   f(x)(x);
@@ -11,11 +11,11 @@ equiv nested_stuck_callee(f: T -> T -> T, x: T, y: T) {
 }
 
 equiv newtype_payload(x: T, y: T) {
-  Box.mk_box(x);
-  Box.mk_box(y)
+  Box.mk(x);
+  Box.mk(y)
 }
 
 equiv effect_inside_newtype(x: T) {
-  Box.mk_box(scope { effect(x); x });
-  Box.mk_box(x)
+  Box.mk(scope { effect(x); x });
+  Box.mk(x)
 }

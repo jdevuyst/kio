@@ -1,6 +1,7 @@
 module polygon/clip;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import polygon/geometry as geo;
 import testapi(Array, Bool, I32, String);
@@ -8,14 +9,14 @@ import testapi/arith as num;
 import testapi/array as arr;
 import testapi/iter(loop);
 
-labels Ring = { before: Array[I32], after: Array[I32], active: Array[Bool] };
+type Ring = { Before: Array[I32]; After: Array[I32]; Active: Array[Bool] };
 
 rec(loop) fn link_ring(ring: Ring, i: I32, n: I32) {
   if(geo.equal(i, n)) {
     ()
   } else {
-    arr.array_set(ring.?{before}, i, geo.previous(i, n));
-    arr.array_set(ring.?{after}, i, geo.next(i, n));
+    arr.array_set(ring.>select { Before.get }, i, geo.previous(i, n));
+    arr.array_set(ring.>select { After.get }, i, geo.next(i, n));
     recur link_ring(ring, num.add_i32(i, 1), n)
   }
 }
@@ -33,7 +34,7 @@ rec(loop) fn contains_vertex(points: Array[geo.Point], ring: Ring, a: I32, b: I3
   } else if(geo.either(geo.either(geo.equal(i, a), geo.equal(i, b)), geo.equal(i, c))) {
     recur contains_vertex(points, ring, a, b, c, num.add_i32(i, 1))
   } else if(geo.both(
-  , arr.array_get(ring.?{active}, i)
+  , arr.array_get(ring.>select { Active.get }, i)
   , inside_triangle(
     , arr.array_get(points, i)
     , arr.array_get(points, a)
@@ -66,8 +67,8 @@ rec(loop) fn clip_ring(
 , remaining: I32
 , misses: I32
 ) -> Array[geo.Triangle] | String {
-  let a = arr.array_get(ring.?{before}, cursor);
-  let c = arr.array_get(ring.?{after}, cursor);
+  let a = arr.array_get(ring.>select { Before.get }, cursor);
+  let c = arr.array_get(ring.>select { After.get }, cursor);
   if(geo.equal(remaining, 3)) {
     arr.array_push(triangles, (a, cursor, c));
     triangles.>widen_sum
@@ -75,9 +76,9 @@ rec(loop) fn clip_ring(
     "no removable ear".>widen_sum
   } else if(is_ear(points, ring, a, cursor, c)) {
     arr.array_push(triangles, (a, cursor, c));
-    arr.array_set(ring.?{after}, a, c);
-    arr.array_set(ring.?{before}, c, a);
-    arr.array_set(ring.?{active}, cursor, .f);
+    arr.array_set(ring.>select { After.get }, a, c);
+    arr.array_set(ring.>select { Before.get }, c, a);
+    arr.array_set(ring.>select { Active.get }, cursor, .f);
     recur clip_ring(points, ring, triangles, c, num.sub_i32(remaining, 1), 0)
   } else {
     recur clip_ring(points, ring, triangles, c, remaining, num.add_i32(misses, 1))
@@ -87,11 +88,11 @@ rec(loop) fn clip_ring(
 pub fn triangulate(points: Array[geo.Point]) -> Array[geo.Triangle] | String {
   let n = arr.array_len(points);
   let ring =
-    {
-    , before = arr.array_make_filled(n, 0)
-    , after = arr.array_make_filled(n, 0)
-    , active = arr.array_make_filled(n, .t)
-    };
+    (
+    , Before.mk(arr.array_make_filled(n, 0))
+    , After.mk(arr.array_make_filled(n, 0))
+    , Active.mk(arr.array_make_filled(n, .t))
+    );
   link_ring(ring, 0, n);
   clip_ring(points, ring, arr.array_make_empty(), 0, n, 0)
 }

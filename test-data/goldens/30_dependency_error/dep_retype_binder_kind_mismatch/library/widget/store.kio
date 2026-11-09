@@ -1,3 +1,3 @@
 module store;
 
-pub newtype Phantom[*F] : . { pub constructor mk_phantom; pub projector un_phantom }
+pub type { Phantom[*F]: . { pub mk; pub get; }; };

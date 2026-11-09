@@ -1,0 +1,17 @@
+module conversion;
+
+import __comptime__;
+import bridge(Text);
+
+pub pure fn convert(value: Text) -> Text { value }
+
+pure fn convert_impl(
+, ct: __Comptime__
+, converter: __Checked_term__
+, source: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  __term_host_convert__(ct, __reflect_type__(ct)[Text], source, converter, value)
+}
+
+pub macro convert_alias : [Source] Source -> Text { captures convert; impl convert_impl }

@@ -2,7 +2,7 @@ module main;
 
 import macros/match(macro match);
 
-labels { value: ., other: . };
+type { Value: .; Other: . }
 
 fn run(input: Value) {
   match(input) {

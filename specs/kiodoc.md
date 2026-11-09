@@ -82,7 +82,7 @@ scope. The documented item is visible by its declared name.
 expression-statements followed by a trailing expression, exactly
 what a fn body accepts. It may **not** introduce top-level forms:
 no `module` re-declaration, no `import` lines, no inner `fn` /
-`type` / `literal` / `labels` / `op` declarations.
+`type` / `literal` / `op` declarations.
 
 ### Diagnostics
 
@@ -125,8 +125,7 @@ link syntax and skips them.
 
 ### Two resolution forms
 
-**Simple name** — a single identifier, operator token, label entry name,
-or imported alias. The name is looked up in the applicable scope (see
+**Simple name** — a single identifier, operator token, or imported alias. The name is looked up in the applicable scope (see
 below). Examples: `` [`print`] ``, `` [`Some`] ``, `` [`+`] ``,
 `` [`m`] `` (where `m` is an `import … as m;` alias).
 
@@ -136,12 +135,6 @@ alias-rooted member access (`m.name`). Accepted optimistically for
 external source paths and for paths rooted in a known qualified-import
 alias or module segment. Example: `` [`pkg/util.something`] ``.
 
-A nonminting label-forwarding declaration has the braced identity `{field}`,
-distinct from an ordinary value named `field`. It can be selected locally,
-through a braced selective import, or with a qualified spelling such as
-`alias.{field}` or `pkg/mod.{field}`. This declaration selector introduces no
-uppercase nominal identity and does not change label construction syntax.
-
 ### Resolution context
 
 The scope consulted depends on where the reference appears.
@@ -149,8 +142,8 @@ The scope consulted depends on where the reference appears.
 **Inside a `///` doc-comment** (`*.kio` source file): the surrounding
 module's scope — all top-level declarations in the module (including
 private items), all names brought in by `import` statements (selective
-imports and qualified aliases), label entries from `labels` blocks, newtype
-constructor and projector names, and operator token sequences from `op`
+imports and qualified aliases), nominal entries, their
+qualified `Owner.mk` and `Owner.get` members, and operator token sequences from `op`
 declarations. Intrinsic names (`__left__`, etc.) are in scope only
 when `import __intrinsics__;` appears in the module.
 
@@ -167,10 +160,11 @@ are accepted optimistically, as external references.
 
 Only unscoped `pub` declarations and host declarations contribute boundary
 names; private and scoped-public declarations and imported names do not.
-A newtype's constructor or projector contributes its name only when both the
-newtype and that role are unscoped `pub`. A public labels declaration contributes
-its locally declared label names and generated nominal names, not reused labels.
-A public nonminting forward contributes only its own braced label identity.
+A nominal type's `Owner.mk` or `Owner.get` contributes its qualified selector
+only when both the type and that role are unscoped `pub`; it does not add a bare
+`mk` or `get` name. An identity alias exposes its accessible terminal members
+under `Alias.mk` and `Alias.get`. A public compact declaration contributes its
+locally declared nominal names and named alias, when present.
 
 ### Override semantics
 
@@ -288,15 +282,14 @@ Three directive keywords are defined:
 - **`source`** — embed the item's full source (header + body, minus its
   doc-comment).
 
-**`@type` against a type-level name is a contract error.** A `type` /
-`labels` / `newtype` declaration binds a *type*, not a value, so it has no
+**`@type` against a type-level name is a contract error.** A `type` declaration binds a *type*, not a value, so it has no
 bound-value type to render. `@type` against one is a Kiodoc contract
 error (exit 70, `DocError`); the message names the kind found and what
 `@type` expects — e.g. `` `Cnf` is a type alias; `@type` expects a
 value binding (fn, host fn, exported fn) ``. The error fires on the
 *type name*; a type's constructor and projector are value-level
-functions and still resolve, so `` [`@type Box.mk_box`] `` against a
-`newtype`'s constructor is fine. `@signature` and `@source` accept
+functions and still resolve, so `` [`@type Box.mk`] `` against a
+nominal constructor is fine. `@signature` and `@source` accept
 type-level names — only `@type` rejects them.
 
 **Unknown directive keywords are runner errors.** Any `` [`@KEYWORD term`] ``
@@ -315,7 +308,7 @@ The `term` argument is resolved with the same rules and scope as the
 
 - **Inside a `///` doc-comment** (`*.kio` source): the surrounding
   module's scope (top-level declarations, imports, qualified aliases,
-  label entries, newtype constructor / projector, operator token sequences).
+  nominal entries, qualified `Owner.mk` / `Owner.get` members, operator token sequences).
 - **Inside a `.md` file**: the package boundary declared in the nearest
   enclosing `<name>.pkg.kio` file.
 
@@ -332,8 +325,7 @@ The signature is the item's declaration header in the pretty-printed form
 - **`fn`**: `fn name[type-params](value-params) -> ReturnType`
 - **`type`**: `type Name = Type;`
 - **`literal`**: `literal name = value;`
-- **`labels`**: `labels Name = { tag1: T, tag2: U, … };`
-- **`newtype`**: `newtype Name : Type { constructor c; projector p; };`
+- **Nominal entry**: `type { Name: Type; }`
 - **`op`**: `op pattern { impl function; };`
 - **`host fn`** / **`exported fn`** (at the package boundary): the
   declaration header.
@@ -345,17 +337,9 @@ scope; displaying only the selected member would change its meaning. The
 selected name still owns its own anchor, kind, and prose. No unrelated module
 declarations are added to this context.
 
-The generated uppercase nominal of `labels` is also a type-oriented
-documentation target. Its signature and source show the owning labels
-declaration or complete enclosing recursive group, not a synthetic standalone
-newtype. This includes ordinary and recursive labels. Reuse markers introduce
-no new nominal documentation target.
-
-A nonminting forwarding label's braced selector renders its own
-`type {field} = {target};` declaration for both `@signature` and `@source`,
-not the target's declaration. Its own visibility and documentation determine
-its page entry; forwarding introduces no nominal documentation section.
-It has no bound-value type, so `@type {field}` is rejected.
+A nominal entry is a type-oriented documentation target. Its signature and
+source show the containing declaration or complete enclosing recursive group,
+including the written entry and its context.
 
 ### What `@type` renders
 
@@ -371,7 +355,7 @@ kinds:
 - **`host fn`** / **`exported fn`** (at the package boundary): the
   function type of the declaration.
 
-A `type` / `labels` / `newtype` is a type-level name and is rejected
+A `type` is a type-level name and is rejected
 (see § Directive keywords) — it has no bound-value type. A `literal`
 alias declaration is rejected until it is used in an expression with enough context,
 because the declaration itself has no standalone bound-value type.
@@ -421,7 +405,7 @@ A `@type` directive against a type-level name produces:
 ```
 
 The kind phrasing varies by what `term` resolves to — "a type alias",
-"a `labels` declaration", "a `newtype`", or "a `host type`".
+"a nominal type", or "a `host type`".
 
 ## Documentation in host artifacts
 
@@ -449,7 +433,7 @@ under **Recursive group**, immediately before that group's member sections;
 it creates no resolvable symbol and is not copied into member documentation.
 Hovering the group's `rec` keyword shows this prose with the complete group
 declaration. Each member's own doc comment is validated independently,
-including newtype and labels members.
+including nominal entries.
 
 Package-page references and directives may select a recursive type member
 only when that member is exported. Keeping peer declarations as necessary
@@ -463,11 +447,11 @@ The site has one page per module, plus standing pages:
   tutorial / guide pages.
 - **Module pages** — one per `.kio` module file. The page leads with the
   module-level doc-comment (heading and body), then a per-item section
-  for each top-level `fn` / `type` / `literal` / `labels` / `op` declaration, in
+  for each top-level `fn` / `type` / `literal` / `op` declaration, in
   source declaration order. Each section shows the item's signature —
   the same form `` [`@signature term`] `` embeds — followed by the
   rendered doc-comment body. Anonymous declarations have no section of their
-  own; a labels block's generated nominals have sections under their type names.
+  own; a compact declaration's nominal entries have sections under their type names.
   `equiv` and variadic `op` have no documentable name and are omitted.
 - **Package Boundary page** — the contract surface the package's
   `<name>.pkg.kio` `bridge { … }` block selects: the `host` items
@@ -490,8 +474,7 @@ page, the per-module pages, and the rendered tutorial tree.
   `foo/bar/baz.html` (or `.md`).
 - Each item in a module page or the package-boundary page has a stable in-page
   anchor: `#KIND-ENCODE(MODULE)-ENCODE(NAME)`. `MODULE` is the complete declared
-  module path, including `/` separators. `KIND` is `labels` for a named labels
-  declaration, `op` for an operator, and `item` otherwise. `NAME` is the source
+  module path, including `/` separators. `KIND` is `op` for an operator and `item` otherwise. `NAME` is the source
   identifier, except that operators use their complete canonical operator name
   (`op - __` for prefix minus, `op _ - __` for binary minus), not their display token alone.
   `ENCODE` retains ASCII letters and digits and encodes every other UTF-8 byte
@@ -508,7 +491,7 @@ The renderer rewrites the validated reference data into the output:
 
 - `` [`name`] `` → a link to the documenting page + anchor when `name`
   selects a documentable in-package declaration with a site entry; a plain
-  code span otherwise. An admitted boundary role or label name without a
+  code span otherwise. An admitted boundary member without a
   declaration view remains plain code, rather than borrowing a same-spelling
   declaration's link. External source
   references render as a plain code span (no anchor) until rendered output
@@ -1040,8 +1023,7 @@ and classifies the marker's position as one of two kinds:
 
 - **Top-level position** — the marker sits at module scope: outside
   every `{...}` group, between top-level items. A snippet member
-  contributes top-level forms (`fn`, `type`, `literal`, `labels`,
-  `newtype`, `op`, `import`, `pub fn`).
+  contributes top-level forms (`fn`, `type`, `literal`, `op`, `import`, `pub fn`).
 - **Block position** — the marker sits inside a `fn` body's
   `{...}` group at any nesting depth. A snippet member contributes
   block contents: `let` statements, expression statements, and a

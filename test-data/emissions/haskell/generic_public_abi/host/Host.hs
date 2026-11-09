@@ -94,9 +94,9 @@ pair = (7, "seven")
 
 round_trip :: IO (Int, String)
 round_trip = do
-  wrapped <- P.export__api__Pair__mkPair package (7, "seven")
+  wrapped <- P.export__api__Pair__mk package (7, "seven")
   (number, text) <-
-    P.export__api__Pair__unPair package wrapped
+    P.export__api__Pair__get package wrapped
   pure (number, text)
 
 swapped :: IO String
@@ -118,9 +118,9 @@ hktRoundTrip = do
 -- synonym: it can be passed directly as the higher-kinded F parameter.
 nominalHktRoundTrip :: IO ((Int, String), (Int, String))
 nominalHktRoundTrip = do
-  wrapped <- P.export__origin__Box__mkBox package (pair, (11, "eleven"))
+  wrapped <- P.export__origin__Box__mk package (pair, (11, "eleven"))
   result <- preserveNominal wrapped
-  P.export__origin__Box__unBox package result
+  P.export__origin__Box__get package result
   where
     preserveNominal
       :: P.KioType_origin__Box HostTypes IO (Int, String)
@@ -137,7 +137,7 @@ dictionaryRoundTrip = do
 
 dictionaryMemberRoundTrip :: IO (Int, String)
 dictionaryMemberRoundTrip = do
-  dictionary <- P.export__api__PairEndo__mkPairEndo package pure
+  dictionary <- P.export__api__PairEndo__mk package pure
   result <- P.export__api__applyGiven package dictionary (Just pair)
   case result of
     Just (P.Export_api__applyGiven_Result_App0 number text) ->
@@ -147,15 +147,15 @@ dictionaryMemberRoundTrip = do
 originRoundTrip :: IO (Int, Int)
 originRoundTrip = do
   wrapped <-
-    P.export__origin__Box__mkBox
+    P.export__origin__Box__mk
       package
       (7, 11)
   result <-
     P.export__caller__preserveOrigin
       package
       wrapped
-  P.Member_origin__Box__unBox_Result first second <-
-    P.export__origin__Box__unBox
+  P.Member_origin__Box__get_Result first second <-
+    P.export__origin__Box__get
       package
       result
   pure (first, second)
@@ -163,13 +163,13 @@ originRoundTrip = do
 treeRoundTrip :: IO ()
 treeRoundTrip = do
   value <-
-    P.export__tree__Tree__mkTree
+    P.export__tree__Tree__mk
       package
-      (P.Member_tree__Tree__mkTree_Arg0_Case0_Position0 ())
-  payload <- P.export__tree__Tree__unTree package value
+      (P.Member_tree__Tree__mk_Arg0_Case0_Position0 ())
+  payload <- P.export__tree__Tree__get package value
   case payload of
-    P.Member_tree__Tree__unTree_Result_Case0_Position0 () -> pure ()
-    P.Member_tree__Tree__unTree_Result_Case1_Type_Tree _ -> error "unexpected recursive arm"
+    P.Member_tree__Tree__get_Result_Case0_Position0 () -> pure ()
+    P.Member_tree__Tree__get_Result_Case1_Type_Tree _ -> error "unexpected recursive arm"
   _ <- P.export__tree__keep package value
   P.Export_tree__branchWrapped_Result _ () <-
     P.export__tree__branchWrapped package
@@ -195,17 +195,17 @@ qualifiedNodeRoundTrip = do
 mutualRecursiveRoundTrip :: IO ()
 mutualRecursiveRoundTrip = do
   alpha <-
-    P.export__tree__Alpha__mkAlpha
+    P.export__tree__Alpha__mk
       package
-      (P.Member_tree__Alpha__mkAlpha_Arg0_Case0_Position0 ())
-  P.Member_tree__Alpha__unAlpha_Result_Case0_Position0 () <-
-    P.export__tree__Alpha__unAlpha package alpha
+      (P.Member_tree__Alpha__mk_Arg0_Case0_Position0 ())
+  P.Member_tree__Alpha__get_Result_Case0_Position0 () <-
+    P.export__tree__Alpha__get package alpha
   beta <-
-    P.export__tree__Beta__mkBeta
+    P.export__tree__Beta__mk
       package
-      (P.Member_tree__Beta__mkBeta_Arg0_Case0_Position0 ())
-  P.Member_tree__Beta__unBeta_Result_Case0_Position0 () <-
-    P.export__tree__Beta__unBeta package beta
+      (P.Member_tree__Beta__mk_Arg0_Case0_Position0 ())
+  P.Member_tree__Beta__get_Result_Case0_Position0 () <-
+    P.export__tree__Beta__get package beta
   pure ()
 
 packed
@@ -216,7 +216,7 @@ packed
            Int
        )
 packed =
-  P.export__api__Pack__mkPack
+  P.export__api__Pack__mk
     package
     (7, "hidden")
 
@@ -233,7 +233,7 @@ visible =
 unpacked :: IO Int
 unpacked = do
   value <- packed
-  P.export__api__Pack__unPack package value visible
+  P.export__api__Pack__get package value visible
 
 nestedPacked
   :: IO
@@ -243,7 +243,7 @@ nestedPacked
            ((), ())
        )
 nestedPacked =
-  P.export__api__Pack__mkPack
+  P.export__api__Pack__mk
     package
     (((), ()), "nested")
 
@@ -259,7 +259,7 @@ nestedPackRoundTrip :: IO ()
 nestedPackRoundTrip = do
   value <- nestedPacked
   kept <- P.export__api__keepNestedPack package value
-  P.export__api__Pack__unPack package kept nestedVisible
+  P.export__api__Pack__get package kept nestedVisible
 
 relayed :: IO Int
 relayed = do
@@ -271,7 +271,7 @@ relayed = do
   case result of
     P.Export_api__relayPacked_Result_Case0_Position0 _ -> pure 0
     P.Export_api__relayPacked_Result_Case1_Type_Pack carrier ->
-      P.export__api__Pack__unPack package carrier visible
+      P.export__api__Pack__get package carrier visible
 
 main :: IO ()
 main = do

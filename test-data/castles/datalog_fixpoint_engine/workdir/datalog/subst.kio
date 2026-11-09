@@ -9,34 +9,41 @@ module datalog/subst;
 import datalog/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
-pub labels Bind = { b_var: I32, b_const: I32 };
+pub type Bind = { B_var: I32; B_const: I32 };
 
 pub type Subst = list.List[Bind];
 
 pub type Substs = list.List[Subst];
 
-pub labels Maybe_const = { some_const: I32 } | { no_const: . };
+pub type Maybe_const = { Some_const: I32 } | { No_const: . };
 
-pub fn some_const(code: I32) -> Maybe_const { ({some_const = code}.>widen_sum)[Maybe_const] }
+pub fn some_const(code: I32) -> Maybe_const { (Some_const.mk(code).>widen_sum)[Maybe_const] }
 
-pub fn no_const() -> Maybe_const { ({no_const=}.>widen_sum)[Maybe_const] }
+pub fn no_const() -> Maybe_const { (No_const.mk(()).>widen_sum)[Maybe_const] }
 
 pub fn empty() -> Subst { list.nil[Bind] }
 
 /// Bindings are only ever added, never overwritten: the matcher extends
 /// the environment exclusively for a variable it has just found unbound.
-pub fn extend(s: Subst, v: I32, code: I32) -> Subst { list.cons({b_var = v, b_const = code}, s) }
+pub fn extend(s: Subst, v: I32, code: I32) -> Subst {
+  list.cons((B_var.mk(v), B_const.mk(code)), s)
+}
 
 pub rec(loop) fn lookup(s: Subst, v: I32) -> Maybe_const {
-  match(s.>list.List.un_list) {
+  match(s.>list.List.get) {
     (
     , .(b: Bind, rest: Subst) {
-        if(eq_i32(b.?{b_var}, v)) { some_const(b.?{b_const}) } else { recur lookup(rest, v) }
+        if(eq_i32(b.>select { B_var.get }, v)) {
+          some_const(b.>select { B_const.get })
+        } else {
+          recur lookup(rest, v)
+        }
       }
     , .(_empty: .) { no_const() }
     )

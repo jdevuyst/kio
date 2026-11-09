@@ -8,8 +8,7 @@ pure fn arrange_impl(
 , _b: __Type__
 , _c: __Type__
 , left: __Checked_term__
-, right: __Checked_term__
-, body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
+, inputs: __Checked_term__
+) -> __Checked_term__ { __intrinsic_pair__(ct, left, inputs) }
 
-pub macro arrange : [A][B][C] A -> B -> C -> (A & (B & C)) { trailing product; impl arrange_impl }
+pub macro arrange : [A][B][C] A -> (B & C) -> (A & (B & C)) { trailing product; impl arrange_impl }

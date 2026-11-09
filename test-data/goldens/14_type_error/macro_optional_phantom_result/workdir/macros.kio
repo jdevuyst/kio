@@ -2,9 +2,7 @@ module macros;
 
 import __comptime__;
 
-type Optional_type = __Type__ | .;
-
-pure fn infer_result_impl(ct: __Comptime__, _phantom: Optional_type, _result: Optional_type) -> __Checked_term__ {
+pure fn infer_result_impl(ct: __Comptime__, _phantom: __Type__, _result: .) -> __Checked_term__ {
   __macro_error__(ct, "phantom elaborator executed")
 }
 

@@ -643,11 +643,10 @@ Owned or cloned facade values follow the shared
 does not grant permission to mutate shared Kio data.
 
 Anonymous structural values built from `&` / `|` cross the FFI as the
-Rust-native `Product` record and `Sum` enum. A `labels` declaration instead
-creates a declaration-owned nominal carrier with private erased storage; the
-host constructs or inspects that value only through the declaration's
-generated public constructor/projector capabilities. Labels never turn that
-nominal carrier into an anonymous structural record or enum.
+Rust-native `Product` record and `Sum` enum. A nominal entry creates a
+declaration-owned carrier with private erased storage; the host constructs or
+inspects that value through its public constructor/projector capabilities. The
+nominal carrier is not an anonymous structural record or enum.
 
 Rust realizes the shared [facade-topology and execution-provenance
 contract](README.md#facade-topology-and-execution-provenance) through a
@@ -953,12 +952,11 @@ surfaces are:
 | projector only | nominal struct with hidden storage and only the projector |
 | both | nominal struct with hidden storage and both selected methods |
 
-For `newtype Foo : T { pub constructor mk_foo; pub projector
-un_foo };`, a host calls
+For `pub type { Foo: T; }`, a host calls
 
 ```rust
-let f = my_kiopkg::shapes::nominal::app::model::Foo::<MyHost>::mkFoo(x);
-let v = my_kiopkg::shapes::nominal::app::model::Foo::<MyHost>::unFoo(f);
+let f = my_kiopkg::shapes::nominal::app::model::Foo::<MyHost>::mk(x);
+let v = my_kiopkg::shapes::nominal::app::model::Foo::<MyHost>::get(f);
 ```
 
 Each selected method retains the exact declared Kio member scheme after the
@@ -1003,8 +1001,8 @@ type alias at its call boundary:
 ```rust
 type Foo = my_kiopkg::shapes::nominal::app::model::Foo<MyHost>;
 
-let f = Foo::mkFoo(x);
-let v = Foo::unFoo(f);
+let f = Foo::mk(x);
+let v = Foo::get(f);
 ```
 
 ## Higher-rank value parameters
@@ -1180,8 +1178,7 @@ not runtime HKT machinery.
 A newtype whose payload is itself a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and related abstractions — stores the complete staged callable in the body's universal erased representation. See [`backends/README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads) for the cross-cutting scheme; this section describes the Rust concretization.
 
 ```kio
-pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B] {
-  pub constructor mk_monad;  pub projector bind;  };
+pub type { Monad[*F]: [A][B](F[A] & (A -> F[B])) -> F[B]; }
 ```
 
 The payload's public type uses `KioApplied1<F, A>` /
@@ -1205,7 +1202,7 @@ the marker algebra selects the conversion and the container keeps only the
 opaque token.
 
 **Constructor / projector.** The dictionary newtype keeps its erased staged
-payload in private carrier storage. `mk_monad` and `bind` adapt the exact
+payload in private carrier storage. `mk` and `get` adapt the exact
 public callable trait at that boundary without flattening its stages:
 
 ```rust
@@ -1245,9 +1242,9 @@ type identifiers cannot begin `__`, so that class is outside the image of
 source names; declaration and use sites share the same semantic-binder map.
 
 Newtype-member access is namespaced under the emitted newtype struct.
-For a `Foo` declared in `app/model`, `Foo.mk_foo` becomes
-`shapes::nominal::app::model::Foo::<MyHost>::mkFoo`, not a flattened
-`pkg.foo_mk_foo`.
+For a `Foo` declared in `app/model`, `Foo.mk` becomes
+`shapes::nominal::app::model::Foo::<MyHost>::mk`, not a flattened
+`pkg.foo_mk`.
 See § Newtype namespaces above. The
 namespacing brings Rust in line with the JS backend's
 `pkg.<TypeName>.<member>` shape.
@@ -1263,7 +1260,7 @@ visibility-dependent carrier spellings.
 Source-readable nominal constructor, type-marker, host-carrier, callable-site,
 and `forall` owner frames word-case each source component before escaping
 remaining `_` as `_u` and `/` as `_s`. Fixed role prefixes and indexed suffixes
-remain fixed: a member `mk_foo` contributes `mkFoo_arg0` / `mkFoo_ret` slot
+remain fixed: the `mk` member contributes `mk_arg0` / `mk_ret` slot
 aliases. Raw nominal identities and opaque structural identity encodings
 are not word-cased.
 
@@ -1315,13 +1312,14 @@ module hello/main;
 
 import hello(I32, String, print, int_to_string);
 
-pub labels { hed: I32, mid: String };
+pub type { Hed: I32; Mid: String; }
 
 pub fn main() {
-  let r = ({hed = 42[I32]}, {mid = "hi"[String]});
-  print(int_to_string(r.?{hed}));
+  let r = (Hed.mk(42[I32]), Mid.mk("hi"[String]));
+  let .(hed, mid) = r;
+  print(int_to_string(Hed.get(hed)));
   print(", "[String]);
-  print(r.?{mid})
+  print(Mid.get(mid))
 }
 ```
 

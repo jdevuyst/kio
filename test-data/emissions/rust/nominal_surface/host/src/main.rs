@@ -43,16 +43,16 @@ fn main() {
     let left: LeftToken<Host> = package.left.token();
     let right: RightToken<Host> = package.right.token();
 
-    let wrap = Wrap::<Host>::mkWrap(1);
-    let boxed = Boxed::<Host>::boxIt(Scalar(2));
+    let wrap = Wrap::<Host>::mk(1);
+    let boxed = Boxed::<Host>::mk(Scalar(2));
     let pair = package
         .main
-        .pairBoxed(boxed, Boxed::<Host>::boxIt(Scalar(3)));
+        .pairBoxed(boxed, Boxed::<Host>::mk(Scalar(3)));
     let name = Name::<Host>::mk("name".to_owned());
     let value = Value::<Host>::mk(4);
     exact_nominal_paths(
         wrap,
-        Boxed::<Host>::boxIt(Scalar(5)),
+        Boxed::<Host>::mk(Scalar(5)),
         pair,
         name,
         value,

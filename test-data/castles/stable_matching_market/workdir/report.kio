@@ -3,6 +3,7 @@ module report;
 import certificate as certificate;
 import deferred as deferred;
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import market as market;
 import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
@@ -51,12 +52,21 @@ pub fn outcome(
 , right_proposes: Bool
 ) {
   io.print(text.string_concat(label, "\n"));
-  number("proposals: ", result.?{deferred.proposals});
-  number("recipient switches: ", result.?{deferred.switches});
-  number("rejected proposals: ", result.?{deferred.rejections});
+  number("proposals: ", result.>select { deferred.Proposals.get });
+  number("recipient switches: ", result.>select { deferred.Switches.get });
+  number("rejected proposals: ", result.>select { deferred.Rejections.get });
   let partner =
-    if(right_proposes) { result.?{deferred.holder} } else { result.?{deferred.partner} };
-  let holder = if(right_proposes) { result.?{deferred.partner} } else { result.?{deferred.holder} };
+    if(right_proposes) {
+      result.>select { deferred.Holder.get }
+    } else {
+      result.>select { deferred.Partner.get }
+    };
+  let holder =
+    if(right_proposes) {
+      result.>select { deferred.Partner.get }
+    } else {
+      result.>select { deferred.Holder.get }
+    };
   pairs(partner, 0);
   certificate_report(left, right, partner, holder)
 }

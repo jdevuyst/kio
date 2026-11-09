@@ -283,6 +283,9 @@ impl Requalifier {
                             self.ty(&mut newtype.payload)
                         }
                         crate::ast::TypeRecMember::Labels(labels, _) => {
+                            if let Some(rhs) = &mut labels.type_alias_rhs {
+                                rhs.visit_types_mut(&mut |ty| self.ty(ty));
+                            }
                             for entry in &mut labels.entries {
                                 self.ty(&mut entry.payload);
                             }
@@ -324,7 +327,6 @@ impl Requalifier {
             // module.
             Item::LiteralAlias(..)
             | Item::Labels(..)
-            | Item::LabelForward(..)
             | Item::Equiv(..)
             | Item::Macro(..)
             | Item::Op(..)
@@ -455,10 +457,7 @@ impl Requalifier {
                 self.ty(body);
                 self.bound_names.pop();
             }
-            Type::Unit { .. }
-            | Type::Bottom { .. }
-            | Type::Infer { .. }
-            | Type::LabelSugar { .. } => {}
+            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
             Type::Goal { ext, .. } => match *ext {},
         }
     }
@@ -771,7 +770,7 @@ mod tests {
             "module x/main; \
              rec { \
                type Loop = Box; \
-               newtype Box : . | Loop { constructor mk_box; projector un_box; }; \
+               type { Box: . | Loop { mk; get; }; }; \
              } \
              fn alias_is_transparent(value: Loop) -> Box { value }",
         );
@@ -808,7 +807,7 @@ mod tests {
             "module x/provider; \
              rec { \
                pub type Loop = Box; \
-               pub newtype Box : . | Loop { pub constructor mk_box; pub projector un_box; }; \
+               pub type { Box: . | Loop { pub mk; pub get; }; }; \
              }",
             "module x/main; import x/provider(Loop, Box); \
              fn alias_is_transparent(value: Loop) -> Box { value }",
@@ -824,13 +823,13 @@ mod tests {
 
         let out = emit_one(
             "module x/main;
-             newtype Box[A] : A { constructor mk_box; projector un_box; };
-             rec newtype Recursive : . | (([*F] F[.] -> F[.]) & Recursive) {
-               constructor mk_recursive; projector un_recursive;
-             };
-             newtype Existential <U> : U & ([*F] F[U] -> F[U]) {
-               constructor mk_existential; projector un_existential;
-             };
+             type { Box[A]: A { mk; get; }; };
+             rec type { Recursive: . | (([*F] F[.] -> F[.]) & Recursive) {
+               mk; get;
+             }; };
+             type { Existential <U>: U & ([*F] F[U] -> F[U]) {
+               mk; get;
+             }; };
              fn anonymous(value: Box[.]) -> Box[.] {
                .[*F](item: F[.]) -> F[.] { item }[Box]( value)
              }",
@@ -1056,7 +1055,7 @@ mod tests {
     #[test]
     fn checked_lambda_param_type_is_emitted() {
         let src = "module x/main; \
-                   labels { greet: . }; \
+                   type { Greet: .; }; \
                    fn id[A](x: A) -> A { x } \
                    fn main() -> . { let f = id[Greet -> .]( .(_g) { () }); () }";
         let out = emit_one(src);
@@ -1380,10 +1379,10 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
 
         const OWNER: &str = "module owner; \
-             pub newtype Shared : . { \
-               pub constructor mk_shared; \
-               pub projector un_shared; \
-             }; \
+             pub type { Shared: . { \
+               pub mk; \
+               pub get; \
+             }; }; \
              pub type Alias = Shared;";
         const CONSUMER: &str = "module main; \
              import owner(Alias); \
@@ -1394,10 +1393,10 @@ mod tests {
                __left__[_][ .]( value) \
              }";
         const NOISE_BASELINE: &str = "module noise; pub fn touch() -> . { () }";
-        const UNRELATED_DECLARATION: &str = "pub newtype Shared : . { \
-               pub constructor mk_shared; \
-               pub projector un_shared; \
-             };";
+        const UNRELATED_DECLARATION: &str = "pub type { Shared: . { \
+               pub mk; \
+               pub get; \
+             }; };";
 
         fn compile(noise: &str) -> crate::prime::typer::ValidatedPrimePackage {
             let parsed = [OWNER, CONSUMER, noise]

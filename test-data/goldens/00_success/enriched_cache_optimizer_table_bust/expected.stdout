@@ -6,7 +6,7 @@ body-edit cache log:
 enriched-cache: hit <key>
 enriched-cache: hit <key>
 enriched-cache: miss <key> (no entry)
-member-rename cache log:
+nominal-addition cache log:
 enriched-cache: hit <key>
 enriched-cache: miss <key> (no entry)
 enriched-cache: miss <key> (no entry)

@@ -14,33 +14,27 @@ import testapi(Array, I32);
 /// digit. `stack_cell` / `stack_digit` are the search stack — the cell
 /// chosen at each depth and the digit currently placed there, which is
 /// also the undo trail, since undoing a frame needs exactly that pair.
-pub labels Work = {
-, board: Array[I32]
-, row_of: Array[I32]
-, col_of: Array[I32]
-, box_of: Array[I32]
-, used_row: Array[I32]
-, used_col: Array[I32]
-, used_box: Array[I32]
-, stack_cell: Array[I32]
-, stack_digit: Array[I32]
+pub type Work = {
+  Board: Array[I32];
+  Row_of: Array[I32];
+  Col_of: Array[I32];
+  Box_of: Array[I32];
+  Used_row: Array[I32];
+  Used_col: Array[I32];
+  Used_box: Array[I32];
+  Stack_cell: Array[I32];
+  Stack_digit: Array[I32]
 };
 
 /// What the search proved. `Exhausted` means the step budget ran out
 /// before the search could either complete the grid or refute it.
-pub labels Outcome = { solved: . } | { unsolvable: . } | { exhausted: . };
+pub type Outcome = { Solved: . } | { Unsolvable: . } | { Exhausted: . };
 
-pub labels Report = {
-, verdict: Outcome
-, placements: I32
-, backtracks: I32
-, max_depth: I32
-, steps: I32
-};
+pub type Report = { Verdict: Outcome; Placements: I32; Backtracks: I32; Max_depth: I32; Steps: I32 };
 
 /// What the minimum-remaining-values scan found: the chosen empty cell
 /// paired with the number of digits it still admits, or `Complete` when no
 /// cell is empty. A choice carrying zero candidates is a dead end — the
 /// scan reports it rather than hiding it, because that is precisely the
 /// signal the search backtracks on.
-pub labels Pick = { pick_cell: I32, pick_count: I32 } | { complete: . };
+pub type Pick = { Pick_cell: I32; Pick_count: I32 } | { Complete: . };

@@ -11,11 +11,12 @@ module os/sched;
 
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import os/config as config;
 import os/memory as memory;
 import os/num as num;
 import os/proc as proc;
-import os/proc(Compute, Phase, Touch, {compute}, {touch});
+import os/proc(Compute, Phase, Touch);
 import os/queue as queue;
 import os/trace as trace;
 import testapi(Array, Bool, I32);
@@ -194,8 +195,12 @@ fn execute(
 ) -> trace.Event & trace.Outcome & I32 & I32 & I32 {
   match(phase_at(programs, pid, proc.pc_at(pcb, pid))) {
     (
-    , .(c: Compute) { run_compute(pcb, q, programs, tick, hand, pid, quantum_left, c.?{compute}) }
-    , .(t: Touch) { run_touch(pcb, mem, q, programs, tick, hand, pid, quantum_left, t.?{touch}) }
+    , .(c: Compute) {
+        run_compute(pcb, q, programs, tick, hand, pid, quantum_left, c.>select { Compute.get })
+      }
+    , .(t: Touch) {
+        run_touch(pcb, mem, q, programs, tick, hand, pid, quantum_left, t.>select { Touch.get })
+      }
     )
   }
 }

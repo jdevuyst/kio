@@ -1,10 +1,12 @@
-//! Canonical statement-spine normalization for checked Kio'.
+//! Canonical calls and statement spines for checked Kio'.
 //!
 //! The AST can represent `Let` / `Seq` nodes in expression-only
 //! positions even though Kio' source cannot. Surface elaboration can
 //! produce those shapes in a let RHS or call operand. This pass moves
 //! every such chain onto the surrounding statement spine in checked
-//! module/backend artifacts, preserving left-to-right evaluation.
+//! module/backend artifacts, preserving left-to-right evaluation. Adjacent
+//! type stages use the same call prefix as freshly lowered source; value
+//! stages remain distinct.
 //!
 //! Moving a chain widens its binders' lexical scope. The rewrite uses
 //! a per-function, source-name-seeded supply and alpha-renames a
@@ -133,9 +135,6 @@ fn collect_names(e: &Expr<Prime>, out: &mut HashSet<String>) {
         | Expr::BoolLit { .. } => {}
         Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
-        | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
@@ -283,6 +282,30 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
                     .iter()
                     .any(|arg| matches!(arg, CallArg::Value(value) if is_chain(value)));
             if !hoisting {
+                // Fresh Prime lowering compacts adjacent type stages into the
+                // following call. Synthesized checked terms need the same
+                // shape before routing, without crossing a value stage.
+                let (callee, args) = match callee {
+                    Expr::Call {
+                        callee,
+                        args: mut prefix,
+                        ..
+                    } if !prefix.is_empty()
+                        && prefix.iter().all(|arg| matches!(arg, CallArg::Type(_))) =>
+                    {
+                        if args.is_empty() {
+                            prefix.push(CallArg::Value(Expr::Unit {
+                                occurrence: Default::default(),
+                                source_trivia: Default::default(),
+                                meta: Meta::new(meta.span),
+                            }));
+                        } else {
+                            prefix.extend(args);
+                        }
+                        (*callee, prefix)
+                    }
+                    callee => (callee, args),
+                };
                 return Expr::Call {
                     source_trivia: Default::default(),
                     occurrence: Default::default(),
@@ -574,9 +597,6 @@ fn collect_free_path_heads(e: &Expr<Prime>, bound: &HashSet<String>, free: &mut 
         | Expr::BoolLit { .. } => {}
         Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
-        | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
@@ -1012,6 +1032,109 @@ mod tests {
         assert!(matches!(&args[0], CallArg::Value(value) if path_is(value, temp)));
         assert!(matches!(&args[1], CallArg::Value(value) if path_is(value, "collision")));
         assert_canonical_positions(&canonical, true);
+    }
+
+    fn apply(callee: Expr<Prime>, args: Vec<CallArg<Prime>>) -> Expr<Prime> {
+        Expr::synth_call(callee, args, span(3))
+    }
+
+    fn type_arg(name: &str) -> CallArg<Prime> {
+        CallArg::Type(crate::ast::Type::synth_path(
+            vec![name.to_owned()],
+            Vec::new(),
+            span(2),
+        ))
+    }
+
+    #[test]
+    fn compacts_adjacent_type_applications_before_the_value_packet() {
+        let original = apply(
+            apply(
+                apply(path("callee"), vec![type_arg("A")]),
+                vec![type_arg("B")],
+            ),
+            vec![CallArg::Value(path("value"))],
+        );
+        let result = canonical(original);
+        let Expr::Call { callee, args, .. } = &result else {
+            panic!("the application must remain a call")
+        };
+        assert!(path_is(callee, "callee"));
+        assert_eq!(
+            args,
+            &[type_arg("A"), type_arg("B"), CallArg::Value(path("value"))]
+        );
+        assert_eq!(canonical(result.clone()), result);
+    }
+
+    #[test]
+    fn type_prefix_compaction_preserves_each_value_stage_boundary() {
+        let first = apply(path("callee"), vec![CallArg::Value(path("first"))]);
+        let second = apply(
+            apply(first.clone(), vec![type_arg("A")]),
+            vec![CallArg::Value(path("second"))],
+        );
+        let result = canonical(apply(second, vec![CallArg::Value(path("third"))]));
+        let Expr::Call { callee, args, .. } = &result else {
+            panic!("the final curried value stage must remain a call")
+        };
+        assert_eq!(args, &[CallArg::Value(path("third"))]);
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("the middle type/value stage must remain distinct")
+        };
+        assert_eq!(args, &[type_arg("A"), CallArg::Value(path("second"))]);
+        assert_eq!(callee.as_ref(), &first);
+        assert_eq!(canonical(result.clone()), result);
+    }
+
+    #[test]
+    fn type_prefix_compaction_preserves_an_empty_value_stage() {
+        let result = canonical(apply(
+            apply(path("callee"), vec![type_arg("A")]),
+            Vec::new(),
+        ));
+        let Expr::Call { callee, args, .. } = &result else {
+            panic!("the empty value stage must remain a call")
+        };
+        assert!(path_is(callee, "callee"));
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(_), CallArg::Value(Expr::Unit { .. })]
+        ));
+        assert_eq!(canonical(result.clone()), result);
+    }
+
+    #[test]
+    fn type_application_remains_before_an_argument_statement_chain() {
+        let specialized = apply(path("make"), vec![type_arg("A")]);
+        let result = canonical(apply(
+            specialized.clone(),
+            vec![CallArg::Value(seq(call("effect"), path("argument")))],
+        ));
+        let Expr::Let {
+            name, value, body, ..
+        } = &result
+        else {
+            panic!("the type application must execute before argument statements")
+        };
+        assert_eq!(value.as_ref(), &specialized);
+        let Expr::Seq { value, body, .. } = body.as_ref() else {
+            panic!("the argument effect must follow the specialized callee binding")
+        };
+        assert!(matches!(value.as_ref(), Expr::Call { callee, .. } if path_is(callee, "effect")));
+        let Expr::Let {
+            name: argument,
+            body,
+            ..
+        } = body.as_ref()
+        else {
+            panic!("the argument result must be bound after its effect")
+        };
+        assert!(matches!(body.as_ref(), Expr::Call { callee, args, .. }
+            if path_is(callee, name)
+                && matches!(args.as_slice(), [CallArg::Value(value)] if path_is(value, argument))));
+        assert_canonical_positions(&result, true);
+        assert_eq!(canonical(result.clone()), result);
     }
 
     #[test]

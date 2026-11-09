@@ -1,3 +1,2 @@
-newtype `Export_infos` has no accessible member `mk`
-newtype member `Export_infos\.seal_export_infos` is not visible from module `testapi/main`
-newtype member `Export_infos\.open_export_infos` is not visible from module `testapi/main`
+newtype member `Export_infos\.mk` is not visible from module `testapi/main`
+newtype member `Export_infos\.get` is not visible from module `testapi/main`

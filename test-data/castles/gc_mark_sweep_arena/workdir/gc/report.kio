@@ -5,30 +5,21 @@
 /// check the collector by hand.
 module gc/report;
 
+import gc/compact(Forward_table);
 import gc/compact(Plan);
-import gc/compact({forward_table});
 import gc/heap(field_count, field_slot, fold_fields, fold_objects, tag_at, tag_name, top);
 import gc/heap(object_count);
+import gc/mark(Marked, Pops, Pushes, Revisits);
 import gc/mark(Trace);
-import gc/mark({marked}, {pops}, {pushes}, {revisits});
 import gc/num(bool_eq, int_eq, int_lt);
 import gc/slot(Imm, Ptr);
-import gc/slot({imm}, {ptr});
 import gc/sweep(Census);
-import gc/sweep({dead_cells}, {dead_objects}, {live_cells}, {live_objects});
-import gc/verify(
-, {arena_objects}
-, {broken}
-, {checked_pointers}
-, {checked_roots}
-, {dangling}
-, {expected_live}
-, {reachable}
-, {verified}
-);
+import gc/sweep(Dead_cells, Dead_objects, Live_cells, Live_objects);
+import gc/verify(Arena_objects, Checked_pointers, Checked_roots, Dangling, Expected_live, Reachable);
 import gc/verify(Audit, Broken, Verdict, Verified);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/array(array_get, array_len);
@@ -69,7 +60,14 @@ fn fields_text(cells: Array[I32], addr: I32) -> String {
   , .(list, index) {
       let field =
         match(field_slot(cells, addr, index)) {
-          (.(p: Ptr) { cat("*", num(p.?{ptr})) }, .(v: Imm) { num(v.?{imm}) })
+          (
+          , .(p: Ptr) {
+              cat("*", num(p.>select { Ptr.get }))
+            }
+          , .(v: Imm) {
+              num(v.>select { Imm.get })
+            }
+          )
         };
       append(list, ", ", field)
     }
@@ -131,18 +129,18 @@ fn tally(label: String, count: I32, addrs: String) {
 
 pub fn print_mark(trace: Trace) {
   line("-- mark --");
-  counted("worklist pushes", trace.?{pushes});
-  counted("worklist pops", trace.?{pops});
-  counted("revisits skipped", trace.?{revisits});
-  counted("marked objects", trace.?{marked})
+  counted("worklist pushes", trace.>select { Pushes.get });
+  counted("worklist pops", trace.>select { Pops.get });
+  counted("revisits skipped", trace.>select { Revisits.get });
+  counted("marked objects", trace.>select { Marked.get })
 }
 
 pub fn print_sweep(cells: Array[I32], marks: Array[Bool], census: Census) {
   line("-- sweep --");
-  tally("live objects", census.?{live_objects}, marked_list(cells, marks, .t));
-  tally("dead objects", census.?{dead_objects}, marked_list(cells, marks, .f));
-  counted("live cells", census.?{live_cells});
-  counted("dead cells", census.?{dead_cells})
+  tally("live objects", census.>select { Live_objects.get }, marked_list(cells, marks, .t));
+  tally("dead objects", census.>select { Dead_objects.get }, marked_list(cells, marks, .f));
+  counted("live cells", census.>select { Live_cells.get });
+  counted("dead cells", census.>select { Dead_cells.get })
 }
 
 /// Printed before the move, while the old object list is still there to
@@ -151,7 +149,7 @@ pub fn print_sweep(cells: Array[I32], marks: Array[Bool], census: Census) {
 pub fn print_plan(cells: Array[I32], marks: Array[Bool], layout: Plan) {
   line("-- compact --");
   line("forwarding table (old -> new)");
-  let forward = layout.?{forward_table};
+  let forward = layout.>select { Forward_table.get };
   fold_objects(
   , cells
   , .(_unit, addr) {
@@ -172,20 +170,22 @@ pub fn print_relocation(roots: Array[I32], before_top: I32, after_top: I32) {
 }
 
 fn reached_text(report: Audit) -> String {
-  let reachable = report.?{reachable};
+  let reachable = report.>select { Reachable.get };
   match(reachable) {
     (
-    , .(count: I32) { num(count).>cat(" of ").>cat(num(report.?{expected_live})) }
+    , .(count: I32) {
+        num(count).>cat(" of ").>cat(num(report.>select { Expected_live.get }))
+      }
     , .(_untraversed: .) { "not traversed (unsound pointers)" }
     )
   }
 }
 
 fn print_audit(report: Audit) {
-  counted("objects in arena", report.?{arena_objects});
-  counted("roots checked", report.?{checked_roots});
-  counted("pointer fields checked", report.?{checked_pointers});
-  counted("dangling pointers", report.?{dangling});
+  counted("objects in arena", report.>select { Arena_objects.get });
+  counted("roots checked", report.>select { Checked_roots.get });
+  counted("pointer fields checked", report.>select { Checked_pointers.get });
+  counted("dangling pointers", report.>select { Dangling.get });
   labeled("reachable from roots", reached_text(report))
 }
 
@@ -193,8 +193,14 @@ pub fn print_verify(verdict: Verdict) {
   line("-- verify --");
   match(verdict) {
     (
-    , .(sound: Verified) { print_audit(sound.?{verified}); labeled("verdict", "heap verified") }
-    , .(damaged: Broken) { print_audit(damaged.?{broken}); labeled("verdict", "heap broken") }
+    , .(sound: Verified) {
+        print_audit(sound.>select { Verified.get });
+        labeled("verdict", "heap verified")
+      }
+    , .(damaged: Broken) {
+        print_audit(damaged.>select { Broken.get });
+        labeled("verdict", "heap broken")
+      }
     )
   }
 }

@@ -85,7 +85,7 @@ pub enum Type {
     Product(Box<Type>, Box<Type>),
     /// `(A | B)` — always parenthesized in Kio'.
     Sum(Box<Type>, Box<Type>),
-    /// A nominal type minted by a top-level `newtype` declaration.
+    /// A nominal type minted by a top-level nominal declaration.
     /// `payload` is the wrapped type (what the constructor accepts
     /// and the projector returns); `constructor` / `projector` are
     /// the declared member names. The whole struct is auto-equated,
@@ -97,7 +97,7 @@ pub enum Type {
         constructor: String,
         projector: String,
     },
-    /// A single-parameter parametric `newtype` instantiated at
+    /// A single-parameter parametric nominal instantiated at
     /// `payload`: the surface form `Name[payload]`. Same shape as
     /// `Nominal` but with a polymorphic constructor / projector
     /// reached through wrapper helpers in the generated root module (see
@@ -111,20 +111,6 @@ pub enum Type {
         constructor: String,
         /// Polymorphic wrapper that projects `Name[payload]` back to
         /// payload: signature `[A](x: Name[A]) -> A`.
-        projector: String,
-    },
-    /// A label declared via `labels` — sugar over a generated
-    /// `newtype`. The `label` field is the surface lowercase spelling
-    /// (`greet`); `newtype_name` is the compiler-minted type
-    /// (`Greet`). At type-position render, this prints as the generated
-    /// type name. At value level, construction uses
-    /// `Term::LabelConstruct` for `{label = e}` surface sugar, while
-    /// Kio' rendering calls the generated `Greet.mk` member.
-    Label {
-        label: String,
-        newtype_name: String,
-        payload: Box<Type>,
-        constructor: String,
         projector: String,
     },
 }
@@ -180,9 +166,9 @@ pub enum Term {
         type_args: Vec<Type>,
         args: Vec<Term>,
     },
-    /// Call a `newtype`'s `constructor` or `projector` member by
-    /// dotted path: `I32_box.mk_i32_box(42i32)` or
-    /// `I32_box.un_i32_box(box)`. The generator's catalog uses typed
+    /// Call a nominal constructor or projector by
+    /// dotted path: `I32_box.mk(42i32)` or
+    /// `I32_box.get(box)`. The generator's catalog uses typed
     /// wrapper functions for construction and projection.
     TypeMember {
         type_name: String,
@@ -202,15 +188,6 @@ pub enum Term {
         then_ty: Type,
         else_ty: Type,
         ufcs: Option<UfcsSpelling>,
-    },
-    /// `{<label> = <payload>}` — surface sugar for the generated
-    /// constructor-member call `<constructor>(<payload>)`. Renders two ways:
-    /// - surface: `{<label> = <payload>}`.
-    /// - Kio': `<constructor>(<payload>)`.
-    LabelConstruct {
-        label: String,
-        constructor: String,
-        payload: Box<Term>,
     },
     /// Both clauses produce the same `ret_ty`, making these two renderings
     /// equivalent for a scrutinee of type `A | B`:
@@ -464,7 +441,7 @@ impl UfcsSpelling {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UserMacroTemplate {
     Direct,
-    TargetBranch,
+    RequiredTarget,
     SourceTargetGuard,
     TermTypeGuard,
     LetIdentity,
@@ -477,7 +454,7 @@ impl UserMacroTemplate {
         use UserMacroTemplate::*;
         &[
             Direct,
-            TargetBranch,
+            RequiredTarget,
             SourceTargetGuard,
             TermTypeGuard,
             LetIdentity,
@@ -527,15 +504,13 @@ pub struct Program {
     pub body: Term,
     pub user_macros: Vec<UserMacroSpec>,
     /// True when the rendered program uses any surface form beyond
-    /// Kio' (tuple-literal sugar, `if` blocks, `labels`,
-    /// label-value sugar, `match`, `into` / `onto`). This tracks
+    /// Kio' (tuple-literal sugar, `if` blocks, `match`, `into` / `onto`). This tracks
     /// the generated function body's surface usage; whole generated
     /// cases are not Kio' while prog.kio carries the host
     /// mirror needed by current kio-rs.
     pub uses_surface: bool,
     /// True iff the program was generated with surface mode on (so
-    /// it may reference generated label types from `prog.util` and may emit
-    /// `Term::LabelConstruct` / `Type::Label`). `emit.rs` uses this to
+    /// it may emit surface terms). `emit.rs` uses this to
     /// include the package-level declarations and imports that support
     /// surface programs, including generated user macros.
     /// `surface_mode` may be true while `uses_surface` is false:

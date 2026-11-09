@@ -4,6 +4,7 @@ import list/core as cells;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import report/model as model;
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
@@ -15,12 +16,12 @@ fn count_text(c: model.Counts) -> String {
   text.string_concat(
   , "pass="
   , text.string_concat(
-    , fmt.int_to_string(c.?{model.passed})
+    , fmt.int_to_string(c.>select { model.Passed.get })
     , text.string_concat(
       , " fail="
       , text.string_concat(
-        , fmt.int_to_string(c.?{model.failed})
-        , text.string_concat(" skip=", fmt.int_to_string(c.?{model.skipped}))
+        , fmt.int_to_string(c.>select { model.Failed.get })
+        , text.string_concat(" skip=", fmt.int_to_string(c.>select { model.Skipped.get }))
         )
       )
     )
@@ -37,12 +38,15 @@ fn failure_lines(path: String, failures: cells.List[model.Case]) {
         , text.string_concat(
           , "/"
           , text.string_concat(
-            , test.?{model.name}
+            , test.>select { model.Name.get }
             , text.string_concat(
               , " x"
               , text.string_concat(
-                , fmt.int_to_string(test.?{model.count})
-                , text.string_concat(": ", text.string_concat(test.?{model.message}, "\n"))
+                , fmt.int_to_string(test.>select { model.Count.get })
+                , text.string_concat(
+                  , ": "
+                  , text.string_concat(test.>select { model.Message.get }, "\n")
+                  )
                 )
               )
             )
@@ -59,7 +63,7 @@ rec(loop) fn walk(pending: cells.List[model.Suite & String]) {
   match(cells.uncons(pending)) {
     .(entry: model.Suite & String, rest: cells.List[model.Suite & String]) {
       let .(suite, prefix) = entry;
-      let .(name, counts, children, failures) = suite.>model.Suite.unpack;
+      let .(name, counts, children, failures) = suite.>model.Suite.get;
       let path =
         if(text.string_eq(prefix, "")) {
           name
@@ -88,7 +92,7 @@ rec(loop) fn walk(pending: cells.List[model.Suite & String]) {
 
 pub fn document(state: model.State) {
   io.print("Hierarchical test report\n");
-  let roots = lists.reverse(state.?{model.roots});
+  let roots = lists.reverse(state.>select { model.Roots.get });
   walk(lists.map(.(suite: model.Suite) { (suite, "") }, roots));
   let totals =
     lists.foldl(
@@ -97,7 +101,7 @@ pub fn document(state: model.State) {
     , roots
     );
   io.print(count_text(totals).>text.string_concat("\n").>>text.string_concat("TOTAL "));
-  let errors = lists.reverse(state.?{model.errors});
+  let errors = lists.reverse(state.>select { model.Errors.get });
   io.print(fmt.int_to_string(lists.length(errors))
     .>text.string_concat("\n")
     .>>text.string_concat("DIAGNOSTICS "));

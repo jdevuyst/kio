@@ -6,7 +6,7 @@ simplifies each expression as far as it can without executing host functions,
 and compares what remains. The declaration contributes nothing to emitted
 package code.
 
-Use `equiv` for laws about your functions, such as an identity or a newtype
+Use `equiv` for laws about your functions, such as an identity or a nominal
 round trip. Use a runtime test in your host when the behavior depends on I/O,
 mutation, a backend's emitted representation, or other host-runtime details.
 
@@ -64,9 +64,9 @@ so test output can identify the claim.
 For each claim, `kio test` works on the fully checked and elaborated Kio' terms:
 
 1. Each value parameter becomes a fresh opaque symbolic atom shared by every
-   arm; type parameters are erased.
+   arm; type parameters stand for arbitrary types shared across the arms.
 2. Kio simplifies function calls, local bindings, product projections, known
-   sum branches, and newtype wrap/unwrap pairs.
+   sum branches, and nominal wrap/unwrap pairs.
 3. What remains when a symbolic parameter or host operation blocks further
    simplification is called a **residual normal form**.
 4. Kio compares those results, allowing bound parameters to have different
@@ -96,11 +96,17 @@ equal.
 ## Partial evaluation and residual forms
 
 Ordinary function application, type application, `let`, known sum branches,
-product projections, newtype wrap/unwrap pairs, and literal `if` conditions
+product projections, nominal wrap/unwrap pairs, and literal `if` conditions
 reduce. What cannot reduce remains visible in the result. Residuals include
-literals, functions, pairs, sum injections, newtype constructors, opaque
+literals, functions, pairs, sum injections, nominal constructors, opaque
 atoms, stuck applications and conditionals, expression-statement sequences,
 and symbolic sum case splits.
+
+If the body of a polymorphic function `f` is unavailable, `f[A](())` and
+`f[B](())` do not compare equal merely by ignoring their type arguments.
+When the body is known, both calls can still reduce to the same result. A claim
+about generic functions must hold for every type instantiation, not only the
+ones checked in examples.
 
 Literals are already values, not blocked computations. Intrinsics reduce
 whenever their rules apply, but can remain residual when symbolic inputs hide
@@ -225,7 +231,7 @@ skips dependency claims.
 
 A passing parameterized `equiv` proves equality, under Kio's documented
 partial-evaluation and α/η relation, for every instantiation of its symbolic
-parameters. It can pin helper unfolding, newtype round trips, structural laws,
+parameters. It can pin helper unfolding, nominal round trips, structural laws,
 or the result of macro-generated glue.
 
 It does not execute host code, establish a host function's mathematical law,

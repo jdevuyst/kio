@@ -96,7 +96,7 @@ fn named_entry_permutations_preserve_canonical_output() {
             kind: Kind::Signature,
             prefix: "signature app v(1); v(1) { ".into(),
             entries: vec![
-                "with { module api { pub rec newtype A : . | A { pub constructor make; pub projector read; }; } };",
+                "with { module api { pub rec type { A : . | A { pub mk; pub get; }; }; } };",
                 "breaking { add { module api { host type H; } } };",
                 "nonbreaking { add { api.A; } };",
             ],
@@ -124,9 +124,9 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "newtype members",
             kind: Kind::Module,
-            prefix: "module app; newtype Box : . { ".into(),
-            entries: vec!["pub constructor make;", "projector read;"],
-            suffix: " };",
+            prefix: "module app; type { Box : . { ".into(),
+            entries: vec!["pub mk;", "get;"],
+            suffix: " }; };",
         },
     ];
     for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
@@ -287,7 +287,7 @@ fn reordered_signature_sections_preserve_semantic_replay() {
         "modify { module api { pub type Old = !; } };",
         "remove { module api { Gone; } };",
     ];
-    let with = "with { module api { pub rec newtype Fresh : . | Fresh { pub constructor make; pub projector read; }; } };";
+    let with = "with { module api { pub rec type { Fresh : . | Fresh { pub mk; pub get; }; }; } };";
     let breaking = "breaking { add { module api { host type H; } } };";
     let canonical = format!(
         "{header} {with} {breaking} nonbreaking {{ {} }} }}",
@@ -339,6 +339,8 @@ fn reordered_signature_sections_preserve_semantic_replay() {
 
 #[test]
 fn unordered_entries_still_require_unique_compatible_fields() {
+    format_source(Kind::Module, "module app; type { Box: . { get; mk; }; };")
+        .expect("complete nominal member body");
     let cases = [
         (Kind::Module, "module app; op ~ _ {} ;"),
         (
@@ -369,13 +371,10 @@ fn unordered_entries_still_require_unique_compatible_fields() {
             Kind::Module,
             "module app; macro make: . { impl run; impl(fills) other; };",
         ),
+        (Kind::Module, "module app; type { Box: . { get; }; };"),
         (
             Kind::Module,
-            "module app; newtype Box : . { projector read; };",
-        ),
-        (
-            Kind::Module,
-            "module app; newtype Box : . { projector read; constructor make; projector other; };",
+            "module app; type { Box: . { get; mk; get; }; };",
         ),
         (
             Kind::Package,

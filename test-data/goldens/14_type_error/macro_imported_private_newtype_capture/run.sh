@@ -22,7 +22,7 @@ if ! grep -Fq 'p.Box' "$scratch/stderr"; then
   exit 1
 fi
 # shellcheck disable=SC2016 # backticks are literal diagnostic text
-if grep -Fq 'give captured member `p.Box.make` visibility' "$scratch/stderr"; then
+if grep -Fq 'give captured member `p.Box.mk` visibility' "$scratch/stderr"; then
   printf 'elaborator_imported_private_newtype_capture: diagnostic offered an edit to the provider\n' >&2
   exit 1
 fi

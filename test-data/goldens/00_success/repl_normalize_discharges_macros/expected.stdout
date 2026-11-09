@@ -10,6 +10,6 @@ __left__(())
 __left__(())
 import macros/type_of as _q0;
 
-_q0.Type_rep.mk_type_rep(__left__(_q0.Rep_unit.mk_rep_unit(())))
+_q0.Type_rep.mk(__left__(_q0.Rep_unit.mk(())))
 <closure rne/closure.make_marker(value)>
 bye

@@ -1,7 +1,7 @@
 module roster/scenario;
 
 import macros/control(macro if);
-import roster/types(Shift, {day}, {demand}, {preference}, {skill}, {slot}, {worker});
+import roster/types(Day, Demand, Preference, Shift, Skill, Slot, Worker);
 import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
 
@@ -37,14 +37,14 @@ fn mk_shift(
 , skill_value: I32
 , preference_value: I32
 ) -> Shift {
-  {
-  , day = day_value
-  , slot = slot_value
-  , worker = worker_value
-  , demand = demand_value
-  , skill = skill_value
-  , preference = preference_value
-  }
+  (
+  , Day.mk(day_value)
+  , Slot.mk(slot_value)
+  , Worker.mk(worker_value)
+  , Demand.mk(demand_value)
+  , Skill.mk(skill_value)
+  , Preference.mk(preference_value)
+  )
 }
 
 pub fn shift_at(index: I32) -> Shift {

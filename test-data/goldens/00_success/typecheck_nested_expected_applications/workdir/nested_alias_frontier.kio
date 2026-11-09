@@ -1,6 +1,6 @@
 module nested_alias_frontier;
 
-newtype Value : . { constructor make_value; projector un_value }
+type { Value: . { mk; get } }
 
 type Alias = Value;
 

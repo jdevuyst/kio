@@ -62,6 +62,8 @@ function handle(message) {
   } else if (message.method === "initialized" && control.mode === "transport-close-alive") {
     process.stdout.end();
     setInterval(() => {}, 1000);
+  } else if (message.method === "textDocument/didChange" && first && control.mode === "request-error-crash") {
+    process.exit(9);
   } else if (message.method === "textDocument/didOpen" || message.method === "textDocument/didChange") {
     const document = message.params.textDocument;
     send({ method: "textDocument/publishDiagnostics", params: {
@@ -73,7 +75,6 @@ function handle(message) {
   } else if (message.method === "textDocument/hover") {
     fs.appendFileSync(`${controlPath}.hovers`, `${process.pid}\n`);
     send({ id: message.id, error: { code: ["request-error", "request-error-crash"].includes(control.mode) ? -32603 : -32803, message: "injected request failure" } });
-    if (first && control.mode === "request-error-crash") setTimeout(() => process.exit(9), 100);
   } else if (message.method === "shutdown") {
     send({ id: message.id, result: null });
   } else if (message.method === "exit") {

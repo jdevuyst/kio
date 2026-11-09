@@ -13,24 +13,21 @@ import testapi/text(string_concat);
 // `String` branch carries a present value. Re-defined locally per
 // the goldens convention (cases don't share source); the option-
 // printer pattern below mirrors `exec_option_combinators`.
-newtype Option : . | String { pub constructor mk_option; pub projector un_option }
+type { Option: . | String { pub mk; pub get } }
 
-fn some(v: String) -> Option { Option.mk_option(widen_sum(v)) }
+fn some(v: String) -> Option { Option.mk(widen_sum(v)) }
 
-fn none() -> Option { Option.mk_option(widen_sum(())) }
+fn none() -> Option { Option.mk(widen_sum(())) }
 
 // Binary-search tree over `I32` keys with `String` values. The `()`
 // arm is the leaf; the `(I32 & String & Tree & Tree)` arm is a branch
 // carrying `(key, value, left, right)`. Monomorphic — both key and
 // value types are fixed — so no type parameters.
-rec newtype Tree : . | (I32 & String & Tree & Tree) {
-  pub constructor mk_tree;
-  pub projector un_tree
-  }
+rec type { Tree: . | (I32 & String & Tree & Tree) { pub mk; pub get } }
 
-fn leaf() -> Tree { Tree.mk_tree(widen_sum(())) }
+fn leaf() -> Tree { Tree.mk(widen_sum(())) }
 
-fn branch(k: I32, v: String, l: Tree, r: Tree) -> Tree { Tree.mk_tree(widen_sum((k, v, l, r))) }
+fn branch(k: I32, v: String, l: Tree, r: Tree) -> Tree { Tree.mk(widen_sum((k, v, l, r))) }
 
 // Iterative descent via host `loop`. State is `(target_key,
 // current_node)`. The step projects `current_node` — a leaf exits
@@ -41,7 +38,7 @@ fn branch(k: I32, v: String, l: Tree, r: Tree) -> Tree { Tree.mk_tree(widen_sum(
 fn lookup_step(state: I32 & Tree) -> (I32 & Tree) | Option {
   match(state) {
     .(target_key: I32, current: Tree) {
-      match(current.>Tree.un_tree) {
+      match(current.>Tree.get) {
         (
         , .(k: I32, v: String, l: Tree, r: Tree) {
             if(leq_i32(target_key, k)) {
@@ -70,7 +67,7 @@ fn lookup(k: I32, t: Tree) -> Option {
 // payload is quoted because the value is a `String` literal in the
 // equations.
 fn print_option(o: Option) -> String {
-  match(o.>Option.un_option) {
+  match(o.>Option.get) {
     (.(s: String) { string_concat("some(\"", string_concat(s, "\")")) }, .(_empty: .) { "none" })
   }
 }

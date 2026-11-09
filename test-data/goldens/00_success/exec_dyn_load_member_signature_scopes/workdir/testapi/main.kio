@@ -27,8 +27,8 @@ fn report(label: t.String, source: t.String, construct_sig: t.String, project_si
   , label
   , source
   , l.contract_cons(
-    , l.mk_expect("guest.Box.pack"[t.String], construct_sig)
-    , l.contract_cons(l.mk_expect("guest.Box.unpack"[t.String], project_sig), l.contract_nil())
+    , l.mk_expect("guest.Box.mk"[t.String], construct_sig)
+    , l.contract_cons(l.mk_expect("guest.Box.get"[t.String], project_sig), l.contract_nil())
     )
   )
 }
@@ -59,24 +59,23 @@ pub fn main() {
     "-> #1"[t.String];
   report(
   , "renamed member binders: "[t.String]
-  , "module guest;\npub type Poly_to[A] = [B] B -> A;\npub newtype Box[T]<E> : "
-    "Poly_to[T] & E { pub constructor pack; pub projector unpack; };\npackage "
-    "guest;\nbridge { guest; }\n"[t.String]
+  , "module guest;\npub type Poly_to[A] = [B] B -> A;\npub type { Box[T]<E>: "
+    "Poly_to[T] & E { pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[t.String]
   , construct_sig
   , project_sig
   );
   report(
   , "CPS spelling collision and alias scope: "[t.String]
-  , "module guest;\npub type Poly_to[A] = [Zzcps_r] Zzcps_r -> A;\npub newtype "
-    "Box[Zzcps_r]<Zzcps_n> : Poly_to[Zzcps_r] & Zzcps_n { pub constructor "
-    "pack; pub projector unpack; };\npackage guest;\nbridge { guest; }\n"[t.String]
+  , "module guest;\npub type Poly_to[A] = [Zzcps_r] Zzcps_r -> A;\npub type { "
+    "Box[Zzcps_r]<Zzcps_n>: Poly_to[Zzcps_r] & Zzcps_n { pub mk; pub get; }; "
+    "};\npackage guest;\nbridge { guest; }\n"[t.String]
   , construct_sig
   , project_sig
   );
   report(
   , "payload shadow restores nominal argument: "[t.String]
-  , "module guest;\npub newtype Box[A]<U> : ([A] A -> A) & U { pub constructor "
-    "pack; pub projector unpack; };\npackage guest;\nbridge { guest; }\n"[t.String]
+  , "module guest;\npub type { Box[A]<U>: ([A] A -> A) & U { pub mk; pub get; "
+    "}; };\npackage guest;\nbridge { guest; }\n"[t.String]
   , "[#0] [#1] (([#2] (#2 -> #2)) & #1) -> n{guest.Box}(#0)"[t.String]
   , "[#0] (n{guest.Box}(#0)) -> [#1] ([#2] ((([#3] (#3 -> #3)) & #2) -> #1)) "
     "-> #1"[t.String]

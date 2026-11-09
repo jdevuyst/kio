@@ -1,6 +1,6 @@
 module testapi/main;
 
-import forms(macro arrange, macro block_pair, macro discard, macro last_blocks, macro outer, macro packet, macro pair_prefix, macro run_sequence);
+import forms(macro arrange, macro block_pair, macro discard, macro discard_whole, macro last_blocks, macro outer, macro packet, macro pair_prefix, macro run_sequence);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -13,9 +13,9 @@ fn suffix(value: String) -> String { string_concat(value, "!") }
 
 pure fn identity[A](value: A) -> A { value }
 
-newtype Box[A] : A { constructor box; projector unbox }
+type { Box[A] : A { mk; get }; }
 
-pure fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+pure fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
 fn make_bind() -> [A][B] (Box[A] & (A -> Box[B])) -> Box[B] { line("sequence receiver"); bind }
 
@@ -90,9 +90,9 @@ equiv reverse_inside_prefix[A][B](a: A, b: B) {
 }
 
 equiv sequence_projection[A](a: A) {
-  bind.>run_sequence { let value <- Box.box(a); Box.box(value) };
-  run_sequence { let value <- Box.box(a); Box.box(value) }.<bind;
-  Box.box(a)
+  bind.>run_sequence { let value <- Box.mk(a); Box.mk(value) };
+  run_sequence { let value <- Box.mk(a); Box.mk(value) }.<bind;
+  Box.mk(a)
 }
 
 pub fn main() {
@@ -108,17 +108,23 @@ pub fn main() {
   show_outer(outer ("left") { "body" } after { block_pair ("inner") { "tail" } }.<"outer");
   show_outer(outer("left", "outer") { "body" } after { block_pair { "tail" }.<"inner" });
   show_outer(outer ("left") { "body" } after {
-    last_blocks { "ignored"[String] } after block_pair ("inner") { "tail" }
+    last_blocks { mark("ignored-block") } after block_pair ("inner") { "tail" }
   }.<"outer");
-  line(mark("discarded-forward").>discard { mark("kept-forward") });
-  line(discard { mark("kept-reverse") }.<mark("discarded-reverse"));
-  line(Box.unbox(make_bind().>run_sequence {
-    let first <- Box.box(mark("sequence first"));
-    let second <- Box.box(mark(string_concat(first, " second")));
-    Box.box(second)
+  line(discard(mark("discarded-staged-forward"))(mark("kept-forward")));
+  line(discard(mark("discarded-staged-reverse"))(mark("kept-reverse")));
+  mark("discarded-ufcs-forward").>discard_whole { mark("discarded-block-forward") };
+  line("whole forward ok");
+  discard_whole { mark("discarded-block-reverse") }.<mark("discarded-ufcs-reverse");
+  line("whole reverse ok");
+  discard_whole(mark("discarded-direct"), mark("discarded-block-direct"));
+  line("whole direct ok");
+  line(Box.get(make_bind().>run_sequence {
+    let first <- Box.mk(mark("sequence first"));
+    let second <- Box.mk(mark(string_concat(first, " second")));
+    Box.mk(second)
   }));
-  line(Box.unbox(run_sequence {
-    let value <- Box.box(mark("reverse sequence body"));
-    Box.box(value)
+  line(Box.get(run_sequence {
+    let value <- Box.mk(mark("reverse sequence body"));
+    Box.mk(value)
   }.<make_bind()))
 }

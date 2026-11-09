@@ -48,20 +48,20 @@ if (pkg.api.poly() !== "rank-N") {
   throw new Error("rank-N host callback lost its result");
 }
 
-const boxed = pkg.api.KioType_Box.makeBox("hkt");
+const boxed = pkg.api.KioType_Box.mk("hkt");
 const hktRoundTrip: RichTypedHostApply<NativeBoxLambda, readonly [string]> =
   pkg.api.hkt(boxed);
-if (pkg.api.KioType_Box.readBox(hktRoundTrip) !== "hkt") {
+if (pkg.api.KioType_Box.get(hktRoundTrip) !== "hkt") {
   throw new Error("constructor-kinded host relation lost its payload");
 }
-const shadow = pkg.api.KioType_Shadow.makeShadow({
+const shadow = pkg.api.KioType_Shadow.mk({
   _0: boxed,
   _1: {
     advance: <T>() => (value: T): T => value,
   },
 });
-const shadowPayload = pkg.api.KioType_Shadow.readShadow(pkg.api.shadow(shadow));
-if (pkg.api.KioType_Box.readBox(shadowPayload._0) !== "hkt") {
+const shadowPayload = pkg.api.KioType_Shadow.get(pkg.api.shadow(shadow));
+if (pkg.api.KioType_Box.get(shadowPayload._0) !== "hkt") {
   throw new Error("nested generic application lost its payload");
 }
 if (shadowPayload._1.advance<number>()(37) !== 37) {
@@ -69,7 +69,7 @@ if (shadowPayload._1.advance<number>()(37) !== 37) {
 }
 
 const packed = pkg.api.pack({ witness: "existential" });
-const opened = pkg.api.KioType_Pack.openPack(packed).advance<string>()(
+const opened = pkg.api.KioType_Pack.get(packed).advance<string>()(
   {
     advance: <T>() => (value: T): string =>
       typeof value === "object" && value !== null ? "opened" : "wrong payload",
@@ -79,9 +79,9 @@ if (opened !== "opened") {
   throw new Error("existential CPS projector lost its payload");
 }
 
-const recursiveBase = pkg.api.KioType_Recursive.makeRecursive({ _0: null });
-const recursive = pkg.api.KioType_Recursive.makeRecursive({ _1: recursiveBase });
-const recursiveView = pkg.api.KioType_Recursive.readRecursive(recursive);
+const recursiveBase = pkg.api.KioType_Recursive.mk({ _0: null });
+const recursive = pkg.api.KioType_Recursive.mk({ _1: recursiveBase });
+const recursiveView = pkg.api.KioType_Recursive.get(recursive);
 if (!("_1" in recursiveView)) {
   throw new Error("recursive nominal value lost its recursive arm");
 }

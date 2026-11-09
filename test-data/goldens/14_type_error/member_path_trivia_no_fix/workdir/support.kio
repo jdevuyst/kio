@@ -1,0 +1,3 @@
+module support;
+
+pub type { Box: . { pub mk; pub get } }

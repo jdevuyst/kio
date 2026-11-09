@@ -19,17 +19,15 @@
 //! The seven exported phase markers are:
 //!
 //! - [`Surface`] — parser output. All surface variants present:
-//!   [`Expr::Tuple`], [`Expr::LabelValue`],
-//!   [`Expr::Elaborator`] (internal elaboration forms produced by
-//!   parser/desugar recovery paths), [`Expr::UserMacro`],
-//!   [`Expr::Ufcs`], [`Type::LabelSugar`],
+//!   [`Expr::Tuple`], [`Expr::UserMacro`],
+//!   [`Expr::Ufcs`],
 //!   [`Item::Labels`] — plus every common variant.
 //! - [`Desugared`] — post-`desugar`. Early-lowered expression, item, import,
 //!   and parameter-pattern extensions are uninhabited; label- and
 //!   typer-directed surface forms remain. `desugar` is the single
 //!   `Surface → Desugared` transformer.
 //! - [`Lowered`] — post-`label_elab`. Additionally strips
-//!   [`Expr::LabelValue`], [`Type::LabelSugar`], and [`Item::Labels`].
+//!   [`Item::Labels`].
 //! - [`UncheckedPrime`] — Kio'-shaped but not final-artifact checked.
 //!   Compile-time evaluator inputs use this phase while the surface typer is
 //!   still filling deferred elaborator sites. It admits exactly the same AST
@@ -40,14 +38,9 @@
 //!   not itself evidence that checking ran: `prime::lower` constructs this
 //!   shape before standalone validation, and full-Kio substitution constructs
 //!   it before revalidation. On the full-Kio path, `substitute` replaces each
-//!   elaboration site (`Expr::Elaborator`,
-//!   `Expr::UserMacro`, `Expr::Ufcs`) with its explicit Kio' tree, so every
-//!   surface-only variant carries [`Never`]:
-//!   - Internal elaboration forms → the chosen rearrangement of
-//!     `__pair__` / `__fst__` / `__snd__` / `__left__` /
-//!     `__right__` / `__either__` calls,
-//!   - macro calls → the checked Kio' tree returned
-//!     by the macro implementation.
+//!   elaboration site (`Expr::UserMacro` or `Expr::Ufcs`) with its explicit
+//!   Kio' tree, so every surface-only variant carries [`Never`]. Macro calls
+//!   become the checked Kio' tree returned by the macro implementation.
 //!
 //!   The backend-facing pipeline validates the assembled package before
 //!   exposing Prime to backends. The Kio' emitter therefore sees only validated
@@ -74,11 +67,10 @@
 //! `Desugared` phase between them tightens the `Tuple` / `FnPlaceholder`
 //! / `Op` / `LiteralAlias` extension types to [`Never`]
 //! (so the desugar pass becomes phase-changing); `Lowered` further
-//! tightens the `Labels` / `LabelValue` / `TypeLabelSugar` extensions;
-//! `UncheckedPrime` / `Prime` then tighten the `ExprElab` extension
-//! (covering `Elaborator` / `UserMacro` / field access
-//! and update) to [`Never`] after the typer's elaboration substitutes
-//! them out, closing the door on every surface-only variant.
+//! tightens the `Labels` extension;
+//! `UncheckedPrime` / `Prime` then tighten the `ExprElab` extension for
+//! `UserMacro` to [`Never`] after substitution, closing the door on every
+//! surface-only variant.
 
 use crate::span::Span;
 
@@ -875,7 +867,7 @@ pub(crate) fn is_residual_literal_type_hole<P: Phase>(ty: &Type<P>) -> bool {
 /// carries a real type (or a genuine `None`) verbatim.
 fn convert_lit_annotation<P, Q>(annotation: &P::LitAnnotation, span: Span) -> Q::LitAnnotation
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     let resolved = annotation
@@ -952,36 +944,9 @@ pub trait Phase: Sized {
         + Eq
         + serde::Serialize
         + serde::de::DeserializeOwned;
-    type ExprLabelValue: Clone
-        + std::fmt::Debug
-        + PartialEq
-        + Eq
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
-    /// `Expr::RowLet` (`.{f, g as x} = row; rest`) is surface-only
-    /// statement syntax. Desugar lowers it to ordinary let-bindings
-    /// plus field-access elaborators so later phases never observe
-    /// row-let binders directly.
-    type ExprRowLet: Clone
-        + std::fmt::Debug
-        + PartialEq
-        + Eq
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
-    /// Witness for the elaboration-bearing `Expr` variants whose
-    /// type-checking semantics depend on a side table the typer
-    /// records during synthesis: `Expr::Elaborator`,
-    /// and `Expr::UserMacro`.
-    ///
-    /// All these variants share the same witness shape per phase:
-    /// `NodeId` at `Surface` / `Desugared` / `Lowered` (the side-
-    /// table key that the typer's `Elaborations` table consumes),
-    /// [`Never`] at `Prime` (every elaboration-bearing variant is
-    /// uninhabited there because the substitution pass swaps the
-    /// recorded `Call` shape in at the `Lowered → Prime` boundary).
-    /// Unifying the associated types into one removed the per-variant
-    /// bookkeeping noise while keeping the typer's "variant is
-    /// inhabited iff the side table needs a key" rule.
+    /// Witness for `Expr::UserMacro`: `NodeId` at `Surface`, `Desugared`
+    /// and `Lowered` identifies its recorded elaboration, while [`Never`]
+    /// at `Prime` reflects substitution of the checked expansion.
     type ExprElab: Clone
         + std::fmt::Debug
         + PartialEq
@@ -1029,12 +994,8 @@ pub trait Phase: Sized {
     /// structural forms recovered from right-leaning intrinsic chains after
     /// typechecking. They are uninhabited at every front-end phase (`Surface` /
     /// `Desugared` / `Lowered` / `Prime`, witness [`Never`]) and inhabited at
-    /// [`Enriched`] and [`Routed`] (witness `()`). The six variants share one
-    /// witness for the same
-    /// reason `ExprElab` is shared by the elaboration-bearing
-    /// variants: it collapses the per-variant bookkeeping while
-    /// keeping the "variant is inhabited iff this phase recovered
-    /// it" rule.
+    /// [`Enriched`] and [`Routed`] (witness `()`). A shared witness keeps
+    /// these variants inhabited exactly when structural recovery has run.
     type ExprEnriched: Clone
         + std::fmt::Debug
         + PartialEq
@@ -1114,12 +1075,6 @@ pub trait Phase: Sized {
     /// system pushes "did we forget a case" to a compile-time
     /// exhaustiveness error inside the Routed-consuming code.
     type ExprResolved: Clone
-        + std::fmt::Debug
-        + PartialEq
-        + Eq
-        + serde::Serialize
-        + serde::de::DeserializeOwned;
-    type TypeLabelSugar: Clone
         + std::fmt::Debug
         + PartialEq
         + Eq
@@ -1536,8 +1491,6 @@ impl Phase for Surface {
     type ExprTuple = ();
     type ExprFnPlaceholder = ();
     type ExprOpChain = ();
-    type ExprLabelValue = NodeId;
-    type ExprRowLet = ();
     // The elaboration-bearing variants carry a `NodeId` so the
     // typer's `Elaborations` table has a clone-stable key (see
     // [`NodeId`] for why pointer-keying didn't work).
@@ -1555,7 +1508,6 @@ impl Phase for Surface {
     type ExprLow = Never;
     // Pre-Routed phases admit raw `Call` / `Path` / `FnExpr`.
     type ExprResolved = ();
-    type TypeLabelSugar = ();
     type TypeInfer = ();
     type TypeGoal = Never;
     type ItemLabels = ();
@@ -1590,8 +1542,6 @@ impl Phase for Desugared {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = NodeId;
-    type ExprRowLet = Never;
     type ExprElab = NodeId;
     type ExprRecCall = Never;
     type ExprRecOrder = NodeId;
@@ -1600,7 +1550,6 @@ impl Phase for Desugared {
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = ();
     type TypeInfer = ();
     type TypeGoal = Never;
     type ItemLabels = ();
@@ -1619,13 +1568,11 @@ impl Phase for Desugared {
     type FnTypeCapabilities = ();
 }
 
-/// Post-`label_elab` phase. `Expr::Tuple`, `Expr::LabelValue`, `Type::LabelSugar`,
-/// and `Item::Labels` are all stripped; what reaches `typecheck` is
+/// Post-`label_elab` phase. `Expr::Tuple` and `Item::Labels` are stripped; what reaches `typecheck` is
 /// the surface AST minus the early-desugar surface forms. Dot-splice
 /// calls survive to the typer. The
-/// elaboration-bearing variants (`Expr::Elaborator`,
-/// `Expr::UserMacro`) survive into the typer, which substitutes their
-/// elaborations during the [`Lowered`] → [`Prime`] transition.
+/// elaboration-bearing `Expr::UserMacro` survives into the typer, which
+/// substitutes its elaboration during the [`Lowered`] → [`Prime`] transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Lowered;
 
@@ -1638,8 +1585,6 @@ impl Phase for Lowered {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = NodeId;
     type ExprRecCall = Never;
     type ExprRecOrder = NodeId;
@@ -1648,7 +1593,6 @@ impl Phase for Lowered {
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = Never;
     type TypeInfer = ();
     type TypeGoal = ();
     type ItemLabels = Never;
@@ -1687,8 +1631,6 @@ impl Phase for UncheckedPrime {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = Never;
     type ExprRecCall = Never;
     type ExprRecOrder = Never;
@@ -1697,7 +1639,6 @@ impl Phase for UncheckedPrime {
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = Never;
     type TypeInfer = Never;
     type TypeGoal = Never;
     type ItemLabels = Never;
@@ -1717,9 +1658,8 @@ impl Phase for UncheckedPrime {
 }
 
 /// Strict Kio' shape. The expression extensions for `Tuple`, `FnPlaceholder`,
-/// `OpChain`, `LabelValue`, `RowLet`, `Elaborator` /
-/// `UserMacro`, `RecCall`, `RecOrder`, and `Ufcs`
-/// are uninhabited here, as are `Type::LabelSugar` / `Infer` / internal `Goal`
+/// `OpChain`, `UserMacro`, `RecCall`, `RecOrder`, and `Ufcs`
+/// are uninhabited here, as are `Infer` / internal `Goal`
 /// and `Item::Labels` / `Equiv` / `Macro` / `Op` / `VariadicOperator` / `RecGroup` /
 /// `LiteralAlias`. Enriched and Low-IR expression extensions are also
 /// uninhabited; parameter-pattern and return-elision metadata has been erased.
@@ -1747,8 +1687,6 @@ impl Phase for Prime {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = Never;
     type ExprRecCall = Never;
     type ExprRecOrder = Never;
@@ -1757,7 +1695,6 @@ impl Phase for Prime {
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = Never;
     type TypeInfer = Never;
     type TypeGoal = Never;
     type ItemLabels = Never;
@@ -1803,8 +1740,6 @@ impl Phase for Enriched {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = Never;
     type ExprRecCall = Never;
     type ExprRecOrder = Never;
@@ -1815,7 +1750,6 @@ impl Phase for Enriched {
     type ExprEnrichedSynthTy = Type<Enriched>;
     type ExprLow = Never;
     type ExprResolved = ();
-    type TypeLabelSugar = Never;
     type TypeInfer = Never;
     type TypeGoal = Never;
     type ItemLabels = Never;
@@ -1870,8 +1804,6 @@ impl Phase for Routed {
     type ExprTuple = Never;
     type ExprFnPlaceholder = Never;
     type ExprOpChain = Never;
-    type ExprLabelValue = Never;
-    type ExprRowLet = Never;
     type ExprElab = Never;
     type ExprRecCall = Never;
     type ExprRecOrder = Never;
@@ -1887,7 +1819,6 @@ impl Phase for Routed {
     // carries through on its separate [`FnExprCapabilities`] witness because
     // it is a value-construction site rather than a routing decision.
     type ExprResolved = Never;
-    type TypeLabelSugar = Never;
     type TypeInfer = Never;
     type TypeGoal = Never;
     type ItemLabels = Never;
@@ -2034,7 +1965,7 @@ pub struct TypeRecGroup<P: Phase = Surface> {
     pub open_brace_span: Option<Span>,
     #[serde(default)]
     pub close_brace_span: Option<Span>,
-    /// A surface `labels` declaration whose required singleton `rec` marker
+    /// A compact nominal declaration whose required `rec` marker
     /// was omitted. Label lowering temporarily keeps the declaration's whole
     /// generated type scope in this group so the shared signature checker can
     /// validate it before publishing the tailored marker diagnostic. Valid
@@ -2045,7 +1976,7 @@ pub struct TypeRecGroup<P: Phase = Surface> {
 }
 
 /// Source positions retained only while validating an unmarked recursive
-/// `labels` declaration. The shared checker emits the missing-marker error
+/// compact nominal declaration. The shared checker emits the missing-marker error
 /// after every generated member passes ordinary visibility, kind, arity,
 /// nominal-grounding, and positivity checks.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2053,7 +1984,6 @@ pub struct DeferredRecLabelsDiagnostic {
     pub reference_span: Span,
     pub declaration_span: Span,
     pub head_span: Span,
-    pub has_named_alias: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2175,13 +2105,9 @@ pub enum Item<P: Phase = Surface> {
     /// `literal name = 1;` — a surface-only literal token alias.
     LiteralAlias(LiteralAlias<P>, P::ItemLiteralAlias),
     Newtype(Newtype<P>),
-    /// `labels { f: X, g: Y };` (anonymous) or `labels T = { f: X };`
-    /// (named). **Lowered during label-elab** to N `Item::Newtype`
-    /// chains plus an optional `Item::TypeAlias` for the named form.
+    /// Compact nominal declarations, lowered to ordinary `Item::Newtype`
+    /// declarations plus an optional `Item::TypeAlias` for the named form.
     Labels(Labels<P>, P::ItemLabels),
-    /// `type {local} = {provider.label};` — a nonminting label binding,
-    /// consumed with the label namespace before Lowered.
-    LabelForward(LabelForward<P>, P::ItemLabels),
     /// `equiv name[A](x: A) { <expr>; <expr>; ... }` — a claim
     /// that all the arm expressions reduce to the same normal form.
     /// **Surface-only:** survives `desugar` and
@@ -2384,8 +2310,8 @@ pub struct UserMacroDef<P: Phase = Surface> {
     pub captures: Vec<UserMacroCapture>,
     /// Surface call signature. Type slots are reflected as declared
     /// ABI positions; value slots are reflected as checked-term ABI
-    /// positions. The implementation parameter type determines whether
-    /// a type slot requires `__Type__` or accepts `__Type__ | .`.
+    /// positions. A result-only type slot may use `.` to request the
+    /// natural result; other type slots require `__Type__`.
     pub call_ty: Type<P>,
     pub schedule: MacroSchedule,
     /// Lexical path naming the implementation function that uses the
@@ -2422,7 +2348,11 @@ pub struct TrailingBlockDecl<P: Phase = Surface> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UserMacroCallForm {
     Ordinary,
-    TrailingBlocks,
+    TrailingBlocks {
+        /// Locates the projected blocks inside the final ordinary product
+        /// after call checking; it does not select an application or ABI slot.
+        has_final_prefix: bool,
+    },
 }
 
 /// The body of a fixed-arity `op` declaration.
@@ -2693,14 +2623,6 @@ pub enum ImportItem {
         alias: Option<ImportAlias<String>>,
         leading_trivia: Vec<crate::pass::lexer::Trivia>,
     },
-    /// `{foo}` — a label-syntax import. The label elaborator consumes this
-    /// item and rewrites label references through a collision-free qualified
-    /// module binding before the tree reaches Kio'.
-    Label {
-        name: String,
-        span: Span,
-        leading_trivia: Vec<crate::pass::lexer::Trivia>,
-    },
     /// A complete consumer-declared fixed or variadic parse grammar.
     /// Semantic import resolution checks this projection against the
     /// explicitly selected provider before attaching ordinary call targets.
@@ -2898,35 +2820,35 @@ impl ImportItem {
     /// Comments attached to this selection, including hoisted inter-token trivia.
     pub fn leading_trivia(&self) -> &[crate::pass::lexer::Trivia] {
         match self {
-            Self::Name { leading_trivia, .. }
-            | Self::Label { leading_trivia, .. }
-            | Self::OperatorPattern { leading_trivia, .. } => leading_trivia,
+            Self::Name { leading_trivia, .. } | Self::OperatorPattern { leading_trivia, .. } => {
+                leading_trivia
+            }
         }
     }
 
     pub fn leading_trivia_mut(&mut self) -> &mut Vec<crate::pass::lexer::Trivia> {
         match self {
-            Self::Name { leading_trivia, .. }
-            | Self::Label { leading_trivia, .. }
-            | Self::OperatorPattern { leading_trivia, .. } => leading_trivia,
+            Self::Name { leading_trivia, .. } | Self::OperatorPattern { leading_trivia, .. } => {
+                leading_trivia
+            }
         }
     }
 
     /// The source name when this item selects the ordinary value/type
-    /// namespace. Label and operator imports deliberately return `None`.
+    /// namespace. Operator imports return `None`.
     pub fn as_name(&self) -> Option<&str> {
         match self {
             ImportItem::Name { name, .. } => Some(name.as_str()),
-            ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => None,
+            ImportItem::OperatorPattern { .. } => None,
         }
     }
 
-    /// The ordinary value/type spelling and its exact source span. Label and
-    /// operator imports deliberately return `None`.
+    /// The ordinary value/type spelling and its exact source span.
+    /// Operator imports return `None`.
     pub fn as_name_with_span(&self) -> Option<(&str, Span)> {
         match self {
             ImportItem::Name { name, span, .. } => Some((name.as_str(), *span)),
-            ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => None,
+            ImportItem::OperatorPattern { .. } => None,
         }
     }
 
@@ -2941,30 +2863,15 @@ impl ImportItem {
             } => Some(alias.as_ref().map_or((name.as_str(), *span), |alias| {
                 (alias.local.as_str(), alias.span)
             })),
-            ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => None,
-        }
-    }
-
-    /// The label spelling and source span when this item selects the label
-    /// namespace. Ordinary and operator imports deliberately return `None`.
-    pub fn as_label(&self) -> Option<(&str, Span)> {
-        match self {
-            ImportItem::Label { name, span, .. } => Some((name.as_str(), *span)),
-            ImportItem::Name { .. } | ImportItem::OperatorPattern { .. } => None,
+            ImportItem::OperatorPattern { .. } => None,
         }
     }
 }
 
-/// Mint the generated nominal type spelling for a label. This helper is
-/// phase-independent because projected registries and label lowering must
-/// agree on the same declaration identity even in builds without the surface
-/// lowering feature.
+/// Preserve the compact entry's ordinary nominal spelling across projected
+/// registries and lowering, including builds without the surface feature.
 pub(crate) fn mint_label_newtype_name(label: &str) -> String {
-    let mut chars = label.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
+    label.to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3753,7 +3660,7 @@ pub struct Newtype<P: Phase = Surface> {
     pub type_params: Vec<TypeParam>,
     /// Existential type binders, written as whitespace-separated
     /// `<X>` atoms trailing the universal-parameter list on the newtype
-    /// header (e.g., `newtype Box[A] <U> <V> : A & U & V`). Empty
+    /// header (e.g., `type { Box[A]<U><V>: A & U & V }`). Empty
     /// for the common no-existential case. The names are in scope
     /// inside the payload only; each projector call freshly skolemizes
     /// them inside the CPS continuation.
@@ -3876,48 +3783,34 @@ pub fn convert_type_member<P: Phase, Q: Phase>(m: &TypeMember<P>) -> TypeMember<
     }
 }
 
-/// `labels { f: X, g[A]: Y };` and `labels T = { ... } | { ... };` —
-/// the surface label-declaration form, sugar over `newtype`. The named
-/// form additionally introduces a structural `alias` over the written
-/// product/sum of generated label types. Lowered during label-elab.
+/// Compact nominal declarations: `type { F: X; G[A]: Y; }` or a named
+/// algebraic declaration RHS. Lowering emits ordinary nominal declarations
+/// and, for a named owner, one transparent alias.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Labels<P: Phase = Surface> {
     pub vis: Visibility,
     /// Exact `rec` keyword span for a recursive singleton declaration.
     #[serde(default)]
     pub rec_span: Option<Span>,
-    /// `labels T = { … };` carries `Some("T")`; the anonymous form
-    /// `labels { … };` carries `None`.
+    /// Named owners carry `Some("T")`; anonymous groups carry `None`.
     pub type_alias_name: Option<String>,
     pub type_alias_span: Option<Span>,
-    /// Type parameters of the named form (`labels T[A] = { … };`).
+    /// Type parameters of the named form (`type T[A] = { … };`).
     /// Empty for the anonymous form and for nullary named forms.
     pub type_alias_params: Vec<TypeParam>,
-    /// Product arms written by the named form. `None` for anonymous
-    /// `labels { ... };`; `Some([arm])` for `labels T = { ... };`; more
-    /// than one arm for named sums.
+    /// Compact groups in source order. The named RHS refers to these
+    /// groups by index; anonymous declarations store their entries directly.
     pub type_alias_arms: Option<Vec<LabelsArm<P>>>,
+    /// Written algebraic declaration RHS. Compact groups refer to their
+    /// source-owned entries in `type_alias_arms` by index.
+    pub type_alias_rhs: Option<NominalRhs<P>>,
     pub entries: Vec<LabelEntry<P>>,
     pub meta: Meta<P>,
     /// Exact complete source range that an editor may move or wrap as this
     /// declaration. It excludes unattached plain comments.
     #[serde(default)]
     pub editable_span: Option<Span>,
-    /// Doc-comment attached to this `labels` declaration, if any.
-    pub doc: Option<DocComment>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LabelForward<P: Phase = Surface> {
-    pub vis: Visibility,
-    pub name: String,
-    pub name_span: Span,
-    pub target: String,
-    pub target_span: Span,
-    pub body_trivia: P::LeadingTrivia,
-    pub meta: Meta<P>,
-    #[serde(default)]
-    pub editable_span: Option<Span>,
+    /// Doc-comment attached to this compact declaration, if any.
     pub doc: Option<DocComment>,
 }
 
@@ -3933,18 +3826,6 @@ impl<P: Phase> Labels<P> {
                     .then_some(self.entries.as_slice()),
             )
     }
-
-    pub(crate) fn unbound_entry_universal<'a>(
-        &self,
-        entry: &'a LabelEntry<P>,
-    ) -> Option<&'a TypeParam> {
-        entry.type_params.iter().find(|entry_param| {
-            !self.type_alias_params.iter().any(|alias_param| {
-                alias_param.name == entry_param.name
-                    && alias_param.effective_kind() == entry_param.effective_kind()
-            })
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3954,10 +3835,52 @@ pub struct LabelsArm<P: Phase = Surface> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum NominalRhs<P: Phase = Surface> {
+    Group(usize),
+    Type(Type<P>),
+    Product(Box<Self>, Box<Self>, Meta<P>),
+    Sum(Box<Self>, Box<Self>, Meta<P>),
+    Grouped(Box<Self>, Meta<P>),
+}
+
+impl<P: Phase> NominalRhs<P> {
+    pub fn visit_types(&self, f: &mut impl FnMut(&Type<P>)) {
+        match self {
+            Self::Group(_) => {}
+            Self::Type(ty) => f(ty),
+            Self::Product(left, right, _) | Self::Sum(left, right, _) => {
+                left.visit_types(f);
+                right.visit_types(f);
+            }
+            Self::Grouped(inner, _) => inner.visit_types(f),
+        }
+    }
+
+    pub fn visit_types_mut(&mut self, f: &mut impl FnMut(&mut Type<P>)) {
+        match self {
+            Self::Group(_) => {}
+            Self::Type(ty) => f(ty),
+            Self::Product(left, right, _) | Self::Sum(left, right, _) => {
+                left.visit_types_mut(f);
+                right.visit_types_mut(f);
+            }
+            Self::Grouped(inner, _) => inner.visit_types_mut(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NominalMembers<P: Phase = Surface> {
+    pub constructor: TypeMember<P>,
+    pub projector: TypeMember<P>,
+    pub trailing_trivia: P::LeadingTrivia,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LabelEntry<P: Phase = Surface> {
     pub name: String,
     pub name_span: Span,
-    /// The label's own type parameters: `f[A][B]: X`. Independent
+    /// The entry's own type parameters: `F[A][B]: X`. Independent
     /// from the `type_alias_params` on the named form.
     pub type_params: Vec<TypeParam>,
     /// Per-entry existential type binders, written `<L> <R>` as
@@ -3966,28 +3889,13 @@ pub struct LabelEntry<P: Phase = Surface> {
     /// `Newtype.existential_params`.
     pub existential_params: Vec<TypeParam>,
     pub payload: Type<P>,
+    /// A written member body specifies both fixed roles independently.
+    /// An omitted body inherits the enclosing declaration visibility.
+    pub members: Option<NominalMembers<P>>,
     pub meta: Meta<P>,
 }
 
-impl<P: Phase> LabelEntry<P> {
-    /// Whether this entry is the exact surface spelling `name[...]: _`.
-    /// Label elaboration consumes this marker; it never reaches Lowered.
-    pub fn is_reuse_marker(&self) -> bool {
-        matches!(self.payload, Type::Infer { .. })
-    }
-
-    #[cfg(feature = "surface")]
-    pub(crate) fn universal_header_matches(&self, other: &Self) -> bool {
-        self.type_params.len() == other.type_params.len()
-            && self
-                .type_params
-                .iter()
-                .zip(&other.type_params)
-                .all(|(first, second)| first.effective_kind() == second.effective_kind())
-    }
-}
-
-/// Return the sole generated nominal behind a named `labels` declaration
+/// Return the sole ordinary nominal behind a named compact declaration
 /// exactly when label elaboration emits a fully saturated positional identity
 /// alias for it. The entry's written parameter names matter: `T[A, B] =
 /// Foo(B, A)` is not an identity alias even when both binders have the same
@@ -3997,6 +3905,18 @@ pub(crate) fn named_labels_identity_alias_entry<P: Phase>(
     labels: &Labels<P>,
 ) -> Option<&LabelEntry<P>> {
     labels.type_alias_name.as_ref()?;
+    fn sole_group<P: Phase>(rhs: &NominalRhs<P>) -> Option<usize> {
+        match rhs {
+            NominalRhs::Group(index) => Some(*index),
+            NominalRhs::Grouped(inner, _) => sole_group(inner),
+            _ => None,
+        }
+    }
+    if let Some(rhs) = &labels.type_alias_rhs
+        && sole_group(rhs) != Some(0)
+    {
+        return None;
+    }
     let [arm] = labels.type_alias_arms.as_deref()? else {
         return None;
     };
@@ -4651,13 +4571,6 @@ pub enum Type<P: Phase = Surface> {
         right: Box<Type<P>>,
         meta: Meta<P>,
     },
-    /// Defensive constructed-AST shape rejected by label elaboration:
-    /// braced labels are value syntax, not type syntax.
-    LabelSugar {
-        labels: Vec<LabelSugarLabel<P>>,
-        meta: Meta<P>,
-        ext: P::TypeLabelSugar,
-    },
     /// `_` — a placeholder asking the typer to infer this position.
     /// Resolved during type-checking via bidirectional flow plus
     /// unification with sibling positions. Statically uninhabited at
@@ -4699,35 +4612,7 @@ pub enum Type<P: Phase = Surface> {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LabelSugarLabel<P: Phase = Surface> {
-    pub label: String,
-    pub label_span: Span,
-    /// `None` for payload-elided forms (`{f}`, `{f, g: Y}`); the
-    /// resolver fills in from the recorded signature.
-    pub payload: Option<Type<P>>,
-    pub meta: Meta<P>,
-}
-
 // ---- Value expressions --------------------------------------------------
-
-/// Discriminator for the compiler-private field-syntax forms carried by
-/// [`Expr::Elaborator`]: field access (`x.?{foo}`) and field update
-/// (`x.!{foo = y}`). These are produced by the parser from postfix field
-/// syntax; they are not user-callable elaborator names. A single
-/// `Expr::Elaborator` variant dispatches on `kind` rather than carrying
-/// one variant per form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum ElaboratorKind {
-    /// Compiler-private field access elaboration (`__access__` in
-    /// design notes). Parser-produced postfix field syntax lowers to
-    /// this; it is not a user-callable elaborator name.
-    Access,
-    /// Compiler-private field update/filter elaboration (`__filtered__`
-    /// in design notes). Parser-produced postfix update syntax lowers to
-    /// this; it is not a user-callable elaborator name.
-    Filtered,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RecOrderTypeFlow {
@@ -4841,75 +4726,6 @@ impl<P: Phase> RecQuotePlan<P> {
         }
         .into_iter()
         .flatten()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ElaboratorCall<P: Phase = Surface> {
-    /// Compiler-private field access shape produced from `x.?{foo}`.
-    FieldAccess {
-        receiver: Box<Expr<P>>,
-        labels: Vec<FieldAccessLabel<P>>,
-    },
-    /// Compiler-private row construction or update shape. Construction
-    /// operands are ordinary constructor calls after label elaboration.
-    FieldUpdate {
-        base: FieldUpdateBase<P>,
-        updates: Vec<FieldUpdateLabel<P>>,
-    },
-}
-
-/// The written distinction between a label construction and a field update.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum FieldUpdateBase<P: Phase = Surface> {
-    Construction,
-    Update(Box<Expr<P>>),
-}
-
-impl<P: Phase> FieldUpdateBase<P> {
-    pub fn receiver(&self) -> Option<&Expr<P>> {
-        match self {
-            Self::Construction => None,
-            Self::Update(receiver) => Some(receiver),
-        }
-    }
-
-    pub fn receiver_mut(&mut self) -> Option<&mut Expr<P>> {
-        match self {
-            Self::Construction => None,
-            Self::Update(receiver) => Some(receiver),
-        }
-    }
-
-    pub fn map_receiver<Q: Phase, E>(
-        self,
-        f: impl FnOnce(Expr<P>) -> Result<Expr<Q>, E>,
-    ) -> Result<FieldUpdateBase<Q>, E> {
-        match self {
-            Self::Construction => Ok(FieldUpdateBase::Construction),
-            Self::Update(receiver) => {
-                f(*receiver).map(|receiver| FieldUpdateBase::Update(Box::new(receiver)))
-            }
-        }
-    }
-}
-
-impl ElaboratorKind {
-    /// Compiler-private field-syntax names without the trailing `!`.
-    pub fn name(self) -> &'static str {
-        match self {
-            ElaboratorKind::Access => "__access__",
-            ElaboratorKind::Filtered => "__filtered__",
-        }
-    }
-
-    /// Compiler-private field-syntax names with the trailing `!` — the
-    /// spelling used in diagnostics.
-    pub fn bang_name(self) -> &'static str {
-        match self {
-            ElaboratorKind::Access => "__access__!",
-            ElaboratorKind::Filtered => "__filtered__!",
-        }
     }
 }
 
@@ -5057,22 +4873,6 @@ pub enum Expr<P: Phase = Surface> {
         body: Box<Expr<P>>,
         meta: Meta<P>,
     },
-    /// `let .({f, g as payload}) = row; rest` — row destructuring
-    /// statement syntax. Each entry names a row label and a local
-    /// binder for that label's payload; omitted `as` binds the last
-    /// path segment (`let .({m.f})` binds `f`). Desugar lowers this to a
-    /// single temporary for `row` followed by ordinary `let`
-    /// bindings whose RHS expressions are field-access elaborators.
-    RowLet {
-        #[serde(skip)]
-        occurrence: P::ExpressionOccurrence,
-        entries: Vec<RowLetEntry<P>>,
-        value: Box<Expr<P>>,
-        body: Box<Expr<P>>,
-        temp_name: String,
-        meta: Meta<P>,
-        ext: P::ExprRowLet,
-    },
     /// `e;` followed by the rest of the surrounding block — an
     /// **expression statement** whose value is discarded. Per spec
     /// the typer requires `value : .`; discarding a non-unit value
@@ -5177,43 +4977,6 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprFnPlaceholder,
     },
-    /// `{f = e}` and multi-label `{f = e1, g = e2}` — label-value
-    /// construction sugar.
-    /// **Stripped during label-elab**: each payload becomes the ordinary
-    /// constructor call `F.mk(e)`. A construction carrier retains their row
-    /// order until typechecking selects the result permutation and substitution
-    /// emits ordinary let bindings and nested `__pair__` calls.
-    ///
-    /// Per-label leading trivia flows onto each `labels[i]`'s
-    /// `meta.leading_trivia`.
-    LabelValue {
-        #[serde(skip)]
-        occurrence: P::ExpressionOccurrence,
-        labels: Vec<LabelValueLabel<P>>,
-        meta: Meta<P>,
-        ext: P::ExprLabelValue,
-    },
-    /// Compiler-private field-syntax carrier: postfix field access
-    /// `x.?{foo}` and field update `x.!{foo = y}`, distinguished by `kind`
-    /// ([`ElaboratorKind::Access`] / [`ElaboratorKind::Filtered`]) and
-    /// `call` ([`ElaboratorCall::FieldAccess`] /
-    /// [`ElaboratorCall::FieldUpdate`]). These are not user-callable
-    /// elaborator names — the parser builds them from postfix field
-    /// syntax. (Source-selected macro calls are carried
-    /// by [`Expr::UserMacro`] instead.)
-    ///
-    /// The variant survives into `Lowered`; the typer records its elaboration
-    /// in a side table keyed by `NodeId`, and substitution consumes that record
-    /// to replace the carrier at the `Lowered → Prime` boundary.
-    Elaborator {
-        #[serde(skip)]
-        occurrence: P::ExpressionOccurrence,
-        kind: ElaboratorKind,
-        call: ElaboratorCall<P>,
-        source_trivia: P::SourceDelimitedTrivia,
-        meta: Meta<P>,
-        ext: P::ExprElab,
-    },
     /// Boundary-local carrier for one recursive-CPS ordering/type-flow
     /// binding. Desugar uses it both to preserve an earlier value before
     /// later recursive work and to apply an untyped generated continuation
@@ -5313,9 +5076,12 @@ pub enum Expr<P: Phase = Surface> {
     },
     /// Direct positional access into a product, recovered from a
     /// right-leaning `__fst__` / `__snd__` chain. `target` is the
-    /// product value; `index` is the component picked (`0 <= index
-    /// < arity`); `arity` is the product's component count
-    /// (`>= 2`). The binary projection spine is gone. Introduced by
+    /// product value; `index` selects a slot in a bounded right-spine
+    /// view (`0 <= index < arity`, `arity >= 2`). The first `arity - 1`
+    /// slots are successive left components; the final slot retains the
+    /// complete remaining right tail, which may itself be a product.
+    /// `arity` need not equal the target's maximal spine length.
+    /// The binary projection spine is gone. Introduced by
     /// the structural-recovery pass; inhabited at [`Enriched`] and [`Routed`].
     EnrichedProject {
         #[serde(skip)]
@@ -5857,11 +5623,6 @@ pub enum NeutralItem<P: Phase = Surface> {
         bind: bool,
         meta: Meta<P>,
     },
-    RowBinding {
-        entries: Vec<RowLetEntry<P>>,
-        value: Expr<P>,
-        meta: Meta<P>,
-    },
     ExistentialBinding {
         type_params: Vec<TypeParam>,
         name: String,
@@ -5877,7 +5638,6 @@ impl<P: Phase> NeutralItem<P> {
         match self {
             Self::Expression { value, .. }
             | Self::Binding { value, .. }
-            | Self::RowBinding { value, .. }
             | Self::ExistentialBinding { value, .. } => value,
         }
     }
@@ -5885,9 +5645,7 @@ impl<P: Phase> NeutralItem<P> {
     pub fn span(&self) -> Span {
         match self {
             Self::Expression { value, .. } => value.span(),
-            Self::Binding { meta, .. }
-            | Self::RowBinding { meta, .. }
-            | Self::ExistentialBinding { meta, .. } => meta.span,
+            Self::Binding { meta, .. } | Self::ExistentialBinding { meta, .. } => meta.span,
         }
     }
 }
@@ -5918,73 +5676,6 @@ impl<P: Phase> OpChainKind<P> {
             OpChainKind::Normal { pattern, .. } => op_leading_run(pattern),
             OpChainKind::Variadic { open_tokens, .. } => open_tokens.clone(),
         }
-    }
-}
-
-/// One entry in a label-value construction expression `{f = e, g = e'}`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LabelValueLabel<P: Phase = Surface> {
-    pub label: String,
-    pub label_span: Span,
-    pub value: Expr<P>,
-    pub meta: Meta<P>,
-}
-
-/// One binder in row-let statement syntax `let .({label as local}) = row;`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct RowLetEntry<P: Phase = Surface> {
-    pub label: String,
-    pub label_span: Span,
-    pub local: String,
-    pub local_span: Span,
-    pub alias_explicit: bool,
-    /// Parser-issued key for the field-access elaborator desugar
-    /// creates for this entry.
-    pub access_ext: P::ExprElab,
-    pub meta: Meta<P>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct FieldAccessLabel<P: Phase = Surface> {
-    pub label: String,
-    pub label_span: Span,
-    /// The generated label newtype's **identity-exact path**, populated by
-    /// label elaboration. A locally-declared label is a bare `[Foo]` (the
-    /// single same-module newtype `mint_label_newtype_name` produced); a
-    /// cross-module label imported by `import m({foo});` or the qualified
-    /// `{m.foo}` sugar is the **fully-qualified** `[m…, Foo]` so the typer
-    /// selects the slot, looks the newtype up, and emits the `mk`/`get`
-    /// member call by `(module, name)` identity rather than by bare leaf —
-    /// two modules whose labels mint the same leaf `Foo` stay distinct.
-    /// `None` only before label elaboration.
-    pub label_type: Option<Vec<PathSegment>>,
-    pub meta: Meta<P>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct FieldUpdateLabel<P: Phase = Surface> {
-    pub label: String,
-    pub label_span: Span,
-    /// The generated label newtype's identity-exact path — bare `[Foo]`
-    /// for a local label, fully-qualified `[m…, Foo]` for a cross-module
-    /// one. See [`FieldAccessLabel::label_type`]. `None` only before label
-    /// elaboration.
-    pub label_type: Option<Vec<PathSegment>>,
-    /// An update's written payload, or a construction's lowered constructor call.
-    pub value: Expr<P>,
-    pub meta: Meta<P>,
-}
-
-impl<P: Phase> FieldUpdateLabel<P> {
-    /// The written payload of a construction's generated constructor call.
-    pub fn construction_payload(&self) -> &Expr<P> {
-        let Expr::Call { args, .. } = &self.value else {
-            unreachable!("a lowered construction lost its ordinary constructor call")
-        };
-        let [CallArg::Value(payload)] = args.as_slice() else {
-            unreachable!("a lowered constructor has exactly its written payload argument")
-        };
-        payload
     }
 }
 
@@ -6326,7 +6017,7 @@ pub enum SigItem<P: Phase = Surface> {
     HostFn(HostFn<P>),
     /// `type Name = …;` — a transparent type synonym in the closure.
     TypeAlias(TypeAlias<P>),
-    /// `newtype Name = …;` — a nominal type in the closure.
+    /// `type { Name: … }` — a nominal type in the closure.
     Newtype(Newtype<P>),
     /// A complete Kio' recursive declaration group. Signature operations
     /// target its members individually through [`SigItemRef`].
@@ -6393,7 +6084,6 @@ pub(crate) fn build_product_right_fold<P: Phase>(mut params: Vec<Type<P>>, span:
             | Type::Function { meta, .. }
             | Type::Product { meta, .. }
             | Type::Sum { meta, .. }
-            | Type::LabelSugar { meta, .. }
             | Type::Forall { meta, .. }
             | Type::Infer { meta, .. }
             | Type::Goal { meta, .. } => meta.span,
@@ -6405,7 +6095,6 @@ pub(crate) fn build_product_right_fold<P: Phase>(mut params: Vec<Type<P>>, span:
             | Type::Function { meta, .. }
             | Type::Product { meta, .. }
             | Type::Sum { meta, .. }
-            | Type::LabelSugar { meta, .. }
             | Type::Forall { meta, .. }
             | Type::Infer { meta, .. }
             | Type::Goal { meta, .. } => meta.span,
@@ -6769,7 +6458,6 @@ impl<P: Phase> Type<P> {
             | Type::Function { meta, .. }
             | Type::Product { meta, .. }
             | Type::Sum { meta, .. }
-            | Type::LabelSugar { meta, .. }
             | Type::Forall { meta, .. }
             | Type::Infer { meta, .. }
             | Type::Goal { meta, .. } => meta,
@@ -6784,7 +6472,6 @@ impl<P: Phase> Type<P> {
             | Type::Function { meta, .. }
             | Type::Product { meta, .. }
             | Type::Sum { meta, .. }
-            | Type::LabelSugar { meta, .. }
             | Type::Forall { meta, .. }
             | Type::Infer { meta, .. }
             | Type::Goal { meta, .. } => meta,
@@ -6795,22 +6482,13 @@ impl<P: Phase> Type<P> {
 /// Mechanically rebuild a [`Type`] across a phase boundary.
 /// Identical structure, just with the type parameter changed.
 ///
-/// The `LabelSugar` arm requires `P::TypeLabelSugar = Never`. Markers that
-/// satisfy that bound include [`Lowered`], [`UncheckedPrime`], [`Prime`],
-/// [`Enriched`], [`Routed`], and substitution's private `PrePrime` staging
-/// phase; the generic bound, rather than this catalogue, determines admission.
-/// The variant is therefore uninhabited and the rebuild covers every reachable
-/// shape via the `match *ext {}` discharge. `Q` is unconstrained: the
-/// rebuild never produces a `LabelSugar` so the target's
-/// `TypeLabelSugar` shape doesn't matter.
-///
 /// Used by `pass/substitute` (Lowered → Prime) and
 /// `backends/kio_prime.rs` (Prime → Surface) to share their `Type`
 /// walks. Adding a new pair of phase walkers wires up the same
 /// helper without copy-pasting the recursion.
 pub fn convert_type<P, Q>(ty: &Type<P>) -> Type<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     // Trivia fields use `P::ParallelTrivia` / `P::LeadingTrivia`,
@@ -6874,7 +6552,6 @@ where
             body: Box::new(convert_type::<P, Q>(body)),
             meta: convert_meta(meta),
         },
-        Type::LabelSugar { ext, .. } => match *ext {},
         // `Type::Infer` should be resolved by the typer's
         // substitution pass before reaching `convert_type`. At Prime
         // (`P::TypeInfer = Never`) it's statically unreachable;
@@ -6896,10 +6573,8 @@ where
 
 /// Phase-rebrand an [`Expr`] across a phase boundary where every
 /// surface-only variant is statically uninhabited at the source —
-/// every elaboration-bearing variant (`Elaborator` /
-/// `UserMacro` via `ExprElab`), the pre-typer surface forms (`Tuple` /
-/// `FnPlaceholder` / `LabelValue` / `Ufcs`), and any nested
-/// `Type::LabelSugar` discharge via `match *ext {}`.
+/// `UserMacro` via `ExprElab`, the pre-typer surface forms (`Tuple` /
+/// `FnPlaceholder` / `Ufcs`) discharge via `match *ext {}`.
 ///
 /// [`crate::backends::kio_prime`] uses this walker for Prime → Surface
 /// pretty-printing, and the substitute pass uses it for its strict-core
@@ -6912,8 +6587,6 @@ where
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
-            ExprLabelValue = Never,
-            ExprRowLet = Never,
             ExprElab = Never,
             ExprBlockSyntax = Never,
             ExprRecCall = Never,
@@ -6921,7 +6594,6 @@ where
             ExprUfcs = Never,
             ExprEnriched = Never,
             ExprLow = Never,
-            TypeLabelSugar = Never,
         >,
     Q: Phase<ExprResolved = ()>,
 {
@@ -6986,7 +6658,6 @@ where
             body: Box::new(convert_expr::<P, Q>(body)),
             meta: Meta::new(value.span()),
         },
-        Expr::RowLet { ext, .. } => match *ext {},
         Expr::Seq { value, body, .. } => Expr::Seq {
             occurrence: Default::default(),
             value: Box::new(convert_expr::<P, Q>(value)),
@@ -7053,8 +6724,6 @@ where
         // `match *ext {}` over `Never`.
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro { ext, .. } => match *ext {},
         Expr::BlockCall { ext, .. } => match *ext {},
@@ -7096,7 +6765,7 @@ where
 /// [`convert_type`].
 pub fn convert_signature_param<P, Q>(p: &SignatureParam<P>) -> SignatureParam<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     match p {
@@ -7114,7 +6783,7 @@ where
 /// walking each [`SignatureParam`] via [`convert_signature_param`].
 pub fn convert_signature<P, Q>(sig: &Signature<P>) -> Signature<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     Signature::from_parts(
@@ -7138,8 +6807,6 @@ where
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
-            ExprLabelValue = Never,
-            ExprRowLet = Never,
             ExprElab = Never,
             ExprBlockSyntax = Never,
             ExprRecCall = Never,
@@ -7147,7 +6814,6 @@ where
             ExprUfcs = Never,
             ExprEnriched = Never,
             ExprLow = Never,
-            TypeLabelSugar = Never,
         >,
     Q: Phase<ExprResolved = (), FnBody = Expr<Q>>,
     Q::FnDefRetElided: PhaseBridge<P::FnDefRetElided>,
@@ -7171,7 +6837,7 @@ where
 /// Phase-rebrand an [`TypeAlias`] across a phase boundary.
 pub fn convert_type_alias<P, Q>(a: &TypeAlias<P>) -> TypeAlias<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     TypeAlias {
@@ -7191,7 +6857,7 @@ where
 /// keep their semantic fields and drop source trivia.
 pub fn convert_newtype<P, Q>(d: &Newtype<P>) -> Newtype<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     Newtype {
@@ -7214,7 +6880,7 @@ where
 /// been eliminated.
 pub fn convert_type_rec_group<P, Q>(group: &TypeRecGroup<P>) -> TypeRecGroup<Q>
 where
-    P: Phase<TypeLabelSugar = Never, ItemLabels = Never>,
+    P: Phase<ItemLabels = Never>,
     Q: Phase,
 {
     TypeRecGroup {
@@ -7262,7 +6928,7 @@ where
 /// (no body); each value param's type recurses via [`convert_type`].
 pub fn convert_host_fn<P, Q>(h: &HostFn<P>) -> HostFn<Q>
 where
-    P: Phase<TypeLabelSugar = Never>,
+    P: Phase,
     Q: Phase,
 {
     HostFn {
@@ -7300,8 +6966,6 @@ where
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
-            ExprLabelValue = Never,
-            ExprRowLet = Never,
             ExprElab = Never,
             ExprBlockSyntax = Never,
             ExprRecCall = Never,
@@ -7309,7 +6973,6 @@ where
             ExprUfcs = Never,
             ExprEnriched = Never,
             ExprLow = Never,
-            TypeLabelSugar = Never,
             ItemLabels = Never,
             ItemEquiv = Never,
             ItemOp = Never,
@@ -7329,7 +6992,7 @@ where
         Item::LiteralAlias(_, ext) => match *ext {},
         Item::Newtype(d) => Item::Newtype(convert_newtype::<P, Q>(d)),
         Item::Labels(_, ext) => match *ext {},
-        Item::LabelForward(_, ext) => match *ext {},
+
         Item::Equiv(_, ext) => match *ext {},
         Item::Macro(_, ext) => match *ext {},
         Item::Op(_, ext) => match *ext {},
@@ -7347,7 +7010,7 @@ impl<P: Phase<ExpressionOccurrence = ExpressionOccurrence>> Expr<P> {
         }
     }
 
-    #[cfg(any(feature = "surface", test))]
+    #[cfg(test)]
     pub(crate) fn with_fresh_occurrence(mut self) -> Self {
         *self.occurrence_mut() = ExpressionOccurrence::fresh();
         self
@@ -7362,7 +7025,6 @@ impl<P: Phase> Expr<P> {
             | Self::RecCall { occurrence, .. }
             | Self::FnExpr { occurrence, .. }
             | Self::Let { occurrence, .. }
-            | Self::RowLet { occurrence, .. }
             | Self::Seq { occurrence, .. }
             | Self::Unit { occurrence, .. }
             | Self::StrLit { occurrence, .. }
@@ -7371,8 +7033,6 @@ impl<P: Phase> Expr<P> {
             | Self::BoolLit { occurrence, .. }
             | Self::Tuple { occurrence, .. }
             | Self::FnPlaceholder { occurrence, .. }
-            | Self::LabelValue { occurrence, .. }
-            | Self::Elaborator { occurrence, .. }
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
             | Self::UserMacro { occurrence, .. }
@@ -7409,7 +7069,6 @@ impl<P: Phase> Expr<P> {
             | Self::RecCall { occurrence, .. }
             | Self::FnExpr { occurrence, .. }
             | Self::Let { occurrence, .. }
-            | Self::RowLet { occurrence, .. }
             | Self::Seq { occurrence, .. }
             | Self::Unit { occurrence, .. }
             | Self::StrLit { occurrence, .. }
@@ -7418,8 +7077,6 @@ impl<P: Phase> Expr<P> {
             | Self::BoolLit { occurrence, .. }
             | Self::Tuple { occurrence, .. }
             | Self::FnPlaceholder { occurrence, .. }
-            | Self::LabelValue { occurrence, .. }
-            | Self::Elaborator { occurrence, .. }
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
             | Self::UserMacro { occurrence, .. }
@@ -7460,7 +7117,6 @@ impl<P: Phase> Expr<P> {
             | Expr::RecCall { meta, .. }
             | Expr::FnExpr { meta, .. }
             | Expr::Let { meta, .. }
-            | Expr::RowLet { meta, .. }
             | Expr::Seq { meta, .. }
             | Expr::Unit {
                 source_trivia: _,
@@ -7473,8 +7129,6 @@ impl<P: Phase> Expr<P> {
             | Expr::BoolLit { meta, .. }
             | Expr::Tuple { meta, .. }
             | Expr::FnPlaceholder { meta, .. }
-            | Expr::LabelValue { meta, .. }
-            | Expr::Elaborator { meta, .. }
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
             | Expr::UserMacro { meta, .. }
@@ -7511,7 +7165,6 @@ impl<P: Phase> Expr<P> {
             | Expr::RecCall { meta, .. }
             | Expr::FnExpr { meta, .. }
             | Expr::Let { meta, .. }
-            | Expr::RowLet { meta, .. }
             | Expr::Seq { meta, .. }
             | Expr::Unit {
                 source_trivia: _,
@@ -7524,8 +7177,6 @@ impl<P: Phase> Expr<P> {
             | Expr::BoolLit { meta, .. }
             | Expr::Tuple { meta, .. }
             | Expr::FnPlaceholder { meta, .. }
-            | Expr::LabelValue { meta, .. }
-            | Expr::Elaborator { meta, .. }
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
             | Expr::UserMacro { meta, .. }
@@ -7608,7 +7259,7 @@ impl<P: Phase> Item<P> {
             Item::LiteralAlias(l, _) => &l.meta,
             Item::Newtype(d) => &d.meta,
             Item::Labels(d, _) => &d.meta,
-            Item::LabelForward(d, _) => &d.meta,
+
             Item::Equiv(e, _) => &e.meta,
             Item::Macro(s, _) => &s.meta,
             Item::Op(d, _) => &d.meta,
@@ -7627,7 +7278,7 @@ impl<P: Phase> Item<P> {
             Item::LiteralAlias(l, _) => &mut l.meta,
             Item::Newtype(d) => &mut d.meta,
             Item::Labels(d, _) => &mut d.meta,
-            Item::LabelForward(d, _) => &mut d.meta,
+
             Item::Equiv(e, _) => &mut e.meta,
             Item::Macro(s, _) => &mut s.meta,
             Item::Op(d, _) => &mut d.meta,
@@ -7640,18 +7291,6 @@ impl<P: Phase> Item<P> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn field_construction_base_keeps_receiver_pointer_layout() {
-        assert_eq!(
-            std::mem::size_of::<super::FieldUpdateBase<super::Surface>>(),
-            std::mem::size_of::<Box<super::Expr<super::Surface>>>(),
-        );
-        assert_eq!(
-            std::mem::size_of::<super::FieldUpdateBase<super::Lowered>>(),
-            std::mem::size_of::<Box<super::Expr<super::Lowered>>>(),
-        );
-    }
-
     #[test]
     fn relocated_comment_runs_keep_internal_paragraphs_and_separate_blocks() {
         use super::{append_relocated_trivia, append_source_trivia};

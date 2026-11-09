@@ -1,33 +1,43 @@
 module fmt_label_payload_comments;
 
-labels { ready: . };
+type { Ready: . { mk; get } }
 
 fn construct(ready: .) -> Ready {
-  {ready = (
+  record {
+    Ready.mk(
     // construction leading
-    ready
+    , ready
     // construction trailing
-    )}
+    )
+  }
 }
 
 fn construct_unit() -> Ready {
-  {ready = (
-  // construction unit
-  )}
+  record {
+    Ready.mk((
+    // construction unit
+    ))
+  }
 }
 
 fn update(row: Ready, other: .) -> Ready {
-  row.!{ready = (
+  row.>with {
+    Ready.mk(
     // update leading
-    other
+    , other
     // update trailing
-    )}
+    )
+  }
 }
 
 fn update_unit(row: Ready) -> Ready {
-  row.!{ready = (
-  // update unit
-  )}
+  row.>with {
+    Ready.mk((
+    // update unit
+    ))
+  }
 }
 
-fn canonical(ready: .) -> Ready & Ready { ({ready}, {ready=}) }
+fn canonical(ready: .) -> Ready & Ready {
+  (record { Ready.mk(ready) }, record { Ready.mk(()) })
+}

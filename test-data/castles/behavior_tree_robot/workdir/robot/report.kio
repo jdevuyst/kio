@@ -4,6 +4,7 @@ import list/core as lists;
 import list/list as traversal;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import robot/engine as engine;
 import robot/memory as memory;
 import robot/model as model;
@@ -24,8 +25,8 @@ rec(loop) fn events(messages: lists.List[String]) {
 }
 
 pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) {
-  let .(hazard: String) = if(world.?{model.hazard}) { "hazard" } else { "clear" };
-  let .(door: String) = if(world.?{model.blocked}) { "blocked" } else { "open" };
+  let .(hazard: String) = if(world.>select { model.Hazard.get }) { "hazard" } else { "clear" };
+  let .(door: String) = if(world.>select { model.Blocked.get }) { "blocked" } else { "open" };
   io.print(text.string_concat(
   , "tick "
   , text.string_concat(
@@ -45,7 +46,7 @@ pub fn tick(number: I32, world: model.World, result: model.Status, state: memory
       )
     )
   ));
-  events(traversal.reverse(state.?{memory.events}))
+  events(traversal.reverse(state.>select { memory.Events.get }))
 }
 
 pub fn summary(ticks: I32, state: memory.State) {
@@ -56,14 +57,14 @@ pub fn summary(ticks: I32, state: memory.State) {
     , text.string_concat(
       , " completed-actions="
       , text.string_concat(
-        , fmt.int_to_string(state.?{memory.completed})
+        , fmt.int_to_string(state.>select { memory.Completed.get })
         , text.string_concat(
           , " cancellations="
           , text.string_concat(
-            , fmt.int_to_string(state.?{memory.canceled})
+            , fmt.int_to_string(state.>select { memory.Canceled.get })
             , text.string_concat(
               , " work-ticks="
-              , text.string_concat(fmt.int_to_string(state.?{memory.work_ticks}), "\n")
+              , text.string_concat(fmt.int_to_string(state.>select { memory.Work_ticks.get }), "\n")
               )
             )
           )

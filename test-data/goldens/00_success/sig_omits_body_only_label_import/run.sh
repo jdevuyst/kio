@@ -9,8 +9,8 @@ cp workdir/app.pkg.kio workdir/api.kio workdir/labels.kio workdir/types.kio "$sc
 cd "$scratch" || exit 1
 
 output=$("$KIO_BIN" sig stage --force --stdout) || exit 1
-if printf '%s\n' "$output" | grep -Fq '_label_'; then
-  printf 'recorded signatures must not contain body-only generated module aliases\n' >&2
+if printf '%s\n' "$output" | grep -Fq 'import labels'; then
+  printf 'recorded signatures must not contain body-only module imports\n' >&2
   printf '%s\n' "$output" >&2
   exit 1
 fi

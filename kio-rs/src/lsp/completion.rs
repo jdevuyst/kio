@@ -237,29 +237,8 @@ impl<'a> CompletionSources<'a> {
         let entries = crate::doc_entry::documented_items_module(&parsed.module);
         let mut names = std::collections::HashSet::new();
         for entry in &entries {
-            use crate::doc_entry::DocEntry;
             if !names.insert(entry.name().to_owned()) {
                 return None;
-            }
-            match entry {
-                DocEntry::Labels(labels, _, _) => {
-                    for label in labels
-                        .entries
-                        .iter()
-                        .filter(|label| !label.is_reuse_marker())
-                    {
-                        if !names.insert(format!("{{{}}}", label.name)) {
-                            return None;
-                        }
-                    }
-                }
-                DocEntry::LabelNominal { labels, entry, .. }
-                    if labels.type_alias_name.is_none()
-                        && !names.insert(format!("{{{}}}", entry.name)) =>
-                {
-                    return None;
-                }
-                _ => {}
             }
         }
         Some(parsed.module)
@@ -619,7 +598,7 @@ fn import_list_candidates(
                 .as_local_name()
                 .expect("named import has a local name")
                 .to_owned(),
-            crate::ast::ImportItem::Label { name, .. } => format!("{{{name}}}"),
+
             crate::ast::ImportItem::OperatorPattern { grammar, alias, .. } => alias
                 .as_ref()
                 .map_or(grammar, |alias| &alias.local)
@@ -677,7 +656,6 @@ fn import_list_candidates(
             | DocEntry::LabelNominal { .. } => {
                 (CompletionItemKind::STRUCT, ImportSelectionKind::Name)
             }
-            DocEntry::LabelForward(..) => (CompletionItemKind::FIELD, ImportSelectionKind::Label),
             DocEntry::LiteralAlias(_) => (CompletionItemKind::CONSTANT, ImportSelectionKind::Name),
             DocEntry::Op(..) => (
                 CompletionItemKind::OPERATOR,
@@ -689,33 +667,6 @@ fn import_list_candidates(
             ),
         };
         push(&entry, entry.name().to_owned(), kind, selection);
-        match &entry {
-            DocEntry::Labels(labels, _, _) => {
-                for label in &labels.entries {
-                    if !label.is_reuse_marker() {
-                        push(
-                            &entry,
-                            format!("{{{}}}", label.name),
-                            CompletionItemKind::FIELD,
-                            ImportSelectionKind::Label,
-                        );
-                    }
-                }
-            }
-            DocEntry::LabelNominal {
-                labels,
-                entry: label,
-                ..
-            } if labels.type_alias_name.is_none() => {
-                push(
-                    &entry,
-                    format!("{{{}}}", label.name),
-                    CompletionItemKind::FIELD,
-                    ImportSelectionKind::Label,
-                );
-            }
-            _ => {}
-        }
     }
     result.items.sort_by(|a, b| a.label.cmp(&b.label));
     result.items.dedup_by(|a, b| a.label == b.label);
@@ -976,9 +927,7 @@ impl<'a> CompletionMetadata<'a> {
                     | DocEntry::LabelNominal { .. } => {
                         (entry.name().to_owned(), CompletionItemKind::STRUCT)
                     }
-                    DocEntry::LabelForward(..)
-                    | DocEntry::Op(..)
-                    | DocEntry::VariadicOperator(..) => continue,
+                    DocEntry::Op(..) | DocEntry::VariadicOperator(..) => continue,
                 };
                 let mut item = CompletionItem {
                     label,
@@ -1071,7 +1020,7 @@ fn parse_module(source: &str) -> Option<Module<Surface>> {
 mod tests {
     #[test]
     fn block_snippet_uses_an_editable_prefix_region_and_ordered_descriptors() {
-        let source = "module app; macro choose : (. & .) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
+        let source = "module app; macro choose : (. & (. -> .)) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
         let items = complete_at_marker(source, "{ cho");
         let item = items.iter().find(|item| item.label == "choose").unwrap();
         assert_eq!(
@@ -1367,10 +1316,8 @@ mod tests {
         LspAnalysis {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module: std::collections::BTreeMap::from([(path, "syntax".to_owned())]),
-            label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
             import_aliases: Default::default(),
             sources,
-            generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
                 std::collections::BTreeMap::new(),
                 None,
@@ -1382,11 +1329,11 @@ mod tests {
     #[test]
     fn qualified_provider_members_are_visibility_and_namespace_exact() {
         let analysis = operator_catalog(
-            "module syntax; pub fn visible() { () } fn hidden() { () } pub type Item = .; pub newtype Box : . { pub constructor make; projector read }",
+            "module syntax; pub fn visible() { () } fn hidden() { () } pub type Item = .; pub type { Box: . { pub mk; get }; }",
         );
         for (fragment, expected) in [
             ("selected.", vec!["visible"]),
-            ("selected.Box.", vec!["make"]),
+            ("selected.Box.", vec!["mk"]),
         ] {
             let source = format!("module app; import syntax as selected; fn run() {{ {fragment}");
             let uri: Uri = test_file_uri("/app.kio");
@@ -1427,17 +1374,16 @@ mod tests {
             .insert(terminal.clone(), "terminal".to_owned());
         analysis.sources.insert(
             terminal,
-            "module terminal; pub newtype Box : . { pub constructor make; pub projector read }"
-                .to_owned(),
+            "module terminal; pub type { Box: . { pub mk; pub get }; }".to_owned(),
         );
         let mut failures = Vec::new();
         for (fragment, expected_reads, expected_labels) in [
-            ("Box.", vec![], vec!["make", "read"]),
+            ("Box.", vec![], vec!["get", "mk"]),
             ("selected.", vec!["syntax"], vec!["visible"]),
-            ("Alias.", vec!["syntax", "terminal"], vec!["make", "read"]),
+            ("Alias.", vec!["syntax", "terminal"], vec!["get", "mk"]),
         ] {
             let source = format!(
-                "module app; import syntax as selected; import missing as unused; type Alias = selected.Forward; newtype Box : . {{ constructor make; projector read; }}; fn run() {{ {fragment}"
+                "module app; import syntax as selected; import missing as unused; type Alias = selected.Forward; type {{ Box: . {{ mk; get; }}; }}; fn run() {{ {fragment}"
             );
             let uri: Uri = test_file_uri("/app.kio");
             let position = LineIndex::new(&source).to_position(source.len() as u32);
@@ -1614,15 +1560,15 @@ mod tests {
             fn hidden() -> . { () }
             pub(app) fn scoped() -> . { () }
             pub type Value = .;
-            pub newtype Wrapped : . { pub constructor make; pub projector get }
+            pub type { Wrapped: . { pub mk; pub get }; }
             pub literal answer = 1;
-            pub labels Packet = { alpha: ., beta: . };
-            pub labels { gamma: . };
-            pub(app) labels { local: . };
-            /// The forwarded field's own documentation.
-            pub type {forward} = {gamma};
-            pub(app) type {local_forward} = {local};
-            type {hidden_forward} = {gamma};
+            pub type Packet = { Alpha: .; Beta: .; };
+            pub type { Gamma: .; };
+            pub(app) type { Local: .; };
+            /// The alias's own documentation.
+            pub type Forward = Gamma;
+            pub(app) type Local_forward = Local;
+            type Hidden_forward = Gamma;
             pure fn expand_value(value: .) -> . { value }
             pub macro expand : . -> . { impl expand_value }
             pub op _ + _ { impl visible }
@@ -1632,6 +1578,7 @@ mod tests {
             "Alpha",
             "Beta",
             "Gamma",
+            "Forward",
             "Host",
             "Packet",
             "Value",
@@ -1643,7 +1590,7 @@ mod tests {
             "visible",
         ];
         for importer in ["app/main", "outside/main"] {
-            for prefix in ["", "op", "vis", "{", "op _", "varop ["] {
+            for prefix in ["", "op", "vis", "op _", "varop ["] {
                 let text = format!("module {importer}; import syntax({prefix}");
                 let list = import_list_completions(&text, text.len() as u32, None, Some(&analysis))
                     .unwrap();
@@ -1653,38 +1600,24 @@ mod tests {
                 assert!(!names.contains(&"expand_value"));
                 assert!(!names.contains(&"make"));
                 assert!(!names.contains(&"get"));
-                assert!(!names.contains(&"Forward"));
-                assert!(!names.contains(&"Local_forward"));
-                assert!(!names.contains(&"{hidden_forward}"));
+                assert!(!names.contains(&"Hidden_forward"));
+                assert!(names.iter().all(|name| !name.contains('{')));
                 match prefix {
                     "" | "op" => {
                         for name in ordinary {
                             assert!(names.contains(&name), "{importer}: {names:?}");
                         }
-                        for name in [
-                            "{alpha}",
-                            "{beta}",
-                            "{gamma}",
-                            "{forward}",
-                            "op _ + _",
-                            "varop [* *]",
-                        ] {
+                        for name in ["op _ + _", "varop [* *]"] {
                             assert!(names.contains(&name), "{importer}: {names:?}");
                         }
                         assert_eq!(names.contains(&"scoped"), importer == "app/main");
-                        assert_eq!(names.contains(&"{local}"), importer == "app/main");
                         assert_eq!(names.contains(&"Local"), importer == "app/main");
-                        assert_eq!(names.contains(&"{local_forward}"), importer == "app/main");
+                        assert_eq!(names.contains(&"Local_forward"), importer == "app/main");
                     }
                     "vis" => assert!(list.items.iter().all(|item| !matches!(
                         item.kind,
                         Some(CompletionItemKind::FIELD | CompletionItemKind::OPERATOR)
                     ))),
-                    "{" => assert!(
-                        list.items
-                            .iter()
-                            .all(|item| item.kind == Some(CompletionItemKind::FIELD))
-                    ),
                     _ => assert!(
                         list.items
                             .iter()
@@ -1692,18 +1625,18 @@ mod tests {
                     ),
                 }
                 assert!(!list.items.is_empty(), "{prefix}");
-                if matches!(prefix, "" | "op" | "{") {
+                if matches!(prefix, "" | "op") {
                     let forwards: Vec<_> = list
                         .items
                         .iter()
-                        .filter(|item| item.label == "{forward}")
+                        .filter(|item| item.label == "Forward")
                         .collect();
                     assert_eq!(forwards.len(), 1);
-                    assert_eq!(forwards[0].kind, Some(CompletionItemKind::FIELD));
+                    assert_eq!(forwards[0].kind, Some(CompletionItemKind::STRUCT));
                     let Some(Documentation::MarkupContent(doc)) = &forwards[0].documentation else {
-                        panic!("forwarding completion keeps its own documentation");
+                        panic!("alias completion keeps its own documentation");
                     };
-                    assert!(doc.value.contains("forwarded field's own documentation"));
+                    assert!(doc.value.contains("alias's own documentation"));
                 }
                 for item in list.items {
                     let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
@@ -1760,18 +1693,36 @@ mod tests {
     }
 
     #[test]
+    fn malformed_import_recovery_keeps_ordinary_completion_candidates() {
+        let analysis =
+            operator_catalog("module syntax; pub type { Field: .; }; pub fn field() -> . { () }");
+        for prefix in ["{", "{f", "{Field"] {
+            let source = format!("module app; import syntax({prefix}");
+            let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
+                .expect("ordinary import recovery context");
+            assert_eq!(
+                labels(&list.items),
+                ["Field", "field"],
+                "{source}: {list:?}"
+            );
+            for item in list.items {
+                let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
+                    panic!("ordinary selection edit");
+                };
+                assert_eq!(edit.new_text, item.label);
+            }
+        }
+    }
+
+    #[test]
     fn import_list_completion_preserves_comments_around_replaced_selections() {
         let analysis = operator_catalog(
-            "module syntax; pub labels { field: . }; pub fn foo() -> . { () }
+            "module syntax; pub type { Field: .; }; pub fn foo() -> . { () }
              pub op _ + _ { impl foo }",
         );
         for (selection, prefix, requested) in [
             ("foo", "f", "foo"),
-            (
-                "{ // Name context\n field // Closing context\n }",
-                "{",
-                "{field}",
-            ),
+            ("Field", "F", "Field"),
             ("op _ + _", "op", "op _ + _"),
         ] {
             let source =
@@ -1922,28 +1873,27 @@ rec(loop) {\n\
     }
 
     #[test]
-    fn selective_label_import_does_not_enter_ordinary_completion_scope() {
-        let source =
-            "module pkg/main;\nimport pkg/labels(item, Item, {field});\nfn f() -> . { () }\n";
+    fn selective_nominal_imports_stay_in_the_type_completion_scope() {
+        let source = "module pkg/main;\nimport pkg/types(item, Item, Field);\nfn f() -> . { () }\n";
         let items = complete_at_marker(source, "{ ");
         let labels = labels(&items);
         assert!(labels.contains(&"item"));
         assert!(!labels.contains(&"Item"));
-        assert!(!labels.contains(&"field"));
+        assert!(!labels.contains(&"Field"));
     }
 
     #[test]
-    fn ordinary_label_nominal_completion_keeps_owner_prose() {
-        let source = "module pkg/main;\n/// The field label.\nlabels { field: . };\nfn f(value: Field) -> . { () }\n";
+    fn ordinary_nominal_completion_keeps_owner_prose() {
+        let source = "module pkg/main;\n/// The field type.\ntype { Field: .; }\nfn f(value: Field) -> . { () }\n";
         let items = complete_at_marker(source, "value: ");
         let item = items
             .iter()
             .find(|item| item.label == "Field")
-            .expect("generated nominal completion");
+            .expect("nominal completion");
         let Some(Documentation::MarkupContent(markup)) = &item.documentation else {
             panic!("expected documentation: {item:?}");
         };
-        assert!(markup.value.contains("The field label."));
+        assert!(markup.value.contains("The field type."));
         assert!(!markup.value.contains("```"));
         let value_items = complete_at_marker(source, "-> . { ");
         assert!(!labels(&value_items).contains(&"Field"));
@@ -1979,7 +1929,7 @@ rec {
   /// Transparent recursive chain.
   pub type Chain = Node;
   /// Nominal recursive node.
-  pub newtype Node : Chain { pub constructor make_node; pub projector read_node }
+  pub type { Node: Chain { pub mk; pub get }; }
 }
 fn use_site(value: Node) -> . { () }
 ";
@@ -2007,8 +1957,8 @@ import pkg/types(Imported, _Imported);
 import pkg/values(value_fn);
 type Pair = .;
 type _Pair = .;
-newtype Box : . { pub constructor mk_box; pub projector un_box }
-newtype _Box : . { pub constructor mk_marked; pub projector un_marked }
+type { Box: . { pub mk; pub get }; }
+type { _Box: . { pub mk; pub get }; }
 fn helper(x: .) -> . { x }
 pub macro foo : [Source] Source -> [Target] Target { impl helper }
 ";

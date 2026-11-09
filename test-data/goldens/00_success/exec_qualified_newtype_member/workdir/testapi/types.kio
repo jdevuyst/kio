@@ -2,4 +2,4 @@ module testapi/types;
 
 import testapi(I32);
 
-pub newtype Celsius : I32 { pub constructor mk_celsius; pub projector to_int }
+pub type { Celsius: I32 { pub mk; pub get } }

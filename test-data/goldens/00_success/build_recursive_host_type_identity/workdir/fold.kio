@@ -4,7 +4,9 @@ import macros/control(macro if);
 import testapi(Array, Bool, I32);
 import testapi/iter(loop);
 
-labels Array_state = { cells: Array[I32] };
+type { Cells: Array[I32] { mk; get } }
+
+type Array_state = Cells;
 
 rec(loop) fn keep_array_once(done: Bool, state: Array_state) -> Array_state {
   if(done) { state } else { recur keep_array_once(.t, state) }

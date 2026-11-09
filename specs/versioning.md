@@ -45,7 +45,7 @@ structural.
 | Retained export's normalized type is not alpha-and-kind-equal to the baseline (return narrows, parameter widens, …) | **breaking** |
 | Retained `pure fn` export loses `pure` | **breaking** |
 | Retained `fn` export gains `pure` | compatible |
-| `newtype` export: a `pub` member becomes private, or a `pub` member's signature changes | **breaking** |
+| Nominal type export: a `pub` member becomes private, or a `pub` member's signature changes | **breaking** |
 | Export added | compatible |
 | A private newtype member's payload changes, with no `pub` member exposing it | invisible (not a surface change) |
 
@@ -87,7 +87,7 @@ every type a signature mentions compares each type by its kind:
 
 - **transparent alias** — inlined; a named export records its name plus its
   expansion.
-- **`newtype`** (including `labels`-generated newtypes) — compared by qualified
+- **nominal type** — compared by qualified
   name plus kind and arity; the payload is reached only through the newtype's
   `pub` members.
 - **structural** (`&`, `|`) — compared structurally.
@@ -391,10 +391,7 @@ v(1) {
     module api {
       rec {
         pub type Tree = Branch;
-        pub newtype Branch : Tree {
-          pub constructor branch;
-          pub projector un_branch;
-        };
+        pub type { Branch: Tree { pub mk; pub get; }; };
       }
     }
   }
@@ -441,8 +438,8 @@ redundant group and records ordinary inline declarations instead.
 Declarations inside a module section are post-elaboration **Kio'**:
 
 - `host type` / `host fn` — already signature-only in Kio'.
-- `type`, `newtype`, `rec newtype`, and a complete `rec { ... }` type group
-  (the elaborated forms; never surface `labels`). A mutual group is admitted
+- Alias `type`, explicit singleton nominal `type`, recursive singleton nominal
+  `rec type`, and a complete `rec { ... }` type group. A mutual group is admitted
   only in `with`, not inline under an operation.
 - **Body-less `fn` signatures** for exports — a changelog-specific production
   with the ordinary function's ordered type/value groups, including type-only
@@ -457,8 +454,8 @@ Declarations inside a module section are post-elaboration **Kio'**:
   body on a changelog `fn` is a changelog-context error. The optional `pure`
   modifier records whether the exported ordinary function is available to
   compile-time evaluation. No other signature-file declaration admits
-  `pure`: host functions are runtime requirements, and `type` / `newtype`
-  declarations have no purity.
+  `pure`: host functions are runtime requirements, and type declarations have
+  no purity.
 
   An omitted result annotation on either a body-less export `fn` or a
   `host fn` means `.`. Explicit `-> .` records the same contract.
@@ -473,16 +470,12 @@ Declarations inside a module section are post-elaboration **Kio'**:
 No surface-only forms (`macro`, `op`, `match`, `do`, …) appear — they are not
 Kio'.
 
-A `newtype` records its elaborated form with its members. For example, after
-`labels` elaboration, a label entry surfaces as the generated newtype:
+A nominal type records an explicit singleton declaration with its fixed members:
 
 ```text
 add {
   module app {
-    newtype Old_type : Str {
-      pub constructor mk;
-      pub projector get;
-    };
+    pub type { Old_type: Str { pub mk; pub get; }; };
   }
 }
 ```
@@ -490,17 +483,12 @@ add {
 (Kio' user type names are `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*` — an
 optional single leading underscore, letter-first words with trailing digits,
 single internal separators, and any trailing underscores. Only the first
-letter is uppercase. The
-`labels` desugar capitalizes the label's first letter, so a label `old_type`
-mints the newtype `Old_type`.)
+letter is uppercase.)
 
 The recorded declaration exposes exactly the newtype's plain-`pub` member
-surface; scoped `pub(path)` is not exported into a signature. A constructor or
-projector that is not plain `pub` is replaced by the private placeholder
-`sig_private_constructor` or `sig_private_projector`; if that spelling would
-collide with a retained plain-`pub` member, the smallest positive `_nN` suffix
-that does not collide is appended. The placeholder never preserves the hidden
-source member's name. When neither member is plain `pub`, the payload is
+surface; scoped `pub(path)` is not exported into a signature. Each member keeps
+its fixed `mk` or `get` spelling; a member that is not plain `pub` is recorded
+with private visibility. When neither member is plain `pub`, the payload is
 recorded as `.` and existential parameters are omitted, so the artifact cannot
 reveal a fully opaque payload. Documentation, trivia, and `import` clauses needed
 only by omitted private facts are likewise absent. Such a recorded newtype
@@ -523,7 +511,7 @@ The legacy `module app { old_fn; }` spelling remains accepted when reading an
 existing changelog but formats to `app.old_fn;`; new output never writes the
 nested form. A bare name remains side-ambiguous on its own — a value-shaped name
 could be a host fn or an exported fn, and a type-shaped name a `host type` or an exported
-`newtype` / `type` — so the changelog verifier **replays the history to the
+nominal type or alias — so the changelog verifier **replays the history to the
 item's introducing `add` / `modify` operation** to recover its side (which
 selects the partition) and its frozen signature (which the deprecated re-emit
 consumes). This is the reason replay history must not be garbage-collected: a
@@ -806,20 +794,16 @@ contract surface at that commit:
   *sealed* iff its changelog has at least one committed version.
 - **Unsealed** — when the dependency ships no `<pkg>.sig.kio` (or one still on
   its uncommitted first draft `v(1)`), the digest is over its bridge-reachable
-  **live** surface: the `host`/`pub` type, newtype, alias, and function
+  **live** surface: the `host`/`pub` type, nominal type, alias, and function
   **signatures** its bridged modules declare, including `pure` on exported
   ordinary functions. This live surface is projected
   from the dependency's *signatures alone* — function bodies are never lowered
   or typechecked to compute it — so it digests identically in the full and
   standalone Kio' checking pipelines even when the dependency's bodies use
   surface forms (block and blockless macro calls) that only the full
-  front-end accepts. A
-  surface-only declaration that would enter the contract only *after* surface
-  elaboration — notably `labels`, which the full front-end lowers to newtypes —
-  is **not** part of the unsealed live surface: projecting it would require the
-  surface front-end the standalone Kio' checker deliberately omits, so a dependency
-  that exposes such a form in its public interface must be **sealed** (ship a
-  `<pkg>.sig.kio`) to freeze it into its contract.
+  front-end accepts. Compact nominal declarations contribute their ordinary
+  nominal entries and any named alias to the live surface; omitted member
+  bodies and explicit public `mk` / `get` members project equivalently.
 
 The digest reuses the contract-surface projection above, so it is a pure
 function of the dependency's contract surface: the same surface digests

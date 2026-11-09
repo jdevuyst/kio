@@ -5,9 +5,9 @@ import macros/match(macro match);
 import testapi/io(print);
 import testapi/types(String);
 
-newtype A : String { pub constructor mk_a; pub projector un_a }
+type { A: String { pub mk; pub get } }
 
-newtype B : String { pub constructor mk_b; pub projector un_b }
+type { B: String { pub mk; pub get } }
 
 // Source: `. -> A`. The call site expects `. -> (A | B)` (e.g.,
 // a wider return-type contract later took shape after this
@@ -16,12 +16,12 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // on the return slot — leaf sees source-then-target `(A, A | B)`;
 // the leaf `ease` engine fires `R-Widen-Sum` to inject `A` into
 // the left arm of the target sum.
-fn source() -> A { A.mk_a("ease! return widened ok\n") }
+fn source() -> A { A.mk("ease! return widened ok\n") }
 
 pub fn main() {
   let widen_ret = ease(source)[. -> (A | B)];
   let r = widen_ret();
   print(match(r) {
-    (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
+    (.(a: A) { A.get(a) }, .(b: B) { B.get(b) })
   })
 }

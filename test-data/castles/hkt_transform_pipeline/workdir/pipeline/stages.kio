@@ -2,25 +2,26 @@ module pipeline/stages;
 
 import hkt/testapi/main(Box, Extract, Functor, Identity, Monad, Pure);
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import macros/sequence(macro do);
 import pipeline/domain(
+, Approvals
+, Approved
+, Delta
+, Field_name
+, First_sample
 , Form_event
+, Form_name
 , Pipeline_summary
+, Report_name
+, Route
+, Sample_name
+, Score_total
+, Second_sample
+, Stage_score
 , Telemetry_sample
-, {approvals}
-, {approved}
-, {delta}
-, {field_name}
-, {first_sample}
-, {form_name}
-, {report_name}
-, {route}
-, {sample_name}
-, {score_total}
-, {second_sample}
-, {stage_score}
-, {third_sample}
-, {urgent}
+, Third_sample
+, Urgent
 );
 import pipeline/hkt_instances(
 , box_extract
@@ -40,37 +41,41 @@ fn join3(a: String, b: String, c: String) -> String { string_concat(a, string_co
 
 fn render_sample(sample: Telemetry_sample) -> String {
   join3(
-  , sample.?{sample_name}
+  , sample.>select { Sample_name.get }
   , "="
   , join3(
-    , int_to_string(sample.?{stage_score})
+    , int_to_string(sample.>select { Stage_score.get })
     , ":"
-    , join3(bool_to_string(sample.?{approved}), ":", sample.?{route})
+    , join3(bool_to_string(sample.>select { Approved.get }), ":", sample.>select { Route.get })
     )
   )
 }
 
 fn normalized_name(event: Form_event) -> String {
-  join3(event.?{form_name}, "/", string_concat("form.", event.?{field_name}))
+  join3(
+  , event.>select { Form_name.get }
+  , "/"
+  , string_concat("form.", event.>select { Field_name.get })
+  )
 }
 
 fn score_and_adjust(event: Form_event) -> Telemetry_sample {
   let name = normalized_name(event);
-  if(string_eq(event.?{form_name}, "login")) {
-    {sample_name = name, stage_score = 11, route = "accept", approved = .t}
-  } else if(string_eq(event.?{form_name}, "profile")) {
-    {sample_name = name, stage_score = 38, route = "review+manual", approved = .f}
+  if(string_eq(event.>select { Form_name.get }, "login")) {
+    (Sample_name.mk(name), Stage_score.mk(11), Route.mk("accept"), Approved.mk(.t))
+  } else if(string_eq(event.>select { Form_name.get }, "profile")) {
+    (Sample_name.mk(name), Stage_score.mk(38), Route.mk("review+manual"), Approved.mk(.f))
   } else {
-    {sample_name = name, stage_score = 23, route = "review+manual", approved = .f}
+    (Sample_name.mk(name), Stage_score.mk(23), Route.mk("review+manual"), Approved.mk(.f))
   }
 }
 
 fn run_pipeline[*F](monad: Monad[F], functor: Functor[F], pur: Pure[F], seed: F[Form_event]) -> F[Telemetry_sample] {
-  do(Monad.bind(monad)) {
-    let normalized <- Functor.fmap(functor)[Form_event][Form_event](.(event) { event }, seed);
-    Functor.fmap(functor)[Form_event][Telemetry_sample](
+  do(Monad.get(monad)) {
+    let normalized <- Functor.get(functor)[Form_event][Form_event](.(event) { event }, seed);
+    Functor.get(functor)[Form_event][Telemetry_sample](
     , .(event) { score_and_adjust(event) }
-    , Pure.lift(pur)(normalized)
+    , Pure.get(pur)(normalized)
     )
   }
 }
@@ -81,24 +86,22 @@ fn extract_pipeline[*F](
 , pur: Pure[F]
 , ext: Extract[F]
 , event: Form_event
-) -> Telemetry_sample {
-  Extract.peel(ext)(run_pipeline(monad, functor, pur, Pure.lift(pur)(event)))
-}
+) -> Telemetry_sample { Extract.get(ext)(run_pipeline(monad, functor, pur, Pure.get(pur)(event))) }
 
 fn login_event() -> Form_event {
-  {form_name = "login", field_name = "email", delta = 2, urgent = .f}
+  (Form_name.mk("login"), Field_name.mk("email"), Delta.mk(2), Urgent.mk(.f))
 }
 
 fn profile_event() -> Form_event {
-  {form_name = "profile", field_name = "display", delta = 10, urgent = .t}
+  (Form_name.mk("profile"), Field_name.mk("display"), Delta.mk(10), Urgent.mk(.t))
 }
 
 fn checkout_event() -> Form_event {
-  {form_name = "checkout", field_name = "coupon", delta = 5, urgent = .t}
+  (Form_name.mk("checkout"), Field_name.mk("coupon"), Delta.mk(5), Urgent.mk(.t))
 }
 
 fn approved_value(sample: Telemetry_sample) -> I32 {
-  if(sample.?{approved}) { 1 } else { 0 }
+  if(sample.>select { Approved.get }) { 1 } else { 0 }
 }
 
 fn summarize(
@@ -107,14 +110,14 @@ fn summarize(
 , second: Telemetry_sample
 , third: Telemetry_sample
 ) -> Pipeline_summary {
-  {
-  , report_name = name
-  , first_sample = render_sample(first)
-  , second_sample = render_sample(second)
-  , third_sample = render_sample(third)
-  , score_total = 72
-  , approvals = 1
-  }
+  (
+  , Report_name.mk(name)
+  , First_sample.mk(render_sample(first))
+  , Second_sample.mk(render_sample(second))
+  , Third_sample.mk(render_sample(third))
+  , Score_total.mk(72)
+  , Approvals.mk(1)
+  )
 }
 
 pub fn box_summary() -> Pipeline_summary {

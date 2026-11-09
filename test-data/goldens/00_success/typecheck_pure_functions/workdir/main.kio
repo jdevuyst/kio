@@ -4,9 +4,9 @@ import __intrinsics__;
 
 pub type Unit_alias = .;
 
-pub labels Unit_label = { unit: . };
+pub type Unit_label = { Unit: . };
 
-pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+pub type { Box[A]: A { pub mk; pub get } }
 
 pub pure fn empty() { () }
 
@@ -18,6 +18,6 @@ pub varop [* *] { foldr append empty }
 
 pub pure fn id[A](value: A) -> A { value }
 
-pub pure fn wrap[A](value: A) -> Box[A] { Box.mk_box[A](value) }
+pub pure fn wrap[A](value: A) -> Box[A] { Box.mk[A](value) }
 
 fn impure_use() { id(()) }

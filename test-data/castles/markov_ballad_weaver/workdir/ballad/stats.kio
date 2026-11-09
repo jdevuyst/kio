@@ -4,18 +4,21 @@
 module ballad/stats;
 
 import ballad/list(List, cons, len, nil);
-import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, {line_stop}, {line_words});
+import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, Line_stop, Line_words);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, lt_i32);
 import testapi/iter(loop);
 import testapi/text(string_eq);
 
 rec(loop) fn words_onto(lines: List[Line], acc: I32) -> I32 {
-  match(lines.>List.un_list) {
+  match(lines.>List.get) {
     (
-    , .(l: Line, more: List[Line]) { recur words_onto(more, add_i32(acc, len(l.?{line_words}))) }
+    , .(l: Line, more: List[Line]) {
+        recur words_onto(more, add_i32(acc, len(l.>select { Line_words.get })))
+      }
     , .(_empty: .) { acc }
     )
   }
@@ -24,10 +27,10 @@ rec(loop) fn words_onto(lines: List[Line], acc: I32) -> I32 {
 pub fn words_generated(lines: List[Line]) -> I32 { words_onto(lines, 0) }
 
 rec(loop) fn longest_onto(lines: List[Line], acc: I32) -> I32 {
-  match(lines.>List.un_list) {
+  match(lines.>List.get) {
     (
     , .(l: Line, more: List[Line]) {
-        let n = len(l.?{line_words});
+        let n = len(l.>select { Line_words.get });
         let best = if(lt_i32(acc, n)) { n } else { acc };
         recur longest_onto(more, best)
       }
@@ -39,7 +42,7 @@ rec(loop) fn longest_onto(lines: List[Line], acc: I32) -> I32 {
 pub fn longest_line(lines: List[Line]) -> I32 { longest_onto(lines, 0) }
 
 rec(loop) fn seen(ws: List[String], w: String) -> Bool {
-  match(ws.>List.un_list) {
+  match(ws.>List.get) {
     (
     , .(x: String, more: List[String]) {
         if(string_eq(x, w)) { .t } else { recur seen(more, w) }
@@ -50,7 +53,7 @@ rec(loop) fn seen(ws: List[String], w: String) -> Bool {
 }
 
 rec(loop) fn collect_words(ws: List[String], acc: List[String]) -> List[String] {
-  match(ws.>List.un_list) {
+  match(ws.>List.get) {
     (
     , .(w: String, more: List[String]) {
         if(seen(acc, w)) {
@@ -65,10 +68,10 @@ rec(loop) fn collect_words(ws: List[String], acc: List[String]) -> List[String] 
 }
 
 rec(loop) fn collect_lines(lines: List[Line], acc: List[String]) -> List[String] {
-  match(lines.>List.un_list) {
+  match(lines.>List.get) {
     (
     , .(l: Line, more: List[Line]) {
-        recur collect_lines(more, collect_words(l.?{line_words}, acc))
+        recur collect_lines(more, collect_words(l.>select { Line_words.get }, acc))
       }
     , .(_empty: .) { acc }
     )
@@ -79,28 +82,28 @@ rec(loop) fn collect_lines(lines: List[Line], acc: List[String]) -> List[String]
 pub fn distinct_words(lines: List[Line]) -> I32 { len(collect_lines(lines, nil[String])) }
 
 fn ended_on_word(l: Line) -> Bool {
-  let stop = l.?{line_stop};
+  let stop = l.>select { Line_stop.get };
   match(stop) {
     (.(_e: By_end_word) { .t }, .(_c: By_word_cap) { .f }, .(_d: By_no_successor) { .f })
   }
 }
 
 fn hit_the_cap(l: Line) -> Bool {
-  let stop = l.?{line_stop};
+  let stop = l.>select { Line_stop.get };
   match(stop) {
     (.(_e: By_end_word) { .f }, .(_c: By_word_cap) { .t }, .(_d: By_no_successor) { .f })
   }
 }
 
 fn ran_dry(l: Line) -> Bool {
-  let stop = l.?{line_stop};
+  let stop = l.>select { Line_stop.get };
   match(stop) {
     (.(_e: By_end_word) { .f }, .(_c: By_word_cap) { .f }, .(_d: By_no_successor) { .t })
   }
 }
 
 rec(loop) fn count_onto(lines: List[Line], pick: Line -> Bool, acc: I32) -> I32 {
-  match(lines.>List.un_list) {
+  match(lines.>List.get) {
     (
     , .(l: Line, more: List[Line]) {
         let .(hit: I32) = if(pick(l)) { 1 } else { 0 };

@@ -357,21 +357,10 @@ pub(super) fn namespace_candidates(
                     pattern_scope(pattern, offset, ns, true, &mut out);
                 }
             }
-            ScopeSyntax::RowLet(entries) if ns == Namespace::Value => {
-                for entry in entries.iter().rev() {
-                    local(
-                        &mut out,
-                        &entry.local,
-                        entry.local_span,
-                        CandidateKind::Variable,
-                    );
-                }
-            }
             ScopeSyntax::TypeParameters(_)
             | ScopeSyntax::RecursiveMembers { .. }
             | ScopeSyntax::RecursiveTypes(_)
             | ScopeSyntax::TypeDeclarations(_)
-            | ScopeSyntax::RowLet(_)
             | ScopeSyntax::Placeholder { .. } => {}
         }
     }

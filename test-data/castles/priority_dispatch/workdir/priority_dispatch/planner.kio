@@ -1,10 +1,34 @@
 module priority_dispatch/planner;
 
 import macros/control(macro if);
+import macros/row_macros(macro select);
 import priority_dispatch/model(
 , Choice
+, Choice_cpu
+, Choice_deadline
+, Choice_duration
+, Choice_eligible
+, Choice_id
+, Choice_io
+, Choice_name
+, Choice_rank
 , Dispatch_state
 , Slot
+, Slot_cpu
+, Slot_io
+, Slot_tick
+, State_alert_done
+, State_audit_done
+, State_backup_done
+, State_blocked
+, State_cpu
+, State_dispatched
+, State_duration
+, State_ingress_done
+, State_io
+, State_reconcile_done
+, State_slack
+, State_tick
 , alert_job
 , audit_job
 , backup_job
@@ -13,29 +37,6 @@ import priority_dispatch/model(
 , initial_state
 , reconcile_job
 , slot
-, {choice_cpu}
-, {choice_deadline}
-, {choice_duration}
-, {choice_eligible}
-, {choice_id}
-, {choice_io}
-, {choice_name}
-, {choice_rank}
-, {slot_cpu}
-, {slot_io}
-, {slot_tick}
-, {state_alert_done}
-, {state_audit_done}
-, {state_backup_done}
-, {state_blocked}
-, {state_cpu}
-, {state_dispatched}
-, {state_duration}
-, {state_ingress_done}
-, {state_io}
-, {state_reconcile_done}
-, {state_slack}
-, {state_tick}
 );
 import priority_dispatch/scoring(all_done, better, blocked_for, choose_job);
 import priority_dispatch/text as text;
@@ -59,13 +60,14 @@ fn slot_for(tick: I32) -> Slot {
 }
 
 fn choose(state: Dispatch_state, slot_value: Slot) -> Choice {
-  let .({
-  , state_ingress_done as ingress_done
-  , state_backup_done as backup_done
-  , state_alert_done as alert_done
-  , state_reconcile_done as reconcile_done
-  , state_audit_done as audit_done
-  }) = state;
+  let .(ingress_done, backup_done, alert_done, reconcile_done, audit_done) =
+    state.>select {
+      State_ingress_done.get;
+      State_backup_done.get;
+      State_alert_done.get;
+      State_reconcile_done.get;
+      State_audit_done.get
+    };
   let ingress = choose_job(ingress_job(), slot_value, ingress_done);
   let backup = choose_job(backup_job(), slot_value, backup_done);
   let alert = choose_job(alert_job(), slot_value, alert_done);
@@ -75,13 +77,14 @@ fn choose(state: Dispatch_state, slot_value: Slot) -> Choice {
 }
 
 fn blocked_count(state: Dispatch_state, slot_value: Slot) -> I32 {
-  let .({
-  , state_ingress_done as ingress_done
-  , state_backup_done as backup_done
-  , state_alert_done as alert_done
-  , state_reconcile_done as reconcile_done
-  , state_audit_done as audit_done
-  }) = state;
+  let .(ingress_done, backup_done, alert_done, reconcile_done, audit_done) =
+    state.>select {
+      State_ingress_done.get;
+      State_backup_done.get;
+      State_alert_done.get;
+      State_reconcile_done.get;
+      State_audit_done.get
+    };
   add_i32(
   , add_i32(
     , blocked_for(ingress_job(), slot_value, ingress_done)
@@ -101,23 +104,23 @@ fn trace_line(slot_value: Slot, choice_value: Choice, blocked: I32) -> String {
   text.cat5(
   , text.cat5(
     , "tick "
-    , text.show_i32(slot_value.?{slot_tick})
+    , text.show_i32(slot_value.>select { Slot_tick.get })
     , " cap cpu="
-    , text.show_i32(slot_value.?{slot_cpu})
+    , text.show_i32(slot_value.>select { Slot_cpu.get })
     , " io="
     )
   , text.cat5(
-    , text.show_i32(slot_value.?{slot_io})
+    , text.show_i32(slot_value.>select { Slot_io.get })
     , " -> "
-    , choice_value.?{choice_name}
+    , choice_value.>select { Choice_name.get }
     , " rank="
-    , text.show_i32(choice_value.?{choice_rank})
+    , text.show_i32(choice_value.>select { Choice_rank.get })
     )
   , text.cat5(
     , " deadline="
-    , text.show_i32(choice_value.?{choice_deadline})
+    , text.show_i32(choice_value.>select { Choice_deadline.get })
     , " duration="
-    , text.show_i32(choice_value.?{choice_duration})
+    , text.show_i32(choice_value.>select { Choice_duration.get })
     , " blocked="
     )
   , text.show_i32(blocked)
@@ -126,28 +129,43 @@ fn trace_line(slot_value: Slot, choice_value: Choice, blocked: I32) -> String {
 }
 
 fn advance(state: Dispatch_state, choice_value: Choice, blocked: I32) -> Dispatch_state {
-  let .({
-  , state_tick as tick
-  , state_ingress_done as ingress_done
-  , state_backup_done as backup_done
-  , state_alert_done as alert_done
-  , state_reconcile_done as reconcile_done
-  , state_audit_done as audit_done
-  , state_dispatched as dispatched
-  , state_blocked as blocked_total
-  , state_cpu as cpu_total
-  , state_io as io_total
-  , state_duration as duration_total
-  , state_slack as slack_total
-  }) = state;
-  let .({
-  , choice_id as id
-  , choice_cpu as cpu
-  , choice_io as io
-  , choice_duration as duration
-  , choice_deadline as deadline
-  , choice_eligible as eligible
-  }) = choice_value;
+  let .(
+  , tick
+  , ingress_done
+  , backup_done
+  , alert_done
+  , reconcile_done
+  , audit_done
+  , dispatched
+  , blocked_total
+  , cpu_total
+  , io_total
+  , duration_total
+  , slack_total
+  ) =
+    state.>select {
+      State_tick.get;
+      State_ingress_done.get;
+      State_backup_done.get;
+      State_alert_done.get;
+      State_reconcile_done.get;
+      State_audit_done.get;
+      State_dispatched.get;
+      State_blocked.get;
+      State_cpu.get;
+      State_io.get;
+      State_duration.get;
+      State_slack.get
+    };
+  let .(id, cpu, io, duration, deadline, eligible) =
+    choice_value.>select {
+      Choice_id.get;
+      Choice_cpu.get;
+      Choice_io.get;
+      Choice_duration.get;
+      Choice_deadline.get;
+      Choice_eligible.get
+    };
   let next_tick = add_i32(tick, 1);
   if(eligible) {
     dispatch_state(
@@ -183,8 +201,8 @@ fn advance(state: Dispatch_state, choice_value: Choice, blocked: I32) -> Dispatc
 }
 
 rec(loop) fn run_loop(state: Dispatch_state) -> Dispatch_state {
-  if(lt_i32(state.?{state_tick}, 5)) {
-    let slot_value = slot_for(state.?{state_tick});
+  if(lt_i32(state.>select { State_tick.get }, 5)) {
+    let slot_value = slot_for(state.>select { State_tick.get });
     let chosen = choose(state, slot_value);
     let blocked = blocked_count(state, slot_value);
     print(trace_line(slot_value, chosen, blocked));
@@ -195,19 +213,32 @@ rec(loop) fn run_loop(state: Dispatch_state) -> Dispatch_state {
 }
 
 fn summary(state: Dispatch_state) -> String {
-  let .({
-  , state_ingress_done as ingress_done
-  , state_backup_done as backup_done
-  , state_alert_done as alert_done
-  , state_reconcile_done as reconcile_done
-  , state_audit_done as audit_done
-  , state_dispatched as dispatched
-  , state_blocked as blocked
-  , state_cpu as cpu
-  , state_io as io
-  , state_duration as duration
-  , state_slack as slack
-  }) = state;
+  let .(
+  , ingress_done
+  , backup_done
+  , alert_done
+  , reconcile_done
+  , audit_done
+  , dispatched
+  , blocked
+  , cpu
+  , io
+  , duration
+  , slack
+  ) =
+    state.>select {
+      State_ingress_done.get;
+      State_backup_done.get;
+      State_alert_done.get;
+      State_reconcile_done.get;
+      State_audit_done.get;
+      State_dispatched.get;
+      State_blocked.get;
+      State_cpu.get;
+      State_io.get;
+      State_duration.get;
+      State_slack.get
+    };
   let complete = all_done(ingress_done, backup_done, alert_done, reconcile_done, audit_done);
   text.cat5(
   , text.cat5(

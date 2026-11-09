@@ -20,7 +20,7 @@ equiv name[A](x: A) {
 The runner, conceptually:
 
 1. Parses, type-checks, and substitutes the module to `Lowered` and finally to `Prime`-shaped terms. Every block and blockless macro call, including the library's `if`, `scope`, `do`, `match`, and `derive`, has its ordinary Kio' expansion substituted at the Lowered → Prime boundary.
-2. For each `equiv` item: binds each value parameter `pᵢ : Tᵢ` to a **fresh opaque atom** `aᵢ` shared across every arm, ignores the type parameters (they're erased), and partial-evaluates each arm body to a residual normal form `vᵢ`.
+2. For each `equiv` item: treats each type parameter as an arbitrary type shared across the arms, binds each value parameter `pᵢ : Tᵢ` to a **fresh opaque atom** `aᵢ` shared across every arm, and partial-evaluates each arm body to a residual normal form `vᵢ`. Known type abstractions reduce by substitution; type applications to an opaque callee retain their type arguments in the residual.
 3. Compares the `N` residual NFs pairwise. If every pair is equivalent under the relation in § 4, the `equiv` passes; otherwise it fails with the partition into NF-equivalence groups (see [`../cli.md`](../cli.md) § kio test for the diagnostic shape).
 
 Termination: every body is a closed well-typed Kio' term (parameters substituted with opaque atoms, which the partial evaluator treats as values that don't reduce). Strong normalization (per [`prime.md`](prime.md) § 5) holds for the substituted bodies, so the partial evaluator terminates.
@@ -42,6 +42,13 @@ In the rules and residual grammar, a bracketed type vector such as `[T̄]` abbre
 ```
 
 (See [`prime.md`](prime.md) § 3 for full rule statements.)
+
+A type application to a known type abstraction reduces by β-TLam, substituting
+the actual type argument in the body. A known type-insensitive primitive or member may
+consume a type stage according to its reduction rule. When the callee is
+opaque or otherwise unknown, retain the type application and its argument:
+there is no body whose behavior justifies erasing that stage. Later value and
+type stages remain ordered.
 
 β-Lam consumes one λ-layer per application — curry layers are distinct ([`../language.md`](../language.md#type-parameters)) — so an application that saturates a group-boundary prefix of a multi-group function reduces to a closure over the remaining groups, with the prefix's bindings captured in its environment; that closure is an ordinary closure residual (§ 3).
 
@@ -144,7 +151,7 @@ v ::=
   | __left__[T̄](v)               (sum injection with residual payload)
   | __right__[T̄](v)
   | __pair__[T̄](v₁, v₂)          (product with residual components)
-  | N.c[T̄](v)                       (newtype constructor with residual payload)
+  | N.mk[T̄](v)                       (newtype constructor with residual payload)
   | a                               (free atom — equiv parameter, unbound name,
                                      or host item)
   | case v_s { left(l) → v_l,       (symbolic case-split over an opaque sum
@@ -152,12 +159,14 @@ v ::=
                                      atoms — see § 2.6)
   | v_unit ; v_body                  (residual expression statement; v_unit
                                      is stuck at type .)
-  | Stuck(v_callee, [v_arg₁, …])    (residual application: callee couldn't
-                                     reduce — stuck on an atom or another
-                                     stuck residual)
+  | Stuck(v_callee, [v_arg₁, …])    (residual value application)
+  | StuckType(v_callee, T)          (residual type application to an opaque
+                                     or otherwise unknown callee)
 ```
 
-A **stuck residual** carries through composition: applying a stuck callee to further arguments produces a deeper stuck residual.
+A **stuck residual** carries through composition: applying a stuck callee to
+further value or type arguments retains each successive stage. `StuckType` is
+notation for the semantic residual, not a source-language construct.
 
 **Stuck shapes the runner expects:** host calls applied to fully-evaluated arguments; `__if_then_else__` whose condition is a stuck host call; `__absurd__` whose argument is a stuck host call; newtype member access against an opaque atom. All four are valid residuals — the equivalence relation in § 4 compares them structurally.
 
@@ -205,11 +214,31 @@ an opaque argument, and a nested `Stuck` application remain structural
 boundaries; in particular `[__pair__(a, b), c] ≄ [a, b, c]` and
 `Stuck(Stuck(f, [a]), [b]) ≄ Stuck(f, [a, b])`.
 
+Two `StuckType(callee, T)` residuals are equal iff their callees are equivalent
+and their type arguments are definitionally equivalent, including consistent
+renaming of bound type variables, kind, and exact nominal and used free-variable
+identities in the lexical environment.
+A residual type stage is distinct from a value stage. Thus for opaque `f`,
+`f[TypeA](())` and `f[TypeB](())` do not compare equal solely by erasing the
+distinct type arguments. A known body may instead reduce both applications to
+the same result.
+
 Two residual expression statements `v₁ ; body₁` and `v₂ ; body₂` are equal iff `v₁ ≃ v₂` and `body₁ ≃ body₂`. A residual expression statement is not equal to its body alone; the discarded unit result does not imply the action that produced it can be erased.
 
 ### 4.4. `equiv` parameters as fresh opaque atoms
 
 When an `equiv` block carries value parameters `(p₁: T₁, …, pₙ: Tₙ)`, the runner binds each `pᵢ` to a fresh opaque atom `aᵢ` **shared across every arm**. Reduction in arm `j` may produce residuals containing `aᵢ`; comparison across arms (§ 4.3) then equates references to the same parameter from different arms.
+
+Type parameters also denote arbitrary types consistently across the arms.
+When comparing polymorphic functions, the shared generic probe represents an
+arbitrary instantiation; it is not a genuine rigid type variable supplied by a
+particular caller, nor a concrete type selected for observation. A comparison
+must not assume a type-sensitive observation has the outcome for one chosen
+instantiation. An observation whose result requires choosing that arbitrary
+type remains residual; operations needing only determined outer structure may
+still reduce. An observation that needs an unresolved inference goal still
+raises the existing uncatchable missing-information error. Explicit concrete
+instantiations of known bodies substitute their actual types before evaluation.
 
 The "shared across arms" rule is what makes parametric `equiv` express a universal claim: the arms are claimed equal *for every instantiation* of the parameters. The runner discharges the universal quantification by reasoning about the bound names symbolically — the same atom in different arms compares equal, which is the symbolic-evaluation reading of "for all `aᵢ`."
 
@@ -221,9 +250,10 @@ The relation rejects the following:
 - Different application skeletons after final product-packet canonicalization:
   `Stuck(f, [p]) ≄ Stuck(f, [a, b])` for opaque `p`;
   `Stuck(f, [a]) ≄ Stuck(g, [a])` (different head).
+- Different retained type arguments: `StuckType(f, TypeA) ≄ StuckType(f, TypeB)` when the types are not definitionally equivalent.
 - Different sequence skeletons: `Stuck(f, []) ; Stuck(g, []) ≄ Stuck(g, [])` (extra stuck action).
 - Different injected branches: `__left__(v) ≄ __right__(w)`; `__left__(v) ≄ __left__(w)` when `v ≄ w`.
-- Different newtype heads: `N.c(v) ≄ M.c(v)` when `N ≠ M`; `N.c(v) ≄ N.d(w)` when `c ≠ d`.
+- Different nominal heads: `N.mk(v) ≄ M.mk(w)` when `N ≠ M`. Each nominal identity has one constructor, `mk`.
 - Literals that disagree: `.t ≄ .f`; `42[I32] ≄ 7[I32]`; `42[I32] ≄ 42[I64]` (same digits, distinct exact host-type annotations).
 
 ### 4.6. Symbolic case-split equivalence

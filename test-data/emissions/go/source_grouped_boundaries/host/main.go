@@ -47,7 +47,7 @@ func main() {
 	if pkg.Api.Callback(step, pair) != 9 || pkg.Api.Substituted(step, pair) != 9 {
 		panic("product callback or substitution")
 	}
-	if pkg.Api.KioType_Pair.Read(pkg.Api.KioType_Pair.Make(pair)) != pair {
+	if pkg.Api.KioType_Pair.Get(pkg.Api.KioType_Pair.Mk(pair)) != pair {
 		panic("newtype member grouping")
 	}
 	fmt.Println("source grouping and package roles ok")

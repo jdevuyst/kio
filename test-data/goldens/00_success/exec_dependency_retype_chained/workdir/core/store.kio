@@ -4,6 +4,6 @@ import testapi as testapi;
 
 pub type I32 = testapi.I32;
 
-pub newtype Tag : I32 { pub constructor mk; pub projector un }
+pub type { Tag: I32 { pub mk; pub get } }
 
-pub fn tag_val(t: Tag) -> I32 { Tag.un(t) }
+pub fn tag_val(t: Tag) -> I32 { Tag.get(t) }

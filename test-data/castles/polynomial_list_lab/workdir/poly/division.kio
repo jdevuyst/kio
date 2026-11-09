@@ -15,7 +15,7 @@ import testapi/text(string_concat);
 
 /// The outcome of one of the workbench's fixed division cases: either a quotient
 /// with its remainder, or the reason the division was refused.
-pub labels Divmod = { divided: core.Poly & core.Poly } | { not_divisible: String };
+pub type Divmod = { Divided: core.Poly & core.Poly } | { Not_divisible: String };
 
 fn inexact_step(lead_remainder: I32, lead_divisor: I32) -> String {
   string_concat(
@@ -34,7 +34,7 @@ fn inexact_step(lead_remainder: I32, lead_divisor: I32) -> String {
 // which is what makes that stopping test reachable at all.
 rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: core.Poly) -> Divmod {
   if(lt_i32(core.deg(remainder), core.deg(divisor))) {
-    widen_sum({divided = (quotient, remainder)})
+    widen_sum(Divided.mk((quotient, remainder)))
   } else {
     let factor = integers.exact_div(core.leading(remainder), core.leading(divisor));
     match(factor) {
@@ -49,7 +49,7 @@ rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: cor
         }
       , .(_inexact: .) {
           let reason = inexact_step(core.leading(remainder), core.leading(divisor));
-          widen_sum({not_divisible = reason})
+          widen_sum(Not_divisible.mk(reason))
         }
       )
     }
@@ -65,7 +65,7 @@ rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: cor
 /// otherwise the workbench refuses the division rather than rounding.
 pub fn divmod(p: core.Poly, divisor: core.Poly) -> Divmod {
   if(core.is_zero(divisor)) {
-    widen_sum({not_divisible = "divisor is the zero polynomial"})
+    widen_sum(Not_divisible.mk("divisor is the zero polynomial"))
   } else {
     long_divide(core.zero(), p, divisor)
   }

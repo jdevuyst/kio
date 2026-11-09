@@ -4,32 +4,45 @@ import list/core as cells;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Entry = { key: String, value: I32 | ., revision: I32 };
+pub type Entry = { Key: String; Value: I32 | .; Revision: I32 };
 
-pub labels Snapshot = { head: I32, journal: cells.List[Entry] };
+pub type Snapshot = { Head: I32; Journal: cells.List[Entry] };
 
-pub fn empty() -> Snapshot { {head = 0, journal = cells.nil[_]} }
+pub fn empty() -> Snapshot { (Head.mk(0), Journal.mk(cells.nil[_])) }
 
 pub fn write(s: Snapshot, key: String, value: I32 | ., revision: I32) -> Snapshot {
-  {head = revision, journal = cells.cons({key, value, revision}, s.?{journal})}
+  (
+  , Head.mk(revision)
+  , Journal.mk(cells.cons(
+    , (Key.mk(key), Value.mk(value), Revision.mk(revision))
+    , s.>select { Journal.get }
+    ))
+  )
 }
 
 rec(loop) fn search(entries: cells.List[Entry], key: String) -> I32 | . {
   match(cells.uncons(entries)) {
     .(entry: Entry, rest: cells.List[Entry]) {
-      if(text.string_eq(entry.?{key}, key)) { entry.?{value} } else { recur search(rest, key) }
+      if(text.string_eq(entry.>select { Key.get }, key)) {
+        entry.>select { Value.get }
+      } else {
+        recur search(rest, key)
+      }
     };
     .() { widen_sum(())[I32 | .] }
   }
 }
 
-pub fn get(s: Snapshot, key: String) -> I32 | . { search(s.?{journal}, key) }
+pub fn get(s: Snapshot, key: String) -> I32 | . {
+  search(s.>select { Journal.get }, key)
+}
 
 pub fn show_value(value: I32 | .) -> String {
   match(value) {
@@ -39,7 +52,10 @@ pub fn show_value(value: I32 | .) -> String {
 }
 
 pub fn show_entry(entry: Entry) -> String {
-  text.string_concat(entry.?{key}, text.string_concat("=", show_value(entry.?{value})))
+  text.string_concat(
+  , entry.>select { Key.get }
+  , text.string_concat("=", show_value(entry.>select { Value.get }))
+  )
 }
 
 rec(loop) fn visible_walk(
@@ -49,11 +65,11 @@ rec(loop) fn visible_walk(
 ) -> cells.List[Entry] {
   match(cells.uncons(entries)) {
     .(entry: Entry, rest: cells.List[Entry]) {
-      if(lists.elem(text.string_eq, entry.?{key}, seen)) {
+      if(lists.elem(text.string_eq, entry.>select { Key.get }, seen)) {
         recur visible_walk(rest, seen, visible)
       } else {
-        let next_seen = cells.cons(entry.?{key}, seen);
-        match(entry.?{value}) {
+        let next_seen = cells.cons(entry.>select { Key.get }, seen);
+        match(entry.>select { Value.get }) {
           .(_n: I32) { recur visible_walk(rest, next_seen, cells.cons(entry, visible)) };
           .() { recur visible_walk(rest, next_seen, visible) }
         }
@@ -64,7 +80,7 @@ rec(loop) fn visible_walk(
 }
 
 pub fn visible(s: Snapshot) -> cells.List[Entry] {
-  visible_walk(s.?{journal}, cells.nil[_], cells.nil[_])
+  visible_walk(s.>select { Journal.get }, cells.nil[_], cells.nil[_])
 }
 
 pub fn view(s: Snapshot) -> String { lists.to_string(show_entry, visible(s)) }
@@ -72,13 +88,13 @@ pub fn view(s: Snapshot) -> String { lists.to_string(show_entry, visible(s)) }
 fn show_revision(entry: Entry) -> String {
   text.string_concat(
   , show_entry(entry)
-  , text.string_concat("@", fmt.int_to_string(entry.?{revision}))
+  , text.string_concat("@", fmt.int_to_string(entry.>select { Revision.get }))
   )
 }
 
 pub fn signature(s: Snapshot) -> String {
   text.string_concat(
-  , fmt.int_to_string(s.?{head})
-  , text.string_concat(":", lists.to_string(show_revision, s.?{journal}))
+  , fmt.int_to_string(s.>select { Head.get })
+  , text.string_concat(":", lists.to_string(show_revision, s.>select { Journal.get }))
   )
 }

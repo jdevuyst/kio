@@ -6,14 +6,14 @@ import testapi/io(print);
 import widget/store as source;
 
 pub fn main() {
-  target.accept_foo({source.foo=});
+  target.accept_foo(source.Foo.mk(()));
   print("terminal-identity\n");
   source.accept_foo(target.Foo.mk(()));
-  target.Foo.mk(()).?{source.foo};
+  source.Foo.get(target.Foo.mk(()));
   print("original-constructor\n");
-  print(source.later_box(({source.foo=}, {source.box = "later-mixed\n"})));
+  print(source.later_box((source.Foo.mk(()), source.Box.mk("later-mixed\n"))));
   print(source.still_box(source.Box.mk("unselected-origin\n")));
-  source.later_box(({source.foo=}, {source.box=}));
-  source.still_box({source.box=});
+  source.later_box((source.Foo.mk(()), source.Box.mk(())));
+  source.still_box(source.Box.mk(()));
   print("generic-unit\n")
 }

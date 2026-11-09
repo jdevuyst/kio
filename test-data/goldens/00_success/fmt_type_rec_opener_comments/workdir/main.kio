@@ -8,6 +8,6 @@ rec // Opening boundary.
   // Before the first member.
   /// Alias documentation.
   type A = B;
-  newtype B : A { constructor make; projector take };
+  type { B: A { mk; get } };
   // Before the closing brace.
 }

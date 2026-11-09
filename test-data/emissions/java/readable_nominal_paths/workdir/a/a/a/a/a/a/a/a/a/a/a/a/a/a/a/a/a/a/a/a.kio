@@ -2,4 +2,4 @@ module a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a;
 
 host type Box[T];
 
-pub newtype Token : . { pub constructor make_token; pub projector read_token }
+pub type { Token: . { pub mk; pub get } }

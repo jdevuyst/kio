@@ -538,15 +538,6 @@ pub struct LspAnalysis {
     /// uses this to build a [`crate::lsp::positions::LineIndex`] for
     /// files that don't have an open overlay document.
     pub sources: HashMap<PathBuf, String>,
-    /// Per-file label declaration/reuse lookup derived from the analysis's
-    /// surface modules. Closed-document requests query this snapshot instead
-    /// of reparsing `sources` at cursor frequency.
-    pub label_reuse_indexes:
-        HashMap<PathBuf, std::sync::Arc<crate::lsp::label_reuse::LabelReuseIndex>>,
-    /// Generated nominal type identities minted by `labels` declarations.
-    /// Rename uses this surface provenance to refuse an ordinary identifier
-    /// rename that could not update the coupled lowercase label spellings.
-    pub(crate) generated_label_nominals: HashSet<(String, String)>,
     /// The root package's source-spelled `Lowered` AST. Source-facing LSP
     /// requests format declarations from this tree; synthesized facts live in
     /// the position index.
@@ -617,67 +608,6 @@ fn lsp_import_aliases(
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
-fn lsp_label_reuse_indexes(
-    parsed: &package_collection::ParsedPackageCollection,
-    surface_tokens: &HashMap<PathBuf, Vec<crate::tokens::ClassifiedToken>>,
-    cancel_token: &crate::lsp::cancel::CancellationToken,
-) -> Option<HashMap<PathBuf, std::sync::Arc<crate::lsp::label_reuse::LabelReuseIndex>>> {
-    let mut indexes = HashMap::new();
-    for package in parsed.packages.values() {
-        for (path, module) in &package.modules {
-            if cancel_token.is_cancelled() {
-                return None;
-            }
-            let Some(tokens) = surface_tokens.get(path) else {
-                continue;
-            };
-            indexes.insert(
-                path.clone(),
-                std::sync::Arc::new(
-                    crate::lsp::label_reuse::LabelReuseIndex::from_module_with_tokens(
-                        module, tokens,
-                    ),
-                ),
-            );
-        }
-    }
-    Some(indexes)
-}
-
-#[cfg(all(feature = "surface", feature = "lsp"))]
-fn lsp_generated_label_nominals(
-    parsed: &package_collection::ParsedPackageCollection,
-    only_files: Option<&HashSet<PathBuf>>,
-    cancel_token: &crate::lsp::cancel::CancellationToken,
-) -> Option<HashSet<(String, String)>> {
-    let mut generated = HashSet::new();
-    for package in parsed.packages.values() {
-        for (file_path, module) in &package.modules {
-            if cancel_token.is_cancelled() {
-                return None;
-            }
-            if only_files.is_some_and(|files| !files.contains(file_path)) {
-                continue;
-            }
-            let module_path = module_path_key(&module.path);
-            lsp_for_each_surface_labels(module, |labels| {
-                for entry in labels
-                    .entries
-                    .iter()
-                    .filter(|entry| !entry.is_reuse_marker())
-                {
-                    generated.insert((
-                        module_path.clone(),
-                        crate::ast::mint_label_newtype_name(&entry.name),
-                    ));
-                }
-            });
-        }
-    }
-    Some(generated)
-}
-
-#[cfg(all(feature = "surface", feature = "lsp"))]
 fn lsp_for_each_surface_labels<'a>(
     module: &'a Module<Surface>,
     mut visit: impl FnMut(&'a crate::ast::Labels<Surface>),
@@ -730,191 +660,6 @@ fn lsp_surface_tokens(
         }
     }
     Some(by_file)
-}
-
-#[cfg(all(feature = "surface", feature = "lsp"))]
-fn lsp_record_label_import_binders(
-    parsed: &package_collection::ParsedPackageCollection,
-    surface_tokens: &HashMap<PathBuf, Vec<crate::tokens::ClassifiedToken>>,
-    file_to_module: &BTreeMap<PathBuf, String>,
-    position_index: &mut crate::pass::typecheck_full::PositionIndex,
-    label_reuse_indexes: &mut HashMap<
-        PathBuf,
-        std::sync::Arc<crate::lsp::label_reuse::LabelReuseIndex>,
-    >,
-    cancel_token: &crate::lsp::cancel::CancellationToken,
-) -> Option<()> {
-    use crate::ast::{ImportItem, ImportKind, mint_label_newtype_name};
-    use crate::pass::typecheck_full::ResolvedBinder;
-
-    for package in parsed.packages.values() {
-        if cancel_token.is_cancelled() {
-            return None;
-        }
-        let providers: HashMap<String, &PathBuf> = package
-            .modules
-            .iter()
-            .map(|(file_path, module)| (module_path_key(&module.path), file_path))
-            .collect();
-        for (consumer_file, module) in &package.modules {
-            if cancel_token.is_cancelled() {
-                return None;
-            }
-            let Some(consumer_module) = file_to_module.get(consumer_file) else {
-                continue;
-            };
-            let Some(tokens) = surface_tokens.get(consumer_file) else {
-                continue;
-            };
-            let mut local_labels = HashMap::new();
-            lsp_for_each_surface_labels(module, |labels| {
-                for entry in labels
-                    .entries
-                    .iter()
-                    .filter(|entry| !entry.is_reuse_marker())
-                {
-                    local_labels.insert(
-                        entry.name.clone(),
-                        ResolvedBinder::Newtype {
-                            module_path: consumer_module.clone(),
-                            name: mint_label_newtype_name(&entry.name),
-                        },
-                    );
-                }
-            });
-            let mut imported_labels = HashMap::new();
-            let mut qualified_label_modules = HashMap::new();
-            for import_ in &module.imports {
-                match &import_.kind {
-                    ImportKind::Selective { items, from } => {
-                        let Some(provider_file) = providers.get(&module_path_key(from)) else {
-                            continue;
-                        };
-                        let Some(provider_module) = file_to_module.get(provider_file.as_path())
-                        else {
-                            continue;
-                        };
-                        for item in items {
-                            let ImportItem::Label { name, span, .. } = item else {
-                                continue;
-                            };
-                            let binder = ResolvedBinder::Newtype {
-                                module_path: provider_module.clone(),
-                                name: mint_label_newtype_name(name),
-                            };
-                            position_index.record_binder(consumer_module, *span, binder.clone());
-                            imported_labels.insert(name.as_str(), binder);
-                        }
-                    }
-                    ImportKind::Qualified { path, alias } => {
-                        let Some(provider_file) = providers.get(&module_path_key(path)) else {
-                            continue;
-                        };
-                        let Some(provider_module) = file_to_module.get(provider_file.as_path())
-                        else {
-                            continue;
-                        };
-                        qualified_label_modules.insert(alias.as_str(), provider_module.clone());
-                    }
-                    ImportKind::Intrinsics | ImportKind::Comptime => {}
-                }
-            }
-            if local_labels.is_empty()
-                && imported_labels.is_empty()
-                && qualified_label_modules.is_empty()
-            {
-                continue;
-            }
-            let Some(source) = package.sources.get(consumer_file) else {
-                continue;
-            };
-            for (index, token) in tokens.iter().enumerate() {
-                if cancel_token.is_cancelled() {
-                    return None;
-                }
-                if !matches!(
-                    token.kind,
-                    crate::tokens::TokenKind::EntityNameLabel
-                        | crate::tokens::TokenKind::EntityNameLabelReference
-                        | crate::tokens::TokenKind::EntityNameQualifiedLabelReference
-                ) {
-                    continue;
-                }
-                let Some(name) = source.get(token.span.start as usize..token.span.end as usize)
-                else {
-                    continue;
-                };
-                let binder = if matches!(
-                    token.kind,
-                    crate::tokens::TokenKind::EntityNameQualifiedLabelReference
-                ) {
-                    // Qualification is an AST-derived token property. Walk
-                    // classified tokens only to recover the written alias;
-                    // comments are first-class tokens and cannot erase the
-                    // parsed `alias.label` relationship.
-                    let mut before = tokens[..index].iter().rev().filter(|token| {
-                        !matches!(
-                            token.kind,
-                            crate::tokens::TokenKind::CommentLine
-                                | crate::tokens::TokenKind::CommentDoc
-                        )
-                    });
-                    let Some(dot) = before.next() else {
-                        continue;
-                    };
-                    if source.get(dot.span.start as usize..dot.span.end as usize) != Some(".") {
-                        continue;
-                    }
-                    let Some(qualifier) = before.next().and_then(|token| {
-                        source.get(token.span.start as usize..token.span.end as usize)
-                    }) else {
-                        continue;
-                    };
-                    let Some(provider_module) = qualified_label_modules.get(qualifier) else {
-                        continue;
-                    };
-                    ResolvedBinder::Newtype {
-                        module_path: provider_module.clone(),
-                        name: mint_label_newtype_name(name),
-                    }
-                } else {
-                    let Some(binder) = local_labels.get(name).or_else(|| imported_labels.get(name))
-                    else {
-                        continue;
-                    };
-                    binder.clone()
-                };
-                if let Some(index) = label_reuse_indexes.get_mut(consumer_file) {
-                    std::sync::Arc::make_mut(index).protect_label_span(token.span);
-                }
-                if matches!(token.kind, crate::tokens::TokenKind::EntityNameLabel)
-                    && local_labels.contains_key(name)
-                {
-                    if let ResolvedBinder::Newtype {
-                        module_path,
-                        name: newtype,
-                    } = &binder
-                    {
-                        for member in ["mk", "get"] {
-                            position_index.record_declaration_site_only(
-                                consumer_module,
-                                token.span,
-                                &ResolvedBinder::NewtypeMember {
-                                    module_path: module_path.clone(),
-                                    newtype: newtype.clone(),
-                                    member: member.to_owned(),
-                                },
-                            );
-                        }
-                    }
-                    position_index.record_binder_declaration(consumer_module, token.span, binder);
-                } else {
-                    position_index.record_binder(consumer_module, token.span, binder);
-                }
-            }
-        }
-    }
-    Some(())
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -1066,26 +811,6 @@ fn lsp_retain_source_written_binders(
         })
         .collect();
 
-    let label_spans_by_module: HashMap<_, HashSet<_>> = file_to_module
-        .iter()
-        .filter_map(|(file_path, module_path)| {
-            surface_tokens.get(file_path).map(|tokens| {
-                let spans = tokens
-                    .iter()
-                    .filter(|token| {
-                        matches!(
-                            token.kind,
-                            crate::tokens::TokenKind::EntityNameLabel
-                                | crate::tokens::TokenKind::EntityNameLabelReference
-                                | crate::tokens::TokenKind::EntityNameQualifiedLabelReference
-                        )
-                    })
-                    .map(|token| token.span)
-                    .collect();
-                (module_path.as_str(), spans)
-            })
-        })
-        .collect();
     let source_by_module: HashMap<&str, &str> = file_to_module
         .iter()
         .filter_map(|(file_path, module_path)| {
@@ -1097,12 +822,6 @@ fn lsp_retain_source_written_binders(
     let retained = position_index.try_retain_binders(|module_path, span, binder| {
         if cancel_token.is_cancelled() {
             return None;
-        }
-        if label_spans_by_module
-            .get(module_path)
-            .is_some_and(|spans| spans.contains(&span))
-        {
-            return Some(false);
         }
         let Some(source) = source_by_module.get(module_path) else {
             return Some(true);
@@ -1241,7 +960,6 @@ fn lsp_importable_name_binder(
         | Item::TypeAlias(_)
         | Item::LiteralAlias(_, _)
         | Item::Labels(_, _)
-        | Item::LabelForward(_, _)
         | Item::Equiv(_, _)
         | Item::Macro(_, _)
         | Item::Op(_, _)
@@ -1451,12 +1169,63 @@ fn lsp_record_surface_declaration_positions(
                         }
                     }
                     Item::LiteralAlias(_, _)
-                    | Item::LabelForward(_, _)
                     | Item::Equiv(_, _)
                     | Item::Macro(_, _)
                     | Item::Op(_, _)
                     | Item::VariadicOperator(_, _) => {}
                 }
+            }
+
+            lsp_for_each_surface_labels(module, |labels| {
+                for entry in labels.entries.iter() {
+                    if cancel_token.is_cancelled() {
+                        return;
+                    }
+                    position_index.record_binder_declaration(
+                        module_path,
+                        entry.name_span,
+                        ResolvedBinder::Newtype {
+                            module_path: module_path.clone(),
+                            name: entry.name.clone(),
+                        },
+                    );
+                    for (name, member) in [
+                        (
+                            "mk",
+                            entry.members.as_ref().map(|members| &members.constructor),
+                        ),
+                        (
+                            "get",
+                            entry.members.as_ref().map(|members| &members.projector),
+                        ),
+                    ] {
+                        let binder = ResolvedBinder::NewtypeMember {
+                            module_path: module_path.clone(),
+                            newtype: entry.name.clone(),
+                            member: name.to_owned(),
+                        };
+                        if let Some(member) = member {
+                            let span = lsp_named_token_span(
+                                tokens,
+                                source,
+                                member.span,
+                                name,
+                                TokenKind::EntityNameFunction,
+                            )
+                            .expect("a written nominal member retains its exact role token");
+                            position_index.record_binder_declaration(module_path, span, binder);
+                        } else {
+                            position_index.record_declaration_site_only(
+                                module_path,
+                                entry.name_span,
+                                &binder,
+                            );
+                        }
+                    }
+                }
+            });
+            if cancel_token.is_cancelled() {
+                return None;
             }
 
             for import_ in &module.imports {
@@ -1620,12 +1389,10 @@ fn lsp_generated_label_declaration_spans(
             if cancel_token.is_cancelled() {
                 return;
             }
-            if !entry.is_reuse_marker() {
-                declarations.insert(
-                    crate::ast::mint_label_newtype_name(&entry.name),
-                    entry.name_span,
-                );
-            }
+            declarations.insert(
+                crate::ast::mint_label_newtype_name(&entry.name),
+                entry.name_span,
+            );
         }
     });
     if cancel_token.is_cancelled() {
@@ -2391,8 +2158,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
     let root_package_lowered =
         root_package_lowered.expect("workspace always contains its root package");
     let surface_tokens = lsp_surface_tokens(&parsed_ws, &surface_modules, None, cancel_token)?;
-    let mut label_reuse_indexes =
-        lsp_label_reuse_indexes(&parsed_ws, &surface_tokens, cancel_token)?;
     let import_aliases = lsp_import_aliases(
         &parsed_ws,
         &surface_modules,
@@ -2406,14 +2171,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
         &sources,
         &file_to_module,
         &mut merged_index,
-        cancel_token,
-    )?;
-    lsp_record_label_import_binders(
-        &parsed_ws,
-        &surface_tokens,
-        &file_to_module,
-        &mut merged_index,
-        &mut label_reuse_indexes,
         cancel_token,
     )?;
     lsp_record_surface_declaration_positions(
@@ -2479,8 +2236,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
         import_aliases,
         file_to_module,
         sources,
-        label_reuse_indexes,
-        generated_label_nominals: lsp_generated_label_nominals(&parsed_ws, None, cancel_token)?,
         root_package_lowered,
         warnings,
     }))
@@ -2776,8 +2531,6 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         Some(&focused_files),
         cancel_token,
     )?;
-    let mut label_reuse_indexes =
-        lsp_label_reuse_indexes(&parsed_ws, &surface_tokens, cancel_token)?;
     let import_aliases = lsp_import_aliases(
         &parsed_ws,
         &surface_modules,
@@ -2791,14 +2544,6 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         &sources,
         &file_to_module,
         &mut position_index,
-        cancel_token,
-    )?;
-    lsp_record_label_import_binders(
-        &parsed_ws,
-        &surface_tokens,
-        &file_to_module,
-        &mut position_index,
-        &mut label_reuse_indexes,
         cancel_token,
     )?;
     lsp_record_surface_declaration_positions(
@@ -2856,12 +2601,6 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         import_aliases,
         file_to_module,
         sources,
-        label_reuse_indexes,
-        generated_label_nominals: lsp_generated_label_nominals(
-            &parsed_ws,
-            Some(&focused_files),
-            cancel_token,
-        )?,
         root_package_lowered,
         warnings: Vec::new(),
     }))
@@ -3078,7 +2817,7 @@ fn collect_unused_expr_decls(
     expr: &crate::ast::Expr<crate::ast::Lowered>,
     declarations: &mut Vec<UnusedLocalDecl>,
 ) {
-    use crate::ast::{ElaboratorCall, Expr};
+    use crate::ast::Expr;
 
     match expr {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
@@ -3130,31 +2869,6 @@ fn collect_unused_expr_decls(
             collect_unused_expr_decls(source, file_path, module_path, value, declarations);
             collect_unused_expr_decls(source, file_path, module_path, body, declarations);
         }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, .. } => {
-                collect_unused_expr_decls(source, file_path, module_path, receiver, declarations);
-            }
-            ElaboratorCall::FieldUpdate { base, updates, .. } => {
-                if let Some(receiver) = base.receiver() {
-                    collect_unused_expr_decls(
-                        source,
-                        file_path,
-                        module_path,
-                        receiver,
-                        declarations,
-                    );
-                }
-                for update in updates {
-                    collect_unused_expr_decls(
-                        source,
-                        file_path,
-                        module_path,
-                        &update.value,
-                        declarations,
-                    );
-                }
-            }
-        },
         Expr::RecQuote { plan, .. } => {
             for expression in plan.expressions() {
                 collect_unused_expr_decls(source, file_path, module_path, expression, declarations);
@@ -3183,10 +2897,8 @@ fn collect_unused_expr_decls(
         | Expr::FloatLit { .. }
         | Expr::BoolLit { .. } => {}
         Expr::RecCall { ext, .. }
-        | Expr::RowLet { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::EnrichedTuple { ext, .. }
         | Expr::EnrichedProject { ext, .. }
@@ -4043,8 +3755,8 @@ mod tests {
                __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
              } \
              pub type Rep_payload = .; \
-             pub newtype Rep : Rep_payload { pub constructor mk_rep; pub projector un_rep; }; \
-             pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
+             pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
+             pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; \
              fn keep() -> . { () }",
         )
         .expect("write macro module");
@@ -4227,13 +3939,13 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "lsp"))]
     const COPIED_RECEIVER_SOURCE: &str = concat!(
         "module pkg/main; import sequence(macro do);\n",
-        "newtype Left : . { constructor left; projector unleft; };\n",
-        "newtype Right : . { constructor right; projector unright; };\n",
-        "newtype Box[A] : A { constructor box; projector unbox; };\n",
-        "fn pure[A](value: A) -> Box[A] { Box.box(value) }\n",
+        "type { Left: . { mk; get; }; };\n",
+        "type { Right: . { mk; get; }; };\n",
+        "type { Box[A]: A { mk; get; }; };\n",
+        "fn pure[A](value: A) -> Box[A] { Box.mk(value) }\n",
         "fn choose_second[A](first: A, second: Right) -> Box[Right] {\n",
         "  do (.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {\n",
-        "    next(Box.unbox(value))\n",
+        "    next(Box.get(value))\n",
         "  }) {\n",
         "    let first_value <- pure(first);\n",
         "    let second_value <- pure(second);\n",
@@ -4250,9 +3962,9 @@ mod tests {
 
         let (_dir, analysis, path) = analyze_lsp_fixture(COPIED_RECEIVER_SOURCE);
         let uri = crate::lsp::diagnostics::path_to_uri(&path, _dir.path()).expect("file URI");
-        let start = COPIED_RECEIVER_SOURCE.find("Box.unbox(value)").unwrap() as u32;
+        let start = COPIED_RECEIVER_SOURCE.find("Box.get(value)").unwrap() as u32;
         let lines = LineIndex::new(COPIED_RECEIVER_SOURCE);
-        let value = lines.to_position(start + 10);
+        let value = lines.to_position(start + 8);
         let hover = crate::lsp::hover::handle_hover(
             &uri,
             &Position::new(value.line, value.character),
@@ -4271,7 +3983,7 @@ mod tests {
             None,
         )
         .expect("typed hints");
-        let end = lines.to_position(start + 9);
+        let end = lines.to_position(start + 7);
         let projector_hints = hints
             .iter()
             .filter(|hint| hint.position == Position::new(end.line, end.character))
@@ -4280,7 +3992,7 @@ mod tests {
         assert!(
             matches!(&projector_hints[0].label, InlayHintLabel::String(label) if label == "[A]")
         );
-        let value_span = crate::span::Span::new(start + 10, start + 15);
+        let value_span = crate::span::Span::new(start + 8, start + 13);
         let checked_type = analysis
             .position_index
             .type_at("pkg/main", value_span)
@@ -4345,7 +4057,7 @@ mod tests {
             "fn id[X](x: X) -> X { x }\n",
             "fn choose[X](left: X, right: X) -> X { left }\n",
             "op _ + _ { impl choose; };\n",
-            "newtype Pack <X>: X { constructor pack; projector unpack; };\n",
+            "type { Pack <X>: X { mk; get; }; };\n",
             "fn controls[A](value: A) -> A {\n",
             "  let first = pair(value, value);\n",
             "  let second = value.>id;\n",
@@ -4353,7 +4065,7 @@ mod tests {
             "  (.[X](x: X) -> X { x })(value)\n",
             "}\n",
             "fn existential() -> . {\n",
-            "  let .(<Hidden> payload) = Pack.unpack(Pack.pack(()));\n",
+            "  let .(<Hidden> payload) = Pack.get(Pack.mk(()));\n",
             "  ()\n",
             "}\n",
         );
@@ -4372,7 +4084,7 @@ mod tests {
             ("value.>id", 9, "[A]"),
             ("{ x })(value)", 5, "[A]"),
             ("() + ()", 7, "[.]"),
-            ("Pack.pack(())", 9, "[.]"),
+            ("Pack.mk(())", 7, "[.]"),
         ] {
             let end = lines.to_position((source.find(marker).unwrap() + offset) as u32);
             let labels = hints
@@ -4394,10 +4106,10 @@ mod tests {
         use lsp_types::{InlayHintLabel, Position, Range};
         let source = concat!(
             "module pkg/main; import sequence(macro do);\n",
-            "newtype Box[A]: A { constructor box; projector unbox; };\n",
-            "fn pure[A](value: A) -> Box[A] { Box.box(value) }\n",
+            "type { Box[A]: A { mk; get; }; };\n",
+            "fn pure[A](value: A) -> Box[A] { Box.mk(value) }\n",
             "fn factory[X](value: X) -> [A][B](Box[A] & (A -> Box[B])) -> Box[B] {\n",
-            "  .[A][B](boxed: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(boxed)) }\n",
+            "  .[A][B](boxed: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(boxed)) }\n",
             "}\n",
             "fn run() -> Box[.] {\n",
             "  do(factory(())) {\n",
@@ -4710,8 +4422,8 @@ mod tests {
         let provider = concat!(
             "module pkg/provider;\n",
             "rec {\n",
-            "  pub newtype Tag : . | Peer { pub constructor make; pub projector open; };\n",
-            "  pub newtype Peer : . | Tag { pub constructor make_peer; pub projector open_peer; };\n",
+            "  pub type { Tag: . | Peer { pub mk; pub get; }; };\n",
+            "  pub type { Peer: . | Tag { pub mk; pub get; }; };\n",
             "}\n",
         );
         let provider_path = dir.path().join("pkg/provider.kio");
@@ -4720,8 +4432,8 @@ mod tests {
             "module pkg/main;\n",
             "import pkg/provider as imported;\n",
             "type Tag = imported.Tag;\n",
-            "op _ + _ { impl Tag.make; };\n",
-            "varop [* *] { foldr Tag.open Tag.make; };\n",
+            "op _ + _ { impl Tag.mk; };\n",
+            "varop [* *] { foldr Tag.get Tag.mk; };\n",
         );
         let source_path = dir.path().join("pkg/main.kio");
         std::fs::write(&source_path, source).expect("write source");
@@ -4766,20 +4478,15 @@ mod tests {
         let alias_decl = source.find("type Tag").expect("alias declaration") + "type ".len();
         let terminal_use =
             source.find("imported.Tag").expect("terminal type use") + "imported.".len();
-        let op_head = source.find("impl Tag.make").expect("op alias head") + "impl ".len();
-        let base_head = source
-            .find("foldr Tag.open Tag.make")
-            .expect("fold base head")
-            + "foldr Tag.open ".len();
-        let step_head = source.find("foldr Tag.open").expect("fold step head") + "foldr ".len();
+        let op_head = source.find("impl Tag.mk").expect("op alias head") + "impl ".len();
+        let base_head =
+            source.find("foldr Tag.get Tag.mk").expect("fold base head") + "foldr Tag.get ".len();
+        let step_head = source.find("foldr Tag.get").expect("fold step head") + "foldr ".len();
         let op_member = op_head + "Tag.".len();
         let base_member = base_head + "Tag.".len();
         let terminal_decl =
-            provider.find("newtype Tag").expect("terminal declaration") + "newtype ".len();
-        let make_decl = provider
-            .find("constructor make")
-            .expect("constructor declaration")
-            + "constructor ".len();
+            provider.find("type { Tag").expect("terminal declaration") + "type { ".len();
+        let mk_decl = provider.find("pub mk").expect("constructor declaration") + "pub ".len();
 
         let alias_definition = crate::lsp::definition::handle_definition(
             &source_uri,
@@ -4808,7 +4515,7 @@ mod tests {
             member_definition,
             GotoDefinitionResponse::Scalar(lsp_types::Location {
                 uri: provider_uri.clone(),
-                range: to_range(&provider_lines, make_decl, "make"),
+                range: to_range(&provider_lines, mk_decl, "mk"),
             })
         );
 
@@ -4846,12 +4553,11 @@ mod tests {
         .expect("terminal member references");
         assert!(member_refs.iter().any(|location| {
             location.uri == provider_uri
-                && location.range == to_range(&provider_lines, make_decl, "make")
+                && location.range == to_range(&provider_lines, mk_decl, "mk")
         }));
         for start in [op_member, base_member] {
             assert!(member_refs.iter().any(|location| {
-                location.uri == source_uri
-                    && location.range == to_range(&source_lines, start, "make")
+                location.uri == source_uri && location.range == to_range(&source_lines, start, "mk")
             }));
         }
 
@@ -4887,7 +4593,17 @@ mod tests {
                 .any(|edit| edit.range == to_range(&source_lines, terminal_use, "Tag"))
         );
 
-        let member_edit = crate::lsp::rename::handle_rename(
+        assert!(
+            crate::lsp::rename::handle_prepare_rename(
+                &source_uri,
+                &position(&source_lines, op_member),
+                &analysis,
+                None,
+            )
+            .is_none(),
+            "fixed member roles cannot prepare rename",
+        );
+        let error = crate::lsp::rename::handle_rename(
             &source_uri,
             &position(&source_lines, op_member),
             "construct",
@@ -4895,35 +4611,8 @@ mod tests {
             None,
             dir.path(),
         )
-        .expect("member rename succeeds")
-        .expect("member rename edits");
-        assert_eq!(
-            member_edit
-                .changes
-                .as_ref()
-                .expect("plain member edits")
-                .get(&source_uri)
-                .map(Vec::len),
-            Some(2)
-        );
-        assert_eq!(
-            member_edit
-                .changes
-                .as_ref()
-                .expect("plain member edits")
-                .get(&provider_uri)
-                .map(Vec::len),
-            Some(1)
-        );
-        assert!(
-            member_edit
-                .changes
-                .as_ref()
-                .expect("plain member edits")
-                .values()
-                .flatten()
-                .all(|edit| edit.new_text == "construct")
-        );
+        .expect_err("fixed member roles cannot be renamed");
+        assert_eq!(error, "the identifier at the cursor cannot be renamed");
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -4952,12 +4641,12 @@ mod tests {
             "  fn second(value: .) -> . { recur first(value) }\n",
             "}\n",
             "\n",
-            "pub newtype Wrap : . { pub constructor mk; pub projector get; };\n",
+            "pub type { Wrap: . { pub mk; pub get; }; };\n",
             "fn keep_wrap(value: Wrap) -> Wrap { value }\n",
-            "labels { mk: ., get: . };\n",
-            "fn label_forms(mk: ., row: Get) -> Mk {\n",
-            "  let _seen = row.?{get};\n",
-            "  {mk}\n",
+            "type { Mk: .; Get: .; };\n",
+            "fn nominal_forms(mk: ., row: Get) -> Mk {\n",
+            "  let _seen = Get.get(row);\n",
+            "  Mk.mk(mk)\n",
             "}\n",
         );
         let provider_path = dir.path().join("provider.kio");
@@ -5040,14 +4729,14 @@ mod tests {
                 },
             ),
             (
-                name_span(provider, "newtype Wrap", "newtype ".len(), "Wrap"),
+                name_span(provider, "Wrap:", 0, "Wrap"),
                 ResolvedBinder::Newtype {
                     module_path: "provider".to_owned(),
                     name: "Wrap".to_owned(),
                 },
             ),
             (
-                name_span(provider, "constructor mk", "constructor ".len(), "mk"),
+                name_span(provider, "pub mk", "pub ".len(), "mk"),
                 ResolvedBinder::NewtypeMember {
                     module_path: "provider".to_owned(),
                     newtype: "Wrap".to_owned(),
@@ -5055,7 +4744,7 @@ mod tests {
                 },
             ),
             (
-                name_span(provider, "projector get", "projector ".len(), "get"),
+                name_span(provider, "pub get", "pub ".len(), "get"),
                 ResolvedBinder::NewtypeMember {
                     module_path: "provider".to_owned(),
                     newtype: "Wrap".to_owned(),
@@ -5070,27 +4759,17 @@ mod tests {
             assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
         }
 
-        let parsed_provider = crate::pass::parser::parse(provider).expect("parse provider");
-        let label_spans = crate::tokens::dump_module(provider, &parsed_provider)
-            .expect("classify provider")
-            .into_iter()
-            .filter(|token| {
-                matches!(
-                    token.kind,
-                    crate::tokens::TokenKind::EntityNameLabel
-                        | crate::tokens::TokenKind::EntityNameLabelReference
-                        | crate::tokens::TokenKind::EntityNameQualifiedLabelReference
-                )
-            })
-            .map(|token| token.span)
-            .collect::<Vec<_>>();
-        for span in &label_spans {
-            let written = &provider[span.start as usize..span.end as usize];
-            let expected = crate::ast::mint_label_newtype_name(written);
+        let nominal_spans = [
+            (name_span(provider, "Mk:", 0, "Mk"), "Mk"),
+            (name_span(provider, "Get:", 0, "Get"), "Get"),
+            (name_span(provider, "Get.get", 0, "Get"), "Get"),
+            (name_span(provider, "Mk.mk", 0, "Mk"), "Mk"),
+        ];
+        for (span, expected) in &nominal_spans {
             assert!(matches!(
                 analysis.position_index.binder_at(provider_module, *span),
                 Some(ResolvedBinder::Newtype { module_path, name })
-                    if module_path == "provider" && name == &expected
+                    if module_path == "provider" && name.as_str() == *expected
             ));
         }
 
@@ -5100,11 +4779,6 @@ mod tests {
             &provider_path,
         )
         .expect("focused provider analysis succeeds");
-        assert_eq!(
-            focused.label_reuse_indexes.keys().collect::<Vec<_>>(),
-            vec![&provider_path],
-            "focused enrichment must classify only the requested source file"
-        );
         assert!(
             focused
                 .position_index
@@ -5112,13 +4786,11 @@ mod tests {
                 .all(|((module, _), _)| module == provider_module),
             "focused enrichment must not publish sibling-module positions"
         );
-        for span in &label_spans {
-            let written = &provider[span.start as usize..span.end as usize];
-            let expected = crate::ast::mint_label_newtype_name(written);
+        for (span, expected) in &nominal_spans {
             assert!(matches!(
                 focused.position_index.binder_at(provider_module, *span),
                 Some(ResolvedBinder::Newtype { module_path, name })
-                    if module_path == "provider" && name == &expected
+                    if module_path == "provider" && name.as_str() == *expected
             ));
         }
 
@@ -5170,8 +4842,8 @@ mod tests {
             crate::lsp::diagnostics::path_to_uri(&provider_path, dir.path()).expect("provider URI");
         let provider_lines = LineIndex::new(provider);
         for start in [
-            provider.find("{get}").expect("field-access label") + 1,
-            provider.rfind("{mk}").expect("record-shorthand label") + 1,
+            provider.find("Get.get").expect("nominal projector") + "Get.".len(),
+            provider.rfind("Mk.mk").expect("nominal constructor") + "Mk.".len(),
         ] {
             let cursor = provider_lines.to_position(start as u32);
             let position = Position {
@@ -5186,7 +4858,7 @@ mod tests {
                     None,
                 )
                 .is_none(),
-                "label syntax must not prepare an ordinary rename"
+                "fixed members must not prepare an ordinary rename"
             );
             assert!(
                 crate::lsp::rename::handle_rename(
@@ -5198,57 +4870,57 @@ mod tests {
                     dir.path(),
                 )
                 .is_err(),
-                "label syntax must reject an ordinary rename"
+                "fixed members must reject an ordinary rename"
             );
         }
 
-        let local_label_start = provider.rfind("{mk}").expect("local label use") + 1;
-        let local_label_cursor = provider_lines.to_position(local_label_start as u32);
-        let local_label_position = Position {
-            line: local_label_cursor.line,
-            character: local_label_cursor.character,
+        let local_nominal_start = provider.rfind("Mk.mk").expect("local nominal use");
+        let local_nominal_cursor = provider_lines.to_position(local_nominal_start as u32);
+        let local_nominal_position = Position {
+            line: local_nominal_cursor.line,
+            character: local_nominal_cursor.character,
         };
         assert!(
             crate::lsp::definition::handle_definition(
                 &provider_uri,
-                &local_label_position,
+                &local_nominal_position,
                 &analysis,
                 None,
                 dir.path(),
             )
             .is_some(),
-            "a local label expression use must retain navigation identity"
+            "a local nominal expression use must retain navigation identity"
         );
         assert!(
             crate::lsp::references::handle_references(
                 &provider_uri,
-                &local_label_position,
+                &local_nominal_position,
                 true,
                 &analysis,
                 None,
                 dir.path(),
             )
             .is_some_and(|locations| locations.len() >= 2),
-            "a local label expression use must retain its declaration/reference set"
+            "a local nominal expression use must retain its declaration/reference set"
         );
 
-        let local_label_without_cursor = crate::lsp::references::handle_references(
+        let local_nominal_without_cursor = crate::lsp::references::handle_references(
             &provider_uri,
-            &local_label_position,
+            &local_nominal_position,
             false,
             &analysis,
             None,
             dir.path(),
         )
-        .expect("local label references without declaration");
-        let label_declaration_start = provider.find("mk:").expect("local label declaration");
+        .expect("local nominal references without declaration");
+        let nominal_declaration_start = provider.find("Mk:").expect("local nominal declaration");
         let expected_declaration = provider_lines.to_range(crate::span::Span::new(
-            label_declaration_start as u32,
-            (label_declaration_start + "mk".len()) as u32,
+            nominal_declaration_start as u32,
+            (nominal_declaration_start + "Mk".len()) as u32,
         ));
         let expected_use = provider_lines.to_range(crate::span::Span::new(
-            local_label_start as u32,
-            (local_label_start + "mk".len()) as u32,
+            local_nominal_start as u32,
+            (local_nominal_start + "Mk".len()) as u32,
         ));
         let to_lsp_range = |range: crate::lsp::positions::LspRange| Range {
             start: Position {
@@ -5263,45 +4935,45 @@ mod tests {
         let expected_declaration = to_lsp_range(expected_declaration);
         let expected_use = to_lsp_range(expected_use);
         assert!(
-            local_label_without_cursor
+            local_nominal_without_cursor
                 .iter()
                 .all(|location| location.range != expected_declaration),
-            "includeDeclaration=false must omit the label declaration"
+            "includeDeclaration=false must omit the nominal declaration"
         );
         assert!(
-            local_label_without_cursor
+            local_nominal_without_cursor
                 .iter()
                 .any(|location| location.range == expected_use),
-            "includeDeclaration=false must preserve the queried label use"
+            "includeDeclaration=false must preserve the queried nominal use"
         );
-        let label_declaration_cursor = provider_lines.to_position(label_declaration_start as u32);
-        let from_label_declaration = crate::lsp::references::handle_references(
+        let nominal_declaration_cursor =
+            provider_lines.to_position(nominal_declaration_start as u32);
+        let from_nominal_declaration = crate::lsp::references::handle_references(
             &provider_uri,
             &Position {
-                line: label_declaration_cursor.line,
-                character: label_declaration_cursor.character,
+                line: nominal_declaration_cursor.line,
+                character: nominal_declaration_cursor.character,
             },
             true,
             &analysis,
             None,
             dir.path(),
         )
-        .expect("references queried from a label declaration");
+        .expect("references queried from a nominal declaration");
         assert!(
-            from_label_declaration
+            from_nominal_declaration
                 .iter()
                 .any(|location| location.range == expected_declaration),
-            "a declaration query must include the label declaration"
+            "a declaration query must include the nominal declaration"
         );
         assert!(
-            from_label_declaration
+            from_nominal_declaration
                 .iter()
                 .any(|location| location.range == expected_use),
             "a declaration query must include ordinary expression uses"
         );
 
-        let wrap_start =
-            provider.find("newtype Wrap").expect("newtype declaration") + "newtype ".len();
+        let wrap_start = provider.find("Wrap:").expect("nominal declaration");
         let wrap_cursor = provider_lines.to_position(wrap_start as u32);
         let wrap_position = Position {
             line: wrap_cursor.line,
@@ -5501,9 +5173,9 @@ mod tests {
             "module provider;\n",
             "\n",
             "pub fn combine(left: ., right: .) -> . { left }\n",
-            "pub newtype Wrap : . { pub constructor mk; pub projector get; };\n",
-            "labels { mark: . };\n",
-            "fn mark_value(mark: .) -> Mark { {mark} }\n",
+            "pub type { Wrap: . { pub mk; pub get; }; };\n",
+            "type { Mark: .; };\n",
+            "fn mark_value(mark: .) -> Mark { Mark.mk(mark) }\n",
         );
         let provider_path = dir.path().join("provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
@@ -5609,17 +5281,16 @@ mod tests {
             consumer,
         );
 
-        let mk_declaration =
-            provider.find("constructor mk").expect("mk declaration") + "constructor ".len();
+        let mk_declaration = provider.find("pub mk").expect("mk declaration") + "pub ".len();
         let mk_use = consumer.rfind("Wrap.mk").expect("mk use") + "Wrap.".len();
         assert_declaration_policy(mk_declaration, mk_use, "mk", 2, &consumer_uri, consumer);
 
-        let mark_declaration = provider.find("mark:").expect("label declaration");
-        let mark_use = provider.rfind("{mark}").expect("label use") + 1;
+        let mark_declaration = provider.find("Mark:").expect("nominal declaration");
+        let mark_use = provider.rfind("Mark.mk").expect("nominal use");
         assert_declaration_policy(
             mark_declaration,
             mark_use,
-            "mark",
+            "Mark",
             2,
             &provider_uri,
             provider,
@@ -5794,7 +5465,7 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_generated_label_callable_members_have_exact_full_and_focused_definitions() {
+    fn lsp_compact_nominal_members_have_exact_full_and_focused_definitions() {
         use crate::lsp::positions::LineIndex;
         use crate::pass::typecheck_full::ResolvedBinder;
         use lsp_types::{GotoDefinitionResponse, Position, Range};
@@ -5805,7 +5476,7 @@ mod tests {
             "package pkg;\n\nbridge { provider; consumer; }\n",
         )
         .expect("write package file");
-        let provider = "module provider;\n\npub labels { item: . };\n";
+        let provider = "module provider;\n\npub type { Item: .; };\n";
         let provider_path = dir.path().join("provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
         let consumer = concat!(
@@ -5857,8 +5528,8 @@ mod tests {
         let span = |start: usize, name: &str| {
             crate::span::Span::new(start as u32, (start + name.len()) as u32)
         };
-        let label_start = provider.find("item:").expect("label declaration");
-        let label_span = span(label_start, "item");
+        let nominal_start = provider.find("Item:").expect("nominal declaration");
+        let nominal_span = span(nominal_start, "Item");
         let qualified_start = consumer.find("p.Item.mk").expect("qualified target");
         let qualified_spans = [
             (
@@ -5922,13 +5593,13 @@ mod tests {
             for member in [&qualified_spans[2].1, &selective_member] {
                 assert_eq!(
                     analysis.position_index.declaration_site(member),
-                    Some((provider_module.as_str(), label_span)),
-                    "generated members point to their source-written label declaration"
+                    Some((provider_module.as_str(), nominal_span)),
+                    "generated members point to their source-written nominal declaration"
                 );
             }
         }
         assert!(matches!(
-            full.position_index.binder_at(provider_module, label_span),
+            full.position_index.binder_at(provider_module, nominal_span),
             Some(ResolvedBinder::Newtype { module_path, name })
                 if module_path == "provider" && name == "Item"
         ));
@@ -5939,7 +5610,7 @@ mod tests {
             crate::lsp::diagnostics::path_to_uri(&provider_path, dir.path()).expect("provider URI");
         let consumer_lines = LineIndex::new(consumer);
         let provider_lines = LineIndex::new(provider);
-        let expected = provider_lines.to_range(label_span);
+        let expected = provider_lines.to_range(nominal_span);
         let expected = Range {
             start: Position {
                 line: expected.start.line,
@@ -5966,7 +5637,7 @@ mod tests {
                     None,
                     dir.path(),
                 )
-                .expect("generated callable member resolves to its label declaration");
+                .expect("generated callable member resolves to its nominal declaration");
                 let GotoDefinitionResponse::Scalar(location) = response else {
                     panic!("expected a scalar definition response")
                 };
@@ -6042,16 +5713,18 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_recursive_labels_keep_named_alias_and_generated_nominal_declarations() {
+    fn lsp_recursive_nominals_keep_exact_declarations_and_rename_identities() {
         use crate::lsp::positions::LineIndex;
         use lsp_types::{GotoDefinitionResponse, Position, Range};
 
         let source = concat!(
             "module pkg/main;\n",
-            "pub rec labels { item: Item };\n",
-            "pub rec labels Tree = { branch: Tree };\n",
+            "pub rec type { Item: Item; }\n",
+            "pub rec type Tree = { Branch: Tree; };\n",
+            "pub type { Named: . { pub mk; pub get; }; Other: .; }\n",
             "op + _ { impl Item.mk; };\n",
             "op - _ { impl Branch.mk; };\n",
+            "op ! _ { impl Named.mk; };\n",
         );
         let (dir, analysis, source_path) = analyze_lsp_fixture(source);
         let uri =
@@ -6081,18 +5754,19 @@ mod tests {
             }
         };
 
-        for (label, generated, target) in [
-            ("item", "Item", "impl Item.mk"),
-            ("branch", "Branch", "impl Branch.mk"),
+        for (name, target, occurrences, member_declaration) in [
+            ("Item", "impl Item.mk", 3, None),
+            ("Branch", "impl Branch.mk", 2, None),
+            ("Named", "impl Named.mk", 2, Some("pub mk")),
         ] {
             let declaration = source
-                .find(&format!("{label}:"))
-                .expect("label declaration");
-            let head = source.find(target).expect("generated nominal target") + "impl ".len();
-            let member = head + generated.len() + 1;
+                .find(&format!("{name}:"))
+                .expect("nominal declaration");
+            let head = source.find(target).expect("nominal target") + "impl ".len();
+            let member = head + name.len() + 1;
             let expected = GotoDefinitionResponse::Scalar(lsp_types::Location {
                 uri: uri.clone(),
-                range: range(declaration, label),
+                range: range(declaration, name),
             });
             assert_eq!(
                 crate::lsp::definition::handle_definition(
@@ -6103,7 +5777,7 @@ mod tests {
                     dir.path(),
                 ),
                 Some(expected.clone()),
-                "generated nominal head must resolve to its recursive label entry"
+                "nominal head must resolve to its recursive declaration"
             );
             assert_eq!(
                 crate::lsp::definition::handle_definition(
@@ -6113,8 +5787,13 @@ mod tests {
                     None,
                     dir.path(),
                 ),
-                Some(expected),
-                "generated mk member must resolve to its recursive label entry"
+                Some(member_declaration.map_or(expected, |needle| {
+                    GotoDefinitionResponse::Scalar(lsp_types::Location {
+                        uri: uri.clone(),
+                        range: range(source.find(needle).unwrap() + "pub ".len(), "mk"),
+                    })
+                })),
+                "mk resolves to its written role or the owning nominal declaration"
             );
             let references = crate::lsp::references::handle_references(
                 &uri,
@@ -6124,27 +5803,57 @@ mod tests {
                 None,
                 dir.path(),
             )
-            .expect("generated nominal references");
+            .expect("nominal references");
             assert!(
                 references
                     .iter()
-                    .any(|location| location.range == range(declaration, label))
+                    .any(|location| location.range == range(declaration, name))
             );
             assert!(
                 references
                     .iter()
-                    .any(|location| location.range == range(head, generated))
+                    .any(|location| location.range == range(head, name))
+            );
+            let highlights = crate::lsp::highlight::handle_document_highlight(
+                &uri,
+                &position(declaration),
+                &analysis,
+                None,
+            )
+            .expect("nominal declaration highlights");
+            assert_eq!(
+                highlights.len(),
+                occurrences,
+                "{name} declaration highlights"
             );
             assert!(
-                crate::lsp::rename::handle_prepare_rename(&uri, &position(head), &analysis, None,)
+                crate::lsp::rename::handle_prepare_rename(&uri, &position(head), &analysis, None)
+                    .is_some(),
+                "ordinary nominal names prepare a rename"
+            );
+            let edit = crate::lsp::rename::handle_rename(
+                &uri,
+                &position(head),
+                "Renamed",
+                &analysis,
+                None,
+                dir.path(),
+            )
+            .expect("ordinary nominal rename succeeds")
+            .expect("nominal rename edits");
+            let edits = edit.changes.as_ref().unwrap().get(&uri).unwrap();
+            assert_eq!(edits.len(), occurrences, "{name}");
+            assert!(edits.iter().all(|edit| edit.new_text == "Renamed"));
+            assert!(
+                crate::lsp::rename::handle_prepare_rename(&uri, &position(member), &analysis, None)
                     .is_none(),
-                "generated nominal rename must not separate it from `{label}`"
+                "fixed mk member cannot be renamed"
             );
         }
 
         let tree_declaration =
-            source.find("labels Tree").expect("named labels alias") + "labels ".len();
-        let tree_use = source.find("branch: Tree").expect("named alias use") + "branch: ".len();
+            source.find("type Tree").expect("named compact alias") + "type ".len();
+        let tree_use = source.find("Branch: Tree").expect("named alias use") + "Branch: ".len();
         assert_eq!(
             crate::lsp::definition::handle_definition(
                 &uri,
@@ -6166,8 +5875,8 @@ mod tests {
             None,
             dir.path(),
         )
-        .expect("named labels alias rename succeeds")
-        .expect("named labels alias edits");
+        .expect("named compact alias rename succeeds")
+        .expect("named compact alias edits");
         let edits = edit
             .changes
             .as_ref()
@@ -6187,7 +5896,7 @@ mod tests {
         let source = concat!(
             "module pkg/main;\n",
             "fn apply[A][*F](f: F[A], value: A) -> A { value }\n",
-            "newtype Pack[A] <E> : A & E { constructor mk_pack; projector un_pack; };\n",
+            "type { Pack[A] <E>: A & E { mk; get; }; };\n",
         );
         let (dir, analysis, source_path) = analyze_lsp_fixture(source);
         let uri =
@@ -6439,7 +6148,7 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_analysis_indexes_selective_label_import_identity() {
+    fn lsp_analysis_indexes_selective_nominal_import_identity() {
         use crate::lsp::positions::LineIndex;
         use crate::pass::typecheck_full::ResolvedBinder;
         use lsp_types::Position;
@@ -6450,13 +6159,13 @@ mod tests {
             "package pkg;\n\nbridge { origin; consumer; }\n",
         )
         .expect("write package file");
-        let origin = "module origin;\n\npub labels { item: . };\n";
+        let origin = "module origin;\n\npub type { Item: .; };\n";
         let origin_file = dir.path().join("origin.kio");
         std::fs::write(&origin_file, origin).expect("write origin");
         let consumer = concat!(
             "module consumer;\n\n",
-            "import origin(Item, {item});\n\n",
-            "pub fn make() -> Item { {item=} }\n",
+            "import origin(Item);\n\n",
+            "pub fn make() -> Item { Item.mk(()) }\n",
             "pub fn unwrap(value: Item) -> . { Item.get(value) }\n",
         );
         std::fs::write(dir.path().join("consumer.kio"), consumer).expect("write consumer");
@@ -6466,7 +6175,7 @@ mod tests {
             &package_collection::SourceOverlay::empty(),
         )
         .expect("analysis succeeds");
-        let import_start = consumer.find("{item}").expect("label import") + 1;
+        let import_start = consumer.find("Item);").expect("nominal import");
         let import_span = crate::span::Span::new(import_start as u32, import_start as u32 + 4);
         assert!(
             analysis
@@ -6482,7 +6191,7 @@ mod tests {
                         )
                 })
         );
-        let use_start = consumer.rfind("{item=").expect("label use") + 1;
+        let use_start = consumer.find("Item.mk").expect("nominal use");
         let use_span = crate::span::Span::new(use_start as u32, use_start as u32 + 4);
         assert!(
             analysis
@@ -6497,71 +6206,45 @@ mod tests {
                                 if module_path == "origin" && name == "Item"
                         )
                 }),
-            "surface label uses keep the selected provider identity"
+            "ordinary nominal uses keep the selected provider identity"
         );
         let consumer_file = std::fs::canonicalize(dir.path().join("consumer.kio"))
             .expect("canonical consumer path");
         let origin_file = std::fs::canonicalize(origin_file).expect("canonical origin path");
-        assert!(
-            analysis
-                .label_reuse_indexes
-                .get(&consumer_file)
-                .and_then(|index| index.label_at(use_span.start))
-                .is_some(),
-            "imported label uses are protected from ordinary rename"
-        );
-
-        assert!(
-            analysis
-                .generated_label_nominals
-                .contains(&("origin".to_owned(), "Item".to_owned()))
-        );
         let consumer_uri =
             crate::lsp::diagnostics::path_to_uri(&consumer_file, dir.path()).expect("consumer URI");
         let origin_uri =
             crate::lsp::diagnostics::path_to_uri(&origin_file, dir.path()).expect("origin URI");
         let line_index = LineIndex::new(consumer);
-        for (description, offset) in [
-            (
-                "generated label nominal",
-                consumer.find("Item,").expect("nominal import"),
-            ),
-            (
-                "generated label member",
-                consumer.find("Item.get").expect("generated member") + "Item.".len(),
-            ),
-        ] {
-            let cursor = line_index.to_position(offset as u32);
-            let position = Position {
-                line: cursor.line,
-                character: cursor.character,
-            };
-            assert!(
-                crate::lsp::rename::handle_prepare_rename(
-                    &consumer_uri,
-                    &position,
-                    &analysis,
-                    None,
-                )
+        let (description, offset) = (
+            "fixed nominal member",
+            consumer.find("Item.get").expect("projector member") + "Item.".len(),
+        );
+        let cursor = line_index.to_position(offset as u32);
+        let position = Position {
+            line: cursor.line,
+            character: cursor.character,
+        };
+        assert!(
+            crate::lsp::rename::handle_prepare_rename(&consumer_uri, &position, &analysis, None,)
                 .is_none(),
-                "{description} must not prepare an incomplete rename"
-            );
-            assert!(
-                crate::lsp::rename::handle_rename(
-                    &consumer_uri,
-                    &position,
-                    "Renamed",
-                    &analysis,
-                    None,
-                    dir.path(),
-                )
-                .is_err(),
-                "{description} must refuse a rename that cannot update the source label"
-            );
-        }
+            "{description} must not prepare an incomplete rename"
+        );
+        assert!(
+            crate::lsp::rename::handle_rename(
+                &consumer_uri,
+                &position,
+                "Renamed",
+                &analysis,
+                None,
+                dir.path(),
+            )
+            .is_err(),
+            "{description} must refuse a rename of a fixed member role"
+        );
 
         let origin_lines = LineIndex::new(origin);
-        let declaration_start = origin.find("item:").expect("provider label declaration");
+        let declaration_start = origin.find("Item:").expect("provider nominal declaration");
         let declaration_cursor = origin_lines.to_position(declaration_start as u32);
         let declaration_position = Position {
             line: declaration_cursor.line,
@@ -6575,7 +6258,7 @@ mod tests {
             None,
             dir.path(),
         )
-        .expect("provider label references");
+        .expect("provider nominal references");
         let consumer_ranges = references
             .iter()
             .filter(|location| location.uri == consumer_uri)
@@ -6596,21 +6279,21 @@ mod tests {
         };
         assert!(
             consumer_ranges.contains(&consumer_range(import_span)),
-            "a provider declaration query must include the selective label import"
+            "a provider declaration query must include the selective nominal import"
         );
         assert!(
             consumer_ranges.contains(&consumer_range(use_span)),
-            "a provider declaration query must include the consumer label use"
+            "a provider declaration query must include the consumer nominal use"
         );
         assert!(
             references.iter().all(|location| location.uri != origin_uri),
-            "includeDeclaration=false must omit the provider label declaration"
+            "includeDeclaration=false must omit the provider nominal declaration"
         );
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_label_binder_repair_preserves_comment_separated_qualification() {
+    fn lsp_nominal_member_preserves_comment_separated_qualification() {
         use crate::pass::typecheck_full::ResolvedBinder;
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6621,38 +6304,38 @@ mod tests {
         .expect("write package file");
         std::fs::write(
             dir.path().join("imported.kio"),
-            "module imported;\n\npub labels { item: . };\n",
+            "module imported;\n\npub type { Item: .; };\n",
         )
         .expect("write imported provider");
         std::fs::write(
             dir.path().join("qualified.kio"),
-            "module qualified;\n\npub labels { item: . };\n",
+            "module qualified;\n\npub type { Item: .; };\n",
         )
         .expect("write qualified provider");
         let consumer = concat!(
             "module consumer;\n",
             "\n",
-            "import imported(Item, {item});\n",
+            "import imported(Item);\n",
             "import qualified as item;\n",
             "\n",
-            "pub fn make() -> item.Item { {item. // keep qualification through trivia\n",
-            "item=} }\n",
+            "pub fn make() -> item.Item { item. // keep qualification through trivia\n",
+            "Item.mk(()) }\n",
         );
         std::fs::write(dir.path().join("consumer.kio"), consumer).expect("write consumer");
 
         let parsed_consumer = crate::pass::parser::parse(consumer).expect("parse consumer");
-        let qualified_leaf = consumer.rfind("item=").expect("qualified label use") as u32;
+        let qualified_leaf = consumer.rfind("mk(").expect("qualified nominal member") as u32;
         let classified = crate::tokens::dump_module(consumer, &parsed_consumer)
             .expect("classify consumer")
             .into_iter()
             .find(|token| token.span.start == qualified_leaf)
-            .expect("qualified label token");
+            .expect("qualified member token");
         assert!(
             matches!(
                 classified.kind,
-                crate::tokens::TokenKind::EntityNameQualifiedLabelReference
+                crate::tokens::TokenKind::EntityNameFunctionReference
             ),
-            "parsed label qualification was lost: {:?}",
+            "parsed member role was lost: {:?}",
             classified.kind
         );
 
@@ -6661,8 +6344,8 @@ mod tests {
             &package_collection::SourceOverlay::empty(),
         )
         .expect("analysis succeeds");
-        let use_start = consumer.rfind("item=").expect("qualified label use");
-        let use_span = crate::span::Span::new(use_start as u32, use_start as u32 + 4);
+        let use_start = consumer.rfind("mk(").expect("qualified nominal member");
+        let use_span = crate::span::Span::new(use_start as u32, use_start as u32 + 2);
         let binders_at_use: Vec<_> = analysis
             .position_index
             .binders_iter()
@@ -6678,8 +6361,8 @@ mod tests {
                         && *span == use_span
                         && matches!(
                             binder,
-                            ResolvedBinder::Newtype { module_path, name }
-                                if module_path == "qualified" && name == "Item"
+                            ResolvedBinder::NewtypeMember { module_path, newtype, member }
+                                if module_path == "qualified" && newtype == "Item" && member == "mk"
                         )
                 }),
             "the parsed qualified path must not be rebound to imported.Item: {binders_at_use:?}"
@@ -6884,15 +6567,11 @@ mod tests {
         std::fs::write(
             dir.join("macros.kio"),
             "module macros;\n\n\
-             import __intrinsics__;\n\n\
              import __comptime__;\n\n\
-             pub type Optional_type = __Type__ | .;\n\n\
-             pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Optional_type) -> __Checked_term__ {\n\
-               __either__[__Type__][.][__Checked_term__](target, .(_target: __Type__) -> __Checked_term__ {\n\
-                 value\n\
-               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\"[__Diagnostic_text__]) })\n\
+             pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
+               value\n\
              }\n\n\
-             pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Optional_type) -> __Checked_term__ {\n\
+             pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
                __macro_error__(ct, \"bad macro ran\"[__Diagnostic_text__])\n\
              }\n\n\
              pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
@@ -7370,7 +7049,7 @@ pub fn compile_package_with<P: Pipeline>()
 -> Result<crate::prime::typer::ValidatedPrimePackage, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -7408,7 +7087,7 @@ pub fn compile_workspace_with<P: Pipeline>(
 ) -> Result<TypedPackageCollection, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -7442,7 +7121,7 @@ pub fn compile_workspace_with_at<P: Pipeline>(
 ) -> Result<TypedPackageCollection, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -7466,7 +7145,7 @@ pub fn compile_workspace_with_at_buffered<P: Pipeline>(
 ) -> Result<TypedPackageCollection, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -7498,7 +7177,7 @@ pub fn analyze_workspace_with_at<P: Pipeline>(
 ) -> Result<TypedPackageCollection, AnalysisFailure>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -7538,7 +7217,7 @@ pub(crate) fn analyze_parsed_workspace_with<P: Pipeline>(
 ) -> Result<TypedPackageCollection, AnalysisFailure>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     P::LoweredPhase: serde::Serialize + serde::de::DeserializeOwned,
     Module<P::LoweredPhase>: Send,
@@ -8097,7 +7776,7 @@ fn build_package_summary<P: Pipeline>(
 ) -> Result<(P::LoweringContext, PackageSummary<P::LoweredPhase>), LocatedError>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
 {
     validate_source_package::<P>(parsed_pkg)?;
@@ -8227,7 +7906,7 @@ fn typecheck_package_with_summary_scheduler<P: Pipeline>(
 ) -> Result<ScheduledTypecheckResult, Vec<LocatedError>>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
     Module<P::LoweredPhase>: Send,
     Package<P::LoweredPhase>: Sync,
@@ -8387,7 +8066,7 @@ fn force_and_lower_module<P: Pipeline>(
 ) -> Result<ForcedLoweredModule<P::LoweredPhase>, LocatedError>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()>,
     P::LoweredPhase: Clone,
 {
     let summary = summaries
@@ -8856,20 +8535,20 @@ mod typed_cache_dependency_fingerprint_tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn forwarding_surface_fingerprint_tracks_target_and_visibility() {
-        let baseline = surface_fingerprint("module provider; pub type {field} = {origin.first};");
+    fn alias_surface_fingerprint_tracks_target_and_visibility() {
+        let baseline = surface_fingerprint("module provider; pub type Field = origin.First;");
         assert_ne!(
             baseline,
-            surface_fingerprint("module provider; pub type {field} = {origin.second};")
+            surface_fingerprint("module provider; pub type Field = origin.Second;")
         );
         assert_ne!(
             baseline,
-            surface_fingerprint("module provider; pub(provider) type {field} = {origin.first};")
+            surface_fingerprint("module provider; pub(provider) type Field = origin.First;")
         );
         assert_eq!(
             baseline,
             surface_fingerprint(
-                "module provider;\n/// A label.\npub type {field} = {origin.first};"
+                "module provider;\n/// A type alias.\npub type Field = origin.First;"
             )
         );
     }
@@ -9533,11 +9212,6 @@ fn public_surface_entries(module: &Module<Surface>) -> Vec<String> {
                 d.type_alias_name.as_deref().unwrap_or(""),
                 crate::pretty::pretty_item_signature(item)
             )),
-            crate::ast::Item::LabelForward(forward, _) => entries.push(format!(
-                "label_forward:{}:{}",
-                forward.name,
-                crate::pretty::pretty_item_signature(item)
-            )),
             crate::ast::Item::Op(op, _) if op.vis.is_pub() => entries.push(format!(
                 "op:{}:{}",
                 crate::ast::OperatorDispatchKey::from_body(&op.body).render(),
@@ -9913,14 +9587,10 @@ fn normalize_projected_signature_patterns(signature: &mut crate::ast::Signature<
 ///   `sig::surface::item_is_exported`), and `kio-prime`'s lowering rejects
 ///   them, so they are dropped: the result is the same contract on both
 ///   binaries.
-/// - `labels` is the one surface form that would enter the contract only
-///   *after* surface label-elaboration (as newtypes). Computing that
-///   without the surface frontend is exactly what `kio-prime` cannot do, so
-///   `labels` is dropped here too: an unsealed dependency's live contract
-///   covers its explicitly-declared signatures, and a dependency that
-///   exposes `labels` in its public interface must be **sealed** (ship a
-///   `<pkg>.sig.kio`) to freeze them into its contract. See
-///   `specs/versioning.md` § Git-dependency contract gate.
+/// - Compact nominal declarations retain their written grouping until the
+///   bodyless lowerer expands their ordinary headers. That path applies the
+///   same opaque projection before lowering payload types, then partitions
+///   their surviving recursive graph with the ordinary contract policy.
 #[cfg(feature = "cli")]
 fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Result<(), Error> {
     use crate::ast::Item;
@@ -9942,9 +9612,9 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
                 let members = group
                     .members
                     .into_iter()
-                    .filter_map(|member| match member {
+                    .map(|member| match member {
                         crate::ast::TypeRecMember::TypeAlias(alias) => {
-                            Some(crate::ast::TypeRecMember::TypeAlias(alias))
+                            crate::ast::TypeRecMember::TypeAlias(alias)
                         }
                         crate::ast::TypeRecMember::Newtype(newtype) => {
                             let newtype = if newtype.is_host_exported() {
@@ -9952,9 +9622,9 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
                             } else {
                                 newtype
                             };
-                            Some(crate::ast::TypeRecMember::Newtype(newtype))
+                            crate::ast::TypeRecMember::Newtype(newtype)
                         }
-                        crate::ast::TypeRecMember::Labels(_, _) => None,
+                        member @ crate::ast::TypeRecMember::Labels(..) => member,
                     })
                     .collect();
                 kept.push(Item::TypeRecGroup(crate::ast::TypeRecGroup {
@@ -9979,12 +9649,10 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
                 };
                 kept.push(Item::Newtype(newtype));
             }
-            keep @ (Item::HostType(_) | Item::HostFn(_)) => {
+            keep @ (Item::HostType(_) | Item::HostFn(_) | Item::Labels(..)) => {
                 kept.push(keep);
             }
-            Item::Labels(..)
-            | Item::LabelForward(..)
-            | Item::Equiv(..)
+            Item::Equiv(..)
             | Item::Macro(..)
             | Item::LiteralAlias(..)
             | Item::Op(..)
@@ -9999,14 +9667,13 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
         items: module
             .items
             .iter()
-            .filter(|item| {
-                matches!(
-                    item,
-                    Item::TypeAlias(_)
-                        | Item::Newtype(_)
-                        | Item::TypeRecGroup(_)
-                        | Item::HostType(_)
-                )
+            .filter(|item| match item {
+                Item::TypeRecGroup(group) => !group
+                    .members
+                    .iter()
+                    .any(|member| matches!(member, crate::ast::TypeRecMember::Labels(..))),
+                Item::TypeAlias(_) | Item::Newtype(_) | Item::HostType(_) => true,
+                _ => false,
             })
             .cloned()
             .collect(),
@@ -10021,6 +9688,14 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
             partitioned.push(item);
             continue;
         };
+        if group
+            .members
+            .iter()
+            .any(|member| matches!(member, crate::ast::TypeRecMember::Labels(..)))
+        {
+            partitioned.push(Item::TypeRecGroup(group));
+            continue;
+        }
         let (analyzed_span, analysis) = analyses
             .next()
             .expect("one projection analysis per recursive group");
@@ -10088,8 +9763,7 @@ pub(crate) fn prepare_resolved_package_from_walked<P: Pipeline>(
 ) -> Result<PreparedTestPackage<P::LoweredPhase>, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
-    P::LoweredPhase:
-        crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()> + Clone,
+    P::LoweredPhase: crate::ast::Phase<ExprResolved = ()> + Clone,
 {
     let mut sources: HashMap<PathBuf, String> = HashMap::new();
     for pkg in parsed_ws.packages.values() {
@@ -10337,13 +10011,90 @@ mod analysis_failure_render_tests {
 mod prime_only_contract_surface_tests {
     use super::*;
 
+    fn prime_contract(source: &str) -> Result<crate::sig::ContractSnapshot, LocatedError> {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("dep.pkg.kio"),
+            "package dep; bridge { **; }",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("api.kio"), format!("module api; {source}")).unwrap();
+        let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
+        let dep = parsed.packages.get(&parsed.root).unwrap();
+        contract_snapshot_via_lower::<crate::prime::pipeline::PrimePipeline>(dep)
+    }
+
+    #[test]
+    fn compact_nominal_contracts_expand_without_surface_frontend() {
+        for (compact, explicit) in [
+            (
+                "pub type { Field[A]: A; }",
+                "pub type { Field[A]: A { pub mk; pub get; }; }",
+            ),
+            (
+                "pub rec type { Left: . | Left; Right: . | Right; }",
+                "pub rec type { Left: . | Left { pub mk; pub get; }; } \
+                 pub rec type { Right: . | Right { pub mk; pub get; }; }",
+            ),
+            (
+                "rec { pub type Tree = Branch; \
+                 pub type { Branch: . | Tree; Detached: .; }; }",
+                "pub type { Detached: . { pub mk; pub get; }; } \
+                 rec { pub type Tree = Branch; \
+                 pub type { Branch: . | Tree { pub mk; pub get; }; }; }",
+            ),
+        ] {
+            let compact = prime_contract(compact).expect("compact contract");
+            let explicit = prime_contract(explicit).expect("explicit contract");
+            assert_eq!(compact, explicit);
+            assert_eq!(
+                crate::sig::contract_digest(&compact),
+                crate::sig::contract_digest(&explicit)
+            );
+        }
+    }
+
+    #[test]
+    fn compact_opaque_contract_erases_payload_before_prime_lowering() {
+        let expected =
+            prime_contract("pub type { Token: . { mk; get; }; } pub type Owner = Token;").unwrap();
+        for declaration in [
+            "pub type Owner = { Token: Missing { mk; get; }; };",
+            "pub type Owner = { Token: . & _ { mk; get; }; };",
+            "pub type Owner = { Token<Unused>: . { mk; get; }; };",
+            "pub rec type Owner = { Token: Token -> . { mk; get; }; };",
+            "pub rec type Owner = { Token: . { mk; get; }; };",
+        ] {
+            assert_eq!(
+                prime_contract(declaration).expect("opaque compact contract"),
+                expected,
+                "{declaration}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_exposed_contract_preserves_missing_rec_and_type_errors() {
+        for (source, expected) in [
+            ("pub type { Tree: . | Tree; }", "rec"),
+            ("pub type { Tree: . | Tree[.]; }", "argument"),
+            ("pub type { Tree: Tree -> .; }", "positive"),
+            ("pub rec type Loop = Loop & { Token: .; };", "boundary"),
+            ("pub type Choice = { Tag: .; } | { Tag: .; };", "duplicate"),
+        ] {
+            let error = prime_contract(source).expect_err("invalid exposed recursive contract");
+            let message = error.error.diag().1;
+            assert!(message.contains(expected), "{source}: {error:?}");
+        }
+    }
+
     #[test]
     fn projected_recursive_group_repartitions_without_surface_frontend() {
         let mut module = crate::pass::parser::parse(
             "module api; \
              rec { \
-               pub newtype Public : Private { constructor make; projector read; }; \
-               newtype Private : Public { constructor make_private; projector read_private; }; \
+               pub type { Public : Private { mk; get; }; }; \
+               type { Private : Public { mk; get; }; }; \
              }",
         )
         .expect("parse Kio'-shaped module");
@@ -10378,24 +10129,171 @@ mod contract_surface_tests {
     use crate::prime::pipeline::PrimePipeline;
 
     #[test]
-    fn labels_free_contract_projection_handles_empty_acyclic_and_cyclic_groups() {
+    fn opaque_nominal_contract_ignores_hidden_payload_validation() {
+        let mut baseline = None;
+        for declaration in [
+            "pub type { Token: . { mk; get; }; }",
+            "pub type { Token: Missing { mk; get; }; }",
+            "pub type { Token: . & _ { mk; get; }; }",
+            "pub type { Token<Unused>: . { mk; get; }; }",
+            "pub rec type { Token: Token -> . { mk; get; }; }",
+            "pub rec type { Token: . { mk; get; }; }",
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tmp.path().join("dep.pkg.kio"),
+                "package dep; bridge { **; }",
+            )
+            .unwrap();
+            std::fs::write(
+                tmp.path().join("api.kio"),
+                format!("module api; {declaration}"),
+            )
+            .unwrap();
+            let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
+            let dep = parsed.packages.get(&parsed.root).unwrap();
+            for snapshot in [
+                contract_snapshot_via_lower::<FullPipeline>(dep),
+                contract_snapshot_via_lower::<PrimePipeline>(dep),
+            ] {
+                let snapshot = snapshot.unwrap_or_else(|error| {
+                    panic!(
+                        "opaque payload must be erased before validation: {declaration}: {error:?}"
+                    )
+                });
+                if let Some(expected) = &baseline {
+                    assert_eq!(&snapshot, expected, "hidden payload: {declaration}");
+                } else {
+                    baseline = Some(snapshot);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn public_nominal_contract_checks_exposed_payload_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("dep.pkg.kio"),
+            "package dep; bridge { **; }",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("api.kio"),
+            "module api; pub type { Token: Missing { pub mk; pub get; }; }",
+        )
+        .unwrap();
+        let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
+        let dep = parsed.packages.get(&parsed.root).unwrap();
+        for result in [
+            contract_snapshot_via_lower::<FullPipeline>(dep),
+            contract_snapshot_via_lower::<PrimePipeline>(dep),
+        ] {
+            assert!(
+                result.is_err(),
+                "an exposed unresolved payload must be checked"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_opaque_contracts_match_explicit_payload_erasure() {
+        for (compact, explicit) in [
+            (
+                "pub type Owner = { Token: Missing { mk; get; }; };",
+                "pub type { Token: Missing { mk; get; }; } pub type Owner = Token;",
+            ),
+            (
+                "pub type Owner = { Token: . & _ { mk; get; }; };",
+                "pub type { Token: . & _ { mk; get; }; } pub type Owner = Token;",
+            ),
+            (
+                "pub type Owner = { Token<Unused>: . { mk; get; }; };",
+                "pub type { Token<Unused>: . { mk; get; }; } pub type Owner = Token;",
+            ),
+            (
+                "pub rec type Owner = { Token: Token -> . { mk; get; }; };",
+                "pub rec type { Token: Token -> . { mk; get; }; } pub type Owner = Token;",
+            ),
+            (
+                "pub rec type Owner = { Token: . { mk; get; }; };",
+                "pub rec type { Token: . { mk; get; }; } pub type Owner = Token;",
+            ),
+        ] {
+            let compact_source = format!("module api; {compact}");
+            let explicit_source = format!("module api; {explicit}");
+            let compact = projected_contracts_for_modules(&[("api.kio", &compact_source)]);
+            let explicit = projected_contracts_for_modules(&[("api.kio", &explicit_source)]);
+            let expected = explicit[0].as_ref().expect("explicit full contract");
+            for snapshot in compact.iter().chain(explicit.iter()) {
+                assert_eq!(snapshot.as_ref().expect("opaque contract"), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn compact_nominal_unsealed_contract_matches_explicit_public_roles() {
+        let snapshot = |declaration: &str| {
+            let tmp = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tmp.path().join("dep.pkg.kio"),
+                "package dep; bridge { **; }",
+            )
+            .unwrap();
+            std::fs::write(
+                tmp.path().join("fields.kio"),
+                format!("module fields; {declaration}"),
+            )
+            .unwrap();
+            std::fs::write(
+                tmp.path().join("api.kio"),
+                "module api; import fields(Field); pub type Export = Field[.]; \
+                 pub fn roundtrip(value: Export) -> Export { discarded_body }",
+            )
+            .unwrap();
+            let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
+            let dep = parsed.packages.get(&parsed.root).unwrap();
+            let full = contract_snapshot_via_lower::<FullPipeline>(dep).expect("full contract");
+            let prime = contract_snapshot_via_lower::<PrimePipeline>(dep).expect("Prime contract");
+            assert_eq!(
+                full, prime,
+                "both entry routes retain the same declarations"
+            );
+            full
+        };
+        let compact = snapshot("pub type { Field[A]: A; }");
+        let explicit = snapshot("pub type { Field[A]: A { pub mk; pub get; }; }");
+        assert_eq!(compact, explicit);
+        assert_eq!(
+            crate::sig::contract_digest(&compact),
+            crate::sig::contract_digest(&explicit)
+        );
+        let private = snapshot("pub type { Field[A]: A { mk; get; }; }");
+        let scoped = snapshot("pub type { Field[A]: A { pub(fields) mk; pub(fields) get; }; }");
+        assert_eq!(
+            private, scoped,
+            "scoped members stay outside the host contract"
+        );
+        assert_ne!(
+            compact, private,
+            "an explicit private body changes the public surface"
+        );
+    }
+
+    #[test]
+    fn contract_projection_lowers_compact_and_explicit_recursive_groups() {
         for (declarations, expected_items, expected_groups, expected_self_recursive) in [
-            ("rec { labels { tag: . }; }", 0, 0, 0),
+            ("rec { type { Tag: .; }; }", 1, 0, 0),
             ("rec { type Plain = .; }", 1, 0, 0),
+            ("rec { type { Node : Node { mk; get; }; }; }", 1, 0, 1),
             (
-                "rec { newtype Node : Node { constructor make; projector read; }; }",
-                1,
+                "rec { type { Tag: .; }; type { Node : Node { mk; get; }; }; }",
+                2,
                 0,
                 1,
             ),
             (
-                "rec { labels { tag: . }; newtype Node : Node { constructor make; projector read; }; }",
-                1,
-                0,
-                1,
-            ),
-            (
-                "rec { newtype Left : Right { constructor left; projector read_left; }; newtype Right : Left { constructor right; projector read_right; }; }",
+                "rec { type { Left : Right { mk; get; }; }; type { Right : Left { mk; get; }; }; }",
                 1,
                 1,
                 0,
@@ -10403,8 +10301,9 @@ mod contract_surface_tests {
         ] {
             let mut module = crate::pass::parser::parse(&format!("module api; {declarations}"))
                 .expect("parse the written projection subject");
-            select_contract_declarations(&mut module)
-                .expect("labels-free projection has an identity owner partition");
+            select_contract_declarations(&mut module).expect("select declaration headers");
+            let module = PrimePipeline::lower_contract_module(module)
+                .expect("lower and partition compact and explicit declaration headers");
             assert_eq!(module.items.len(), expected_items, "{declarations}");
             assert_eq!(
                 module
@@ -10645,7 +10544,7 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn body_only_surface_imports_do_not_obstruct_projected_contracts() {
+    fn auxiliary_and_nominal_imports_project_in_both_pipelines() {
         let cases = [
             (
                 "literal",
@@ -10663,14 +10562,14 @@ mod contract_surface_tests {
                 "import provider(varop [* *]);",
             ),
             (
-                "labels",
-                "module provider; pub labels Choice = { tag: . } | { other: . };",
-                "import provider({tag}, Tag, Choice);",
+                "compact nominals",
+                "module provider; pub type Choice = { Tag: .; } | { Other: .; };",
+                "import provider(Tag, Choice);",
             ),
             (
-                "label forward",
-                "module provider; pub labels { original: . }; pub type {tag} = {original};",
-                "import provider({tag});",
+                "ordinary alias",
+                "module provider; pub type { Original: .; }; pub type Tag = Original;",
+                "import provider(Tag);",
             ),
             (
                 "macro",
@@ -10703,7 +10602,7 @@ mod contract_surface_tests {
                  host type Host; \
                  host fn host_id(value: Host) -> Host; \
                  pub type Payload = .; \
-                 pub newtype Wrapped : Payload { pub constructor wrap; pub projector unwrap; }; \
+                 pub type { Wrapped : Payload { pub mk; pub get; }; }; \
                  pub fn identity(value: Payload) -> Payload { value } \
                  pub literal zero = 0;",
             ),
@@ -10717,9 +10616,9 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_label_import_can_be_shadowed_by_signature_binder() {
+    fn projected_nominal_import_can_be_shadowed_by_signature_binder() {
         assert_projected_contracts_match(&[
-            ("provider.kio", "module provider; pub labels { tag: . };"),
+            ("provider.kio", "module provider; pub type { Tag: .; };"),
             (
                 "api.kio",
                 "module api; import provider(Tag); pub fn expose[Tag](value: Tag) -> Tag { value }",
@@ -10728,27 +10627,28 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_label_identity_in_signature_still_requires_sealed_contract() {
-        for result in projected_contracts_for_modules(&[
-            ("provider.kio", "module provider; pub labels { tag: . };"),
+    fn projected_compact_identity_is_retained_in_unsealed_contract() {
+        let [full, prime] = projected_contracts_for_modules(&[
+            ("provider.kio", "module provider; pub type { Tag: .; };"),
             (
                 "api.kio",
                 "module api; import provider(Tag); pub fn expose(value: Tag) -> Tag { value }",
             ),
-        ]) {
-            let error =
-                result.expect_err("labels-generated identity is not in an unsealed contract");
-            assert!(matches!(error.error, Error::NameRes(_)), "got: {error:?}");
-        }
+        ]);
+        let full = full.expect("ordinary compact identities belong to the live contract");
+        let prime = prime.expect("Prime computes the same compact contract");
+        assert_eq!(full, prime);
+        assert!(full.items.values().any(|entry| entry.name.leaf == "Tag"));
+        assert!(full.items.values().any(|entry| entry.name.leaf == "expose"));
     }
 
     #[test]
-    fn projected_opaque_newtype_does_not_retain_label_generated_payload() {
+    fn projected_opaque_nominal_does_not_retain_private_compact_payload() {
         let [full, prime] = projected_contracts_for_modules(&[(
             "api.kio",
             "module api; \
-             labels { hidden: . }; \
-             pub newtype Token : Hidden { constructor make_token; projector read_token; };",
+             type { Hidden: .; }; \
+             pub type { Token : Hidden { mk; get; }; };",
         )]);
         let full = full.expect("full projection hides an opaque newtype payload");
         let prime = prime.expect("Prime projection hides an opaque newtype payload");
@@ -10771,7 +10671,7 @@ mod contract_surface_tests {
         );
         assert!(
             full.items.values().all(|entry| entry.name.leaf != "Hidden"),
-            "the private label-generated payload must not enter the contract"
+            "the private compact payload must not enter the contract"
         );
     }
 
@@ -10781,8 +10681,8 @@ mod contract_surface_tests {
             "api.kio",
             "module api; \
              rec { \
-               pub newtype Public : Private { constructor make; projector read; }; \
-               newtype Private : Public { constructor make_private; projector read_private; }; \
+               pub type { Public : Private { mk; get; }; }; \
+               type { Private : Public { mk; get; }; }; \
              }",
         )]);
         let full = full.expect("full projection repartitions the now-acyclic group");
@@ -10809,7 +10709,7 @@ mod contract_surface_tests {
         let [full, prime] = projected_contracts_for_modules(&[(
             "api.kio",
             "module api; \
-             pub rec newtype Loop : Loop { constructor make; projector read; };",
+             pub rec type { Loop : Loop { mk; get; }; };",
         )]);
         let full = full.expect("full projection drops the now-redundant singleton marker");
         let prime = prime.expect("Prime projection drops the now-redundant singleton marker");
@@ -11315,7 +11215,7 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_label_nominal_collisions_match_across_pipelines_and_orders() {
+    fn projected_nominal_collisions_match_across_pipelines_and_orders() {
         for api in [
             "module api; import labels(Item); import types(Item); pub fn expose() -> . { () }",
             "module api; import types(Item); import labels(Item); pub fn expose() -> . { () }",
@@ -11323,7 +11223,7 @@ mod contract_surface_tests {
             for error in projected_errors_for_modules(
                 "  api;",
                 &[
-                    ("labels.kio", "module labels; pub labels { item: . };"),
+                    ("labels.kio", "module labels; pub type { Item: .; };"),
                     ("types.kio", "module types; pub type Item = .;"),
                     ("api.kio", api),
                 ],
@@ -11338,8 +11238,8 @@ mod contract_surface_tests {
         }
 
         for api in [
-            "module api; pub type Item = .; pub labels { item: . };",
-            "module api; pub labels { item: . }; pub type Item = .;",
+            "module api; pub type Item = .; pub type { Item: .; };",
+            "module api; pub type { Item: .; }; pub type Item = .;",
         ] {
             for error in projected_errors_for_modules("  api;", &[("api.kio", api)]) {
                 assert!(

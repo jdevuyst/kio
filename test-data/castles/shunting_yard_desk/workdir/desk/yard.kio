@@ -21,12 +21,13 @@ module desk/yard;
 
 import desk/list(List, cons, nil, reverse);
 import desk/num(int_eq, not);
-import desk/op(Binary, Binop, Op, Unary, binop_prec, binop_right_assoc, prec, {binary});
+import desk/op(Binary, Binop, Op, Unary, binop_prec, binop_right_assoc, prec);
 import desk/outcome(Failure, bad_token_fault, fault_at, unclosed_open_fault, unmatched_close_fault);
 import desk/step(Step, app_step, lit_step);
-import desk/token(Bad, Lparen, Num, Oper, Placed, Rparen, at_of, tok_of, {num}, {oper});
+import desk/token(Bad, Lparen, Num, Oper, Placed, Rparen, at_of, tok_of);
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select);
 import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith(lt_i32);
@@ -34,42 +35,44 @@ import testapi/iter(loop);
 
 /// An operator waiting on the stack, remembering where it was written so a
 /// fault raised when it finally fires can quote the right token.
-labels Pending = { pend_op: Op, pend_at: I32 };
+type Pending = { Pend_op: Op; Pend_at: I32 };
 
-labels Frame = { operator: Pending } | { open_paren: I32 };
+type Frame = { Operator: Pending } | { Open_paren: I32 };
 
 /// The yard's whole mutable state, threaded by value: the output built so far
 /// (head-first, reversed) and the operator stack.
-labels Carry = { c_out: List[Step], c_stack: List[Frame] };
+type Carry = { C_out: List[Step]; C_stack: List[Frame] };
 
-labels Prog = { going: Carry } | { stopped: Failure };
+type Prog = { Going: Carry } | { Stopped: Failure };
 
-labels Close = { after: Carry } | { close_failed: Failure };
+type Close = { After: Carry } | { Close_failed: Failure };
 
 /// The conversion's result: an RPN queue, or the fault that stopped it.
-pub labels Built = { rpn: List[Step] } | { rpn_failed: Failure };
+pub type Built = { Rpn: List[Step] } | { Rpn_failed: Failure };
 
-fn carry(out: List[Step], stack: List[Frame]) -> Carry { {c_out = out, c_stack = stack} }
+fn carry(out: List[Step], stack: List[Frame]) -> Carry { (C_out.mk(out), C_stack.mk(stack)) }
 
-fn going(c: Carry) -> Prog { ({going = c}.>widen_sum)[Prog] }
+fn going(c: Carry) -> Prog { (Going.mk(c).>widen_sum)[Prog] }
 
-fn stopped(f: Failure) -> Prog { ({stopped = f}.>widen_sum)[Prog] }
+fn stopped(f: Failure) -> Prog { (Stopped.mk(f).>widen_sum)[Prog] }
 
-fn close_ok(c: Carry) -> Close { ({after = c}.>widen_sum)[Close] }
+fn close_ok(c: Carry) -> Close { (After.mk(c).>widen_sum)[Close] }
 
-fn close_fail(f: Failure) -> Close { ({close_failed = f}.>widen_sum)[Close] }
+fn close_fail(f: Failure) -> Close { (Close_failed.mk(f).>widen_sum)[Close] }
 
-fn ok_built(queue: List[Step]) -> Built { ({rpn = queue}.>widen_sum)[Built] }
+fn ok_built(queue: List[Step]) -> Built { (Rpn.mk(queue).>widen_sum)[Built] }
 
-fn fail_built(f: Failure) -> Built { ({rpn_failed = f}.>widen_sum)[Built] }
+fn fail_built(f: Failure) -> Built { (Rpn_failed.mk(f).>widen_sum)[Built] }
 
 fn op_frame(op: Op, spot: I32) -> Frame {
-  ({operator = {pend_op = op, pend_at = spot}}.>widen_sum)[Frame]
+  (Operator.mk((Pend_op.mk(op), Pend_at.mk(spot))).>widen_sum)[Frame]
 }
 
-fn open_frame(spot: I32) -> Frame { ({open_paren = spot}.>widen_sum)[Frame] }
+fn open_frame(spot: I32) -> Frame { (Open_paren.mk(spot).>widen_sum)[Frame] }
 
-fn frame_step(held: Pending) -> Step { app_step(held.?{pend_op}, held.?{pend_at}) }
+fn frame_step(held: Pending) -> Step {
+  app_step(held.>select { Pend_op.get }, held.>select { Pend_at.get })
+}
 
 /// Must the operator already on the stack come off before `incoming` goes on?
 /// Yes when it binds strictly tighter, and yes on a tie only when `incoming`
@@ -88,14 +91,14 @@ fn outranks(held: Op, incoming: Binop) -> Bool {
 }
 
 rec(loop) fn pop_greater(incoming: Binop, out: List[Step], stack: List[Frame]) -> Carry {
-  match(stack.>List.un_list) {
+  match(stack.>List.get) {
     (
     , .(top: Frame, rest: List[Frame]) {
         match(top) {
           (
           , .(o: Operator) {
-              let held = o.?{operator};
-              if(outranks(held.?{pend_op}, incoming)) {
+              let held = o.>select { Operator.get };
+              if(outranks(held.>select { Pend_op.get }, incoming)) {
                 recur pop_greater(incoming, cons(frame_step(held), out), rest)
               } else {
                 carry(out, stack)
@@ -113,12 +116,14 @@ rec(loop) fn pop_greater(incoming: Binop, out: List[Step], stack: List[Frame]) -
 /// Pop back to the nearest `(` and drop it. Running out of stack first means
 /// the `)` at `spot` closes nothing.
 rec(loop) fn pop_to_paren(spot: I32, out: List[Step], stack: List[Frame]) -> Close {
-  match(stack.>List.un_list) {
+  match(stack.>List.get) {
     (
     , .(top: Frame, rest: List[Frame]) {
         match(top) {
           (
-          , .(o: Operator) { recur pop_to_paren(spot, cons(frame_step(o.?{operator}), out), rest) }
+          , .(o: Operator) {
+              recur pop_to_paren(spot, cons(frame_step(o.>select { Operator.get }), out), rest)
+            }
           , .(_barrier: Open_paren) { close_ok(carry(out, rest)) }
           )
         }
@@ -131,13 +136,17 @@ rec(loop) fn pop_to_paren(spot: I32, out: List[Step], stack: List[Frame]) -> Clo
 /// Flush the stack at end of input. A barrier still on it is an unclosed `(`,
 /// and the fault quotes the position of that parenthesis, not of the end.
 rec(loop) fn drain(out: List[Step], stack: List[Frame]) -> Built {
-  match(stack.>List.un_list) {
+  match(stack.>List.get) {
     (
     , .(top: Frame, rest: List[Frame]) {
         match(top) {
           (
-          , .(o: Operator) { recur drain(cons(frame_step(o.?{operator}), out), rest) }
-          , .(b: Open_paren) { fail_built(fault_at(unclosed_open_fault(), b.?{open_paren})) }
+          , .(o: Operator) {
+              recur drain(cons(frame_step(o.>select { Operator.get }), out), rest)
+            }
+          , .(b: Open_paren) {
+              fail_built(fault_at(unclosed_open_fault(), b.>select { Open_paren.get }))
+            }
           )
         }
       }
@@ -148,7 +157,14 @@ rec(loop) fn drain(out: List[Step], stack: List[Frame]) -> Built {
 
 fn close_prog(c: Close) -> Prog {
   match(c) {
-    (.(a: After) { going(a.?{after}) }, .(f: Close_failed) { stopped(f.?{close_failed}) })
+    (
+    , .(a: After) {
+        going(a.>select { After.get })
+      }
+    , .(f: Close_failed) {
+        stopped(f.>select { Close_failed.get })
+      }
+    )
   }
 }
 
@@ -157,8 +173,11 @@ fn feed_op(op: Op, spot: I32, out: List[Step], stack: List[Frame]) -> Prog {
     (
     , .(_prefix: Unary) { going(carry(out, cons(op_frame(op, spot), stack))) }
     , .(b: Binary) {
-        let popped = pop_greater(b.?{binary}, out, stack);
-        going(carry(popped.?{c_out}, cons(op_frame(op, spot), popped.?{c_stack})))
+        let popped = pop_greater(b.>select { Binary.get }, out, stack);
+        going(carry(
+        , popped.>select { C_out.get }
+        , cons(op_frame(op, spot), popped.>select { C_stack.get })
+        ))
       }
     )
   }
@@ -169,8 +188,12 @@ fn feed(p: Placed, out: List[Step], stack: List[Frame]) -> Prog {
   let spot = at_of(p);
   match(tok_of(p)) {
     (
-    , .(n: Num) { going(carry(cons(lit_step(n.?{num}, spot), out), stack)) }
-    , .(o: Oper) { feed_op(o.?{oper}, spot, out, stack) }
+    , .(n: Num) {
+        going(carry(cons(lit_step(n.>select { Num.get }, spot), out), stack))
+      }
+    , .(o: Oper) {
+        feed_op(o.>select { Oper.get }, spot, out, stack)
+      }
     , .(_open: Lparen) { going(carry(out, cons(open_frame(spot), stack))) }
     , .(_close: Rparen) { close_prog(pop_to_paren(spot, out, stack)) }
     , .(_junk: Bad) { stopped(fault_at(bad_token_fault(), spot)) }
@@ -179,13 +202,18 @@ fn feed(p: Placed, out: List[Step], stack: List[Frame]) -> Prog {
 }
 
 rec(loop) fn shunt(toks: List[Placed], out: List[Step], stack: List[Frame]) -> Built {
-  match(toks.>List.un_list) {
+  match(toks.>List.get) {
     (
     , .(p: Placed, rest: List[Placed]) {
         match(feed(p, out, stack)) {
           (
-          , .(g: Going) { let next = g.?{going}; recur shunt(rest, next.?{c_out}, next.?{c_stack}) }
-          , .(s: Stopped) { fail_built(s.?{stopped}) }
+          , .(g: Going) {
+              let next = g.>select { Going.get };
+              recur shunt(rest, next.>select { C_out.get }, next.>select { C_stack.get })
+            }
+          , .(s: Stopped) {
+              fail_built(s.>select { Stopped.get })
+            }
           )
         }
       }

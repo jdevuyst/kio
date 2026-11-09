@@ -6,7 +6,7 @@ host type Str role(str);
 
 host type Bool role(bool);
 
-pub labels { left: I32, right: Str };
+pub type { Left: I32; Right: Str }
 
 host fn pair(number: I32, text: Str) -> I32 & Str;
 

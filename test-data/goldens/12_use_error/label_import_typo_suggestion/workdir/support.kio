@@ -1,3 +1,0 @@
-module support;
-
-pub labels { helper: . };

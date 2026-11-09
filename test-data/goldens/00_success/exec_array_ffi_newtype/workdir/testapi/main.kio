@@ -16,12 +16,12 @@ import testapi/text(string_concat);
 // `Array(Point)` carries the nominal wrapper across the FFI — the
 // host stores `Point` values, and Kio reads them back, unwraps the
 // projector, and destructures the inner product.
-newtype Point : I32 & I32 { pub constructor mk_point; pub projector un_point }
+type { Point: I32 & I32 { pub mk; pub get } }
 
-fn point(x: I32, y: I32) -> Point { Point.mk_point((x, y)) }
+fn point(x: I32, y: I32) -> Point { Point.mk((x, y)) }
 
 fn show_point(p: Point) -> String {
-  match(p.>Point.un_point) {
+  match(p.>Point.get) {
     .(x: I32, y: I32) {
       string_concat(
       , "("

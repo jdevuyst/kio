@@ -2,4 +2,4 @@ module testapi/token;
 
 import testapi(String);
 
-pub newtype Token : String { pub constructor mk_token; pub projector un_token }
+pub type { Token: String { pub mk; pub get } }

@@ -4,6 +4,7 @@ import egraph/graph as graph;
 import egraph/numbers as n;
 import macros/control(macro if);
 import macros/match(macro match);
+import macros/row_macros(macro select as row_select);
 import testapi(Array, Bool, I32, String);
 import testapi/arith as num;
 import testapi/array as arr;
@@ -11,13 +12,13 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub newtype Selection : Array[I32] & Array[I32] { constructor selection; projector fields }
+pub type { Selection: Array[I32] & Array[I32] { mk; get } }
 
 literal infinity = 100000;
 
-fn costs(s: Selection) -> Array[I32] { let .(values, _) = Selection.fields(s); values }
+fn costs(s: Selection) -> Array[I32] { let .(values, _) = Selection.get(s); values }
 
-fn choices(s: Selection) -> Array[I32] { let .(_, nodes) = Selection.fields(s); nodes }
+fn choices(s: Selection) -> Array[I32] { let .(_, nodes) = Selection.get(s); nodes }
 
 pub fn cost(g: graph.Graph, s: Selection, root: I32) -> I32 {
   arr.array_get(costs(s), graph.find(g, root))
@@ -40,8 +41,12 @@ fn binary_cost(g: graph.Graph, s: Selection, children: I32 & I32) -> I32 {
 
 fn node_cost(g: graph.Graph, s: Selection, node: graph.Node) -> I32 {
   match(node) {
-    .(value: graph.Addition) { binary_cost(g, s, value.?{graph.addition}) };
-    .(value: graph.Product) { binary_cost(g, s, value.?{graph.product}) };
+    .(value: graph.Addition) {
+      binary_cost(g, s, value.>row_select { graph.Addition.get })
+    };
+    .(value: graph.Product) {
+      binary_cost(g, s, value.>row_select { graph.Product.get })
+    };
     .() { 1 }
   }
 }
@@ -70,10 +75,10 @@ rec(loop) fn relax(g: graph.Graph, s: Selection) -> Selection {
 pub fn select(g: graph.Graph) -> Selection {
   relax(
   , g
-  , Selection.selection(
+  , Selection.mk((
     , arr.array_make_filled(graph.size(g), infinity)
     , arr.array_make_filled(graph.size(g), -1)
-    )
+    ))
   )
 }
 
@@ -86,16 +91,18 @@ fn combine(left: String, op: String, right: String) -> String {
 
 pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
   match(graph.node(g, chosen(g, s, root))) {
-    .(value: graph.Constant) { fmt.int_to_string(value.?{graph.constant}) };
+    .(value: graph.Constant) {
+      fmt.int_to_string(value.>row_select { graph.Constant.get })
+    };
     .(value: graph.Variable) {
-      if(n.equal(value.?{graph.variable}, 0)) { "x" } else { "y" }
+      if(n.equal(value.>row_select { graph.Variable.get }, 0)) { "x" } else { "y" }
     };
     .(value: graph.Addition) {
-      let .(a, b) = value.?{graph.addition};
+      let .(a, b) = value.>row_select { graph.Addition.get };
       combine(recur(cont) render(g, s, a), "+", recur(cont) render(g, s, b))
     };
     .(value: graph.Product) {
-      let .(a, b) = value.?{graph.product};
+      let .(a, b) = value.>row_select { graph.Product.get };
       combine(recur(cont) render(g, s, a), "*", recur(cont) render(g, s, b))
     }
   }
@@ -103,16 +110,18 @@ pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
 
 pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I32) -> I32 {
   match(graph.node(g, chosen(g, s, root))) {
-    .(value: graph.Constant) { value.?{graph.constant} };
+    .(value: graph.Constant) {
+      value.>row_select { graph.Constant.get }
+    };
     .(value: graph.Variable) {
-      if(n.equal(value.?{graph.variable}, 0)) { x } else { y }
+      if(n.equal(value.>row_select { graph.Variable.get }, 0)) { x } else { y }
     };
     .(value: graph.Addition) {
-      let .(a, b) = value.?{graph.addition};
+      let .(a, b) = value.>row_select { graph.Addition.get };
       num.add_i32(recur(cont) evaluate(g, s, a, x, y), recur(cont) evaluate(g, s, b, x, y))
     };
     .(value: graph.Product) {
-      let .(a, b) = value.?{graph.product};
+      let .(a, b) = value.>row_select { graph.Product.get };
       num.mul_i32(recur(cont) evaluate(g, s, a, x, y), recur(cont) evaluate(g, s, b, x, y))
     }
   }
@@ -121,16 +130,18 @@ pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I3
 // Original fixture nodes retain their acyclic child IDs through class merges.
 pub rec(loop) fn source_value(g: graph.Graph, original: I32, x: I32, y: I32) -> I32 {
   match(graph.node(g, original)) {
-    .(value: graph.Constant) { value.?{graph.constant} };
+    .(value: graph.Constant) {
+      value.>row_select { graph.Constant.get }
+    };
     .(value: graph.Variable) {
-      if(n.equal(value.?{graph.variable}, 0)) { x } else { y }
+      if(n.equal(value.>row_select { graph.Variable.get }, 0)) { x } else { y }
     };
     .(value: graph.Addition) {
-      let .(a, b) = value.?{graph.addition};
+      let .(a, b) = value.>row_select { graph.Addition.get };
       num.add_i32(recur(cont) source_value(g, a, x, y), recur(cont) source_value(g, b, x, y))
     };
     .(value: graph.Product) {
-      let .(a, b) = value.?{graph.product};
+      let .(a, b) = value.>row_select { graph.Product.get };
       num.mul_i32(recur(cont) source_value(g, a, x, y), recur(cont) source_value(g, b, x, y))
     }
   }

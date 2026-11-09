@@ -114,6 +114,30 @@ Recorded result: on a cold `kio test --no-cache` run of the package fixture used
 
 Artifact-miss copying costs are recorded under [Macro artifact selection before copying](#macro-artifact-selection-before-copying); these do not establish per-call body sharing, whole-check speedups or a peak-memory win.
 
+## Macro template snapshot reuse
+
+Macro template reuse in [`memo.rs`](../kio-rs/src/pass/typecheck_core/memo.rs)
+requires matching reflected snapshots, including genuine free caller references.
+Equal printed type shapes alone do not authorize a hit. The collision guard
+retains one stored entry and computes a mismatching invocation normally; it
+does not transport binders between callers.
+
+CLI probes of the inputs in
+[`package_check_cache_skip.rs`](../kio-rs/tests/package_check_cache_skip.rs)
+observed two required-target calls in one generic caller collapse to one unique
+template: zero hits, one miss and one first write. Two natural-result calls in
+one generic caller produced one hit, one miss and one first write. The
+corresponding tests are
+`user_macro_template_batch_reuses_the_same_caller_binders` and
+`user_macro_natural_result_memo_reuses_the_same_caller_binder`.
+
+`user_macro_template_memo_preserves_free_binders_in_both_forced_orders` retains
+both module orders, each caller's returned value, fresh Prime validation and a
+wrong-target rejection. Probes of distinct caller scopes produced zero hits,
+two misses and one first write. This gives up reuse across those scopes while
+retaining correct results. The resulting compiler-time and memory cost is
+unquantified.
+
 ## Ordered cancellable focused-module force/lower fan-out
 
 Source: `kio-rs/src/cmd/check.rs`.
@@ -236,3 +260,142 @@ timing thresholds.
 Compiler SHA-256: before
 `bd3d37a4093a769480cde7c9822891ce909544a68f6998b8344427b4b90f8c4c`;
 after `3b661df3c5ac3923860a0b5021d942d85bbfa6120eba911adcb8393124140adf`.
+
+## Reflected forall construction with empty bindings
+
+The reflected-type closer in [`reflection_bindings.rs`](../kio-rs/src/normalization/reflection_bindings.rs) returns an empty free-binding list when the reflection environment is absent. [`type_arguments.rs`](../kio-rs/src/normalization/type_arguments.rs) uses the existing iterative type copier when the substitution map is empty. A reflected forall name hint starts from a candidate derived from the reserved-name count and still checks the full set and falls back on collision. Nonempty bindings, substitutions, and exact collision checks retain their ordinary paths.
+
+The unchanged [`reflection_fold_constructs_deep_forall_types_on_the_default_stack`](../kio-rs/src/normalization/execution/type_depth_tests.rs) unit witness constructs 10,000 nested foralls over Unit, checks the resulting depth and tail, and exercises template replay. Each callback returns the captured accumulator without its new binder, so the environment and substitution inputs are empty at every layer. It therefore exercises both empty-input paths as well as repeated binder allocation. `closing_a_forall_checks_collisions_in_its_name_hint` checks occupied hint and fallback names, preservation of free names, deterministic construction, and alpha-scoped equality; all 18 reflection-binding tests passed in the recorded candidate run. These tests establish neither the timing effect of each guard separately nor performance on nonempty environments.
+
+Each arm ran a frozen test binary once with `--exact normalization::execution::type_depth_tests::reflection_fold_constructs_deep_forall_types_on_the_default_stack --nocapture`. The JSON measurement receipts record elapsed seconds; RSS comes from the process timing report. The associated build logs record Rust 1.99.0 and the Cargo test profile (`unoptimized + debuginfo`). All three runs succeeded:
+
+| Arm | Wall time (s) | Peak RSS (KiB) | Test binary SHA-256 |
+| --- | ---: | ---: | --- |
+| Before empty-input paths | 434.696 | 47,556 | `b61ed9ab2b39fd618e628d35a4e69857afb875facf6a7e42fa1d01dfb6364bfe` |
+| With both empty-input paths | 91.320 | 42,728 | `012827e6880009bf27964ad674310e55a6f20ae3f224ebf59508edd59b8dd99e` |
+| With empty-input paths and name hint | 72.916 | 47,240 | `cd975ff2978ef0a297f556bc5a5a480ee04de005541abb04a20659a7e21d774e` |
+
+These sequential single samples show a reduction for this witness, not a statistical estimate or broad compiler-performance claim. The two empty guards are measured together. Source hash maps captured around the first two builds agree on the witness file (SHA-256 `f9cd1cee64247dba6e24529003f37fae71518e6fc824a289bb07abe7664180e0`) and record changes in both files containing the guards, but also record other changed files and have different inventories. For `reflection_bindings.rs`, the empty-input guard changed SHA-256 `b38120cd79b5482f582619dae680a9666990c094f89477a42f6e9bcd6be208d1` to `192b2653d662c1ade69ba48d70ea3ad658d5a13328311c65f8739ecef85222a5`; the name hint changed it to `15e94f4fefe8b7e8ab8a14e310049b57fbfd8065d171b6bda1abac69c5e41ce7`. For `type_arguments.rs`, the empty-substitution guard changed `899736ff36ce92b99314744e5c7474d70858d8896e27042f35a9c1d9a9304062` to `347cea1ae3c45cc1e1ee9659a806adb71700e014332230cfd641c14e18f99631`. The guarded name-hint record does not provide a complete source-tree snapshot for the last binary. These records therefore do not establish that every other source input was identical. The construction still performs quadratic copying across the nested types; the hint avoids repeated prefix probing for this pattern without eliminating that cost. A historical binary (SHA-256 `93c5fed3d852c9fc2d8e8b500072eb38f7f8ce1aeb6c618694c3e557578697a1`) ran the same named witness in 39.170 seconds; its exact source and build configuration are not established, so it is context only, not a matched comparator. The 72.916-second result does not establish restoration to the historical timing. No cross-workload, throughput, or allocation-rate conclusion follows.
+
+## Completed-macro ancestor waits
+
+A late macro with checked inputs can retain an authenticated completion wait
+when a required input type depends on a strict ancestor goal. The existing
+sibling driver then completes independently typable arguments and resumes the
+same macro state after that goal changes. Locally unresolved inputs still fail.
+This is a correctness repair in
+[`apply.rs`](../kio-rs/src/pass/typecheck_core/apply.rs), using the existing goal
+store and completion traversal; it adds a cold optional wait pointer to the
+completed macro state and carries each visited value's borrowed owner delta.
+
+Rust 1.99.0 Cargo test-profile binaries (`unoptimized + debuginfo`) each ran
+`completion_wait_depth_and_width_cost --nocapture`, selecting one test each. The before binary SHA-256 is
+`cd975ff2978ef0a297f556bc5a5a480ee04de005541abb04a20659a7e21d774e`; the after
+binary is `c89ab913bbd0bd350e0284e21b8e61affbf039ef5ea76f3c3538a2108898e0ee`.
+Both runs passed. All common work counters, callback-body counts and macro-action
+counts agree across the nine existing depth/width cases. At marked depths
+1/4/16, each case creates and resumes one wait, visits eight completion nodes,
+and closes with no live waits. At waiting widths 4/16/64, each creates and
+resumes exactly that many waits, visits 112/448/1,792 completion nodes, and
+executes one macro action; every callback body is entered once. The corresponding
+nonwaiting widths create no waits and perform no completion visits. These
+legacy cases do not exercise the added completed-macro wait itself.
+
+Measured shared inline sizes are unchanged: `CompletionWait` and its retained
+payload are 64 bytes, `OrdinaryValueCursor` is 1,048 bytes,
+`OrdinaryChildContinuation` is 104 bytes, and `OrdinaryDriverFrame` is 224 bytes.
+The after binary additionally reports a 464-byte macro-state enum and a 24-byte
+completion-visitor node; their before sizes were not measured. The optional
+boxed wait and borrowed-delta traversal remain real storage/work costs even
+though the measured enclosing cursor size is unchanged.
+
+`completed_macro_waits_for_an_independent_sibling_without_replay` passes with
+one Final-stage wait and one resume for required-first calls and their nested
+ordinary-call variant, zero waits for natural-first order, two macro actions,
+and one entry into each of two callback bodies. It also retains rejection of
+an independently bound unresolved result and of two required peers without
+an informative sibling. `ordinary_arguments_keep_completed_sibling_priority`
+passes with the ordinary row macros in both argument orders. These checks and
+the matching legacy counters establish bounded firing and compatibility for
+these witnesses, not throughput, allocation-rate, peak-memory or whole-compiler
+neutrality. The binaries include other compiler changes; no isolated timing
+comparison or speed claim is made.
+
+## Bounded tuple-let recovery
+
+The shared enriched optimizer in [`optimize.rs`](../kio-rs/src/pass/optimize.rs)
+recovers exact product reconstruction and propagates projection-only uses of
+immutable slots. A single retained component can reuse the existing binding;
+unsupported layouts, escaping packets and unsafe capture cases decline the
+rewrite. The rules preserve ordered eager component evaluation and do not
+introduce fresh binders. Private invariant tests cover firing, retained effects,
+capture, literal-conversion boundaries, no-op cases and bounded output growth.
+`natural_match_and_user_named_equivalent_recover_one_dispatch` also checks the
+ordinary three-handler macro shape and its renamed equivalent.
+
+A fixed two-component nominal row workload compares macro construction,
+one-component update and selection against manually written counterparts.
+The same Kio inputs were compiled with frozen before/after CLIs. The generated
+JavaScript construction and update bodies become identical to their manual
+counterparts; selection is unchanged. Node v24.21.0 ran three fresh processes
+per compiler arm, rotating operation order. Each process checked both components
+against independent expected values for 1,024 inputs, then used two warmup runs
+and four timed runs per macro/manual arm, counterbalancing arm order. Each timed
+run performs 2,000,000 calls. These are medians of the three process medians:
+
+| Operation | Before macro (s) | After macro (s) | Before manual (s) | After manual (s) |
+| --- | ---: | ---: | ---: | ---: |
+| Construct | 0.489 | 0.433 | 0.424 | 0.424 |
+| Update | 0.305 | 0.243 | 0.243 | 0.245 |
+
+These measurements support a runtime win for these Node workloads. They do not
+measure allocation counts or establish a win for other runtimes. Selection's
+timing variation receives no optimization credit because its body is unchanged.
+
+The initial compiler-time comparison mixed a package optimization level of 2
+with an ordinary development build at level 0 and is invalid. A corrected
+comparison built both CLIs through `build_corpus_tool_binary kio-lsp-cli
+--all-features --bins`, with `profile.dev.package.kio-lang.opt-level=2`, debug
+assertions and overflow checks. Five counterbalanced compilations per arm have
+wall-time medians of 0.679 seconds before and 0.703 seconds after (+3.5%). This
+small workload establishes neither compiler-cost neutrality nor scaling.
+The corrected builds reproduce the exact emitted JavaScript used for runtime
+measurement.
+
+### Bounded compiler-cost probes
+
+The same matched-profile CLIs compiled six fixed inputs three times per arm
+in counterbalanced order, using `build js --no-cache` and
+`KIO_DEBUG_TIMING=frontend,build`. Wide inputs reconstruct an ordered product
+of distinct host calls through ordinary destructuring. Nested inputs bind
+constant-size pairs, each passed whole twice to a host observer, so the new
+rules decline without exponential source types. The timings below are medians;
+`enriched_ms` includes shared recovery and optimization, not this rewrite alone.
+
+| Input | Before enriched (ms) | After enriched (ms) | Before wall (ms) | After wall (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Width 8 | 0.289 | 0.242 | 29.8 | 35.8 |
+| Width 32 | 5.233 | 5.456 | 414.4 | 410.9 |
+| Width 128 | 284.196 | 284.490 | 27,835.6 | 26,853.4 |
+| Nesting 8 | 0.127 | 0.172 | 17.5 | 21.8 |
+| Nesting 32 | 0.210 | 0.367 | 41.9 | 41.6 |
+| Nesting 128 | 1.053 | 2.664 | 90.9 | 97.8 |
+
+All widths remove the reconstruction binding; enriched expression counts drop
+from 43/163/643 to 25/97/385. All nested outputs remain byte-identical between
+arms. At width 128, the shared slice changes by +0.294 ms (+0.1%); frontend
+type checking, including Prime validation, dominates both runs at about
+26.4 seconds. The strong existing width growth is not eliminated by this change.
+At nesting 128, the shared slice grows by 1.611 ms (2.53 times the before cost),
+while median wall time grows by 6.8 ms (+7.5%). This is a real added scan cost
+in the no-op workload, small in absolute terms at these sizes. Three samples
+with noisy wall times cannot establish overall neutrality or asymptotic bounds;
+nested candidate scans may overlap. These probes provide bounded compiler-cost
+and shape evidence, not runtime measurements.
+
+Matched-profile compiler SHA-256: before
+`955bcf02d0f5bc91c9c17a1ac33ee8b6faa41cc6562af7b3eaa398bcab1942c9`;
+after `e347025237f0f5ec239697f83cf5de9dd94e39c4eb1058fdffc4bc0b35f56064`.
+JavaScript SHA-256: before
+`d7a1144bc685c84e2b25dab42ef6698480f8a6b0aa269186c56e692ce5a80229`;
+after `02dfcb10357063428300772f4c344899721c9082147eee4798520679ca558eab`.

@@ -789,28 +789,6 @@ fn representation_exact<P: Phase>(left: &Type<P>, right: &Type<P>) -> bool {
                 meta: rm,
             },
         ) => meta_exact(lm, rm) && representation_exact(ll, rl) && representation_exact(lr, rr),
-        (
-            Type::LabelSugar {
-                labels: ll,
-                meta: lm,
-                ext: le,
-            },
-            Type::LabelSugar {
-                labels: rl,
-                meta: rm,
-                ext: re,
-            },
-        ) => {
-            meta_exact(lm, rm)
-                && le == re
-                && ll.len() == rl.len()
-                && ll.iter().zip(rl).all(|(l, r)| {
-                    l.label == r.label
-                        && l.label_span == r.label_span
-                        && meta_exact(&l.meta, &r.meta)
-                        && option_type_representation_exact(&l.payload, &r.payload)
-                })
-        }
         (Type::Infer { meta: lm, ext: le }, Type::Infer { meta: rm, ext: re }) => {
             meta_exact(lm, rm) && le == re
         }
@@ -857,17 +835,6 @@ fn types_representation_exact<P: Phase>(left: &[Type<P>], right: &[Type<P>]) -> 
             .iter()
             .zip(right)
             .all(|(l, r)| representation_exact(l, r))
-}
-
-fn option_type_representation_exact<P: Phase>(
-    left: &Option<Type<P>>,
-    right: &Option<Type<P>>,
-) -> bool {
-    match (left, right) {
-        (Some(l), Some(r)) => representation_exact(l, r),
-        (None, None) => true,
-        _ => false,
-    }
 }
 
 impl<P> PartialEq for InternedType<P>
@@ -1016,7 +983,6 @@ enum TypeKey {
         param: Option<KindKey>,
         body: Box<TypeKey>,
     },
-    LabelSugar(Vec<(String, Option<TypeKey>)>),
     Infer,
     Goal {
         goal: crate::ast::TypeGoalRef,
@@ -1127,21 +1093,6 @@ impl TypeKey {
                     .map(|arg| Self::from_type_with_binders(arg, binders, record))
                     .collect(),
             },
-            Type::LabelSugar { labels, .. } => {
-                let mut labels: Vec<_> = labels
-                    .iter()
-                    .map(|label| {
-                        (
-                            label.label.clone(),
-                            label.payload.as_ref().map(|payload| {
-                                Self::from_type_with_binders(payload, binders, record)
-                            }),
-                        )
-                    })
-                    .collect();
-                labels.sort_by(|a, b| a.0.cmp(&b.0));
-                TypeKey::LabelSugar(labels)
-            }
         }
     }
 }

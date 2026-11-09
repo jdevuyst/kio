@@ -10,13 +10,13 @@ AGENTS.md § Universal rules — Kio' is a strict subset of Kio, Surface forms m
 
 1. **Kio' adds nothing to Kio.** Every spelling, identifier class, declaration/import form, typing rule, and runtime meaning accepted as Kio' is accepted with the same meaning by the full Kio pipeline. Kio' is a restriction, never a privileged compiler dialect.
 2. **No surface-only form survives into Kio'.** The AST that reaches the Prime phase contains only Kio' constructs.
-3. **No surface-only *information* survives into Kio'.** Even when a surviving node looks Kio'-shaped, it must not carry hidden surface provenance — original label-declaration names, "was the signature elided" flags, optional types that encode "user wrote it" vs. "typer filled it in," or any other back-reference whose only consumer is "remember which surface form produced this." Such fields are themselves hidden surface forms.
+3. **No surface-only *information* survives into Kio'.** Even when a surviving node looks Kio'-shaped, it must not carry hidden surface provenance — "was the signature elided" flags, optional types that encode "user wrote it" vs. "typer filled it in," or any other back-reference whose only consumer is "remember which surface form produced this." Such fields are themselves hidden surface forms.
 4. **Compile-time evaluation consumes phase-pure inputs.** `equiv`, `:normalize`, user macros, generated-term templates, and future `__comptime__` hooks reduce Kio'-shaped core terms plus an explicit primitive environment. In kio-rs, an entry adapter may use typed Lowered plus boundary-local `Elaborations` only to build an explicit `UncheckedPrime` evaluator input; the reducer must never consume Lowered/surface ASTs, `Elaborations`, or hidden typer state.
 5. **`structural_recovery` consumes Kio' shape only.** The recovery pass (`Module<Prime>` → `Module<Enriched>`) is the back-end's only mediator between Kio' and codegen. Its decisions must be driven by intrinsic call structure, type-args, and Kio'-identity names — never by surface-provenance fields that rode through Prime so recovery could read them.
 6. **Phase artifacts derive no authority from producer provenance.** A Prime/textual/serialized/cache/dynamic-load construct may grant only authority that its receiving validator can verify from the artifact and explicit dependencies. Reserved or compiler-generated spellings provide hygiene only, and an exact selected private edge never expands into module-wide access.
 7. **Call semantics use resolved types only.** Derive call completion, argument grouping, partial application and residualization, and UFCS placement from the resolved public type, written syntax, and local constraints. Never use declaration or host-parameter grouping, runtime ABI arity, callee identity or provenance, or a private macro ABI to change the public call plan.
 
-Property (3) is the generalization of property (2): a `from_labels_label: Option<String>` on a Prime-surviving `Newtype` is conceptually a surviving `labels` declaration, just expressed as a field instead of an AST variant. Before label elaboration, explicit `Labels` declarations and Surface label relations remain authoritative through Surface transformations and dependency materialization. Their erasure forbids carrying that provenance into Prime; it does not authorize reconstructing a Surface label binding from an ordinary newtype. Property (4) extends the same phase-boundary purity rule to evaluator inputs. Property (5) is the motivation: when a downstream pass cheats by reading surface provenance, the front-end's layered design erodes — recovery becomes coupled to the front-end's history rather than the Kio' input it claims to accept. Property (6) applies the same producer-independent counterfactual to authority: a fresh parser and validator see the artifact, not who emitted it.
+Property (3) is the generalization of property (2): provenance on a Prime-surviving node can preserve a surface form without preserving its AST variant. Native label declarations and row sugar are rejected; nominal entries and fixed `mk` / `get` members derive from ordinary declarations, not a hidden field namespace. Property (4) extends the same phase-boundary purity rule to evaluator inputs. Property (5) is the motivation: when a downstream pass cheats by reading surface provenance, the front-end's layered design erodes — recovery becomes coupled to the front-end's history rather than the Kio' input it claims to accept. Property (6) applies the same producer-independent counterfactual to authority: a fresh parser and validator see the artifact, not who emitted it.
 
 ## The dump-and-reload counterfactual
 
@@ -73,12 +73,11 @@ The surface forms that must not survive are:
 - UFCS (`r.>m`, `r.>m(T)`)
 - `.stem. { ... }` placeholder lambdas
 - `literal` declarations
-- Label sugar (multi-label shorthand, `labels`)
-- Nonminting label forwarding (`type {name} = {target.name};`)
+- Compact nominal declarations expanded into ordinary nominal entries and aliases, including multiple entries, named mixed type expressions, and omitted member bodies
 - `op` user-operator bindings
 - `equiv` blocks
 
-For each, confirm `specs/language.md` documents the surface form and `specs/prime.md` confirms Kio' does not include it.
+For each, confirm `specs/language.md` documents the surface form and `specs/prime.md` confirms Kio' does not include it. Separately check that retired label declarations, forwarding and native row sugar are rejected, rather than silently lowered or admitted as Prime.
 
 ## 3. Prime AST shape
 
@@ -97,7 +96,7 @@ If any form is silently passed through, that's the finding.
 
 ## 5. Elaboration substitution at the Lowered → Prime boundary
 
-Generic trailing block calls are projected before desugaring according to ordinary imported macro declarations, each block supplying one successive Function layer: product blocks become independent values, thunk blocks become lambdas, and sequence blocks become nested ordinary bind calls. The resulting imported calls, including `if`, `scope`, `do`, and `match`, use the same boundary-local elaboration path as other user macros when their removal needs completed types. `typecheck_full` records the elaboration and substitution swaps it into the AST at the Lowered → Prime boundary; UFCS and field syntax also close at that boundary. Macro calls stay as elaboration variants rather than being folded into the intrinsic-scheme registry — this preserves the phase-typed elimination invariant (`PrimeTyper` discharges every elaborator arm via `match *ext {}`). Check:
+Generic trailing block calls are projected before desugaring according to ordinary imported macro declarations: product blocks become independent values, thunk blocks become lambdas, and sequence blocks become nested ordinary bind calls. The whole final prefix value and projected block values form one right-associated product for one Function layer; earlier stages remain separate. The resulting imported calls, including `if`, `scope`, `do`, and `match`, use the same boundary-local elaboration path as other user macros when their removal needs completed types. `typecheck_full` records the elaboration and substitution swaps it into the AST at the Lowered → Prime boundary; UFCS is projected before desugaring. Macro calls stay as elaboration variants rather than being folded into the intrinsic-scheme registry — this preserves the phase-typed elimination invariant (`PrimeTyper` discharges every elaborator arm via `match *ext {}`). Check:
 
 - Every dispatch position that produces an elaboration records it in the `Elaborations` table.
 - The substitute pass consumes every recorded elaboration and emits only ordinary nodes admitted by the shared Kio'/Kio subset.
@@ -115,9 +114,9 @@ Walk every node type that survives into Prime (`Item::FnDef`, `Item::Alias`, `It
 
 Known examples in the current tree to use as exemplars (counterfactual-failures that motivated narrowing):
 
-- `Newtype.from_labels_label: Option<String>` (historical, now removed) — back-reference to the originating `labels` group's label spelling. After label elaboration, the ordinary newtype shape survives the Prime round-trip; its Surface origin does not. Downstream consumers derive the lowered newtype's host key from `Newtype::ffi_key()` (the newtype type name). That key never establishes Surface label-ness or a braced binding: explicit `Labels` declarations and exact Surface label relations remain authoritative before erasure, including during dependency materialization.
+- `Newtype.from_labels_label: Option<String>` (historical, now removed) — a former back-reference to a surface spelling, not part of ordinary nominal identity. Do not reconstruct a retired label namespace from a nominal type or its `ffi_key()`.
 - `FnDef.ret_elided: bool` — flag for "the return type was elided in the surface." At Prime, narrowed to `()` via `Phase::FnDefRetElided`: the value is uninhabited there, so the round-trip on the Prime AST is trivially preserved and the kio-prime emit writes the canonical `-> .` shape.
-- `Labels.type_alias_name: Option<String>` — moot at Prime today (`Labels` is uninhabited), but flag any new analogue that moves to a Prime-surviving node.
+- `Labels.type_alias_name: Option<String>` — the current Surface carrier also records the alias of a compact type declaration. It is consumed before Prime; its internal name does not admit retired label syntax or authorize provenance on a Prime-surviving node.
 
 Counterfactual-survivors (fields with surface flavour that round-trip via source text — keep them as-is):
 
@@ -196,7 +195,7 @@ Read `kio-rs/src/pass/structural_recovery.rs`. The pass's input is `Module<Prime
 
 Recovery must **not** read:
 
-- `Newtype.from_labels_label` or any other surface-provenance back-reference. At this post-label-elaboration boundary, recover ordinary newtype field structure from resolved nominal identity, payload and member calls. `ffi_key()` supplies a lowered host key, never a Surface label binding; pre-erasure Surface transformations and materializers still use explicit label declarations and relations.
+- `Newtype.from_labels_label` or any other surface-provenance back-reference. Recover ordinary nominal field structure from resolved identity, payload and member calls; `ffi_key()` does not create a separate field namespace.
 - `*.ret_elided` or other "was this elided in surface" flags.
 - Any field that encodes "the surface looked like X" rather than "the Kio' shape is Y."
 

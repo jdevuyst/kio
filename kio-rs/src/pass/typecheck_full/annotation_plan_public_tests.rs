@@ -152,10 +152,10 @@ fn partial_as_pattern_local_rejects_local_forall_hole() {
 #[test]
 fn partial_monadic_do_unary_rejects_local_forall_hole() {
     let source = r#"module main; import sequence(macro do);
-        pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        pub type { Box[A]: A { mk; get; }; };
+        fn box_pure[A](value: A) -> Box[A] { Box.mk(value) }
         fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-          next(Box.un_box(value))
+          next(Box.get(value))
         }
         host fn boxed_polymorphic(_token: .) -> Box[[Poly] Poly -> Poly];
         fn partial() -> Box[.] {
@@ -175,10 +175,10 @@ fn partial_monadic_do_unary_rejects_local_forall_hole() {
 #[test]
 fn partial_monadic_do_pattern_rejects_local_forall_hole() {
     let source = r#"module main; import sequence(macro do);
-        pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        pub type { Box[A]: A { mk; get; }; };
+        fn box_pure[A](value: A) -> Box[A] { Box.mk(value) }
         fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-          next(Box.un_box(value))
+          next(Box.get(value))
         }
         host fn boxed_polymorphic(_token: .) -> Box[[Poly] Poly -> Poly];
         fn partial() -> Box[.] {
@@ -327,10 +327,10 @@ fn alias_root_as_pattern_local_rejects_materialized_forall_hole() {
 fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_alias_bound] Slot -> Do_alias_bound;
-        pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        pub type { Box[A]: A { mk; get; }; };
+        fn box_pure[A](value: A) -> Box[A] { Box.mk(value) }
         fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-          next(Box.un_box(value))
+          next(Box.get(value))
         }
         host fn boxed_wrapped(_token: .) -> Box[Wrap[.]];
         fn partial() -> Box[.] {
@@ -351,10 +351,10 @@ fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
 fn alias_root_monadic_do_pattern_rejects_materialized_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_pattern_alias_bound] Slot -> Do_pattern_alias_bound;
-        pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        pub type { Box[A]: A { mk; get; }; };
+        fn box_pure[A](value: A) -> Box[A] { Box.mk(value) }
         fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
-          next(Box.un_box(value))
+          next(Box.get(value))
         }
         host fn boxed_wrapped(_token: .) -> Box[Wrap[.]];
         fn partial() -> Box[.] {
@@ -377,7 +377,7 @@ fn recursive_alias_partial_let_rejects_once_with_source_provenance() {
         host type I32 role(i32);
         host fn loop[S][R](step: S -> (S | R), state: S) -> R;
         type Wrap[Slot] = [Rec_alias_bound] Slot -> Rec_alias_bound;
-        newtype Box[A] : A { constructor mk_box; projector un_box; };
+        type { Box[A]: A { mk; get; }; };
         fn choose_box[A](_tag: I32, value: Box[A]) -> Box[A] { value }
         rec(loop) fn recursive(value: I32) -> Box[Wrap[.]] {
           let .(box: Box[Wrap[_]]) = choose_box(value, recur(cont) recursive(value));
@@ -464,9 +464,9 @@ fn identity_alias_preserves_ordinary_hole() {
 #[test]
 fn ordinary_newtype_and_product_holes_remain_admitted() {
     ok("module main; \
-        newtype Box[A] : A { constructor mk_box; projector un_box; }; \
+        type { Box[A]: A { mk; get; }; }; \
         fn partial() -> . { \
-          let .(boxed: Box[_]) = Box.mk_box(()); \
+          let .(boxed: Box[_]) = Box.mk(()); \
           let .(pair: . & _) = ((), ()); \
           () \
         }");

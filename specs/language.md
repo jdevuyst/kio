@@ -8,12 +8,12 @@ Kio is layered. The small subset **Kio'** — described in [`prime.md`](prime.md
 
 Kio is an ultra-portable language. Kio' deliberately contains nothing host-specific, so a program can be transpiled to any backend for which a host is provided.
 
-- Built on **System F** (polymorphic lambda calculus with explicit universal quantification): functions, universal types (`forall`), type application. Binder kinds are first-order chains (`κ ::= * | * → κ`): every arrow domain is `*`, so a binder may range over a constructor of ordinary types, not over a higher-order type-level function. Nominal declarations separately list each parameter's kind; a dictionary such as `Monad[*F]` can accept a constructor argument. There is no type-level lambda and there are no kind variables — a Church-style fragment of F-ω rather than full F-ω (rank-N permitted; quantifiers nest freely under arrows because every binder is explicitly written by the user; see [Higher-kinded types](#higher-kinded-types)). Anonymous type expressions cannot be self-referential. Recursive types exist, but the recursion is always grounded inside a `newtype` body (see [Type declarations](#type-declarations)), giving an iso-recursive wrap/unwrap at the nominal boundary.
-- Supports **anonymous sum**, **anonymous product**, and **label-generated nominal** types on top of Kio' (the label forms are surface sugar; the underlying primitive is `newtype`).
-- **Host-provided runtime capabilities.** Ordinary runtime code receives numeric, Boolean, string and I/O capabilities from host declarations; Kio has no ambient runtime or special runtime `String`. The core provides structural constructors (`->`, `forall`, `&`, `|`), Unit `.` and bottom `!`. Modules introduce or name types with `type`, `newtype`, `labels` and `host type`; the compiler-provided `__comptime__` vocabulary is a separate compile-time interface. Literal tokens in ordinary runtime source — integers (`42`), floats (`3.14`), booleans, and strings — are typed against the `role(...)`-marked host types in scope (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)).
-- **No implicit recursive definitions.** Ordinary `fn` bindings may not refer to themselves, nor may two ordinary bindings mutually refer to each other. Surface Kio has one explicit term-level escape hatch: `rec(loop)` groups, which lower annotated recursive calls to an ordinary host-supplied `loop` function and do not introduce a Kio' fixpoint. Recursive data scope is separately explicit and capability-free: `rec newtype` / `rec labels` for a singleton and bare `rec { ... }` for one genuinely mutual type component. Every cyclic type path crosses a nominal newtype boundary; there is no alias-only fixed point. This keeps Kio' strongly normalizing while still letting hosted packages opt into general iteration through an explicit capability.
+- Built on **System F** (polymorphic lambda calculus with explicit universal quantification): functions, universal types (`forall`), type application. Binder kinds are first-order chains (`κ ::= * | * → κ`): every arrow domain is `*`, so a binder may range over a constructor of ordinary types, not over a higher-order type-level function. Nominal declarations separately list each parameter's kind; a dictionary such as `Monad[*F]` can accept a constructor argument. There is no type-level lambda and there are no kind variables — a Church-style fragment of F-ω rather than full F-ω (rank-N permitted; quantifiers nest freely under arrows because every binder is explicitly written by the user; see [Higher-kinded types](#higher-kinded-types)). Anonymous type expressions cannot be self-referential. Recursive types exist, but the recursion is always grounded inside a nominal payload (see [Type declarations](#type-declarations)), giving an iso-recursive wrap/unwrap at the nominal boundary.
+- Supports **anonymous sum**, **anonymous product**, and **nominal** types.
+- **Host-provided runtime capabilities.** Ordinary runtime code receives numeric, Boolean, string and I/O capabilities from host declarations; Kio has no ambient runtime or special runtime `String`. The core provides structural constructors (`->`, `forall`, `&`, `|`), Unit `.` and bottom `!`. Modules introduce or name types with `type` and `host type`; the compiler-provided `__comptime__` vocabulary is a separate compile-time interface. Literal tokens in ordinary runtime source — integers (`42`), floats (`3.14`), booleans, and strings — are typed against the `role(...)`-marked host types in scope (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)).
+- **No implicit recursive definitions.** Ordinary `fn` bindings may not refer to themselves, nor may two ordinary bindings mutually refer to each other. Surface Kio has one explicit term-level escape hatch: `rec(loop)` groups, which lower annotated recursive calls to an ordinary host-supplied `loop` function and do not introduce a Kio' fixpoint. Recursive data scope is separately explicit and capability-free: `rec type` for a compact declaration and bare `rec { ... }` for one genuinely mutual type component. Every cyclic type path crosses a nominal boundary; there is no alias-only fixed point. This keeps Kio' strongly normalizing while still letting hosted packages opt into general iteration through an explicit capability.
 - Surface syntax aims to feel close to **modern curly-brace languages**.
-- **Trait-like machinery is just label-generated types.** A "trait" is a label-generated type, or a product of label-generated types, whose labels are the method names. Callers reach the methods by explicit projection. Value-level glue between a source value and an expected type is synthesized by **imported macro calls** — `name(e)` forms resolved through ordinary scoped imports — not by any built-in coercion. Resolution is opt-in and name-driven: a macro only runs where the direct local call resolves to its explicitly selected declaration. The reference source-to-target palettes (an algebraic palette and a spine palette of structural-coercion macros) are user-defined Kio libraries that live in the case studies, not language primitives; see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient). *(Macro invocation and its authority are surface-only. Ordinary call syntax remains part of [Kio'](prime.md), where it has only ordinary value-call semantics.)*
+- **Trait-like machinery uses nominal dictionaries.** A bundle of methods is an ordinary product of nominal values carrying functions. Callers pass and project the dictionary explicitly. Imported macros provide opt-in structural transformations through ordinary resolved calls; they are not ambient coercions.
 - **Open-world design.** Adding definitions to a module body never causes another module to fail to compile. (Scoped to module bodies — a package file's contract surface is governed by versioning, not open-world; see [Open-world design](#open-world-design).)
 
 ## Type system
@@ -93,13 +93,13 @@ a polytype already fixed by local evidence.
 - Top-level `fn` / `host fn` parameter and return-type slots.
 - Local binding patterns, including the unary spelling `let .(x: T) = e;`.
 - Type-argument slots in singleton square brackets at call sites (positional, optionally `_`-marked or fully elided).
-- `host type` / `newtype` / parametric `type` / parametric `labels` declaration headers.
+- `host type` / parametric `type` alias / nominal entry declaration headers.
 - The body of a `type` declaration.
 - Scalar literal and literal-alias annotations, such as `42[I32]`.
 
 The user has to seed the expected type from one of these positions; everywhere else, the elaborator either synthesizes bottom-up or pulls the expected type from the immediately-enclosing context.
 
-**Untyped `let` takes the RHS's type as-is.** A `let x = e;` types `e` in synthesizing mode with no expected type and binds `x` to whatever type `e` synthesized — polytype or monotype, taken unchanged. No narrowing, no generalization, no defaulting. Every type-binder in Kio is user-written (universal `[A]` at signatures and `fn` headers, existential `<U>` at `newtype` payloads), so any polytype the elaborator synthesizes traces back to a binder the user wrote in the source. Unlike Hindley-Milner let-generalization, this rule introduces no new universal binders. The principal example: `let f = id;` where `id` is an in-scope top-level polymorphic `fn`, e.g. `fn id[T](x: T) -> T { x }`. `id` synthesizes its declared polytype `[T] T -> T`; `f` inherits it; the local `f` is usable at every instantiation `id` accepts.
+**Untyped `let` takes the RHS's type as-is.** A `let x = e;` types `e` in synthesizing mode with no expected type and binds `x` to whatever type `e` synthesized — polytype or monotype, taken unchanged. No narrowing, no generalization, no defaulting. Every type-binder in Kio is user-written (universal `[A]` at signatures and `fn` headers, existential `<U>` at nominal payloads), so any polytype the elaborator synthesizes traces back to a binder the user wrote in the source. Unlike Hindley-Milner let-generalization, this rule introduces no new universal binders. The principal example: `let f = id;` where `id` is an in-scope top-level polymorphic `fn`, e.g. `fn id[T](x: T) -> T { x }`. `id` synthesizes its declared polytype `[T] T -> T`; `f` inherits it; the local `f` is usable at every instantiation `id` accepts.
 
 **Typed `let` checks a local RHS.** A fully concrete binding pattern supplies an expected type to the RHS: `let .(f: Int -> Int) = .x. { x1 };` checks the placeholder lambda against `Int -> Int`, and `let .(f: Int -> Int) = make_id();` can solve a polymorphic factory from the checked return position. This is still a local bidirectional boundary, not body-driven inference. The checked position comes only from the binder pattern itself. A partial pattern or partial annotation, such as `let .(f: _) = e;` or `let .(x: Int, y) = e;`, does not push a partial expected type into `e`; the RHS must synthesize on its own, and the written leaves are checked against the synthesized product afterward. This deliberately skips partial product unification.
 
@@ -189,7 +189,7 @@ In addition to System F, Kio has **anonymous sum** (`|`) and **anonymous product
 - `A | B` — a value of this type carries one selected branch, with a payload of type `A` or `B`.
 - `A & B` — a value of this type carries two components, one of type `A` and one of type `B`.
 
-So Kio's type system is effectively **System F with disjunction, conjunction, and nominal labels**, with recursion grounded at `newtype` and label-generated boundaries.
+So Kio's type system is effectively **System F with disjunction, conjunction, and nominal types**, with recursion grounded at nominal boundaries.
 
 **Anonymous structure and nominal names.** These product and sum types need no user-supplied type name, named constructors, or named fields. Nominal types can supply domain-specific field and alternative identities. A sum is tagged by position, not by a user-provided name or payload type; repeated payload types still form distinct branches.
 
@@ -201,7 +201,7 @@ So Kio's type system is effectively **System F with disjunction, conjunction, an
 
 **The zero-component product.** The anonymous product with no components has type `.` and the sole value `()`. It is typically used as the return type of a function whose effect happens at the host boundary (`String -> .`). The positional non-collapsing rule still applies: `A & .` is a 2-component product distinct from `A`.
 
-**The bottom type.** The type `!` has no values — no surface syntax constructs one, and no newtype or intrinsic ever produces one. `!` enters a program only as the return type of a host function that does not return (e.g., `fn panic(msg: String) -> !;`) or through the `__absurd__` intrinsic described below. `!` is a lexer token like `.`, not a user identifier, and cannot appear at the value level.
+**The bottom type.** The type `!` has no values — no surface syntax constructs one, and no nominal constructor or intrinsic ever produces one. `!` enters a program only as the return type of a host function that does not return (e.g., `fn panic(msg: String) -> !;`) or through the `__absurd__` intrinsic described below. `!` is a lexer token like `.`, not a user identifier, and cannot appear at the value level.
 
 `!` is the **sum identity at the macro layer**: a macro may absorb `A | ! ↔ A` in either direction. The mirror at the product layer is `()` (the zero-component product): `A & . ↔ A` is likewise a macro-layer absorption. **Neither identity holds at type equality** — `A | !` and `A` are distinct types under structural comparison, just as `A & .` and `A` are; each pair is bridged only at a macro-call site, never by the type checker. Which coercions a particular macro admits is that macro library's contract; see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient).
 
@@ -266,11 +266,10 @@ body cannot add an alternative, nominate a result producer, or change the
 common result.
 
 **Annotations at bindings.** Every top-level binding (`fn`, `host fn`, `host
-type`, `type`, `newtype`, `labels`) carries an explicit type — these are
+type`, `type`) carries an explicit type — these are
 public-contract positions where the type is part of the declared interface.
 Top-level positions accept no inferred `_` placeholder; the type must be
-written out. The label-specific exact payload `name: _` instead references an
-earlier label declaration, as specified in [Labels](#labels). An omitted result
+written out. An omitted result
 annotation on `fn` or `host fn` means `.`; this is a fixed Unit default, not
 inference (see [Function definitions](#function-definitions)).
 
@@ -339,159 +338,40 @@ unrelated declaration cannot change admissibility or the resulting equation.
 Literal-role selection remains the separately documented lexical selection
 that occurs before an exact literal annotation enters this rule.
 
-Top-level annotations otherwise remain unaffected — `fn` / `host fn` / `host type` / `type` / `newtype` / explicit `labels` payloads are public-contract positions and admit no inferred `_` anywhere in their signatures. The exact whole-payload `name: _` label-reuse marker names an already-declared nominal rather than inferring a new payload.
+Top-level annotations otherwise remain unaffected — `fn` / `host fn` / `host type` / `type` payloads are public-contract positions and admit no inferred `_` anywhere in their signatures.
 
-### Labels
+### Nominal fields and row-typed records
 
-A `labels` declaration introduces lowercase value-surface labels and generated nominal types. The generated type name is the label spelling with the first letter capitalized (`foo` → `Foo`):
-
-```kio
-pub labels { box[A] : A };
-```
-
-elaborates as if the module contained:
+A nominal entry in a `type` declaration introduces a distinct type and its
+`mk` and `get` members. Ordinary products of these types can be used as
+row-typed records; no separate field namespace, record type, or native field
+construction, access, update, or row-let syntax is involved. For example:
 
 ```kio
-pub newtype Box[A] : A {
-  pub constructor mk;
-  pub projector get;
-};
+type Person = { Name: String; Age: I32; };
 ```
 
-The generated type name is the only type-surface spelling. Use `Box`, `Box[Int]`, and products or sums such as `Box & Name`; lowercase labels and braced label forms are not type expressions. The label `box` remains value-surface syntax only, so it does not introduce a same-module value alias and does not reserve the ordinary value name `box`.
+This declares `Name` and `Age` and the transparent alias
+`Person = Name & Age`. `Name.mk(value)` constructs a `Name` and
+`Name.get(value)` projects its payload. Import the type to use its accessible
+members. A type alias forwarding the terminal nominal's parameters in order
+retains its member namespace under the rules in [Type aliases](#type-aliases).
 
-**Visibility and binding origin.** `pub labels` exports each explicit lowercase
-label spelling for braced selective or qualified use as well as its generated nominal;
-`pub(path)` restricts both spellings to that module subtree. A qualified module
-alias remains usable outside the subtree for the module's public members, but
-does not expose a restricted label through `{alias.label}`. Within a consumer's
-label-syntax registry, `import source({item});` selects only label `item`, while
-`import source(Item);` selects only its generated nominal type. Import both as
-`import source(Item, {item});` when a module names the type and uses construction,
-access, or update syntax. Each explicit braced label import may be written once;
-repeating it is a Name error even when both imports name the same declaration.
-Importing one label spelling from distinct declarations, or combining an
-imported label with a same-named local label declaration, is likewise a Name
-error after every written import and value-import cycle has been validated.
-Label syntax and ordinary values remain separate namespaces, so a label and a
-function may share a lowercase spelling; neither declaration order nor that
-overlap changes which visible label origin a braced form uses.
-
-**Forwarding a label family.** A standalone declaration introduces another
-spelling for an existing label without generating a nominal type:
-
-```kio
-import original as source;
-pub type {renamed} = {source.foo};
-```
-
-`renamed` denotes the same field identity, constructor and projector as the
-explicit label at the end of that written route. The declaration introduces
-only the braced label spelling, not `Renamed`, an ordinary value, or members.
-Its target may be a local label, a braced selective import, or a label selected
-through an explicitly imported module alias; chains must end at an explicit
-label declaration. Missing targets and cycles without such an origin are
-errors. Generic and existential parameters remain those of the original label
-family: a forwarding declaration has no parameter list or type application.
-It is a standalone Surface item, never a recursive type-group member.
-
-The new spelling has its own documentation and visibility. Each written edge
-must be ordinarily accessible where declared, and a forward cannot expose its
-target beyond that target's visibility. Ordinary terminal nominal/member
-access checks still apply. A forwarding module need not export the terminal
-uppercase type; code that names that type imports it separately. Repeated
-label introductions are errors even when their routes share one terminal.
-Forwarding does not reserve a same-spelled ordinary value name.
-
-Label elaboration consumes these declarations and uses ordinary explicit
-imports and nominal member calls to the exact terminal. No forwarding record
-or producer authority survives into Kio'. Resolution follows only written
-label and import edges, so unrelated declarations in another module cannot
-change a route or make an unused forwarding label affect an existing use.
-
-**Construction.** A value is constructed with label syntax:
-
-```kio
-{box = value}
-{ready=}
-{name = n, age = a}
-```
-
-`{box = value}` lowers to `Box.mk(value)`. `{box}` is value-only sugar for `{box = box}`: the payload expression is the local value whose name is the label's last path segment, so `{m.box}` means `{m.box = box}`. `{ready=}` is the unit-payload shorthand for `{ready = ()}`. `{}` is the unit value `()`. Multi-label construction builds a right-spine product in written order, so `{name = n, age = a}` has type `Name & Age` and lowers to a `__pair__` chain of generated constructor-member calls. Duplicate labels in one construction expression are rejected.
-
-**Named products and sums.** Anonymous `labels` declarations declare one product arm only:
-
-```kio
-labels { name : String, age : I32 };
-```
-
-Named declarations may define products and sums:
-
-```kio
-labels Person = { name : String, age : I32 };
-labels Message = { text : String } | { code : I32, fatal : . };
-```
-
-The first declaration emits `Name`, `Age`, and `type Person = Name & Age`. The second emits `Text`, `Code`, `Fatal`, and `type Message = Text | (Code & Fatal)`. Duplicate labels inside one product arm are rejected. Anonymous sum declarations are rejected because sum syntax has only the named alias to attach to.
-
-**Reusing an earlier label.** An entry with an explicit payload, `name: Payload`, declares a module-local label and mints its generated newtype. At a later source position inside a named `labels` declaration—whether a later arm of the same form or another declaration—the exact `name: _` spelling reuses that nominal:
-
-```kio
-labels Reply = { request_id: I32, ok: . } | { request_id: _, error: String };
-```
-
-The `request_id: _` entry contributes the `Request_id` declared in the first arm at that position in `Reply`; it emits no newtype and supplies no second payload to compare. Repeating `request_id: I32` is a duplicate declaration error even though the payload text matches. The diagnostic points to the first declaration and suggests replacing the later payload with `_` when that edit is sufficient.
-
-Reuse is deliberately explicit and source-ordered. The original explicit declaration must occur earlier in the same module. A later declaration, a nonminting `type {name} = {target};` forward, an imported label, or a qualified label cannot satisfy a marker, and anonymous `labels { name: _ };` has no alias position in which reuse is meaningful. Visibility on the reusing declaration does not revise the original nominal; it applies only to the named alias being declared.
-
-For a generic label, the marker repeats the universal binder arity and kinds, using parameters introduced by the enclosing named alias. Binder names need not match the original:
-
-```kio
-labels { value[*F][A]: F[A] };
-labels Choice[*G][B] = { value[*G][B]: _, left: . } | { value[*G][B]: _, right: . };
-```
-
-A nullary marker cannot reuse a generic label. Existential binders belong only to the original explicit declaration and are rejected on a marker. Exact bare `_` is the marker only at the whole label-payload position; an `_` nested inside a larger payload remains an ordinary inference placeholder and is checked by the rules for that surrounding type position.
-
-The marker is fully consumed by label elaboration. Kio' receives the original generated newtype and ordinary alias references to it, with no `_`, reuse record, or declaration history. Resolution consults only earlier explicit declarations written in the same module, so adding declarations to another module or later in this module cannot change an existing marker's meaning (see [Open-world design](#open-world-design)). The Kio'-level duplicate-newtype rule remains strict (see [`prime.md`](prime.md)).
-
-**Recursive labels.** A label declaration is source ordered unless it carries the explicit `rec` marker. One `rec labels` declaration is an atomic generated-type scope: every nominal head generated by that declaration is visible across its payloads and a named declaration also sees its alias head. It does not see unrelated declarations later in the module. Recursive references use generated type names or the named alias:
-
-```kio
-rec labels { list[A] : . | (A & List[A]) };
-
-rec labels Tree =
-  { leaf: I32 }
-  | { branch: Tree & Tree };
-```
-
-Every cyclic component produced by label elaboration must cross a generated nominal boundary and satisfy strict positivity. The generated newtypes remain iso-recursive boundaries. Values cross one with `{list = e}` or `List.mk(e)`, and leave it with `List.get(v)`, never by implicit unfolding. Omitting `rec` from a recursive declaration is an error with a fix that adds it; writing `rec` when no generated component is recursive is a redundant-marker error. See [Type declarations](#type-declarations).
-
-**Field access.** `x.?{foo}` returns the unwrapped payload from the visible `Foo` slot of `x`; `x.?{foo, bar}` returns payloads in written order. `x.?{}` evaluates `x` once and returns `()`. Duplicate access labels are allowed and reuse the same visible slot. Visibility is mechanical: walk the receiver product's right spine into slots and choose the lowest-index slot whose type is the requested generated label type. There is no payload-shape search and no declaration-pool search.
-
-The receiver's type is inferred independently before selecting fields. The expected type of the access result does not infer the receiver's type arguments or literal carriers. After selection, the payload product is checked against that expected type.
-
-**Field update.** `x.!{foo = y, bar = z}` evaluates `x` once, evaluates RHS expressions left-to-right, removes visible matching slots if present, and prepends replacements in written order. `x.!{foo}` is value-only sugar for `x.!{foo = foo}` by the same last-segment rule as construction; `x.!{foo=}` is the unit-payload shorthand. `x.!{}` evaluates `x` once and returns the receiver row. Updates are upserts: an absent field is added. Duplicate update labels are rejected.
-
-**Expected-order checking.** Construction and update synthesize their default result in written order. When either form is checked against an expected product type that is only a permutation of the default row result, the checker accepts the form and emits the ordinary product spine in the expected order. This is a product-axis reorder only: no widening, narrowing, insertion, deletion, label search beyond the labels written at the site, or `fit` composition. Access does not participate in this rule: `x.?{foo, bar}` unwraps the selected labels first and produces payloads in written order, so checking it against a different product order is a type error.
-
-**Row-let binding.** `let .({foo, bar}) = x;` is a statement form that evaluates `x` once and binds payload locals from visible label slots for the continuation. Each entry may give an alias: `let .({foo as payload}) = x;` binds `payload` to `x.?{foo}`. The shorthand `{foo}` within the pattern means `{foo as foo}`; qualified labels use the last segment, so `let .({m.foo}) = x;` binds `foo`. Row-let lists are non-empty, and duplicate local names in one row-let are rejected. See [Blocks and local bindings](#blocks-and-local-bindings).
-
-**Enum-like sums.** A closed set of named alternatives is a structural sum of generated label types:
-
-```kio
-labels Color = { red : . } | { green : . } | { blue : . };
-```
-
-Values use ordinary label construction (`{red=}`) and widen into the named alias through the normal sum-construction macros; the named `labels` declaration does not introduce implicit sum construction.
-
-**Neither `into` nor `onto` crosses label or host type boundaries.** The macro bridges structural rearrangements inside `&` and `|` (and, for `onto`, forgets product components), but never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. To move between a payload type `X` and `Foo`, write `{foo = x}` / `Foo.mk(x)` to construct or `Foo.get(v)` / `v.?{foo}` to destruct; to move values in or out of a `host type`, call a host-provided conversion.
+Products are ordered. A row tail such as `Name & R` uses an ordinary type
+parameter, and neither row polymorphism nor field identity makes product type
+equality unordered. Imported library macros can construct, select, and update
+ordinary product slots; they are ordinary declarations, not ambient language
+forms. See [Structural products and row types](../docs/guides/products.md)
+and the [macro case study](../docs/poc/macros.md). The macro calls use their
+written operands and the resolved imported declarations; adding unrelated
+declarations cannot add field candidates or change the identity of a selected
+member.
 
 ### Type parameters
 
 A type parameter is introduced by writing **`[name]`** — Kio's surface syntax for a `forall` binder. There is no separate `forall` keyword; `[…]` is the only spelling. Binders may appear in two positions:
 
-- **As a signature or declaration-head group** (ordinary `fn`, dot-led lambda, `host fn`, `equiv`, parametric `type`, parametric `newtype` / `labels`). In callable signatures, type groups appear in source order alongside value groups; an ordinary `fn` or lambda may have only type groups. The binder scope extends to the groups to its right and (where present) the return type and body:
+- **As a signature or declaration-head group** (ordinary `fn`, dot-led lambda, `host fn`, `equiv`, parametric `type`, parametric nominal entries). In callable signatures, type groups appear in source order alongside value groups; an ordinary `fn` or lambda may have only type groups. The binder scope extends to the groups to its right and (where present) the return type and body:
 
     ```kio
     fn id[T](x: T) -> T { x }
@@ -651,8 +531,8 @@ forces that type slot to be solved, and a written type applies it directly.
 This leading-versus-returned distinction is identical for ordinary functions,
 intrinsics, prefix and UFCS calls, and blockless macro calls; only
 the macro's compile-time execution and Kio' substitution are phase-specific.
-Macros with trailing descriptors instead require the complete direct
-block-call form, with inferred type arguments, described below.
+Block calls infer type arguments and supply every declared block; their projected
+ordinary call follows the same residualization rules, as described below.
 
 Explicit type application uses singleton brackets. Write every supplied type
 as its own group, use `[_]` for a whole inferred slot, or omit the type groups
@@ -674,31 +554,30 @@ Kio expresses **higher-kinded types** through kind-annotated binders and direct 
 | `[*F]` | `*→*` | arity-1 type constructor |
 | `[**G]` | `*→*→*` | arity-2 type constructor |
 
-**Direct type application.** A kind-`*→*`-or-higher head takes one type argument per square-bracket group: `F[A]` where `[*F]` is a kind-`*→*` binder and `A : *`; `Either[String]` where `Either` is an arity-2 newtype. There is no `__App__` wrapper and no application keyword. Kinds compute by consuming one arrow per argument — `Either` has kind `*→*→*`, so `Either[String]` has kind `*→*` and `Either[String][ I32]` has kind `*`. Applying a kind-`*` head to an argument, or supplying more arguments than the head's arrow count, is a kind error.
+**Direct type application.** A kind-`*→*`-or-higher head takes one type argument per square-bracket group: `F[A]` where `[*F]` is a kind-`*→*` binder and `A : *`; `Either[String]` where `Either` is an arity-2 nominal type. There is no `__App__` wrapper and no application keyword. Kinds compute by consuming one arrow per argument — `Either` has kind `*→*→*`, so `Either[String]` has kind `*→*` and `Either[String][ I32]` has kind `*`. Applying a kind-`*` head to an argument, or supplying more arguments than the head's arrow count, is a kind error.
 
-Every type that classifies a runtime value must be saturated to kind `*`. This includes function parameters and returns, newtype payloads, annotations, and every member of an anonymous product or sum: `F[A] & G[A]` and `F[A] | G[A]` are well-kinded when `F` and `G` have kind `*→*`, while bare `F`, `F & G`, and `F | G` are kind errors. A constructor may remain higher-kinded only where another type constructor explicitly expects that kind, such as the `F` argument in `Monad[F]`, or as a partial application such as `Either[String]`. This rule follows only the written binder kinds and the selected nominal declaration; adding unrelated declarations cannot change it.
+Every type that classifies a runtime value must be saturated to kind `*`. This includes function parameters and returns, nominal payloads, annotations, and every member of an anonymous product or sum: `F[A] & G[A]` and `F[A] | G[A]` are well-kinded when `F` and `G` have kind `*→*`, while bare `F`, `F & G`, and `F | G` are kind errors. A constructor may remain higher-kinded only where another type constructor explicitly expects that kind, such as the `F` argument in `Monad[F]`, or as a partial application such as `Either[String]`. This rule follows only the written binder kinds and the selected nominal declaration; adding unrelated declarations cannot change it.
 
 A transparent alias reference must supply every parameter declared by that alias. Thus `type Pair[A][B] = A & B;` admits `Pair[String][ I32]`, while `Pair` and `Pair[String]` are type errors. This exact-arity rule concerns the alias declaration's own binders; ordinary transparent expansion determines the resulting kind of an exactly applied alias. For example, with `type Unary[E] = Either[E];`, `Unary[String]` supplies the alias's only parameter exactly and has kind `*→*`, inherited from the partially applied `Either` body.
 
-**Kinds are explicit and immutable.** A newtype's signature is its declared parameter list, each parameter carrying its own kind: an all-kind-`*` newtype `Either[E][A]` accepts two kind-`*` arguments, while a dictionary newtype `Monad[*F]` accepts one kind-`*→*` argument. A type application checks each argument against the matching parameter's kind. A binder's kind is the annotation the user writes. Nothing is inferred from how a type is used, and a newtype's kind never changes after its definition — this is what preserves open-world monotonicity (see § Open-world design): adding a new source declaration cannot retroactively alter the kind of an existing one. Kind annotations are part of a type's public signature.
+**Kinds are explicit and immutable.** A nominal type's signature is its declared parameter list, each parameter carrying its own kind: an all-kind-`*` nominal type `Either[E][A]` accepts two kind-`*` arguments, while a dictionary nominal type `Monad[*F]` accepts one kind-`*→*` argument. A type application checks each argument against the matching parameter's kind. A binder's kind is the annotation the user writes. Nothing is inferred from how a type is used, and a nominal type's kind never changes after its definition — this is what preserves open-world monotonicity (see § Open-world design): adding a new source declaration cannot retroactively alter the kind of an existing one. Kind annotations are part of a type's public signature.
 
-**Complete polymorphic function schemes are value types.** One or more `Forall` layers ending in a `Function` form a complete function scheme. The whole scheme has kind `*`, even when one of its binders is higher-kinded, and may therefore appear anywhere a runtime value type may appear: as a parameter or return, inside a product or sum, in an annotation or type argument, as an anonymous function literal's type, or inside a recursive or existential newtype payload. This is a structural rule, not a privilege of a named declaration; unfolding a transparent alias does not change the classification. A higher-kinded `Forall` whose body does not ultimately reach a function is incomplete and is rejected; bare and undersaturated constructors remain non-value types. Newtype existential binders themselves remain kind `*`. The check depends only on the written type structure and explicit binder kinds, so adding unrelated declarations cannot change an existing type's admissibility.
+**Complete polymorphic function schemes are value types.** One or more `Forall` layers ending in a `Function` form a complete function scheme. The whole scheme has kind `*`, even when one of its binders is higher-kinded, and may therefore appear anywhere a runtime value type may appear: as a parameter or return, inside a product or sum, in an annotation or type argument, as an anonymous function literal's type, or inside a recursive or existential nominal payload. This is a structural rule, not a privilege of a named declaration; unfolding a transparent alias does not change the classification. A higher-kinded `Forall` whose body does not ultimately reach a function is incomplete and is rejected; bare and undersaturated constructors remain non-value types. Nominal existential binders themselves remain kind `*`. The check depends only on the written type structure and explicit binder kinds, so adding unrelated declarations cannot change an existing type's admissibility.
 
 **Higher-kinded application without primitives.** Lifting a value into and projecting it out of a kind-`*→*` position uses ordinary language constructs, not intrinsics. (How a backend carries that kind identity through to host code — a native host type constructor, or the transparent erased rep — is a backend-encoding concern, described in [`backends/README.md` § Higher-kinded types](backends/README.md#higher-kinded-types); at the language level there is only the kind-annotated binder and direct `F[A]` application.)
 
-- At a **concrete type constructor** (a named kind-`*→*` newtype like `Box[A] : A`), the newtype's own constructor / projector pair crosses the boundary: `Box.mk_box(x)` lifts, `Box.un_box(b)` peels. The backend contract determines the host representation; equality between the payload and the type parameter does not erase the newtype's nominal identity.
-- At an **abstract type constructor** (a kind-`*→*` binder `[*F]`), the lift / projection routes through an explicitly-threaded instance value. A combinator over `[*F]` that needs to inject takes an `Applicative[F]` parameter and dispatches through its `pure` member; one that needs to project takes a `Comonad[F]` parameter and dispatches through `extract`. Instances are explicit `fn` parameters — Kio has no typeclasses. The [higher-kinded-types case study](../docs/poc/hkt.md) shows this dictionary-passing pattern.
+- At a **concrete type constructor** (a named kind-`*→*` nominal type like `Box[A]`), the nominal type's own constructor / projector pair crosses the boundary: `Box.mk(x)` lifts, `Box.get(b)` peels. The backend contract determines the host representation; equality between the payload and the type parameter does not erase the type's nominal identity.
+- At an **abstract type constructor** (a kind-`*→*` binder `[*F]`), the lift / projection routes through an explicitly-threaded instance value. A combinator over `[*F]` that needs to inject takes an `Applicative[F]` parameter and projects its operation with `Applicative.get`; one that needs to project takes a `Comonad[F]` parameter and uses `Comonad.get`. Instances are explicit `fn` parameters — Kio has no typeclasses. The [higher-kinded-types case study](../docs/poc/hkt.md) shows this dictionary-passing pattern.
 
-**Polymorphic newtype payloads.** A newtype payload may itself be a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and related abstractions. The payload shape is a `Function` nested under one or more unary `Forall` binders, where the binders scope over the args and ret:
+**Polymorphic nominal payloads.** A nominal payload may itself be a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and related abstractions. The payload shape is a `Function` nested under one or more unary `Forall` binders, where the binders scope over the args and ret:
 
 ```kio
-pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
-  pub constructor mk_monad;  pub projector bind;};
+pub type { Monad[*F]: [A][B] (F[A] & (A -> F[B])) -> F[B]; }
 ```
 
-The constructor accepts a polymorphic lambda literal whose binders match the payload's; the projector yields a value whose polymorphism survives projection (`Monad.bind[F](monad)` at an abstract `[*F]` produces a value with the same shape as a top-level polymorphic `bind` fn). The imported `do` accepts that value as its supplied bind function: `do(Monad.bind[F](monad)) { … }` uses the same sequence projection as `do(top_level_bind) { … }`. Per-backend codegen must support this pattern. Construction and projection preserve the payload's staged callable shape; erasing bound types does not erase their application stages. The backend contract determines the nominal carrier and its construction and projection operations. See [`backends/README.md` § Polymorphic newtype payloads](backends/README.md#polymorphic-newtype-payloads) for the cross-cutting scheme.
+The constructor accepts a polymorphic lambda literal whose binders match the payload's; the projector yields a value whose polymorphism survives projection (`Monad.get[F](monad)` at an abstract `[*F]` produces a value with the same shape as a top-level polymorphic `bind` fn). The imported `do` accepts that value as its supplied bind function: `do(Monad.get[F](monad)) { … }` uses the same sequence projection as `do(top_level_bind) { … }`. Per-backend codegen must support this pattern. Construction and projection preserve the payload's staged callable shape; erasing bound types does not erase their application stages. The backend contract determines the nominal carrier and its construction and projection operations. See [`backends/README.md` § Polymorphic nominal payloads](backends/README.md#polymorphic-newtype-payloads) for the cross-cutting scheme.
 
-**Multi-arity type constructors and partial application.** A multi-parameter newtype is a higher-arity constructor whose partial applications are themselves higher-kinded types. `Either[E][A] : E | A` has kind `*→*→*`; `Either[String]` has kind `*→*`, so `Monad[Either[String]]` is well-kinded. See [`docs/guides/higher-kinded-types.md`](../docs/guides/higher-kinded-types.md#multi-arity-type-constructors) § Multi-arity type constructors for the worked `Monad[Either[String]]` example.
+**Multi-arity type constructors and partial application.** A multi-parameter nominal type is a higher-arity constructor whose partial applications are themselves higher-kinded types. `Either[E][A] : E | A` has kind `*→*→*`; `Either[String]` has kind `*→*`, so `Monad[Either[String]]` is well-kinded. See [`docs/guides/higher-kinded-types.md`](../docs/guides/higher-kinded-types.md#multi-arity-type-constructors) § Multi-arity type constructors for the worked `Monad[Either[String]]` example.
 
 This partial-application rule does not permit a transparent alias reference to omit any parameter declared by that alias.
 
@@ -707,7 +586,7 @@ This partial-application rule does not permit a transparent alias reference to o
 
 ### Macros are imported, not ambient
 
-Every macro is an ordinary module item resolved through scoped imports — there is no built-in coercion, no ambient dispatch, and no language-level palette of named forms. A blockless call writes `name(...)`; a macro with trailing-block descriptors uses `name(args) { … }` or zero-prefix `name { … }`. Transparent parentheses may group the direct head, including `(name)(args) { body }`. Parsing recognizes either shape without consulting provider declarations; ordinary lexical ownership selects the macro (see [`grammar.md` § Surface item additions](grammar.md#surface-item-additions)). The reference `macros` library supplies `if`, `scope`, `do`, `match`, `derive`, an **algebraic** coercion palette (`iso`, `into`, `onto`, `align`, `ease`, `atom`), and a **spine** palette (`reorder_sum`, `reorder_prod`, `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`, `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`, `fit`). These are ordinary Kio declarations, imported explicitly. Their per-form algorithms are documented with the executable library in [`docs/poc/macros.md`](../docs/poc/macros.md); [`docs/poc/optics.md`](../docs/poc/optics.md) demonstrates the spine palette and `match`.
+Every macro is an ordinary module item resolved through scoped imports — there is no built-in coercion, no ambient dispatch, and no language-level palette of named forms. An ordinary call writes `name(...)`; a macro with trailing-block descriptors also admits `name(args) { … }` or zero-prefix `name { … }`. Transparent parentheses may group the direct head, including `(name)(args) { body }`. Parsing recognizes either shape without consulting provider declarations; ordinary lexical ownership selects the macro (see [`grammar.md` § Surface item additions](grammar.md#surface-item-additions)). The reference `macros` library supplies `if`, `scope`, `do`, `match`, `derive`, an **algebraic** coercion palette (`iso`, `into`, `onto`, `align`, `ease`, `atom`), and a **spine** palette (`reorder_sum`, `reorder_prod`, `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`, `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`, `fit`, with natural-result variants `narrow_sum_`, `one_sum_`, and `one_prod_`). These are ordinary Kio declarations, imported explicitly. Their per-form algorithms are documented with the executable library in [`docs/poc/macros.md`](../docs/poc/macros.md); [`docs/poc/optics.md`](../docs/poc/optics.md) demonstrates the spine palette and `match`.
 
 **Explicit selection and lexical ownership.** External macros require a tagged
 selector such as `import library(macro build as make);`. The selected export
@@ -730,6 +609,13 @@ distinction.
 
 **Named-callable contract.** Top-level `fn`s, intrinsics, and macro names are all looked up by name and expose a declared call type (a polytype). At a call site, explicit type arguments, `_` placeholders, value arguments, and the surrounding expected type are all solved against that call type by the ordinary call-type rules of § Type system. The difference is that a macro's macro call runs compile-time implementation code over **reflected arguments** rather than the runtime function-call path; the ordinary and fills-marked reflected ABIs are documented below and in [`docs/guides/macros.md`](../docs/guides/macros.md).
 
+A macro receives a checked input as a quoted term and may omit it from its
+generated code. When that code evaluates a retained product input, ordinary
+strict product evaluation evaluates its components in order. To make a
+component independently skippable, pass it as a thunk and invoke that thunk
+only when needed. This runtime behavior follows the generated code, not the
+macro's call spelling.
+
 **Whole-chain public admission.** A maximal written application chain rooted
 at a resolved direct macro head is one connected public inference and
 admission unit; transparent grouping does not split it. Its written stages
@@ -743,16 +629,16 @@ ordinary admission and expansion, a callable generated result may be applied
 normally. A `let` ends the connected unit. These rules grant no first-class
 macro value or implementation-derived public call shape.
 
-**Trailing-block declarations.** A macro may declare one or more final
-value-application stages with `trailing product;`, `trailing thunk;`, or
+**Trailing-block declarations.** A macro may declare one or more block
+projections with `trailing product;`, `trailing thunk;`, or
 `trailing sequence;`. The first descriptor is unlabelled; every later descriptor
 has a distinct value-shaped label, for example `trailing thunk else;`.
 `impl` and `captures` retain their unordered entry policy; the relative order
-of the `trailing` entries determines the order of blocks. Descriptors belong
-to successive final `Function` layers in the resolved public call type, never
-to components of one product domain or to the private implementation ABI. Each
-block projects one value for its own layer. A descriptor whose projection
-cannot inhabit that whole domain is a type error.
+of the `trailing` entries determines the order of blocks. Each descriptor
+selects a projection from block syntax to one value. Declaration checking
+validates descriptor structure; the projected call is checked against the
+public type at each invocation. Descriptors impose no additional predicate on
+an ordinary direct call.
 
 | Descriptor | Value projected from the block |
 | --- | --- |
@@ -768,20 +654,25 @@ they apply to every `sequence` descriptor, regardless of the macro's name.
 
 **Block calls.** Every declared block is supplied exactly once, in declaration
 order. The first is unlabelled and later blocks carry their declared labels.
-Each block supplies its projected value to one successive `Function` layer.
-A block call is a complete call through a single value-shaped name.
-Its prefixes contain values only; all public type arguments are inferred.
-It admits the four [UFCS](#ufcs) directions but no partial application or
-blockless alternate spelling supplying the projected arguments directly. A
-splice inserts its receiver among the prefix values, before projected blocks.
-The public type fixes
-the prefix and block slots before any implementation action runs.
+After UFCS insertion, the whole final written prefix value, if present, and
+whole projected block values form one right-associated product supplied to one
+`Function` layer. Earlier prefix groups remain separate applications. Thus
+`m(a,b) { c; d }` projects to `m((a,b),(c,d))`, equivalent to
+`m((a,b),c,d)`. Omission and Unit differ: `m {}` supplies Unit, while
+`m() {}` supplies a product of two Units. No implicit currying splits a product.
+
+Block calls infer their public type arguments; explicit type arguments are not
+part of the block-call spelling. Once all syntactic blocks are supplied, the
+ordinary macro residualization rules apply. Direct calls may supply projected
+values explicitly, for example `if(condition, .() { yes() }, .() { no() })`. Direct calls use the public
+type and ordinary macro semantic checks, without descriptor-specific checks.
+The public call plan is fixed before any implementation action runs.
 
 Every nonempty written prefix uses a parenthesized value-argument list:
-`name(value) { … }` has one prefix stage; `name(a, b) { … }` and
-`name((a, b)) { … }` both supply one product at that stage.
-`name(a)(b) { … }` has two successive prefix stages,
-`name() { … }` has one Unit prefix stage, and `name { … }` has none. The parentheses are required for all
+`name(value) { … }` has one prefix group; `name(a, b) { … }` and
+`name((a, b)) { … }` both supply the same whole prefix product.
+`name(a)(b) { … }` has an earlier `(a)` stage and combines `(b)` with
+the blocks; `name() { … }` includes a Unit prefix value, and `name { … }` has none. The parentheses are required for all
 prefix expressions, including names, signed numbers, Boolean literals and
 operator expressions. UFCS can supply a receiver with no written prefix list:
 `receiver.>name { body }` and `name { body }.<receiver` insert that receiver
@@ -811,13 +702,13 @@ chain inside an explicit outer block may still use it.
 Malformed syntax is a parse error (`11`). Import and name failures retain
 their ordinary categories (`12`/`13`). Once the macro is resolved,
 missing, duplicate, unknown, or out-of-order blocks, invalid block contents,
-and descriptor/public-type mismatches are type errors (`14`), with source and
+and projected-call type mismatches are type errors (`14`), with source and
 declaration context. An ignored non-unit sequence step explains the required
 `F[.]` and suggests `<-`. Library-reported errors retain their ordinary
 `14`/`15` distinction; these categories impose no diagnostic precedence.
 
 Parsing and formatting depend only on written syntax. Block projection depends
-only on the resolved declaration's descriptors and public type, and generated
+only on written structure and the resolved declaration's descriptors, and generated
 terms obey the ordinary checking, purity, hygiene, and recursion rules.
 Adding unrelated declarations cannot reinterpret an existing call. Descriptor
 metadata, neutral blocks, and provisional projection state are consumed before
@@ -828,7 +719,7 @@ of two implementation schedules. In both modes, the field names its
 implementation with an ordinary lexical value path. A bare path may name a
 local function or a selectively imported function. A dotted path may select a
 function through an explicitly imported module alias (`helpers.build`) or a
-constructor/projector on a local or imported newtype, directly or through an
+constructor/projector on a local or imported nominal type, directly or through an
 identity alias (`Box.make` or `types.Wrapped.make`). Slash-qualified package
 FQNs such as `lib/helpers.build`, calls, and inline lambdas are not
 implementation targets; use an explicit `import` and name an ABI-shaped `pure fn`
@@ -842,7 +733,7 @@ ordinary callable `fills`, while `impl(fills) (build)` selects `build` with the
 fills schedule.
 
 Resolution matches an ordinary path expression's source-order classes. A
-same-module ordinary or host `fn`, `rec` member, newtype head, or identity-alias
+same-module ordinary or host `fn`, `rec` member, nominal head, or identity-alias
 head must precede the declaration. A self-qualified alias or selective
 self-import does not turn a later declaration into an earlier binding.
 
@@ -854,10 +745,17 @@ The ordinary field `impl f;` selects the late schedule and this ABI:
 ```
 
 Every declared value slot is a completed `__Checked_term__` before the
-implementation runs. A declared type slot is `__Type__`, or `__Type__ | .`
-only under the optional-result-binder rule. The returned checked
-term is related to the declared result and may solve its preallocated result
-goal. Ordinary implementations receive no fill context.
+implementation runs. Each declared type slot is `__Type__`, except that an
+eligible result-only binder may use `.`. Eligibility follows the exact binder:
+it must occur in the terminal result and must not occur in any later value
+domain, after transparent aliases unfold and with lexical shadowing respected.
+A dead binder is not result-only. The `.` slot always receives unit, including
+when an expected result is available; the implementation cannot observe that
+result through this slot. A result-only `__Type__` slot instead requires a
+complete target before evaluation, even if the implementation ignores it.
+`__Type__ | .` is not an implementation-ABI option.
+The returned checked term is related to the declared result and may solve its
+preallocated result goal. Ordinary implementations receive no fill context.
 
 The declaration-local field `impl(fills) f;` selects the fills schedule and
 this ABI:
@@ -869,14 +767,15 @@ this ABI:
 
 `__Comptime__` remains the immutable leading proof. The compiler-created,
 call-local `__Fill_ctx__` is exactly second and is the only threaded fill
-state. Captures keep declaration order; every declared type slot is exactly
-`__Type__`, including an open declared result represented by an opaque handle;
-and every value slot is `__Checked_term__`. The implementation returns one
-checked term paired with the final context and never returns `__Comptime__`.
-Its checked term is validation-only with respect to an open marked result: an
-implementation that determines that result records an explicit fill. The
-implementation may return the original context unchanged; the marker supplies
-fill authority but does not require an appended relation.
+state. Captures keep declaration order. The same natural `.` and required
+`__Type__` choices apply to eligible result-only binders. Other type slots are
+`__Type__` and may carry authenticated open handles under the marked header
+rules below. Every value slot is `__Checked_term__`. The implementation returns
+one checked term paired with the final context and never returns `__Comptime__`.
+A natural result may be determined by the returned term's complete type after
+all retained producers finish. Explicit fills can relate that result to
+provisional operands before their bodies resume. The implementation may return
+the original context unchanged; fill authority does not require an append.
 
 The fills schedule evaluates once after the complete structural headers of all
 declared value operands are ready, in declared-slot and written-source order.
@@ -899,20 +798,76 @@ or infer a missing annotation. A closed result may pass through enclosing
 ordinary calls while their source terms remain pending. The callback body is
 still checked once before publication, including when the macro ignores
 the operand. No body, nested macro action, or immediate-lambda callee is
-entered merely to complete such a header. A direct lambda is the
+entered merely to complete such a header.
+
+If a computed source remains open after these public header constraints, its
+retained ordinary derivation completes before the enclosing macro prepares its
+inputs, using the information already available. This can complete an inner
+call, its callback body, or an inner macro invocation whose own inputs are
+ready. Each source and macro invocation is checked or evaluated once, without
+retrying an alternative interpretation. A source whose type is already complete
+retains the header-first order above. Information supplied only by the enclosing
+macro's action cannot complete one of its own inputs.
+
+A direct lambda is the
 structural exception: its complete universal and value-parameter
 header may precede an open final body-result subtree, but no unresolved source
-placeholder may remain. Any other open value source is a type error
-at that source before the implementation action runs. Binding the whole source
+placeholder may remain. A computed source that remains undetermined after
+ordinary completion is a type error at that source before the implementation
+action runs. Binding the whole source
 in an ordinary `let` completes its ordinary body checking first, but does not
 by itself supply a missing generic choice. A complete binding annotation,
 explicit type argument, or concrete callback result type can supply that
 information where appropriate. Compile-time reflection
-authenticates marked opaque type handles before reduction. After aliases
-unfold, `__type_args_fold__` and
-`__type_apply__` remain residual when their outer type or head is unresolved;
-they do not substitute a zero-argument fold result or a no-op application. The
-formal boundary is specified in
+authenticates marked opaque type handles before reduction. An evaluated
+operation that needs unresolved inference information raises an uncatchable
+macro error (exit 15); it does not return a route mismatch, diagnostic arm, or
+residual value. Known rigid generic variables are determined information.
+A known product, sum, function, or forall view may return opaque children;
+viewing an unknown child itself fails. Named-head views also require the
+argument-root information they report. Root predicates need only their outer
+constructor; spine folds need each traversed right-spine head, while their
+left elements may remain opaque. Applied-argument folds need a known outer
+head. `__type_forall_prefix_fold__` visits the determined leading universal
+binders, outermost first, and returns its accumulator paired with the remaining
+type. It requires a known stopping head but may return a Function with opaque
+children. Its callback receives the same binder handles as repeated type views;
+kind arity is available through `__type_var_arity__`. It establishes the finite
+immutable prefix before calling the callback once per binder.
+Type equality, type display, and type instantiation require complete
+operands. Corresponding parameters opened from equivalent complete generic
+types compare equal, including when those types were independently rebuilt.
+The comparison preserves nominal identities, binder positions and genuine free
+variable environments. A comparison that needs missing type information fails
+rather than guessing equality or inequality; this also applies after converting
+a variable handle to a Type. Opening, storing and transporting a fragment does
+not itself compare its missing structure.
+
+A new quantified Type or polymorphic checked term may use its own parameter,
+a live enclosing constructor parameter, or a genuine free caller parameter.
+The result of `__type_forall__` or `__term_type_fn__` must not contain a free
+parameter opened from another generic type. A complete generic type may remain
+intact within the result: its own parameters are bound there. To use an opened
+body under a new parameter, explicitly instantiate the original generic type
+with the chosen parameter before constructing the result. Ordinary generic
+helper calls substitute their type arguments normally; they do not turn a
+substituted free opened parameter into a genuine caller parameter or waive the
+constructor boundary. Inspection and storage of opened fragments outside these
+construction results remain valid. The check covers type occurrences inside a
+checked term, not just its outer type. An unknown region cannot establish the
+absence of a forbidden reference without sufficient information.
+
+Type and term constructors may transport opaque children when their
+own required outer shape is known, subject to this quantified-construction
+boundary. Fill operations record opaque candidates
+without inspecting them. An evaluated fault cannot be caught, masked by a
+later error, or discarded, and is not cached as a successful result. An
+unevaluated branch does not fault. A semantic reflected Type nested inside
+ordinary recursion data counts as one atom, regardless of whether its contents
+are closed or opaque. A Type used directly as fuel retains structural
+measurement: an initial known head admits a conservative lower bound, while a
+recursive edge requires a complete measure.
+The formal boundary is specified in
 [macro evaluation](formal/elaboration.md#74-macro-calls). During this
 staging, a directly synthesized lambda with explicit type binders may omit its
 return annotation or write `-> _` when its written binder and parameter header
@@ -947,7 +902,7 @@ call private helpers in its own module. A target declared in another module
 must be ordinarily importable into the defining module through a written
 `import`, but it need not meet the macro's outward visibility. These
 functions are compile-time implementation details, not declarations a caller
-imports. A newtype constructor or projector keeps its ordinary member type and
+imports. A nominal constructor or projector keeps its ordinary member type and
 cannot satisfy either macro ABI; use an ABI-shaped function instead.
 
 The implementation path follows only the declaration module's lexical scope
@@ -971,14 +926,17 @@ reflection helpers, `import __comptime__;` introduces the opaque type
 __fill__ :
   (__Comptime__ & __Fill_ctx__ & __Type__ & __Type__) -> __Fill_ctx__
 
+__fill_result__ :
+  (__Comptime__ & __Fill_ctx__ & __Type__) -> __Fill_ctx__
+
 __term_specialize__ :
   (__Comptime__ & __Checked_term__ & __Type__ & __Type__)
     -> (__Checked_term__ | [. | __Diagnostic_text__])
 ```
 
 Every callable in the block retains `__Comptime__` as its first value
-parameter. Of those callables, only `__fill__` also takes `__Fill_ctx__`
-second and returns the descendant context.
+parameter. Both fill helpers take `__Fill_ctx__` second and return the
+descendant context.
 
 `__fill__(ct, fills, destination, candidate)` does not solve or inspect
 inference while the implementation executes. It returns a new context with
@@ -987,6 +945,15 @@ The destination must be an authenticated occurrence of this marked call's
 declared result; an arbitrary reflected type, source operand, or constructed
 clause tuple is not a fill destination. The candidate may retain staged body
 provenance but gains no destination authority from it.
+
+`__fill_result__(ct, fills, candidate)` appends equality between the candidate
+and this invocation's whole terminal result. It neither returns nor observes
+the result type. For a partially applied macro this is the body result in its
+retained lexical scope, not the residual function introduced around that body.
+A candidate may contain the residual body's rigid binders. The candidate's
+producer dependencies are retained; no result-type producer is introduced.
+Discarding the returned context discards the entry. Old and whole-result
+entries share the same authenticated, atomic adoption below.
 
 The boundary authenticates the complete returned transcript before solving
 it. Explicit Kio state threading preserves authored entry order, but that
@@ -1005,8 +972,12 @@ relation, retained-body writes, and marked result are committed atomically.
 `__term_specialize__(ct, term, pattern, target)` specializes only the term's
 explicit leading universal binders in an isolated exact structural relation,
 not subtyping or containment. It returns a
-specialized checked term on success, unit for an ordinary structural route
-miss, or diagnostic text for malformed or underdetermined inputs. It neither
+specialized checked term on success, unit for an ordinary known structural
+route miss, or diagnostic text for malformed or underdetermined specialization
+of complete inputs. The pattern and target must be complete, and the term's
+leading forall prefix and its end head must be known; a known function may
+still have an opaque result child. Missing information needed for this
+observation is an uncatchable macro error, not a diagnostic arm. It neither
 takes a fill context nor appends a relation. The successful term's reflected
 type is the fully instantiated whole function scheme. Ordinary code may use it
 with closed operands, but only a marked implementation receives provisional
@@ -1053,25 +1024,25 @@ that kind by matching a name or type shape. Adding an unrelated declaration to
 a module body therefore changes neither the selected schedule, staged
 operands, transcript order, nor completed result of an existing call.
 
-**Crossing label and host boundaries is not a macro's job.** A source-to-target coercion rearranges structural shapes inside `&` and `|`; it never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. Move between a payload type and a generated nominal type `F` with `{f = x}` / `F.mk(x)` or `F.get(r)` / `r.?{f}` (see [Labels](#labels)); cross a `host type` boundary with a host-provided conversion.
+**Crossing nominal and host boundaries is not a macro's job.** A source-to-target coercion rearranges structural shapes inside `&` and `|`; it never manufactures or discards a nominal wrapper, and never treats a `host type` as structurally equal to its consumer-supplied binding. Cross a nominal boundary with its accessible `mk` and `get` members; cross a `host type` boundary with a host-provided conversion.
 
 Unlike typeclasses, which insert dictionary lookups at every polymorphic call site automatically, a macro only runs where you import its name and write the macro call.
 
-### Traits as label-generated types
+### Traits as nominal dictionaries
 
-*This section describes a surface encoding that does not exist in [Kio'](prime.md). Trait-style dispatch in Kio' is explicit dictionary-passing: threading the dictionary value as an ordinary parameter and projecting out its methods by name.*
-
-Kio has no `trait` or `class` construct. What other languages call a "trait" — a bundle of named methods — is directly a [label-generated type](#labels) whose label is the method name, or a product of such label-generated types:
+Kio has no `trait` or `class` construct. A nominal type can wrap a function,
+and an ordinary product can bundle several such values as an explicit
+dictionary:
 
 ```kio
-pub labels { show[A] : A -> String };
-pub labels { less_than[A] : (A & A) -> Bool };
+pub type { Show[A]: A -> String; }
+pub type { Less_than[A]: (A & A) -> Bool; }
 pub type Ord[A] = Show[A] & Less_than[A];
 ```
 
-A value of `Ord[Int]` is a dictionary carrying `show` and `less_than` implementations for `Int`. Callers reach the dictionary's methods by explicit projection — `(d.?{show})(42)` and `(d.?{less_than})(1, 2)` — projecting the matching conjunct from `d` first (with `__fst__`/`__snd__`) if `d`'s type is a compound product of label-generated methods. Because each label inhabits its own generated nominal type, two methods with identical underlying signatures never collide — the label distinguishes them. The named form `labels T = { … }` also introduces a `type T` over the product of its labels; when a trait aggregates labels declared elsewhere (as with `Ord` reusing `show`), write the type alias directly. Users may always bypass the alias and write the label-generated forms directly (`Show[Int]`, `Show[Int] & Less_than[Int]`) wherever a type is expected.
-
-Prose in this document may use "trait" for such a label-generated product and "method name" for a label, but these are just labels — the language has only generated nominal types, products, and functions.
+The nominal identities distinguish methods even when their function types
+coincide. Callers pass the dictionary explicitly and project the desired
+nominal slot and its payload through ordinary functions or imported macros.
 
 ## Module system
 
@@ -1098,9 +1069,9 @@ A `host type` is either roleless and optionally parameterized by ordinary kind-`
 
 **Dependency roots.** A package may declare a cross-package dependency in a `<local>.dep.kio` file at its root (see [`package.md` § Dependency files](package.md#dependency-files)). The dependency's module tree is **re-rooted** under its local name: the dependency's `module app;` becomes reachable as `<local>/app`, and its `pub` items are importable with the ordinary `import` forms (`import <local>/app(greet);`). An `import` path's first segment names a declared dependency's local name or one of the consumer's own modules: a first segment that matches a declared dependency resolves in that dependency's re-rooted tree, otherwise in the consumer's own modules. A dependency's local name may not equal the first path segment of any of the consumer's own modules, which keeps that choice unambiguous (see § Open-world design).
 
-**Visibility.** Every definition is private by default. The **`pub`** contextual keyword on a definition makes it exported. `pub` is only recognized in declaration-leading position (top-level, or at member positions inside a `newtype` or braced `rec` group); elsewhere it is an ordinary identifier.
+**Visibility.** Every definition is private by default. The **`pub`** contextual keyword on a definition makes it exported. `pub` is only recognized in declaration-leading position (top-level, or at member positions inside a nominal member body or braced `rec` group); elsewhere it is an ordinary identifier.
 
-A `pub` may carry a **scope restriction**, written `pub(<module-path>)`: the definition is exported only within the module subtree rooted at that path — importable from that module and anything beneath it, sealed everywhere else. The path must be a **prefix of the declaring module's own path**: visibility relaxes only up to an ancestor, never sideways to an unrelated module or down to a narrower one, so nothing is ever visible where its own module cannot reach — a non-prefix path is a compile error. The restriction is enforced at name resolution as an import gate **and retained into Kio'**, where it also shapes the package's **host interface**: a scoped definition is not exported to the host, which sits outside every module `path`. It is a core visibility form, not a surface-only one. Because a scoped definition is strictly narrower than `pub`, adding one cannot widen any existing import — open-world compilation is preserved. The scope is admissible wherever `pub` is a genuine visibility choice — including a `newtype`'s `constructor`/`projector` members and `rec`-group members. `host` declarations are the sole exception: always public, hence never scoped.
+A `pub` may carry a **scope restriction**, written `pub(<module-path>)`: the definition is exported only within the module subtree rooted at that path — importable from that module and anything beneath it, sealed everywhere else. The path must be a **prefix of the declaring module's own path**: visibility relaxes only up to an ancestor, never sideways to an unrelated module or down to a narrower one, so nothing is ever visible where its own module cannot reach — a non-prefix path is a compile error. The restriction is enforced at name resolution as an import gate **and retained into Kio'**, where it also shapes the package's **host interface**: a scoped definition is not exported to the host, which sits outside every module `path`. It is a core visibility form, not a surface-only one. Because a scoped definition is strictly narrower than `pub`, adding one cannot widen any existing import — open-world compilation is preserved. The scope is admissible wherever `pub` is a genuine visibility choice — including nominal `mk`/`get` members and `rec`-group members. `host` declarations are the sole exception: always public, hence never scoped.
 
 **Declaration dependencies obey the same visibility floor.** Every named type
 reachable through a declaration's signature must be visible everywhere that
@@ -1108,11 +1079,11 @@ declaration is visible. The walk is recursive through type arguments,
 functions, sums, products, and transparent aliases, so a public alias cannot
 conceal a private nominal type. It applies to ordinary and recursive function
 signatures, type aliases, host-function signatures, macro call types, and
-the declarations produced when `labels` lowers. A newtype's outer name remains
+nominal entries. A nominal type remains
 an opaque API boundary: its payload need not be as visible as the outer
-newtype. Instead, the payload types must meet each constructor or projector's
-**effective visibility**: the intersection of the outer newtype's visibility
-and that member's own marker. Thus `pub newtype Token : Hidden` with private
+type. Instead, the payload types must meet each constructor or projector's
+**effective visibility**: the intersection of the nominal type's visibility
+and that member's own marker. Thus `pub type { Token: Hidden { mk; get; }; }` with private
 members is valid; a private `Token` remains private even if a member is written
 `pub`; and a public `Token` with a public constructor or projector requires
 `Hidden` to be public. Scoped combinations take the narrower subtree. Type
@@ -1124,21 +1095,21 @@ parameters and local binders are not declaration dependencies.
 pub pure fn id[A](x: A) -> A { x }
 ```
 
-`pub` and `pure` may appear in either order in source; `kio fmt` emits `pub pure fn`. There is no `impure` keyword. `pure` is admitted only on ordinary `fn` declarations, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec(loop)` group/member.
+`pub` and `pure` may appear in either order in source; `kio fmt` emits `pub pure fn`. There is no `impure` keyword. `pure` is admitted only on ordinary `fn` declarations, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec(loop)` group/member.
 
 A `host fn` cannot carry `pure`: its body is opaque to Kio, leaving no body whose executable references the checker could validate. A `rec(loop)` member is excluded because its execution requires the group's declared `loop` function. Both exclusions are categorical rather than inferred from a particular implementation.
 
-The restriction applies only to executable references in the function body. Type annotations inside that body use the ordinary well-formed-type rules and may mention host types, transparent aliases, newtypes, or any other in-scope type. A function signature also has no purity classification, but its named types obey the declaration-visibility floor above. Type declarations carry no purity classification.
+The restriction applies only to executable references in the function body. Type annotations inside that body use the ordinary well-formed-type rules and may mention host types, transparent aliases, nominal types, or any other in-scope type. A function signature also has no purity classification, but its named types obey the declaration-visibility floor above. Type declarations carry no purity classification.
 
-Purity is transitive and declaration-based. In a pure body, executable value paths may resolve to local binders, pure intrinsics and newtype members, or ordinary functions explicitly declared `pure`. While checking a macro implementation, compiler compile-time primitives are admitted as the pure primitive environment; they are consumed before persistent Kio' and are not runtime values. A host function or an ordinary function without `pure` is rejected even if a particular implementation happens not to perform an effect. An unrestricted function may refer to both pure and unrestricted functions. The marker is retained in Kio' and on the public function contract so a dumped, freshly reparsed, or validated cached Prime artifact can check the same promise without producer provenance. A loadable image retains the marker, but the runtime loader trusts precompiled function bodies and does not perform that typecheck (see [`prime.md`](prime.md)).
+Purity is transitive and declaration-based. In a pure body, executable value paths may resolve to local binders, pure intrinsics and nominal members, or ordinary functions explicitly declared `pure`. While checking a macro implementation, compiler compile-time primitives are admitted as the pure primitive environment; they are consumed before persistent Kio' and are not runtime values. A host function or an ordinary function without `pure` is rejected even if a particular implementation happens not to perform an effect. An unrestricted function may refer to both pure and unrestricted functions. The marker is retained in Kio' and on the public function contract so a dumped, freshly reparsed, or validated cached Prime artifact can check the same promise without producer provenance. A loadable image retains the marker, but the runtime loader trusts precompiled function bodies and does not perform that typecheck (see [`prime.md`](prime.md)).
 
 This is a restriction on declaration references, not an effect qualifier on function types. A pure function may invoke a callback supplied through a local binder, including a host callback supplied by an unrestricted caller. A call to a pure function is effect-free when argument evaluation and all invoked callbacks are effect-free, including callbacks carried in data or captured by closures; the `pure` marker alone does not establish that condition.
 
 **`import` statements.** `import` statements appear only at the top of a module region, and each is terminated by a semicolon. Two forms are available:
 
-- **Selective** — `import path/to/module(Type, name, {label}, op _ + __);`
+- **Selective** — `import path/to/module(Type, name, op _ + __);`
   brings each listed binding into scope directly. Bare names select ordinary
-  values/types, braces select label syntax, and an `op` tag followed by a
+  values/types, and an `op` tag followed by a
   complete grammar selects an operator.
 - **Qualified** — `import path/to/module as m;`, accessed as `m.name`. The `as` clause is **required**.
 
@@ -1157,7 +1128,7 @@ these forms. Builtin block imports use their separate fixed forms below.
 ```kio
 import runtime(panic);
 import result(Result);
-import people(Name, {name});
+import people(Name);
 import logger as lg;
 import utils/list_ops(fold);
 ```
@@ -1166,14 +1137,14 @@ An ordinary selection may give its local spelling with `as`, for example
 `import runtime(panic as fail, Handle as Resource);`. The destination preserves
 the source identifier class: value names remain value names and type names
 remain type names. This applies to ordinary functions, host functions, host
-types, transparent types, newtypes, and literal aliases. A macro instead
+types, transparent aliases, nominal types, and literal aliases. A macro instead
 requires `macro name`, optionally followed by `as local`; this tag selects
 the declaration kind and preserves the same identity and alias rules. The import
 retains the original declaration's identity, public type and kind, purity,
 visibility, and declaration role. In particular, a renamed host type retains
-the same literal-admission metadata; a renamed newtype retains
+the same literal-admission metadata; a renamed nominal type retains
 partial type application. An import alias is not a wrapper, transparent type
-declaration, or re-export. Braced label selections have no alias form.
+declaration, or re-export.
 
 Distinct local aliases of one declaration are allowed, as are distinct module
 aliases of one module. Each local spelling is nevertheless introduced once:
@@ -1183,11 +1154,11 @@ conflict. The same rule applies across clauses and against local declarations,
 regardless of whether the selected declarations ultimately share a nominal
 identity or implementation callable.
 
-Deliberately absent: wildcard imports, hiding forms, and exports. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective local name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type`, `newtype`, and the ordinary bindings produced when `labels` and imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `literal` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
+Deliberately absent: wildcard imports, hiding forms, and exports. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective local name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type` declarations and the ordinary bindings produced when imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `literal` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
 
 An identity-only transparent alias is still a local introduction. Thus `import origin(T); import origin as source; pub type T = source.T;` is an error: the selective import and alias both introduce `T`. Omitting the selective import gives a valid re-export through the qualified provider. Alias chains and positional generic forwarding preserve their existing type identity and constructor/projector rules, but do not merge written introductions. Binding checks consume a validated `import` environment; this prerequisite does not establish diagnostic precedence when independent import and binding errors coexist.
 
-The origin set is determined only by declarations and imports written in the consumer module (including bindings produced directly from that module's `labels` and operator imports). A selective import selects the triple `(source module, syntactically selected namespace, source spelling)` and separately introduces its local destination: `item`, `Item`, and `{item}` never infer or widen one another. The compiler never scans an imported module for additional, unwritten candidates. Adding a declaration to a provider in another namespace therefore cannot introduce a new origin or change the meaning of an existing consumer import; only editing the consumer's own declaration or `import` list can do so.
+The origin set is determined only by declarations and imports written in the consumer module (including bindings produced directly from operator imports). A selective import selects the triple `(source module, syntactically selected namespace, source spelling)` and separately introduces its local destination: `item` and `Item` never infer or widen one another. The compiler never scans an imported module for additional, unwritten candidates. Adding a declaration to a provider in another namespace therefore cannot introduce a new origin or change the meaning of an existing consumer import; only editing the consumer's own declaration or `import` list can do so.
 
 **Compile-time helper import.** A module may import the compiler-provided reflection/helper surface with a single block import:
 
@@ -1196,6 +1167,19 @@ import __comptime__;
 ```
 
 The block imports the complete compile-time helper surface. There is no qualified form, selective form, alias, wildcard, or per-name import for `__comptime__`. Public helper type and value names use the documented double-underscore spellings such as `__Type__`, `__Checked_term__`, `__type_view__`, `__term_call__`, and `__structural_recur__`. See [`specs/formal/elaboration.md`](formal/elaboration.md) for the compile-time boundary: user macros return reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
+
+Function reflection observes semantic function types. The function arm of
+`__type_view__(ct, typ)` is the pair `(domain & result)`, and
+`__type_arrow__(ct, domain, result)` constructs `domain -> result`. The domain
+is the complete logical argument packet. These helpers do not expose or
+accept declaration value-parameter counts; value-parameter grouping remains
+internal to function-body binding and host-interface generation. Reflected
+kind arities continue to describe type variables, type constructors, and
+polymorphic binders.
+
+Macro type diagnostics may display the semantic expansion of a transparent
+alias. Nominal types retain their names and identities. Diagnostic text is
+opaque presentation; type comparisons use `__type_equal__`.
 
 **Module cycles.** Value-level cycles between `.kio` module files are disallowed: if module A imports from module B, then B may not transitively import from A. Every **explicit `import`** counts as an edge — there is no type-only exemption: `import m(X);` always contributes the same `→ m` edge, including an `import` that brings a `host type` or `host fn` into scope. The package file's `bridge` block does not participate in this graph because it targets the contract surface rather than module bodies.
 
@@ -1293,7 +1277,7 @@ host type Map[K][V];
 host fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B;
 ```
 
-**Host types are opaque.** A `host type` is treated as an abstract name inside the package's modules: the compiler knows its identity and its ordinary kind-`*` type parameters, but never its structural shape. A host type cannot bind a higher-kinded parameter; abstracting over a type constructor remains a top-level `newtype` or `fn` capability. Structural-typing equality is suspended at the host boundary on purpose, so a package's reasoning about its own types cannot depend on which host supplies them. Neither `into` nor `onto` crosses host type boundaries.
+**Host types are opaque.** A `host type` is treated as an abstract name inside the package's modules: the compiler knows its identity and its ordinary kind-`*` type parameters, but never its structural shape. A host type cannot bind a higher-kinded parameter; abstracting over a type constructor remains a nominal type or `fn` capability. Structural-typing equality is suspended at the host boundary on purpose, so a package's reasoning about its own types cannot depend on which host supplies them. Neither `into` nor `onto` crosses host type boundaries.
 
 **Role-assigned host types.** A `host type` declaration may be annotated with `role(...)` to designate the type's **role** in the language. The currently-recognized roles are the Rust-shaped sized numerics plus `bool` and `str`:
 
@@ -1334,9 +1318,8 @@ Kio identifier spellings are enforced by the compiler: a violation is a parse-er
 
 Ignoring leading and trailing underscore affixes, each word contains one or more ASCII letters followed by zero or more digits. Exactly one underscore separates adjacent words. Thus `a1_b2`, `foo123_bar4`, `sha256`, and `p0` are valid; `a1b`, `foo_123`, and `foo__bar` are invalid. Any number of trailing underscores is admitted.
 
-- **Type names and type parameters** match `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`: the first letter is uppercase, and every later letter is lowercase. This applies to aliases, host types, newtypes, named label aliases, and type binders. `I32`, `Foo123_bar4`, `_Logger`, and `_Event_stream` are valid type names.
+- **Type names and type parameters** match `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`: the first letter is uppercase, and every later letter is lowercase. This applies to aliases, host types, nominal entries, and type binders. `I32`, `Foo123_bar4`, `_Logger`, and `_Event_stream` are valid type names.
 - **Values** match `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`: every letter is lowercase. Functions, macros, value binders, and ordinary imported value names obey this rule.
-- **Labels** match `[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`, without a leading underscore. The generated nominal name preserves every word and affix and capitalizes only the first letter: `foo1_bar2` becomes `Foo1_bar2`. Generated nominals occupy the ordinary type namespace and participate in duplicate-name checking. A second explicit declaration of the same label is rejected; the exact `name: _` marker described in [Labels](#labels) refers to the first generated type without declaring another one.
 - **Modules, subdirectories, packages, and dependency local names** obey the value rule. Module paths and package, dependency, lock, and signature filename stems retain their exact source identity.
 - **Leading underscores** have the same rule for both namespaces. Zero or one leading underscore is user space. A single leading underscore is part of the exact identity and permits an unused binding; `Foo` and `_Foo`, or `foo` and `_foo`, are distinct and remain ordinarily referenceable. It grants no different typing, visibility, or capability.
 - **Reserved prefixes** begin with two or more underscores. They use the same word and case grammar, with grammatical patterns `_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*` and `_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`. User declarations reject this prefix class. The intrinsic and compile-time import targets and their documented declarations use reserved spellings such as `__intrinsics__` and `__Type__`. A reserved spelling supplies hygiene only: a reference still requires an ordinary exact binding and its applicable visibility and phase validation.
@@ -1352,7 +1335,7 @@ What "contextual" buys: adding a new keyword later cannot break existing user co
 
 Per-keyword semantics are documented at the declaration sites; this is the consolidated reference.
 
-- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `macro`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
+- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `equiv`, `macro`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec type` and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
 - **Module-header words** (recognized at the start of a `*.kio` module file): `module` for a module declaration.
 - **Recursive-call introducer**: `recur` introduces a recursive callee, with optional call annotations before that callee: `recur step(x)` or `recur(cont) step(x)`. Without a following callee, a bare `recur` reference or an ordinary call such as `recur(x)` uses the ordinary identifier. Both `rec` and `recur` remain ordinary names outside their grammatical positions; `fn id(rec: .) { rec }` is an ordinary function.
 - **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Macro names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; their direct calls become macro calls only through ordinary lexical ownership of an explicit macro binding. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
@@ -1369,9 +1352,9 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
 - **At the start of a package file**: `package <name>;` declares the package identity.
 - **Inside a package file** (`<name>.pkg.kio`): `bridge` leads the package's module-glob block.
 - **Inside a `build { ... }` block** (in `<name>.pkg.kio`): `build` opens the block; `cache`, `docs`, and `target` lead its declarations. A target opens with `target <backend> { … }` or `target (<backend>, "<name>") { … }`; the backend is a bare identifier and the explicit target name is a string. See [Build target files](package.md#build-target-files).
-- **Inside a `newtype` block**: `constructor`, `projector` at item positions.
+- **Inside a nominal member body**: `mk` and `get` at item positions.
 - **Inside a host type declaration**: `role` opens the `role(...)` annotation.
-- **Declaration modifier position** (top-level declarations and `newtype` block items): `pub`; on an ordinary module-body `fn` only, `pure` as well. `host` is a declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub`); elsewhere it is an ordinary identifier.
+- **Declaration modifier position** (top-level declarations and nominal member items): `pub`; on an ordinary module-body `fn` only, `pure` as well. `host` is a declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub`); elsewhere it is an ordinary identifier.
 
 A user-declared identifier may freely have any of these names — `fn id[A](x: A) -> A { x }` declares a value named `id`, and `fn pub()` would declare one named `pub`. The contextual recognition only fires at the positions above; in any other position the same word is an ordinary identifier reference.
 
@@ -1384,9 +1367,9 @@ This list is exhaustive: every reserved word or name recognized by the compiler 
 
 ### Comma-separated lists and operator chains
 
-Every comma-separated production in Kio's grammar — value-parameter groups, `labels` arm lists, tuple literals, value-call argument lists, label-value label lists, and selective `import` name lists — accepts **any number of commas in any position**: leading runs (before the first item), interior runs (between items, beyond the single separator), and trailing runs (after the last item). Equivalent framing: items are separated by *one or more* commas, with optional comma runs at either edge. All shapes collapse to the same AST as the canonical one-comma-per-separator layout. Type-binder and type-supply brackets are not comma lists: each contains exactly one entry, so `[A, B]`, `f[A, B]`, and their edge-comma variants are rejected. `(,,, a ,,, b ,,,)` and `(a, b)` parse to the same tuple literal; `(, a ,)` parses as grouping around `a`, not as a unary tuple; `(,,,)` parses as `()`. `fn three( , x: A , y: B , z: C , )` and `fn three(x: A, y: B, z: C)` parse to the same value group. Function-type value groups are not comma-separated: write `(A & B) -> C`, not `(A, B) -> C`. The formatter relies on the comma rule for the leading-comma multi-line layout where commas are part of the canonical production.
+Every comma-separated production in Kio's grammar — value-parameter groups, tuple literals, value-call argument lists, and selective `import` name lists — accepts **any number of commas in any position**: leading runs (before the first item), interior runs (between items, beyond the single separator), and trailing runs (after the last item). Equivalent framing: items are separated by *one or more* commas, with optional comma runs at either edge. All shapes collapse to the same AST as the canonical one-comma-per-separator layout. Type-binder and type-supply brackets are not comma lists: each contains exactly one entry, so `[A, B]`, `f[A, B]`, and their edge-comma variants are rejected. `(,,, a ,,, b ,,,)` and `(a, b)` parse to the same tuple literal; `(, a ,)` parses as grouping around `a`, not as a unary tuple; `(,,,)` parses as `()`. `fn three( , x: A , y: B , z: C , )` and `fn three(x: A, y: B, z: C)` parse to the same value group. Function-type value groups are not comma-separated: write `(A & B) -> C`, not `(A, B) -> C`. The formatter relies on the comma rule for the leading-comma multi-line layout where commas are part of the canonical production.
 
-Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral macro blocks, and keyed/member blocks such as `newtype`, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
+Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral macro blocks, and keyed/member blocks such as nominal members, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
 
 The type chains `&` (product) and `|` (sum) follow the symmetric rule: a chain accepts **any number of operators in any position** — leading, interior, trailing — all collapse to the same right-associated chain. `&&& A &&& B &&&` (when terminated by a non-Type token like `,`, `)`, `;`, `=`, `{`, `}`) and `A & B` parse identically; same for `|`. The rule applies in both unparenthesized and parenthesized form: `( &&& A &&& B &&& )` and `(A & B)` parse identically. Empty and unary chains use the algebraic identities: product `&` with no items (`&` or `(&)`) is `.`, sum `|` with no items (`|` or `(|)`) is `!`, and a one-item chain (`& A`, `(A &)`, `| A`, `(A |)`) is just `A`. Mixing `&` and `|` in one chain still requires explicit parentheses (per [Anonymous sum and product types](#anonymous-sum-and-product-types)) — `A & B | C` is a parse error, and the user writes `(A & B) | C` or `A & (B | C)` to disambiguate. The formatter's multi-line emit for a chain mirrors the leading-comma layout for lists: each chain item lives on its own line at +2 indent, prefixed with `&` (or `|`) followed by a space — the leading-operator A1 analogue. Arrow `->` is not a variadic delimiter. Product/sum chains directly on either side of a type-expression arrow must be parenthesized: `(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`. A named function or lambda's own return annotation retains bare chains; see [Function types](#function-types).
 
@@ -1424,7 +1407,7 @@ and the reserved `//…` operator family it backs.
 
 **Attachment points.** A doc-comment attaches to the immediately
 following top-level declaration in a module body (`fn`, `type`,
-`literal`, `newtype`, `labels`, `macro`, `op`, `host type`, `host fn`) —
+`literal`, `macro`, `op`, `host type`, `host fn`) —
 every named, documentable declaration. A
 doc-comment placed at the very beginning of a module file — before the
 `module` line, with no declarations in between — attaches to the module
@@ -1452,8 +1435,6 @@ The top level of a module supports these declaration forms:
 - **`rec(loop)`** — surface-only recursive function groups that lower to an ordinary loop function (see [Recursive functions](#recursive-functions)).
 - **`type`** — transparent type aliases (see [Type and literal aliases](#type-and-literal-aliases)).
 - **`literal`** — literal aliases, a surface-only way to name bare literal tokens (see [Type and literal aliases](#type-and-literal-aliases)).
-- **`newtype`** — nominal type declarations with explicit constructor and projector (see [Type declarations](#type-declarations)).
-- **`labels`** — label declarations; surface sugar over `newtype` (see [Labels](#labels)).
 - **`macro`** — user-defined macros selected explicitly and called by local name (see [User-defined macros](#user-defined-macros)).
 - **`op` and `varop`** — user-defined fixed and variadic operator bindings (see [Operators](#operators)).
 - **`equiv`** — compile-time equivalence checks consumed by `kio test` (see [Equivalence claims](#equivalence-claims-equiv)).
@@ -1475,7 +1456,7 @@ signature needs no parentheses; a zero-parameter value stage is written `()`.
 See [Function definitions](#function-definitions). `let` is never used at the
 top level — it is reserved for local naming inside blocks.
 
-**Order-sensitive visibility.** Declarations, including `host type` and `host fn`, are processed top-to-bottom. A declaration sees only names introduced *above* it in the same file, plus names brought in by `import`. A host declaration introduces its name after its own signature is checked; host types in that signature must already be in scope. There is no implicit forward reference within a file. The explicit exceptions are the capability-free recursive-data scopes (`rec newtype`, `rec labels`, and bare `rec { ... }` type groups; see [Type declarations](#type-declarations)) and `rec(loop)` function groups. A singleton data declaration sees only the heads its own declaration contributes. A bare type group sees exactly its written member heads. A `rec(loop)` group gives its member bodies access to the group's member names only through explicit `recur name(...)` calls.
+**Order-sensitive visibility.** Declarations, including `host type` and `host fn`, are processed top-to-bottom. A declaration sees only names introduced *above* it in the same file, plus names brought in by `import`. A host declaration introduces its name after its own signature is checked; host types in that signature must already be in scope. There is no implicit forward reference within a file. The explicit exceptions are the capability-free recursive-data scopes (`rec type` and bare `rec { ... }` type groups; see [Type declarations](#type-declarations)) and `rec(loop)` function groups. A singleton data declaration sees only the heads its own declaration contributes. A bare type group sees exactly its written member heads. A `rec(loop)` group gives its member bodies access to the group's member names only through explicit `recur name(...)` calls.
 
 A direct consequence: an ordinary **`fn` cannot refer to itself**, because its own name is not yet in scope when its body is checked. Mutual recursion between ordinary `fn`s is equally impossible. Use an explicit `rec(loop)` group when term recursion is intended. The same order-sensitivity rules out self-referential type aliases.
 
@@ -1502,12 +1483,12 @@ type Logger = String -> String;
 pub type Endomorphism[A] = A -> A;
 ```
 
-The typer unfolds a type alias structurally wherever it appears; type aliases survive every compilation phase. **An ordinary `type` declaration is non-recursive.** There is no singleton `rec type` form. A transparent alias may be a member of a genuinely mutual `rec { ... }` type group only when every cycle in the component crosses a sibling `newtype` boundary and the alias-only dependency subgraph is acyclic. Kio has no anonymous recursive type expressions or alias-only fixed points: every recursive type component is grounded at an explicit nominal declaration. Parametric declarations behave as **surface sugar** at the parameter level: `Name[X]…` substitutes the arguments into `body`, one argument per bracket.
+The typer unfolds a type alias structurally wherever it appears; type aliases survive every compilation phase. **An ordinary type alias is non-recursive.** A transparent alias may be a member of a genuinely mutual `rec { ... }` type group only when every cycle in the component crosses a sibling nominal boundary and the alias-only dependency subgraph is acyclic. Kio has no anonymous recursive type expressions or alias-only fixed points: every recursive type component is grounded at an explicit nominal declaration. Parametric declarations behave as **surface sugar** at the parameter level: `Name[X]…` substitutes the arguments into `body`, one argument per bracket.
 
-A transparent alias retains a terminal newtype's member namespace only when
+A transparent alias retains a terminal nominal type's member namespace only when
 every alias edge is a fully saturated positional identity application with the
 same effective binder kinds. For example, after
-`type Wrapped[A] = Box[A];`, `Wrapped.mk_box` denotes the exact constructor
+`type Wrapped[A] = Box[A];`, `Wrapped.mk` denotes the exact constructor
 declared by `Box`; the result remains the `Box[A]` nominal. Partial,
 reordered, structural, cyclic, and missing-target aliases do not expose
 constructor or projector members. The alias head must already be in lexical
@@ -1568,67 +1549,63 @@ an existing expansion.
 
 ### Type declarations
 
-The **`newtype`** keyword declares a **nominally-distinct type** with a single payload, plus an explicit user-named constructor and projector. `newtype` is the Kio' primitive that `labels` (below) is sugar over. Two forms:
+A `type` alias names an existing type. A nominal entry introduces a distinct
+type identity around one payload, with the fixed constructor `mk` and
+projector `get` as members of that type:
 
 ```kio
-newtype Name : Payload {                              // nullary
-  pub constructor name;
-  pub projector name;
-};
-
-newtype Name[A][B] : Payload[A][ B] {              // parametric
-  pub constructor name;
-  pub projector name;
-};
+pub type { Celsius: F64; }
+type { Box[A]: A; }
 ```
 
-A top-level `newtype` declaration ends at `}` and accepts one redundant suffix
-semicolon. Its `constructor` and `projector` items are both required and form
-an **unordered set** — either may be written first. Semicolons separate the
-members; leading and trailing runs are accepted. `kio fmt` emits
-constructor-then-projector with one separator between them and no outer suffix
-(see [`style.md`](style.md#semicolon-clause-blocks)). In a recursive group,
-the group's separator follows a non-final declaration instead. The outer
-declaration and each inner item carry independent visibility: omitted is
-private, leading `pub` is exported. The name follows the type-name rule (an
-optional single underscore before the uppercase initial; see
-[Naming conventions](#naming-conventions)); constructor and projector names
-follow ordinary value-name rules.
+`Celsius.mk : F64 -> Celsius` constructs the nominal value, and `Celsius.get :
+Celsius -> F64` projects its payload. These members are not free module values;
+importing the type makes its accessible members reachable through that type.
+Each nominal entry is distinct from its payload and every other nominal entry.
+Crossing that boundary requires its constructor or projector: there is no
+implicit unfolding or structural coercion to the payload.
 
-Inside the block, `constructor` and `projector` are **contextual keywords** recognized only at the block's item positions; outside a `newtype` block they are ordinary identifiers. Each entry names a function added as a **member of the declared type**, not as a free top-level value in the module. Members are reached by a dotted path on the type:
+An omitted entry body gives both members the entry's visibility. A written body
+must contain both `mk` and `get`; each unmarked member is private and each may
+independently carry `pub` or `pub(path)`. The effective visibility is the
+intersection with the nominal type's visibility. For example,
+`pub type { Token: I32 { mk; pub get; }; }` exposes projection but not
+construction. See [Visibility](#module-system).
 
-- The constructor, reached as `Name.c[T](payload) -> Name[T]`, wraps a payload.
-- The projector, reached as `Name.p(..., value) -> Payload`, unwraps it.
-
-Example:
+A surface declaration can introduce several entries in one anonymous group or
+name a product or sum composed from groups and existing types:
 
 ```kio
-pub newtype Celsius : F64 {
-  pub constructor mk_celsius;
-  pub projector to_f64;
-};
+type { Name: String; Age: I32; }
+type Message = { Text: String; } | { Code: I32; Fatal: .; };
+type Audit = Text & { Timestamp: I32; };
+type Boxed[A] = { Box[A]: A; };
 ```
 
-This introduces an exported type `Celsius` with two exported members: a
-constructor `Celsius.mk_celsius : F64 -> Celsius`, and a projector
-`Celsius.to_f64 : Celsius -> F64`. The member names are not added as free
-top-level values — callers write `Celsius.mk_celsius(42)`, not an unqualified
-`mk_celsius(42)`. `import` brings members into scope together with their type:
-`import temps(Celsius);` brings `Celsius` as a type and keeps
-`Celsius.mk_celsius` reachable through that type name.
+`Message` is a transparent alias for `Text | (Code & Fatal)`; it is not a
+new nominal wrapper. `Audit` combines the existing `Text` with the new
+`Timestamp`. `Boxed[A]` aliases `Box[A]`; the entry declares its own `[A]`
+binder independently of the alias binder. Each entry's binders are local to
+that entry. Payloads
+and ordinary leaves are ordinary types, not nested nominal declarations.
+Kio' admits a single nominal entry per declaration and ordinary aliases; the
+surface conveniences expand to those forms. See [`prime.md`](prime.md).
 
-**`newtype` is a nominal boundary.** Each `newtype` declaration mints a type distinct from its payload and from every other `newtype`. Crossing the boundary always goes through the declared constructor and projector — there is no implicit unfolding, no structural coercion with the payload, and no `into` or `onto` path into or out of a `newtype`.
-
-**Recursive types.** Recursive data scope is always explicit. A self-recursive nominal uses `rec newtype`; the marker puts exactly that declaration's head in scope in its payload:
+**Recursive types.** Recursive data scope is always explicit. A self-recursive nominal uses `rec type`; the marker puts that declaration's contributed heads in scope in its payload:
 
 ```kio
-rec newtype List[A] : . | (A & List[A]) {
-  pub constructor cons;
-  pub projector un_list;
-};
+rec type { List[A]: . | (A & List[A]); }
+
+rec type Tree = { Leaf: I32; } | { Branch: Tree & Tree; };
 ```
 
-The newtype declaration is an iso-recursive boundary by construction. At the value level, crossing it always happens through the declared constructor and projector — there is no implicit unfolding, and a type and its one-step unfolding are **not** the same type until you cross the boundary explicitly.
+A compact recursive declaration creates one atomic scope for all its written
+nominal heads and its named alias head, when present. It does not capture
+unrelated later declarations. Its resulting cyclic components must each cross
+a nominal boundary and satisfy strict positivity; acyclic entries do not join a
+mutual component solely because they share the declaration.
+
+The nominal declaration is an iso-recursive boundary by construction. At the value level, crossing it always happens through the declared constructor and projector — there is no implicit unfolding, and a type and its one-step unfolding are **not** the same type until you cross the boundary explicitly.
 
 Mutual recursion uses one capability-free bare group. Every member head is in scope throughout the braces; each member carries its own visibility and documentation:
 
@@ -1636,26 +1613,23 @@ Mutual recursion uses one capability-free bare group. Every member head is in sc
 rec {
   pub type Tree[A] = Branch[A];
 
-  pub newtype Branch[A] : . | (A & Tree[A] & Tree[A]) {
-    pub constructor branch;
-    pub projector un_branch;
-  };
+  pub type { Branch[A]: . | (A & Tree[A] & Tree[A]); }
 }
 ```
 
-The group must contain at least two unmarked `type`, `newtype`, or `labels` members and denote exactly one genuinely mutual cyclic strongly connected component after label elaboration. Every written member must contribute to that component. An acyclic group, a one-way helper, multiple independent components, a one-member brace group, or an alias-only cycle is rejected; move an acyclic dependency before its consumer instead. Singleton `rec newtype` and `rec labels` declarations are top-level forms, not nested group members.
+The group must contain at least two unmarked type members and denote exactly one genuinely mutual cyclic strongly connected component after declaration lowering. Every written member must contribute to that component. An acyclic group, a one-way helper, multiple independent components, a one-member brace group, or an alias-only cycle is rejected; move an acyclic dependency before its consumer instead. Singleton `rec type` declarations are top-level forms, not nested group members.
 
 Strict positivity is a property of the explicit recursive component. A
-recursive use site is every occurrence in a newtype payload that reaches a
+recursive use site is every occurrence in a nominal payload that reaches a
 nominal member of the component, directly or through its transparent aliases.
 Every such use site must sit in a **strictly-positive position**: the
 **composed variance** from the payload root down to the occurrence must be `+`
 (covariant) or `0` (unused at that position).
 
 Variance composes through every type connective: arrow LHS flips, arrow RHS
-preserves, and `&` / `|` preserve. Entering a parametric `newtype` slot composes
+preserves, and `&` / `|` preserve. Entering a parametric nominal slot composes
 with the slot's variance, computed by mutual fixpoint over the component so
-transitive contravariance through chains of newtypes is caught. Host-type
+transitive contravariance through chains of nominal types is caught. Host-type
 parameter slots are conservatively **invariant**. A recursive occurrence
 through such a slot fails unless an unused (phantom) parameter on its path
 makes the total composed variance `0`.
@@ -1664,7 +1638,7 @@ A higher-kinded type variable has no declared variance for its argument slots.
 Each slot is therefore conservatively invariant when composing recursive
 occurrences through an application headed by that variable. Knowing the kind
 alone does not establish covariance. For example,
-`rec newtype N[*F] : F[N[F]] { constructor make; projector open }` is rejected:
+`rec type { N[*F]: F[N[F]]; }` is rejected:
 the recursive occurrence is an argument of the abstract `F`. A known nominal
 head instead uses its computed parameter variance, and transparent aliases
 preserve that resolved structure.
@@ -1678,33 +1652,28 @@ The marker or group is mandatory exactly when it supplies recursive scope. An om
 
 These scopes are closed by the written declaration boundary. Imports and earlier declarations remain visible, but neither singleton nor group sees an unrelated later declaration. Adding an unrelated module declaration therefore cannot retarget a reference or change an already-valid program; the candidates inside the scope are exactly its written heads. After the closing declaration, all contributed names enter ordinary source-ordered module scope.
 
-Because the iso-recursive boundary is purely a typing property of the `newtype` declaration, a transpiler is free to realize it however the backend dictates — e.g., boxing the payload on size-sensitive backends, or leaving it inline where the backend's layout permits.
+Because the iso-recursive boundary is purely a typing property of the nominal declaration, a transpiler is free to realize it however the backend dictates — e.g., boxing the payload on size-sensitive backends, or leaving it inline where the backend's layout permits.
 
-**Folding over a recursive type.** Kio provides no auto-generated fold for recursive `newtype`s. Ordinary `fn`s cannot be self-recursive; user code that walks a recursive payload either uses an explicit [`rec(loop)` group](#recursive-functions) backed by a host function or calls that function directly.
+**Folding over a recursive type.** Kio provides no auto-generated fold for recursive nominal types. Ordinary `fn`s cannot be self-recursive; user code that walks a recursive payload either uses an explicit [`rec(loop)` group](#recursive-functions) backed by a host function or calls that function directly.
 
 ### Existential type binders
 
-An **existential type binder** is written as `<name>` and appears only as a trailing binder run on a `newtype` declaration's header (or a `labels` entry's header) — there is no standalone existential type expression. The binder run sits as whitespace-separated `<X>` atoms between the universal-parameter list and the `:` introducing the payload. Each binder's scope is the payload type that follows the `:`. **Each binder must occur at least once in the payload** — a binder that never appears in the payload is a phantom existential, information-free and rejected at declaration; the typer reports it in the type-error category.
+An **existential type binder** is written as `<name>` after a nominal entry's
+universal parameters and before the `:` introducing its payload. Its scope is
+the payload type. Each binder must occur at least once in the payload; a
+phantom existential is rejected in the type-error category. There is no
+standalone existential type expression.
 
 ```kio
-newtype Pack[A] <U> : A & U {                       // single existential
-  pub constructor mk_pack;
-  pub projector un_pack;
-};
-
-newtype Box[A] <L> <R> : L & R & A { … };           // multiple existentials
-
-newtype Pack_unit <U> : (U -> .) & U { … };        // existentials only, no universals
-
-labels {
-  dproduct[A] <L> <R> : L & R & A,                    // existentials on A labels entry
-  dnewtype[A] <U> : A & U,
-};
+type { Pack[A] <U>: A & U; }
+type { Box[A] <L> <R>: L & R & A; }
+type { Pack_unit <U>: (U -> .) & U; }
 ```
 
-The newtype's nominal arity stays at the universals' length: `Pack[A] <U>` is `Pack[A]` from any reference site, regardless of whether the header declares existential binders.
-
-**Construction inference.** At a constructor call, including label construction (`{foo = x}` / `Foo.mk(x)`), the elaborator picks the existentials from the concrete argument types — they behave like additional universal binders that the typer infers from the payload's structure, the same way Kio infers any reachable type-parameter from value-arg types. The result type carries only the universals: `Pack[A] <U> : A & U` constructed at `(I32 & String)` produces `Pack[I32]`. Two argument positions that reference the same existential must agree on its concrete type.
+The nominal arity counts only universals: `Pack[A] <U>` is referenced as
+`Pack[A]`. Construction infers existential arguments from the payload;
+repeated occurrences must agree. Constructing `Pack` from `I32 & String`
+produces `Pack[I32]`.
 
 **Existential-opening `let` sugar.** The block-statement form
 
@@ -1719,44 +1688,33 @@ is parser-level surface sugar for
 e[_](.[U_1]…[U_n](x) { rest })
 ```
 
-— the RHS `e` is applied to a continuation that opens the existential. `e` must evaluate to the curried CPS function returned by an existential-bearing newtype's projector (see the **Projection through a newtype** paragraph below). The leading `_` lets the typer infer the result type `R` from the continuation's body. The witnesses `<U_1>, …, <U_n>` are opaque inside the rest of the block (the System F binder discipline enforces the escape check); the value binder `x` carries the projector's payload type with each `<U_i>` substituted in. The sugar is surface-only — Kio' programs spell out the CPS call directly.
+— the RHS `e` is applied to a continuation that opens the existential. `e` must evaluate to the curried CPS function returned by an existential-bearing nominal's projector (see the **Projection through a nominal type** paragraph below). The leading `_` lets the typer infer the result type `R` from the continuation's body. The witnesses `<U_1>, …, <U_n>` are opaque inside the rest of the block (the System F binder discipline enforces the escape check); the value binder `x` carries the projector's payload type with each `<U_i>` substituted in. The sugar is surface-only — Kio' programs spell out the CPS call directly.
 
 The payload can instead be destructured by a typed parameter pattern, for example `let .(<U> (left: U, right: U)) = e;`. The witnesses scope over the pattern's annotations and the remaining block; projecting the components does not weaken their escape check. Pattern recognition uses the existing parameter as-pattern disambiguation: `(left: _, right: _)` is a pattern, while the untyped opening `(left, right)` is not admitted. Nested patterns and wildcard components follow the ordinary parameter-pattern rules. This is equivalent to opening into a named payload and then destructuring that payload with an ordinary rich-pattern let.
 
-**Projection through a newtype.** Existential-bearing newtypes carry a **CPS projector**: the projector scheme is
+**Projection through a nominal type.** Existential-bearing nominal types carry a **CPS projector**: the projector scheme is
 
 ```kio
-N.<projector> : [Universals] N[Universals] -> [R] ([Existentials] payload -> R) -> R
+N.get : [Universals] N[Universals] -> [R] ([Existentials] payload -> R) -> R
 ```
 
-— a curried form whose outer call takes only universals and the newtype value, returning the inner polymorphic CPS function. Instantiating the inner function with `[Result]` and applying `(continuation)` opens the existential: the continuation receives the payload under a System F universal binder that scopes the existential witnesses, so they cannot leak into the result `R`. Most consumers use the [`let .(<U> x) = e;` sugar](#existential-type-binders) at the consumption site; the explicit two-step call is always available for code that needs it. Label-generated newtypes use the member name `get`, so an existential label `foo` is opened through `Foo.get`. Non-existential projectors return the payload directly, with scheme `[Universals] N[Universals] -> payload`.
+— a curried form whose outer call takes only universals and the nominal value, returning the inner polymorphic CPS function. Instantiating the inner function with `[Result]` and applying `(continuation)` opens the existential: the continuation receives the payload under a System F universal binder that scopes the existential witnesses, so they cannot leak into the result `R`. Most consumers use the [`let .(<U> x) = e;` sugar](#existential-type-binders) at the consumption site; the explicit two-step call is always available for code that needs it. Non-existential projectors return the payload directly, with scheme `[Universals] N[Universals] -> payload`.
 
 ### Structural typing
 
-Kio's type system is **structural** throughout, with two deliberate exceptions — at `newtype` boundaries (including `labels`, which is sugar over `newtype`) and at the host boundary. Three consequences follow:
+Kio's type system is **structural** throughout, with two deliberate exceptions — at nominal boundaries and at the host boundary. Three consequences follow:
 
-- **`type` declarations are aliases.** `type A = X;` and `type B = X;` produce the same type; a value of `A` is interchangeable with a value of `B`. A type alias never mints a fresh nominal point distinct from its right-hand side.
-- **`newtype` mints nominal identity.** Each `newtype` introduces a type that is **not** structurally equal to its payload, and distinct from every other `newtype`. `newtype`s are identified by their declaration site, so two modules independently declaring the same name introduce distinct types. `labels` inherits this property through desugaring: generated type `Foo` is distinct from the label's payload type, and distinct from `Bar` for any other label `bar`.
+- **Transparent `type` declarations are aliases.** `type A = X;` and `type B = X;` produce the same type; a value of `A` is interchangeable with a value of `B`. A type alias never mints a fresh nominal point distinct from its right-hand side.
+- **Nominal entries mint identity.** Each entry introduces a type distinct from its payload and from every other nominal entry, identified by its declaration site.
 - **`host type` declarations are opaque.** See the host boundary note below.
 
 An alias body is interpreted in the module that declares it. Once a type reference is qualified to a module identity, type comparison unfolds it only through that module: a caller-local alias with the same leaf cannot reinterpret a callee signature. Thus if module `dep` declares `type Flag = types.Actual`, a caller's unrelated `type Actual = types.Other` has no effect on `dep.Flag`.
 
-The practical consequence: Kio's one-level newtype is either a plain `newtype` (when you want to pick the constructor and projector names explicitly) or a `labels` declaration (the conventional sugar, where the label supplies construction, access, and update syntax while the generated type supplies the type spelling). Writing
+For example, `type Celsius = Float;` makes `Celsius` and `Float` the same
+type. In contrast, `type { Celsius: Float; }` introduces a distinct type;
+`Celsius.mk(x)` and `Celsius.get(value)` cross its boundary.
 
-```kio
-type Celsius = Float;
-```
-
-(where `Float` is a `host type`) makes `Celsius` and `Float` the same type inside the package — callers expecting a `Float` will happily accept a `Celsius`. If you want a distinct type that cannot be confused with `Float`, reach for a label:
-
-```kio
-labels { celsius : Float };
-// `Celsius` is now a distinct type.
-```
-
-`Celsius` is now nominally distinct from `Float`; crossing the boundary requires the construction sugar `{celsius = x}` / `Celsius.mk(x)` or the projector application `Celsius.get(r)` / `r.?{celsius}`.
-
-**The host boundary exception.** `host type` declarations are opaque: the package knows a host type's identity and, for a roleless declaration, its type parameters, but never its structural shape, so a host type is never structurally interchangeable with any package type. A role-bearing host type is always nullary. Opaque here means "not structurally interchangeable," not "nominal at the language level"; inside a single package, every non-host type is either pure-structural (products, sums, type aliases) or nominal via `newtype` (including the `labels` sugar).
+**The host boundary exception.** `host type` declarations are opaque: the package knows a host type's identity and, for a roleless declaration, its type parameters, but never its structural shape, so a host type is never structurally interchangeable with any package type. A role-bearing host type is always nullary. Opaque here means "not structurally interchangeable," not "nominal at the language level"; inside a single package, every non-host type is either pure-structural (products, sums, type aliases) or introduced by a nominal entry.
 
 ### Blocks and local bindings
 
@@ -1791,11 +1749,10 @@ Statements are either:
 - A **simple `let` binding** — `let name = expr;` or `let _ = expr;`. The RHS synthesizes its type; a named local retains that type, including a synthesized polytype, and `_` deliberately discards the result.
 - A **rich-pattern `let` binding** — `let .(PATTERN) = expr;`. Typed unary `let .(name: Type) = expr;`, tuple `let .(x, y) = expr;`, and as-pattern `let .(whole: (x: A, y: B)) = expr;` forms use the parameter-pattern grammar (see [Parameter patterns](#parameter-patterns)). A concrete pattern supplies the RHS's expected type. An untyped or partially annotated pattern leaves the RHS in synthesis mode; concrete leaves are checked afterward, without partial product unification or let-generalization. The as-pattern binds the whole value alongside its components. A unary name-only pattern formats as an ordinary simple let.
 - A **numbered binding** — `let .stem. = expr;`, with its unannotated slots determined by the highest owned numbered reference in the remaining block (see [Numbered bindings](#numbered-bindings)).
-- A **row-let binding** — `let .({foo, bar}) = expr;` or `let .({foo as local}) = expr;`. It evaluates the RHS once and names the payloads of visible label slots for the continuation. Shorthand binds each label's last path segment; `as` changes the local name while preserving the selected label.
 - An **existential-opening binding** — `let .(<U> x) = expr;`, as specified in [Existential type binders](#existential-type-binders).
 - An **expression statement** — a non-final expression clause. It must have type `.`; deliberately discarding any other type requires `let _ = expr;`. A final expression remains the block's result even when followed by `;`.
 
-`let` is contextual at statement start: a following name or wildcard starts a simple binding, `.` followed by `(` starts a rich binding, and `.stem.` starts a numbered binding. Rich patterns are always parenthesized, including rows and existential openings; numbered stems use adjacent dots without parentheses. There is no keyword-free binding form. A following `(` without the dot instead leaves `let` as an ordinary value name, so `let(f)` is a call; `let(f) <- x` is an ordinary expression when `<-` is declared as an operator. Qualified `let.x` references retain their ordinary meaning.
+`let` is contextual at statement start: a following name or wildcard starts a simple binding, `.` followed by `(` starts a rich binding, and `.stem.` starts a numbered binding. Rich patterns are always parenthesized, including existential openings; numbered stems use adjacent dots without parentheses. There is no keyword-free binding form. A following `(` without the dot instead leaves `let` as an ordinary value name, so `let(f)` is a call; `let(f) <- x` is an ordinary expression when `<-` is declared as an operator. Qualified `let.x` references retain their ordinary meaning.
 
 A block that ends in a statement (no trailing expression) is a compile-time error. A trailing semicolon is accepted only after a real final expression.
 
@@ -1925,7 +1882,7 @@ rec(loop) {
 The braces group mutually recursive bodies; they do not introduce a visibility
 scope. Every member produces an ordinary module function with the member's
 visibility, exactly like the independently visible constructor and projector
-members of a `newtype`: no modifier is module-private, `pub(path)` is scoped to
+members of a nominal declaration: no modifier is module-private, `pub(path)` is scoped to
 that module subtree, and bare `pub` is public. A later declaration in the same
 module can therefore call any member as an ordinary function. The member names
 also occupy the ordinary module namespace, so conflicts with another top-level
@@ -1952,8 +1909,8 @@ behavior through their ordinary expanded code when the enclosing call is in
 tail position. This follows from structural use of those bodies, never a
 library name or descriptor: duplicating, discarding, delaying, or
 postprocessing a block does not grant tail permission. The condition of
-`if`, the scrutinee of `match`, ordinary function arguments, tuple/label
-fields, and other subexpressions are non-tail positions and require
+`if`, the scrutinee of `match`, ordinary function arguments, tuple
+components, and other subexpressions are non-tail positions and require
 `recur(cont)`. The `cont` annotation is rejected in tail position so the source
 states the intended lowering precisely.
 
@@ -1996,7 +1953,7 @@ pub rec(loop) fn walk[A](n: I32, marker: A) -> I32 {
 
 If the leading type arguments are omitted, the call uses the current member instantiation and `recur(poly)` is rejected as redundant. If the type arguments differ from the current member instantiation, `recur(poly)` is required. The number and order of written type arguments must match the callee member's type-parameter list. Mutual-recursion members share the same type-parameter list and return type shape, so every member can return through the one loop result type; individual `recur(poly)` calls can still choose a different instantiation for the next state. The lowering packages each member's value parameters in an existential state packet, so `rec(loop)` type parameters must be kind `*`.
 
-The form is surface-only. The desugar pass replaces a group with private state-packet `newtype`s, a loop-step lambda, and one ordinary wrapper function per member, preserving each member's visibility. Tail recursive calls construct the next state packet and return the left arm of `S | R`; each non-recursive tail result returns the right arm. A group that contains `recur(cont)` uses continuation-carrying state instead: each state packet also carries the rest of the computation as a function from the callee's result to the loop step result, so a non-tail recursive call becomes "enqueue the callee state with an updated continuation" rather than a Kio' fixpoint. A continuation-bearing packet that refers back to itself is emitted as `rec newtype`; packets that refer to one another are emitted as one minimal Kio' `rec { ... }` type group. No recursive-function group or recursive-call marker reaches Kio'.
+The form is surface-only. The desugar pass replaces a group with private nominal state packets, a loop-step lambda, and one ordinary wrapper function per member, preserving each member's visibility. Tail recursive calls construct the next state packet and return the left arm of `S | R`; each non-recursive tail result returns the right arm. A group that contains `recur(cont)` uses continuation-carrying state instead: each state packet also carries the rest of the computation as a function from the callee's result to the loop step result, so a non-tail recursive call becomes "enqueue the callee state with an updated continuation" rather than a Kio' fixpoint. A continuation-bearing packet that refers back to itself is emitted as `rec type`; packets that refer to one another are emitted as one minimal Kio' `rec { ... }` type group. No recursive-function group or recursive-call marker reaches Kio'.
 
 The loop boundary is semantic, not just an implementation shortcut:
 
@@ -2281,8 +2238,8 @@ import macros/control(Bool, macro if);
 if(cond) { a } else { b }
 ```
 
-Its public type is `[Result] Bool -> (. -> Result) ->
-(. -> Result) -> Result`, with an unlabelled `thunk` descriptor followed by
+Its public type is `[Result] (Bool & (. -> Result) &
+(. -> Result)) -> Result`, with an unlabelled `thunk` descriptor followed by
 `trailing thunk else;`. Its implementation constructs ordinary
 `__if_then_else__` glue from the checked condition and the two projected
 thunks. The library declares its own concrete `Bool` host type with
@@ -2292,8 +2249,8 @@ capabilities. The generated intrinsic is explicitly specialized at this
 concrete Boolean type; the library's name grants no compiler privilege. See
 [`prime.md`](prime.md#branching-intrinsic).
 
-Both arms are blocks, and their results jointly constrain the one result type
-of the whole expression. In check mode, the surrounding expected type checks
+In the block spelling, each arm projects a lambda, and their results jointly
+constrain the one result type of the whole expression. In check mode, the surrounding expected type checks
 both arms directly. Concrete arm contexts can determine unannotated scalar
 literal carriers through ordinary local inference. In synth mode, either arm whose result is independently
 determined may establish or refine the common result; swapping the arms does
@@ -2305,7 +2262,11 @@ implicit sum from incompatible arms; a branch that contributes to a sum
 constructs it explicitly, normally with `widen_sum`.
 
 Result inference does not flow backward into `cond`. The library evaluates the
-condition once and only the selected arm. Its public type relates exactly the
+combined input product once, in order: the condition, then the two expressions
+that produce thunks. It invokes only the selected thunk body. In the block
+spelling those expressions are the projected lambdas, so only the selected
+block body runs. In a direct call, both thunk-producing expressions run even
+though only the selected thunk body runs. Its public type relates exactly the
 two written arm results and consults no ambient declaration pool, so adding
 an unrelated module-body declaration cannot change its result or evaluation.
 The same behavior under a renamed import follows from that declaration and
@@ -2314,7 +2275,7 @@ behavior by their spelling.
 
 ### Pattern matching
 
-*Surface only; desugars to Kio'.* Pattern matching is the `match` dispatch macro, imported like any other macro (see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient)). It is a macro because compile-time code synthesizes branch-selection glue at the call site; it is not a source-to-target coercion. The Kio' form `let`-binds each clause as a `fn`, discriminates the scrutinee's sums with nested `__either__` calls, and projects products with `__fst__` / `__snd__` / projector-member calls — see § Desugaring below.
+*Surface only; desugars to Kio'.* Pattern matching is the `match` dispatch macro, imported like any other macro (see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient)). It is a macro because compile-time code synthesizes branch-selection glue at the call site; it is not a source-to-target coercion. The Kio' form `let`-binds the combined scrutinee and clauses once, projects them, discriminates the scrutinee's sums with nested `__either__` calls, and projects products with `__fst__` / `__snd__` / projector-member calls — see § Desugaring below.
 
 ```kio
 import macros/match(macro match);
@@ -2333,7 +2294,8 @@ block entries. One entry preserves its value unchanged, so a preassembled
 product of clauses remains expressible as `match(value) { clauses }`.
 Ordinary tuple grouping inside an entry retains its ordinary meaning. The
 block-call rules require the clause block, including in a UFCS spelling such
-as `value.>match { clauses }`; there is no blockless alternate.
+as `value.>match { clauses }`. The ordinary direct call `match(value, clauses)`
+supplies the same product.
 
 Whatever expression a clause is, it must independently determine the
 **parameter type** of its function. That parameter type is the **dispatch
@@ -2347,9 +2309,9 @@ Either way, `match` reads that parameter component to decide dispatch. This
 independence applies only to the parameter component; the clause result follows
 the common-result rule below.
 
-For example, suppose `labels { ok[A]: A, err[A]: A };` has introduced `Ok`
+For example, suppose `type { Ok[A]: A; Err[A]: A; }` has introduced `Ok`
 and `Err`, `r` has type `Ok[I32] | Err[Str]`, and `handler_ok: I32 -> R` and
-`handler_err: Str -> R` are in scope. Each clause receives the labeled value
+`handler_err: Str -> R` are in scope. Each clause receives the nominal value
 and projects its payload before calling the handler:
 
 ```kio
@@ -2407,7 +2369,7 @@ available (see [Anonymous functions](#anonymous-functions)).
 
 **Reachability.** Every clause must cover at least one DNF branch that earlier clauses do not cover. A clause that adds no new coverage is unreachable — a compile-time error in the same macro-error category (exit code `15`). A clause that covers nothing at all is also a `15` macro error — including a slot whose type DNF-normalizes to zero branches (a `!`-typed slot covers no branch). First-match ordering means an earlier clause can eclipse a later one. A slot type **wider** than the branches it ends up covering is *not* an error: a sum slot whose later arms were already taken by narrower sibling clauses is fine — the slot type is an upper bound, not a coverage obligation.
 
-**Desugaring.** `match` lowers to ordinary Kio': it `let`-binds each clause once (evaluating the clause expressions in source order, before any branch is taken), builds a decision tree of nested `__either__` calls over the scrutinee's DNF branches, and at each leaf calls the selected clause function with its argument reconstructed by `let` / `__either__` / projection-intrinsic glue. The reconstruction is duplication-free — a scrutinee factor is never threaded through two slot positions of one clause leaf, and the clause's return value is evaluated once. The elaboration is recorded in the side channel and substituted at the Lowered → Prime boundary; no `match` form survives into Kio'. The per-leaf coercion algorithm is worked through in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/macros.md`](../docs/poc/macros.md).
+**Desugaring.** `match` lowers to ordinary Kio': it `let`-binds the combined scrutinee and clauses once, evaluating the scrutinee and then clause expressions in source order before any branch is taken; it projects the bound values, builds a decision tree of nested `__either__` calls over the scrutinee's DNF branches, and at each leaf calls the selected clause function with its argument reconstructed by `let` / `__either__` / projection-intrinsic glue. The reconstruction is duplication-free — a scrutinee factor is never threaded through two slot positions of one clause leaf, and the clause's return value is evaluated once. The elaboration is recorded in the side channel and substituted at the Lowered → Prime boundary; no `match` form survives into Kio'. The per-leaf coercion algorithm is worked through in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/macros.md`](../docs/poc/macros.md).
 
 **Type flow.** `match` is a macro position (see [Type system](#type-system)
 for the bidirectional-flow mechanism). The scrutinee synthesizes bottom-up, and
@@ -2520,11 +2482,11 @@ fn <rule-name>[T1](…)[TN](// binders, each with optional kind annotation
                …, hk: Hk) -> R               // R is the result type the rule produces
 ```
 
-**Every logical value slot is a precondition.** The imported `derive` implementation treats each `Hi` as a sub-goal to discharge from the same candidate set. A base instance is the zero-precondition case (`. -> R`) and can explicitly produce any result type `R`, including `.`, a host type, a product, a sum, or an opaque `newtype`. Kio canonicalizes both `fn base() -> R` and `fn base(_unit: .) -> R` to that same logical zero-slot function shape; neither requires a candidate that derives `.`. A Unit parameter within a multi-slot value group remains an ordinary precondition. To admit a rule that takes an ordinary parameter that is *not* a precondition (a literal, a flag), partially apply it inside an inline function literal in the candidate argument. Binders may carry any kind (`[A]` is `*`, `[*F]` is `*→*`, `[**G]` is `*→*→*`); the implementation respects the annotation when unifying.
+**The semantic domain determines preconditions.** The imported `derive` implementation takes no preconditions from a Unit domain. For every other domain, it walks the right product spine: each left component is one sub-goal, and traversal continues through the right component. A non-product is one sub-goal. Declaration parameter grouping does not affect this rule: split parameters, one product parameter, and a grouped final product tail have the same prerequisites when their semantic domains agree. A base instance is the zero-precondition case (`. -> R`) and can explicitly produce any result type `R`, including `.`, a host type, a product, a sum, or an opaque nominal type. Kio canonicalizes both `fn base() -> R` and `fn base(_unit: .) -> R` to that same logical zero-slot function shape; neither requires a candidate that derives `.`. A Unit parameter within a multi-slot value group remains an ordinary precondition. To admit a rule that takes an ordinary parameter that is *not* a precondition (a literal, a flag), partially apply it inside an inline function literal in the candidate argument. Binders may carry any kind (`[A]` is `*`, `[*F]` is `*→*`, `[**G]` is `*→*→*`); the implementation respects the annotation when unifying.
 
 A singleton candidate that is not of function type, or an element of a multi-candidate product that is not of function type, is a type error pointing at the offending position (`derive_non_function_candidate`).
 
-**Resolution.** Given the goal `T` and the candidate set, the `derive` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's value parameters as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports a macro error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The [HKT case study](../docs/poc/hkt.md#deriving-an-instance-with-derive) shows dictionary derivation. The [macro case study](../docs/poc/macros.md#derive--instance-deriving) explains the resolution algorithm, exactly-one-coherence rule, termination conditions, and recursive and polymorphic compositions of wrapper rules.
+**Resolution.** Given the goal `T` and the candidate set, the `derive` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's domain prerequisites as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports a macro error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The [HKT case study](../docs/poc/hkt.md#deriving-an-instance-with-derive) shows dictionary derivation. The [macro case study](../docs/poc/macros.md#derive--instance-deriving) explains the resolution algorithm, exactly-one-coherence rule, termination conditions, and recursive and polymorphic compositions of wrapper rules.
 
 The goal may carry **unbound binders inherited from the enclosing `fn`** (a type-constructor-generic combinator with a `derive` site whose target mentions the function's own `[*F]`). The implementation's structural unifier treats those as logic variables; the generated derivation is then polymorphic in them and the enclosing function compiles to a single type-constructor-generic body.
 
@@ -2532,7 +2494,7 @@ The goal may carry **unbound binders inherited from the enclosing `fn`** (a type
 
 **Elaboration.** The imported macro implementation executes at compile time and returns a checked nested call tree of the chosen candidates applied to their bound type arguments and recursively generated precondition values — exactly what the user would write by hand. The front-end records that checked term in the same boundary-local side channel used by every macro call; the substitute pass swaps the `derive` call for the recorded tree at the Lowered → Prime boundary, and standalone Prime validation checks the assembled package. No `derive` form or compile-time machinery survives into Kio': what remains is an ordinary call tree of the caller-supplied rule functions, executed at runtime like equivalent hand-written code. The rules themselves need no `pure` marker because they are runtime values placed in that tree; the macro's own implementation and helpers obey the ordinary compile-time purity contract.
 
-`derive` imposes no backend constraint — it synthesizes an ordinary call tree, so a derived instance emits exactly as the equivalent hand-written composition would. This holds for the transformer-stack goal too: a transformer type constructor (`State_t`, `Maybe_t` — a newtype with a kind-`*→*` parameter) in a kind-`*→*` position emits on every backend, including `rust`, where it rides the erased `Rc<dyn Any>` body like every other value (see [`specs/backends/rust.md` § Higher-kinded types](backends/rust.md#higher-kinded-types)).
+`derive` imposes no backend constraint — it synthesizes an ordinary call tree, so a derived instance emits exactly as the equivalent hand-written composition would. This holds for the transformer-stack goal too: a transformer type constructor (`State_t`, `Maybe_t` — a nominal type with a kind-`*→*` parameter) in a kind-`*→*` position emits on every backend, including `rust`, where it rides the erased `Rc<dyn Any>` body like every other value (see [`specs/backends/rust.md` § Higher-kinded types](backends/rust.md#higher-kinded-types)).
 
 ### Scoped expressions
 
@@ -2572,8 +2534,8 @@ pub type Bind[*F] = [A][B] (F[A] & (A -> F[B])) -> F[B];
 pub type Sequence[*F][R] = Bind[F] -> F[R];
 ```
 
-Its public type is `[Receiver][Result] Receiver -> (Receiver -> Result) -> Result`,
-with one `trailing sequence;` descriptor. Descriptor validation requires the
+Its public type is `[Receiver][Result] (Receiver & (Receiver -> Result)) -> Result`,
+with one `trailing sequence;` descriptor. Sequence projection requires the
 receiver's structural type to be `[A][B] (M[A] & (A -> M[B])) -> M[B]` for
 one fixed carrier `M`, and the block's final result to have that same carrier.
 `A` and `B` remain independently polymorphic at each bind call. `M` may be a
@@ -2674,11 +2636,11 @@ no additional recursive tail positions.
 ```kio
 import macros/sequence(macro do);
 
-newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
+type { Box[A]: A; }
 
-fn box_pure[A](x: A) -> Box[A] { Box.mk_box[A](x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk[A](x) }
 
-fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box[A](m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.get[A](m)) }
 
 fn run() -> Box[String] {
   do(box_bind) {
@@ -2755,18 +2717,21 @@ result instead. Existing operator atom boundaries also apply. An
 operand-ending prefix such as `! _` needs `f.<(!x)`; an operator ending in a
 fixed word already completes an atom.
 
-A splice evaluates the callee once and its selected value arguments once in
-the same order as the equivalent prefix call. Prepending evaluates the
-receiver before the group's written values; appending evaluates it after
-them. For a macro this equivalence concerns public argument planning and
-quotation, without evaluating quoted operands as runtime values.
+A splice has the same call plan and runtime behavior as its equivalent prefix
+call. For an ordinary function, the callee and selected value arguments are
+evaluated once: prepending places the receiver before the group's written
+values, while appending places it after them. A macro receives quoted inputs;
+its generated code determines whether and how those inputs run. The equivalent
+prefix macro call has the same behavior.
 
 **Block calls.** A complete trailing-block macro call inserts into its prefix
 stages, before all projected blocks. Forward forms select its first prefix
 group; reverse forms select its last. With no written prefix, insertion
-creates a receiver-only prefix stage. No splice inserts into a block or
-combines two prefix groups. The macro's complete public invocation is admitted
-before its implementation runs.
+creates a receiver-only prefix group, which combines with the projected blocks.
+No splice inserts into a block or
+combines two prefix groups. The written call is admitted as a connected public
+plan before its implementation runs; ordinary residualization still applies
+after all declared blocks are supplied.
 
 **Bidirectional flow through UFCS chains.** A splice step's expected return type — set by the surrounding context (e.g., the next chain step's inserted-argument position, or a `let` binding's expected type when one is present) — propagates down to the step being checked. This is the same expected-type-at-the-position mechanism the typer uses for macro targets and `fn` parameter slots; UFCS chains pick it up through the rewritten call shape, so elided macro targets in chained positions (e.g. `r.>onto.>callee` with `onto`'s target unspoken) get filled from the next callee's required argument type.
 
@@ -2778,7 +2743,7 @@ before its implementation runs.
 - "callee `<path>` is not callable: its type is not a function" — the resolved value isn't a function.
 - "callee `<path>`'s type parameter `[A]` could not be resolved" — the receiver and arguments don't pin every type parameter.
 
-**No projector fallback.** A name `f` that isn't a free value in scope cannot be reached by UFCS — even when it's a member of a newtype `F` that is in scope. To call a projector-shaped member receiver-style, bring it in as a free value (`import m(f);`) or use the newtype-member spelling (`F.f(r)`).
+**No projector fallback.** A name `f` that isn't a free value in scope cannot be reached by UFCS — even when it's a member of a nominal type `F` that is in scope. To call a projector-shaped member receiver-style, bring it in as a free value (`import m(f);`) or use the nominal-member spelling (`F.get(r)`).
 
 **Worked examples.**
 
@@ -2795,11 +2760,11 @@ print(msg)
 Compound receiver — narrow with `onto`, then chain:
 
 ```kio
-newtype Tag : . { pub constructor mk_tag; pub projector un_tag; };
+type { Tag: .; }
 
 fn shout(s: String) -> String { … }
 
-let pair = (Tag.mk_tag(()), "hello\n");   // pair : Tag & String
+let pair = (Tag.mk(()), "hello\n");   // pair : Tag & String
 pair.>onto.>shout.>print                  // pair narrowed to String, then chained;
                                           // onto's target is filled from the next
                                           // callee's first-param via bidirectional flow.
@@ -2828,9 +2793,8 @@ m.f(x).<<r              // = m.f(r, x)
 ```
 
 **Lowering.** A block-call splice arranges the receiver in its first or last
-prefix group before block projection. Projection supplies the descriptor-selected
-blocks as successive value applications and produces the ordinary macro call checked against its
-resolved public type. Other UFCS forms survive through the resolved and
+prefix group before block projection. Projection combines the final prefix value and descriptor-selected block
+values into one product application checked against the resolved public type. Other UFCS forms survive through the resolved and
 lowered typing phase: the typer plans value-slot insertion from the actual
 call type and records a normalized prefix call or user-macro expansion. The
 substitute pass swaps these recorded replacements in at the Lowered → Prime
@@ -2875,11 +2839,11 @@ before projecting the blocks:
 | `f(a) { B }.<r` | `f(a, r) { B }` |
 
 Here `f` denotes an explicitly selected macro with the appropriate public
-prefix and block slots; `B` denotes its block contents. These equivalences
-describe argument planning and quotation, not eager evaluation of quoted code.
+prefix and block values; `B` denotes its block contents. Each equivalence
+preserves both the public call plan and runtime behavior of the generated code.
 Insertion-last does not put the receiver after the projected block arguments.
-The resulting prefix and projected arguments use the ordinary public-type
-call planner; descriptors do not introduce a second argument-packing rule.
+The final prefix value and projected block values form one right-associated
+product for the ordinary public-type call planner.
 
 Prefixes use ordinary argument-list parentheses as in direct calls: `r.>f(a) { B }` and
 `f(a) { B }.<r` are admitted. Reverse splices follow the complete chain,
@@ -2929,12 +2893,12 @@ fn sum_three(x: Int, y: Int, z: Int) -> Int {
 The `impl` field uses the same lexical value-path grammar as every fold
 callable and macro implementation. It may name a local or selectively
 imported function, select through an explicit module alias, or select a
-constructor/projector on a local or imported newtype, directly or through an
+constructor/projector on a local or imported nominal type, directly or through an
 identity alias. It is not an arbitrary expression and does not admit a
 slash-qualified package FQN.
 
 These callable fields use ordinary path-expression source-order classes. A
-same-module ordinary or host `fn`, `rec` member, newtype head, or identity-alias
+same-module ordinary or host `fn`, `rec` member, nominal head, or identity-alias
 head must precede the `op` or `varop`. Self-qualification and selective self-imports
 do not bypass the declaration-order rule.
 
@@ -3101,7 +3065,7 @@ identity, or element-specific argument adaptation.
 
 Every `step`, base/seed, and finalizer is a lexical value path: a bare local or
 selectively imported value, a dotted path through an explicit module alias, or
-an ordinary newtype member through a local/imported type or identity alias.
+an ordinary nominal member through a local/imported type or identity alias.
 Calls, lambdas, and slash-qualified package FQNs are not callable fields.
 As with a fixed operator's `impl` field, parentheses may group each complete
 reference repeatedly without changing its meaning. Required step and base/seed
@@ -3149,14 +3113,14 @@ queries retain the complete grammar rather than displaying a shortened key.
 function does not import an operator bound to it. An unmarked fixed or variadic
 operator is local; `pub` and `pub(path)` export it under the ordinary visibility
 rules. Every directly named implementation, step, base/seed, and finalizer must
-have visibility at least as wide as the operator. For a newtype-member path,
+have visibility at least as wide as the operator. For a nominal-member path,
 both the type and selected member meet that floor. An identity-alias-qualified
 member is the terminal member for this rule: the written alias and terminal
 member each cover the referring operator's visibility.
 
 {:#operator-pattern-imports}
 **Operator imports.** An explicitly tagged selection imports an exported
-operator alongside ordinary names and label selectors:
+operator alongside ordinary names:
 
 ```kio
 import syntax(Mytype, my_function, op _ + __, varop [* *]);
@@ -3336,10 +3300,19 @@ equiv <name>[A](x: A) {
 ```
 
 - **Name is mandatory.** `equiv { ... }` without a name is a parse error. Names are scoped to the module like `fn` names but never resolve as values — they exist only for diagnostic identification.
-- **Parameters reuse `fn`'s grammar.** Each square-bracket group binds one type parameter; each parenthesized group binds value parameters, all annotated. The groups are optional (a name with no parameter groups declares a zero-parameter `equiv`). Parameters bind in the body's scope; each arm sees the same binding set. Parametric equivs run: type parameters are erased at evaluation time; each value parameter is bound, once per equiv block, to a fresh opaque atom shared across every arm, so equal references on different sides compare equal. The arms are claimed equal *for every instantiation* of the parameters — the runner discharges the universal quantification by reasoning about the bound names symbolically.
+- **Parameters reuse `fn`'s grammar.** Each square-bracket group binds one type parameter; each parenthesized group binds value parameters, all annotated. The groups are optional (a name with no parameter groups declares a zero-parameter `equiv`). Parameters bind in the body's scope; each arm sees the same binding set. Parametric equivs are claims for every instantiation of their parameters. The comparison rules are described below.
 - **At least two arms.** `N=0` and `N=1` blocks are parse errors — there is nothing to compare.
 - **No visibility.** `pub equiv …` is a parse error. Equivs are not part of any public API surface.
 - **Arm syntax.** Arms are semicolon-separated expressions. Repeated semicolons are accepted and ignored; a final semicolon after the final arm is accepted and ignored. Comma-separated arms are rejected with a migration diagnostic. An arm that needs local statements uses the imported `scope { ... }` macro.
+
+During discharge, type parameters represent arbitrary types shared across the
+arms. Each value parameter is a fresh opaque atom shared across the arms. A
+type application to an opaque polymorphic value retains its type argument for
+comparison; distinct type arguments do not become equal merely through erasure.
+Known type abstractions reduce by substitution, and known type-insensitive
+primitives consume type stages under their own rules. Generic function
+comparison uses an arbitrary type, not a concrete choice or a particular
+caller's rigid type variable. See [the formal comparison](formal/equiv.md#4-equivalence-relation).
 
 **Typing.** Each arm is typechecked in the parameter scope; all arms must synthesize the same type under ordinary definitional equality. A complete polymorphic function scheme is a value type here just as it is in every other value position; incomplete schemes remain ill-kinded as values. A type mismatch is a regular type error, not a test failure.
 

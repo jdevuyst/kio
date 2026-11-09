@@ -1087,7 +1087,7 @@ fn payload_hkt_param_indices(nt: &Newtype<Routed>) -> std::collections::HashSet<
 }
 /// Qualify every type reference inside a module fn body to its
 /// cross-module-stable contract form (a bare `Subst` referencing this
-/// module's `newtype Subst` becomes the module-qualified key), so the
+/// module's nominal type `Subst` becomes the module-qualified key), so the
 /// emitter's nominal-identity machinery resolves same-leaf names to the
 /// declaration in scope. Types cross the FFI via their normal shapes;
 /// there is no per-module type adaptation (the old `bridge` adaptation
@@ -1166,9 +1166,6 @@ where
         | Expr::Call { .. }
         | Expr::Tuple { .. }
         | Expr::FnPlaceholder { .. }
-        | Expr::LabelValue { .. }
-        | Expr::RowLet { .. }
-        | Expr::Elaborator { .. }
         | Expr::RecOrder { .. }
         | Expr::RecQuote { .. }
         | Expr::UserMacro { .. }
@@ -3298,10 +3295,9 @@ impl BodyShapeRegistry {
                 .host_param_requirement_impl(param, visited)
                 .max(self.host_param_requirement_impl(ret, visited)),
             Type::Forall { body, .. } => self.host_param_requirement_impl(body, visited),
-            Type::Unit { .. }
-            | Type::Bottom { .. }
-            | Type::Infer { .. }
-            | Type::LabelSugar { .. } => RustHostParamRequirement::None,
+            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {
+                RustHostParamRequirement::None
+            }
             Type::Goal { ext, .. } => match *ext {},
         }
     }
@@ -3901,9 +3897,6 @@ impl BodyShapeRegistry {
             Type::Infer { .. } => {
                 unreachable!("Rust emitter: type inference placeholder reached body registration")
             }
-            Type::LabelSugar { .. } => {
-                unreachable!("Rust emitter: label sugar survived into body registration")
-            }
             Type::Goal { ext, .. } => match *ext {},
         }
     }
@@ -3990,9 +3983,7 @@ impl BodyShapeRegistry {
                 *leaf_idx += 1;
                 Ok(format!("_T{i}"))
             }
-            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                match *ext {}
-            }
+            Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
         }
     }
 
@@ -4305,9 +4296,7 @@ impl BodyShapeRegistry {
                     self.render_use(&substituted, ctx, tparams)
                 }
             }
-            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
-                match *ext {}
-            }
+            Type::Infer { ext, .. } | Type::Goal { ext, .. } => match *ext {},
         }
     }
 
@@ -5426,7 +5415,6 @@ fn render_path_key(ty: &Type<Routed>) -> String {
             format!("<forall {}>", render_path_key(body))
         }
         Type::Infer { .. } => "_".to_owned(),
-        Type::LabelSugar { .. } => "<labelsugar>".to_owned(),
         Type::Goal { ext, .. } => match *ext {},
     }
 }
@@ -5547,7 +5535,6 @@ fn canonical_walk(
             "_FORALL".to_owned() + &format!("_T{i}")
         }
         Type::Infer { .. } => "_".to_owned(),
-        Type::LabelSugar { .. } => "<labelsugar>".to_owned(),
         Type::Goal { ext, .. } => match *ext {},
     }
 }
@@ -7409,16 +7396,13 @@ impl<'a> BodyEmitter<'a> {
             // `Expr::Path` / `Expr::Call` are statically uninhabited at
             // the Routed phase — `route::route_package` classified every
             // such node into a `Low*` variant. The surface-only variants
-            // (`Tuple`, `BlockCall`, `Elaborator`, `UserMacro`,
+            // (`Tuple`, `BlockCall`, `UserMacro`,
             // `Ufcs`, `OpChain`, …) never reach Routed.
             // Discharge each via its `Never`-witness `ext`.
             Expr::Path { ext, .. }
             | Expr::Call { ext, .. }
             | Expr::Tuple { ext, .. }
             | Expr::FnPlaceholder { ext, .. }
-            | Expr::LabelValue { ext, .. }
-            | Expr::RowLet { ext, .. }
-            | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
@@ -11408,7 +11392,7 @@ mod tests {
     fn public_word_casing_has_a_crate_wide_naming_lint_allowance() {
         let pkg = build_package(
             "module word_api; \
-             pub newtype Word_box : . { pub constructor mk_box; pub projector un_box; }; \
+             pub type { Word_box: . { pub mk; pub get; }; }; \
              pub fn round_trip() -> . { () }",
             Some("bridge { word_api; }"),
         );
@@ -11420,7 +11404,7 @@ mod tests {
         ] {
             assert!(krate.lib_rs.contains(name), "{name}:\n{}", krate.lib_rs);
         }
-        for name in ["pub mod wordApi", "pub fn mkBox", "pub fn unBox"] {
+        for name in ["pub mod wordApi", "pub fn mk", "pub fn get"] {
             assert!(
                 krate.shapes_rs.contains(name),
                 "{name}:\n{}",
@@ -11684,8 +11668,8 @@ mod tests {
     fn routed_nominal_identity_is_not_reexpanded_in_rust_contract() {
         let pkg = build_multi_module_package(
             &[
-                "module list/core; pub rec newtype List[A] : . | (A & List[A]) { \
-                 pub constructor mk_list; pub projector un_list; };",
+                "module list/core; pub rec type { List[A]: . | (A & List[A]) { \
+                 pub mk; pub get; }; };",
                 "module model; import list/core as list; \
                  pub type Row = list.List[.]; \
                  pub fn keep(row: Row) -> Row { row }",
@@ -11730,18 +11714,18 @@ mod tests {
     fn recursive_newtype_classification_uses_instantiated_payloads_per_path() {
         let pkg = build_package(
             "module main; \
-             pub newtype Const[A] : . { \
-               pub constructor make_const; pub projector read_const; \
-             }; \
-             pub rec newtype Finite : Const[Finite] { \
-               pub constructor make_finite; pub projector read_finite; \
-             }; \
-             pub newtype Id[A] : A { \
-               pub constructor make_id; pub projector read_id; \
-             }; \
-             pub rec newtype Recursive : Id[.] & Id[Recursive] { \
-               pub constructor make_recursive; pub projector read_recursive; \
-             };",
+             pub type { Const[A]: . { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Finite: Const[Finite] { \
+               pub mk; pub get; \
+             }; }; \
+             pub type { Id[A]: A { \
+               pub mk; pub get; \
+             }; }; \
+             pub rec type { Recursive: Id[.] & Id[Recursive] { \
+               pub mk; pub get; \
+             }; };",
             Some("bridge { main; }"),
         );
         let newtypes = collect_newtypes(&pkg);
@@ -11763,16 +11747,16 @@ mod tests {
     fn public_opaque_newtypes_hide_payload_storage_and_private_payload_types() {
         let pkg = build_package(
             "module api; \
-             newtype Hidden_payload : . { constructor mk_hidden; projector un_hidden; }; \
-             pub newtype Opaque_a : Hidden_payload { constructor mk_opaque_a; projector un_opaque_a; }; \
-             pub newtype Opaque_b : Hidden_payload { constructor mk_opaque_b; projector un_opaque_b; }; \
-             pub newtype Constructor_only[A] : A { pub constructor make_constructor; projector read_constructor; }; \
-             pub newtype Projector_only[A] : A { constructor make_projector; pub projector read_projector; }; \
-             pub newtype Function_box[A] : A -> A { pub constructor make_function; pub projector read_function; }; \
-             pub newtype Existential <U> : U { constructor make_existential; pub projector read_existential; }; \
+             type { Hidden_payload: . { mk; get; }; }; \
+             pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
+             pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
+             pub type { Constructor_only[A]: A { pub mk; get; }; }; \
+             pub type { Projector_only[A]: A { mk; pub get; }; }; \
+             pub type { Function_box[A]: A -> A { pub mk; pub get; }; }; \
+             pub type { Existential <U>: U { mk; pub get; }; }; \
              rec { \
-               pub newtype Outer : Hidden { pub constructor make_outer; pub projector read_outer; }; \
-               pub newtype Hidden : Outer { constructor make_hidden_cycle; projector read_hidden_cycle; }; \
+               pub type { Outer: Hidden { pub mk; pub get; }; }; \
+               pub type { Hidden: Outer { mk; get; }; }; \
              } \
              pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
              pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
@@ -11810,52 +11794,34 @@ mod tests {
             "{}",
             krate.shapes_rs
         );
-        assert!(
-            krate.shapes_rs.contains("pub fn makeConstructor"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            !krate.shapes_rs.contains("pub fn readConstructor"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            !krate.shapes_rs.contains("pub fn makeProjector"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            krate.shapes_rs.contains("pub fn readProjector"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            krate.shapes_rs.contains("pub fn makeFunction"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            krate.shapes_rs.contains("pub fn readFunction"),
-            "{}",
-            krate.shapes_rs
-        );
-        assert!(
-            krate
-                .shapes_rs
-                .contains("pub fn readExistential<__KioPolyType_0: crate::shapes::KioType>"),
-            "{}",
-            krate.shapes_rs
-        );
+        let owner_method = |owner: &str, member: &str| {
+            let path = format!("::nominal::api::{}<", super::rust_public_ident(owner));
+            krate.shapes_rs.split("\n}\n").find(|block| {
+                block
+                    .lines()
+                    .any(|line| line.starts_with("impl<") && line.contains(&path))
+                    && block
+                        .split_once(&path)
+                        .is_some_and(|(_, tail)| tail.contains(&format!("pub fn {member}")))
+            })
+        };
+        assert!(owner_method("Constructor_only", "mk").is_some());
+        assert!(owner_method("Constructor_only", "get").is_none());
+        assert!(owner_method("Projector_only", "mk").is_none());
+        assert!(owner_method("Projector_only", "get").is_some());
+        assert!(owner_method("Function_box", "mk").is_some());
+        assert!(owner_method("Function_box", "get").is_some());
+        assert!(owner_method("Existential", "get").is_some_and(|block| {
+            block.contains("pub fn get<__KioPolyType_0: crate::shapes::KioType>")
+        }));
+        let outer_constructor = owner_method("Outer", "mk").expect("Outer constructor");
+        let outer_projector = owner_method("Outer", "get").expect("Outer projector");
         assert!(
             krate.shapes_rs.contains("pub struct Outer")
                 && krate.shapes_rs.contains("pub struct Hidden")
-                && krate
-                    .shapes_rs
-                    .contains("pub fn makeOuter(arg0: crate::shapes::nominal::api::Hidden")
-                && krate
-                    .shapes_rs
-                    .contains("-> crate::shapes::nominal::api::Hidden")
+                && outer_constructor
+                    .contains("pub fn mk(arg0: crate::shapes::nominal::api::Hidden")
+                && outer_projector.contains("-> crate::shapes::nominal::api::Hidden")
                 && krate.host_rs.contains("shapes::nominal::api::Outer"),
             "shapes:\n{}\nhost:\n{}",
             krate.shapes_rs,
@@ -11866,7 +11832,7 @@ mod tests {
     #[test]
     fn unreferenced_public_opaque_newtype_needs_no_callable_owner() {
         let pkg = build_package(
-            "module api; pub newtype Token : . { constructor make; projector read; };",
+            "module api; pub type { Token: . { mk; get; }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit isolated opaque Rust newtype");
@@ -11878,42 +11844,49 @@ mod tests {
         let pkg = build_package(
             "module api; \
              host type I32 role(i32); \
-             pub newtype Packed_triple : (I32 & I32 & I32) -> I32 { \
-                 pub constructor make_packed_triple; \
-                 pub projector read_packed_triple; \
-             }; \
-             pub newtype Higher_order_parameter : (I32 -> I32) -> I32 { \
-                 pub constructor make_higher_order_parameter; \
-                 pub projector read_higher_order_parameter; \
-             }; \
-             pub newtype Higher_order_return : I32 -> (I32 -> I32) { \
-                 pub constructor make_higher_order_return; \
-                 pub projector read_higher_order_return; \
-             }; \
-             pub newtype Generic_parameter[T] : T -> I32 { \
-                 pub constructor make_generic_parameter; \
-                 pub projector read_generic_parameter; \
-             }; \
-             pub newtype Polymorphic[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { \
-                 pub constructor make_polymorphic; \
-                 pub projector read_polymorphic; \
-             }; \
-             pub rec newtype Recursive_poly : [A] A -> Recursive_poly { \
-                 pub constructor make_recursive_poly; \
-                 pub projector read_recursive_poly; \
-             };",
+             pub type { Packed_triple: (I32 & I32 & I32) -> I32 { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
+             pub type { Higher_order_parameter: (I32 -> I32) -> I32 { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
+             pub type { Higher_order_return: I32 -> (I32 -> I32) { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
+             pub type { Generic_parameter[T]: T -> I32 { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
+             pub type { Polymorphic[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
+             pub rec type { Recursive_poly: [A] A -> Recursive_poly { \
+                 pub mk; \
+                 pub get; \
+             }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
-        let method = |start: &str| {
-            let tail = krate
+        let method = |owner: &str, start: &str| {
+            let owner_path = format!("::nominal::api::{}<", super::rust_public_ident(owner));
+            let block = krate
                 .shapes_rs
-                .split_once(start)
-                .unwrap_or_else(|| panic!("missing `{start}` in:\n{}", krate.shapes_rs))
-                .1;
-            let end = tail
-                .find("\n    }\n}")
-                .unwrap_or_else(|| panic!("missing method end after `{start}` in:\n{tail}"));
+                .split("\n}\n")
+                .find(|block| {
+                    block
+                        .lines()
+                        .any(|line| line.starts_with("impl<") && line.contains(&owner_path))
+                        && block.contains(start)
+                })
+                .unwrap_or_else(|| {
+                    panic!("missing `{start}` for `{owner}` in:\n{}", krate.shapes_rs)
+                });
+            let tail = block.split_once(start).expect("selected member").1;
+            let end = tail.find("\n    }").expect("method end");
             &tail[..end + "\n    }".len()]
         };
         let signature = |method: &str| {
@@ -11924,7 +11897,7 @@ mod tests {
                 .to_owned()
         };
 
-        let packed_constructor = method("pub fn makePackedTriple");
+        let packed_constructor = method("Packed_triple", "pub fn mk");
         let packed_constructor_signature = signature(packed_constructor);
         assert!(
             packed_constructor_signature
@@ -11943,7 +11916,7 @@ mod tests {
             "the constructor must transfer the exact grouped function token without spreading its product domain:\n{packed_constructor}"
         );
 
-        let packed_projector = method("pub fn readPackedTriple");
+        let packed_projector = method("Packed_triple", "pub fn get");
         let packed_projector_signature = signature(packed_projector);
         assert!(
             packed_projector_signature
@@ -11962,7 +11935,7 @@ mod tests {
             "the projector must recover the exact grouped function token without rebuilding a spread closure:\n{packed_projector}"
         );
 
-        let polymorphic_constructor = method("pub fn makePolymorphic");
+        let polymorphic_constructor = method("Polymorphic", "pub fn mk");
         let polymorphic_constructor_signature = signature(polymorphic_constructor);
         assert!(
             polymorphic_constructor_signature.contains("arg0: crate::shapes::KioForall_")
@@ -11982,7 +11955,7 @@ mod tests {
             "the polymorphic constructor must transfer its exact rank-N marker token into private storage:\n{polymorphic_constructor}"
         );
 
-        let polymorphic_projector = method("pub fn readPolymorphic");
+        let polymorphic_projector = method("Polymorphic", "pub fn get");
         let polymorphic_projector_signature = signature(polymorphic_projector);
         assert!(
             polymorphic_projector_signature.contains("-> crate::shapes::KioForall_")
@@ -12010,7 +11983,7 @@ mod tests {
             "the polymorphic projector must reconstruct its exact rank-N marker from the exact newtype-marker token:\n{polymorphic_projector}"
         );
 
-        let higher_parameter = method("pub fn makeHigherOrderParameter");
+        let higher_parameter = method("Higher_order_parameter", "pub fn mk");
         let higher_parameter_signature = signature(higher_parameter);
         assert!(
             higher_parameter_signature.contains("arg0: crate::shapes::KioFn1<")
@@ -12019,7 +11992,7 @@ mod tests {
             "a function-valued parameter must use nested named carriers:\n{higher_parameter_signature}"
         );
 
-        let higher_return = method("pub fn makeHigherOrderReturn");
+        let higher_return = method("Higher_order_return", "pub fn mk");
         let higher_return_signature = signature(higher_return);
         assert!(
             higher_return_signature.contains("arg0: crate::shapes::KioFn1<")
@@ -12042,7 +12015,7 @@ mod tests {
             "flattening a product domain into callable arity would break substitution stability:\n{packed_constructor_signature}\n{packed_projector_signature}"
         );
 
-        let generic_parameter = method("pub fn makeGenericParameter");
+        let generic_parameter = method("Generic_parameter", "pub fn mk");
         let generic_parameter_signature = signature(generic_parameter);
         assert!(
             generic_parameter_signature.contains("arg0: crate::shapes::KioFn1<T, ")
@@ -12050,7 +12023,7 @@ mod tests {
             "a generic one-source function must preserve its source group so substituting T with KioProduct has the direct product-domain identity:\n{generic_parameter_signature}"
         );
 
-        let recursive_constructor = method("pub fn makeRecursivePoly");
+        let recursive_constructor = method("Recursive_poly", "pub fn mk");
         let recursive_constructor_signature = signature(recursive_constructor);
         assert!(
             recursive_constructor_signature.contains("arg0: crate::shapes::KioForall_")
@@ -12059,7 +12032,7 @@ mod tests {
             "a recursive polymorphic function must expose an exact rank-N carrier:\n{recursive_constructor_signature}"
         );
 
-        let recursive_projector = method("pub fn readRecursivePoly");
+        let recursive_projector = method("Recursive_poly", "pub fn get");
         let recursive_projector_signature = signature(recursive_projector);
         assert!(
             recursive_projector_signature.contains("-> crate::shapes::KioForall_")
@@ -12072,8 +12045,8 @@ mod tests {
     fn user_comptime_named_types_keep_lexical_identity() {
         let pkg = build_package(
             "module api; \
-             pub newtype Comptime_bool[A] : A { constructor make_bool; projector read_bool; }; \
-             pub newtype Comptime_str : . { pub constructor make_str; pub projector read_str; }; \
+             pub type { Comptime_bool[A]: A { mk; get; }; }; \
+             pub type { Comptime_str: . { pub mk; pub get; }; }; \
              pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
              pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
              pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
@@ -12122,17 +12095,17 @@ mod tests {
         let pkg = build_package(
             "module api; \
              host type Text role(str); \
-             pub newtype Existential_function <U> : U -> Text { \
-                 constructor make_existential_function; \
-                 pub projector read_existential_function; \
-             };",
+             pub type { Existential_function <U>: U -> Text { \
+                 mk; \
+                 pub get; \
+             }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
 
         let signature_start = krate
             .shapes_rs
-            .find("pub fn readExistentialFunction")
+            .find("pub fn get")
             .expect("existential projector signature");
         let signature_tail = &krate.shapes_rs[signature_start..];
         let signature_end = signature_tail
@@ -12158,12 +12131,8 @@ mod tests {
             krate.shapes_rs
         );
         assert!(
-            krate
-                .ffi_rs
-                .contains("pub type readExistentialFunction_continuation<")
-                && krate
-                    .ffi_rs
-                    .contains(" as readExistentialFunction_continuation_impl;"),
+            krate.ffi_rs.contains("pub type get_continuation<")
+                && krate.ffi_rs.contains(" as get_continuation_impl;"),
             "the exact continuation carrier and its implementation trait need stable FFI names:\n{}",
             krate.ffi_rs
         );
@@ -12173,23 +12142,23 @@ mod tests {
     fn existential_outer_forall_payload_erases_existential_below_binder() {
         let pkg = build_package(
             "module api; \
-             pub newtype Existential_spread <U> : [A] (U & A) -> U { \
-                 constructor make_existential_spread; \
-                 pub projector read_existential_spread; \
-             };",
+             pub type { Existential_spread <U>: [A] (U & A) -> U { \
+                 mk; \
+                 pub get; \
+             }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg")
             .expect("existential erasure should reach through the outer forall");
 
         assert!(
-            krate.shapes_rs.contains("pub fn readExistentialSpread"),
+            krate.shapes_rs.contains("pub fn get"),
             "existential projector missing from shapes:\n{}",
             krate.shapes_rs
         );
         let signature_start = krate
             .shapes_rs
-            .find("pub fn readExistentialSpread")
+            .find("pub fn get")
             .expect("existential projector signature");
         let signature_tail = &krate.shapes_rs[signature_start..];
         let signature_end = signature_tail
@@ -12413,10 +12382,10 @@ mod tests {
         let pkg = build_multi_module_package(
             &[
                 "module left; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round_token(value: Token) -> Token;",
                 "module right; \
-                 pub newtype Token : . { constructor make_token; projector read_token; }; \
+                 pub type { Token: . { mk; get; }; }; \
                  host fn round_token(value: Token) -> Token;",
             ],
             Some("bridge { left; right; }"),
@@ -12452,16 +12421,16 @@ mod tests {
     #[test]
     fn unrelated_declarations_cannot_rename_a_public_nominal_type() {
         let target = "module zed; \
-            pub newtype Token : . { pub constructor make_token; pub projector read_token; }; \
+            pub type { Token: . { pub mk; pub get; }; }; \
             host fn round_token(value: Token) -> Token;";
         let baseline = build_multi_module_package(&[target], Some("bridge { zed; }"));
         let extended = build_multi_module_package(
             &[
                 target,
                 "module zed_; \
-                 pub newtype Token : . { pub constructor make_token; pub projector read_token; };",
+                 pub type { Token: . { pub mk; pub get; }; };",
                 "module other; \
-                 pub newtype Token : . { pub constructor make_token; pub projector read_token; };",
+                 pub type { Token: . { pub mk; pub get; }; };",
             ],
             Some("bridge { zed; zed_; other; }"),
         );
@@ -12753,7 +12722,7 @@ mod tests {
         // prepared public inventory rather than body-shape registration.
         let pkg = build_package(
             "module main; \
-             pub newtype Pair[A][B] : A & B { pub constructor mk_pair; pub projector un_pair; };",
+             pub type { Pair[A][B]: A & B { pub mk; pub get; }; };",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12767,9 +12736,9 @@ mod tests {
         );
         assert!(
             krate.ffi_rs.contains("pub mod main__Pair {")
-                && krate.ffi_rs.contains("pub type mkPair_arg0<A: crate::shapes::KioType, B: crate::shapes::KioType> = crate::shapes::Product<")
-                && !krate.ffi_rs.contains("pub type mkPair_arg1")
-                && krate.ffi_rs.contains("pub type unPair_ret"),
+                && krate.ffi_rs.contains("pub type mk_arg0<A: crate::shapes::KioType, B: crate::shapes::KioType> = crate::shapes::Product<")
+                && !krate.ffi_rs.contains("pub type mk_arg1")
+                && krate.ffi_rs.contains("pub type get_ret"),
             "exported newtype FFI surface missing in ffi_rs:\n{}",
             krate.ffi_rs
         );
@@ -13076,15 +13045,15 @@ mod tests {
              host fn hkt[*F](value: F[.]) -> F[.]; \
              host fn staged[A](poly: [X](X) -> X)[B](second: B) -> A; \
              host fn repeated[A](first: A)[A](second: A) -> A; \
-             pub newtype Shadow[A][A] : A { \
-                 pub constructor make_shadow; pub projector read_shadow; \
-             }; \
-             pub newtype Witness[A][A] <Self> : A & Self { \
-                 pub constructor make_witness; pub projector read_witness; \
-             }; \
-             newtype Keyword[Self] : Self { constructor make_keyword; projector read_keyword; }; \
+             pub type { Shadow[A][A]: A { \
+                 pub mk; pub get; \
+             }; }; \
+             pub type { Witness[A][A] <Self>: A & Self { \
+                 pub mk; pub get; \
+             }; }; \
+             type { Keyword[Self]: Self { mk; get; }; }; \
              fn hold_keyword(value: .) -> Keyword[.] { \
-                 Keyword.make_keyword[.]( value) \
+                 Keyword.mk[.]( value) \
              } \
              pub fn call_staged[A](poly: [X](X) -> X)[B](second: B) -> A { \
                  staged[A]( poly)[ B]( second) \
@@ -13121,8 +13090,14 @@ mod tests {
         );
         let witness_constructor = krate
             .shapes_rs
+            .split_once("crate::shapes::nominal::main::Witness<__KioHost, A, AN2> {")
+            .expect("Witness impl")
+            .1
+            .split_once("\n}\n")
+            .expect("Witness impl end")
+            .0
             .lines()
-            .find(|line| line.contains("pub fn makeWitness"))
+            .find(|line| line.contains("pub fn mk"))
             .expect("existential constructor witness");
         assert!(
             krate.shapes_rs.contains("Witness<__KioHost, A, AN2> {")
@@ -13203,8 +13178,14 @@ mod tests {
         );
         let shadow_constructor = krate
             .shapes_rs
+            .split_once("crate::shapes::nominal::main::Shadow<__KioHost, A, AN2> {")
+            .expect("Shadow impl")
+            .1
+            .split_once("\n}\n")
+            .expect("Shadow impl end")
+            .0
             .lines()
-            .find(|line| line.contains("pub fn makeShadow"))
+            .find(|line| line.contains("pub fn mk"))
             .expect("shadowed newtype constructor");
         assert!(
             krate.shapes_rs.contains("Shadow<__KioHost, A, AN2> {")
@@ -13241,7 +13222,7 @@ mod tests {
              host fn unit(value: .) -> .; \
              host fn nullary() -> .; \
              host fn round_unit(callback: . -> .) -> (. -> .); \
-             pub newtype Pair : Int & Int { pub constructor make_pair; pub projector read_pair; }; \
+             pub type { Pair: Int & Int { pub mk; pub get; }; }; \
              pub fn call_packed(value: Int & Int) -> . { packed(value) } \
              pub fn packed_value() -> ((Int & Int) -> .) { packed } \
              pub fn keep_pair(value: Int & Int) -> Int & Int { value } \
@@ -13281,7 +13262,7 @@ mod tests {
         assert!(
             krate
                 .shapes_rs
-                .contains("pub fn makePair(arg0: crate::shapes::Product<")
+                .contains("pub fn mk(arg0: crate::shapes::Product<")
                 && krate
                     .lib_rs
                     .contains("pub fn keepPair(&self, arg0: crate::shapes::Product<")
@@ -13367,15 +13348,15 @@ mod tests {
              host fn substituted_callback(callback: Callback[.]) -> Text; \
              host fn nested_product(value: (. -> Text) & Text) -> Text; \
              host fn nested_sum(value: (. -> Text) | Text) -> Text; \
-             pub newtype Direct_callback : . -> Text { \
-                 pub constructor make_direct_callback; \
-                 pub projector read_direct_callback; \
-             }; \
+             pub type { Direct_callback: . -> Text { \
+                 pub mk; \
+                 pub get; \
+             }; }; \
              host fn nested_forall(poly: [A] ((. -> A) & A) -> A) -> Text; \
-             pub newtype Existential_callback <U> : (. -> U) & U { \
-                 constructor make_existential_callback; \
-                 pub projector read_existential_callback; \
-             }; \
+             pub type { Existential_callback <U>: (. -> U) & U { \
+                 mk; \
+                 pub get; \
+             }; }; \
              host fn nested_hkt[*F](value: F[. -> Text]) -> F[. -> Text]; \
              fn dummy() -> . { () }",
             Some("bridge { main; }"),
@@ -13400,16 +13381,25 @@ mod tests {
             "direct Unit-domain functions nested in products and sums remain Fn0:\nproduct:\n{product}\nsum:\n{sum}",
         );
 
-        let constructor = krate
-            .shapes_rs
-            .lines()
-            .find(|line| line.contains("pub fn makeDirectCallback"))
-            .expect("direct-function newtype constructor");
-        let projector = krate
-            .shapes_rs
-            .lines()
-            .find(|line| line.contains("pub fn readDirectCallback"))
-            .expect("direct-function newtype projector");
+        let member = |name: &str| {
+            krate
+                .shapes_rs
+                .split("\n}\n")
+                .find(|block| {
+                    block.lines().any(|line| {
+                        line.starts_with("impl<")
+                            && line.contains("::nominal::main::DirectCallback<")
+                    }) && block.contains(&format!("pub fn {name}"))
+                })
+                .and_then(|block| {
+                    block
+                        .lines()
+                        .find(|line| line.contains(&format!("pub fn {name}")))
+                })
+                .unwrap_or_else(|| panic!("missing Direct_callback.{name}"))
+        };
+        let constructor = member("mk");
+        let projector = member("get");
         assert!(
             constructor.contains("arg0: crate::shapes::KioFn0<")
                 && !constructor.contains("KioFn1<")
@@ -13482,7 +13472,7 @@ mod tests {
                 .to_owned()
         };
         let forall = trait_body(&ffi_impl_name("arg0_impl"));
-        let existential = trait_body(&ffi_impl_name("readExistentialCallback_continuation_impl"));
+        let existential = trait_body(&ffi_impl_name("get_continuation_impl"));
         assert!(
             forall.contains("crate::shapes::KioProduct<crate::shapes::KioFunction0<")
                 && !forall.contains("KioFunction1<"),
@@ -13596,7 +13586,7 @@ mod tests {
              ) -> Box[[R] R -> More]; \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
-             pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
+             pub type { Secret: [A] A -> A { mk; get; }; }; \
              host fn opaque(value: Secret) -> Secret;",
             Some("bridge { main; }"),
         );
@@ -13700,7 +13690,7 @@ mod tests {
         let pkg = build_package(
             "module main; \
              host type Box[A]; host type Pair[A][B]; \
-             pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
+             pub type { Holder[*F][A]: . { mk; get; }; }; \
              host fn higher[*F](bound: Holder[F][ [A] A -> A], \
                  nominal: Holder[Box][ [B] B -> B], \
                  partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
@@ -13807,9 +13797,9 @@ mod tests {
     fn ffi_existential_continuation_names_its_polymorphic_payload() {
         let pkg = build_package(
             "module main; \
-             pub newtype Packed<U> : [A](U & A) -> U { \
-                 constructor pack; pub projector open; \
-             }; \
+             pub type { Packed<U>: [A](U & A) -> U { \
+                 mk; pub get; \
+             }; }; \
              fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
@@ -13817,17 +13807,17 @@ mod tests {
         let ffi = &krate.ffi_rs;
         let payload = ffi
             .lines()
-            .find(|line| line.contains("pub type open_continuation_type_ret_cbarg<"))
+            .find(|line| line.contains("pub type get_continuation_type_ret_cbarg<"))
             .unwrap_or_else(|| panic!("missing public continuation payload alias:\n{ffi}"));
         assert!(
             payload.contains("<__KioHost: crate::host::TestPkgHost, __KioPolyType_0: crate::shapes::KioType, __KioPolyType_1: crate::shapes::KioType>")
                 && payload.ends_with("Value<__KioHost, __KioPolyType_0, __KioPolyType_1>;"),
             "continuation payload must preserve result and hidden witness markers:\n{payload}",
         );
-        assert!(ffi.contains(" as open_continuation_type_ret_cbarg_impl;"));
-        assert!(ffi.contains("pub type open_continuation_type_ret_cbret<__KioPolyType_0: crate::shapes::KioType> = <__KioPolyType_0 as crate::shapes::KioType>::Facade;"));
-        assert!(ffi.contains("pub type open_continuation_type_ret_cbarg_type_ret_cbarg<__KioPolyType_1: crate::shapes::KioType, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::Product<<__KioPolyType_1 as crate::shapes::KioType>::Facade, <__KioPolyType_2 as crate::shapes::KioType>::Facade>;"));
-        assert!(ffi.contains("pub type open_continuation_type_ret_cbarg_type_ret_cbret<__KioPolyType_1: crate::shapes::KioType> = <__KioPolyType_1 as crate::shapes::KioType>::Facade;"));
+        assert!(ffi.contains(" as get_continuation_type_ret_cbarg_impl;"));
+        assert!(ffi.contains("pub type get_continuation_type_ret_cbret<__KioPolyType_0: crate::shapes::KioType> = <__KioPolyType_0 as crate::shapes::KioType>::Facade;"));
+        assert!(ffi.contains("pub type get_continuation_type_ret_cbarg_type_ret_cbarg<__KioPolyType_1: crate::shapes::KioType, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::Product<<__KioPolyType_1 as crate::shapes::KioType>::Facade, <__KioPolyType_2 as crate::shapes::KioType>::Facade>;"));
+        assert!(ffi.contains("pub type get_continuation_type_ret_cbarg_type_ret_cbret<__KioPolyType_1: crate::shapes::KioType> = <__KioPolyType_1 as crate::shapes::KioType>::Facade;"));
     }
 
     #[test]
@@ -13910,16 +13900,16 @@ mod tests {
     fn private_nominal_storage_keeps_public_markers_out_of_native_slots() {
         let pkg = build_package(
             "module api; \
-             pub newtype Cell[A] : A { constructor mk; projector get; }; \
-             pub rec newtype Chain[A] : . | (A & Chain[A]) { constructor mk; projector get; }; \
-             pub newtype Applied[*F][A] : F[A] { constructor mk; projector get; }; \
-             newtype Direct[A] : Cell[A] { constructor mk; projector get; }; \
-             newtype Nested[A] : A & Cell[A] { constructor mk; projector get; }; \
-             newtype Callback[A] : Cell[A] -> Cell[A] { constructor mk; projector get; }; \
-             newtype Recursive[A] : Chain[A] { constructor mk; projector get; }; \
-             newtype Higher[A] : Applied[Cell][ A] { constructor mk; projector get; }; \
-             newtype Concrete : Cell[.] { constructor mk; projector get; }; \
-             newtype Native[A] : A { constructor mk; projector get; }; \
+             pub type { Cell[A]: A { mk; get; }; }; \
+             pub rec type { Chain[A]: . | (A & Chain[A]) { mk; get; }; }; \
+             pub type { Applied[*F][A]: F[A] { mk; get; }; }; \
+             type { Direct[A]: Cell[A] { mk; get; }; }; \
+             type { Nested[A]: A & Cell[A] { mk; get; }; }; \
+             type { Callback[A]: Cell[A] -> Cell[A] { mk; get; }; }; \
+             type { Recursive[A]: Chain[A] { mk; get; }; }; \
+             type { Higher[A]: Applied[Cell][ A] { mk; get; }; }; \
+             type { Concrete: Cell[.] { mk; get; }; }; \
+             type { Native[A]: A { mk; get; }; }; \
              fn direct[A](v: Cell[A]) -> Direct[A] { Direct.mk(v) } \
              fn nested[A](v: A & Cell[A]) -> Nested[A] { Nested.mk(v) } \
              fn callback[A](v: Cell[A] -> Cell[A]) -> Callback[A] { Callback.mk(v) } \
@@ -13970,11 +13960,11 @@ mod tests {
     fn phantom_higher_kinded_params_erase_from_private_body_nominals() {
         let pkg = build_package(
             "module api; \
-             newtype Unary[A] : A { constructor mk; projector get; }; \
-             newtype Binary[A][B] : A & B { constructor mk; projector get; }; \
-             newtype Unary_holder[*F] : . { constructor mk; projector get; }; \
-             newtype Binary_holder[**F] : . { constructor mk; projector get; }; \
-             newtype Applied[*F] : F[.] { constructor mk; projector get; }; \
+             type { Unary[A]: A { mk; get; }; }; \
+             type { Binary[A][B]: A & B { mk; get; }; }; \
+             type { Unary_holder[*F]: . { mk; get; }; }; \
+             type { Binary_holder[**F]: . { mk; get; }; }; \
+             type { Applied[*F]: F[.] { mk; get; }; }; \
              fn hold_unary() -> Unary_holder[Unary] { Unary_holder.mk[Unary]( ()) } \
              fn hold_binary() -> Binary_holder[Binary] { Binary_holder.mk[Binary]( ()) } \
              fn hold_applied(value: Applied[Unary]) -> Applied[Unary] { value } \
@@ -14019,8 +14009,8 @@ mod tests {
              host type Array[A]; \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             labels Array_state = { cells: Array[I32] }; \
-             labels Scalar_state = { done: Bool }; \
+             type Array_state = { Cells: Array[I32]; }; \
+             type Scalar_state = { Done: Bool; }; \
              rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \
                if (done) { state } else { recur keep_array_once(.t, state, scalar) } \
              }",
@@ -14236,8 +14226,8 @@ mod tests {
         let pkg = build_package(
             "module api; \
              host type Host_pair[A][B]; \
-             pub newtype Pair[A][B] : A & B { pub constructor make_pair; pub projector read_pair; }; \
-             pub newtype Higher[*F] : . { pub constructor make_higher; pub projector read_higher; }; \
+             pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; \
+             pub type { Higher[*F]: . { pub mk; pub get; }; }; \
              host fn live_host(value: Higher[Host_pair[.]]) -> .; \
              host fn live_new(value: Higher[Pair[.]]) -> .;",
             Some("bridge { api; }"),
@@ -14259,8 +14249,8 @@ mod tests {
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
              host type Host_pair[A][B];\n        \
-             newtype Pair[A][B] : A & B { pub constructor make_pair; pub projector read_pair; };\n        \
-             newtype Higher[*F] : . { pub constructor make_higher; pub projector read_higher; };\n        \
+             type { Pair[A][B]: A & B { pub mk; pub get; }; };\n        \
+             type { Higher[*F]: . { pub mk; pub get; }; };\n        \
              host fn old_host(value: Higher[Host_pair[.]]) -> .;\n        \
              host fn old_new(value: Higher[Pair[.]]) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        old_host;\n        old_new;\n      }\n    }\n  }\n}\n",
@@ -14362,7 +14352,7 @@ mod tests {
             &pkg,
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             newtype Token[A][A] : A { pub constructor make_token; projector read_token; };\n        \
+             type { Token[A][A]: A { pub mk; get; }; };\n        \
              host fn old(value: Token[.][ .]) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
         );
@@ -14392,8 +14382,7 @@ mod tests {
             krate.host_rs
         );
         assert!(
-            !krate.shapes_rs.contains("pub fn makeToken")
-                && !krate.shapes_rs.contains("pub fn readToken"),
+            !krate.shapes_rs.contains("pub fn mk") && !krate.shapes_rs.contains("pub fn get"),
             "retained carrier must not acquire live newtype members:\n{}",
             krate.shapes_rs
         );
@@ -14410,7 +14399,7 @@ mod tests {
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
              host type Gone;\n        \
-             newtype Poly : [A] A -> A { pub constructor wrap; pub projector unwrap; };\n        \
+             type { Poly: [A] A -> A { pub mk; pub get; }; };\n        \
              host fn a_bad(gone: Gone, value: Poly) -> .;\n        \
              host fn z_good(value: Poly) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
@@ -14494,11 +14483,7 @@ mod tests {
             .expect("test target has a qualified identity");
         let signature = |decoys| {
             let declarations = (0..decoys)
-                .map(|index| {
-                    format!(
-                        "newtype A{index:02} : . {{ pub constructor make_a{index:02}; pub projector read_a{index:02}; }};"
-                    )
-                })
+                .map(|index| format!("type {{ A{index:02}: . {{ pub mk; pub get; }}; }};"))
                 .collect::<Vec<_>>()
                 .join("\n");
             let parameters = (0..decoys)
@@ -14515,7 +14500,7 @@ mod tests {
                 "signature pkg v(3);\n\
                  v(1) {{\n  nonbreaking {{\n    add {{\n      module api {{\n\
                  {declarations}\n\
-                 newtype Zpoly : [A] A -> [B] B -> A {{ pub constructor wrap; pub projector unwrap; }};\n\
+                 type {{ Zpoly: [A] A -> [B] B -> A {{ pub mk; pub get; }}; }};\n\
                  host fn z_good({parameters}) -> .;\n\
                  }}\n    }}\n  }}\n}}\n\
                  v(2) {{\n  nonbreaking {{\n    remove {{\n      module api {{\n\
@@ -14640,7 +14625,7 @@ mod tests {
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module main {\n        \
              host type Handle;\n        host type Gone;\n        host type Oldbox[A];\n        \
-             newtype Token : Gone { pub constructor wrap; pub projector unwrap; };\n        \
+             type { Token: Gone { pub mk; pub get; }; };\n        \
              host fn open() -> Handle;\n        host fn old(value: Gone) -> .;\n        \
              host fn old_box(value: Oldbox[Handle]) -> .;\n        host fn old_token(value: Token) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module main {\n        Gone;\n        \

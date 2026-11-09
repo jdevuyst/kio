@@ -93,10 +93,10 @@ fn every_identifier_word_violation_repairs_the_current_version() {
         &[],
     );
     assert_local_repair(
-        "label",
-        "module pkg/main;\npub labels { _foo: . };\n",
-        "module pkg/main;\npub labels { foo: . };\n",
-        "foo",
+        "type",
+        "module pkg/main;\npub type { Foo_Bar: .; };\n",
+        "module pkg/main;\npub type { Foo_bar: .; };\n",
+        "Foo_bar",
         "pkg/main.kio",
         &[],
     );

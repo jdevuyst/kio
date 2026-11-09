@@ -7,10 +7,10 @@
 module base32/report;
 
 import base32/alphabet as alphabet;
-import base32/decode(Decoded, Ok, Reject, bytes_eq, decode, {ok}, {reject});
+import base32/decode(Decoded, Ok, Reject, bytes_eq, decode);
 import base32/encode(encode);
 import base32/list as list;
-import base32/packets(Fixture, Payload, Received, {payload}, {received});
+import base32/packets(Fixture, Payload, Received);
 import macros/control(macro if);
 import macros/match(macro match);
 import testapi(Bool, I32, String);
@@ -28,7 +28,7 @@ fn num(value: I32) -> String { int_to_string(value) }
 fn field(name: String, value: String) -> String { cat3("  ", name, cat3(": ", value, "\n")) }
 
 rec(loop) fn spaced(payload: alphabet.Bytes, gap: String, done: String) -> String {
-  match(payload.>list.List.un_list) {
+  match(payload.>list.List.get) {
     (
     , .(byte: I32, rest: alphabet.Bytes) { recur spaced(rest, " ", cat3(done, gap, num(byte))) }
     , .(_empty: .) { done }
@@ -40,7 +40,7 @@ rec(loop) fn spaced(payload: alphabet.Bytes, gap: String, done: String) -> Strin
 fn show_bytes(payload: alphabet.Bytes) -> String { spaced(payload, "", "") }
 
 rec(loop) fn fused(glyphs: alphabet.Glyphs, done: String) -> String {
-  match(glyphs.>list.List.un_list) {
+  match(glyphs.>list.List.get) {
     (
     , .(glyph: String, rest: alphabet.Glyphs) { recur fused(rest, cat(done, glyph)) }
     , .(_empty: .) { done }
@@ -90,7 +90,7 @@ fn round_trip(index: I32, payload: alphabet.Bytes) -> Entry {
   match(decode(glyphs)) {
     (
     , .(good: Ok) {
-        let recovered = good.?{ok};
+        let recovered = Ok.get(good);
         if(bytes_eq(recovered, payload)) {
           (cat3(shown, accepted(recovered), "\n"), 1, 0, list.length(recovered))
         } else {
@@ -102,7 +102,7 @@ fn round_trip(index: I32, payload: alphabet.Bytes) -> Entry {
           )
         }
       }
-    , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+    , .(bad: Reject) { (cat3(shown, refused(Reject.get(bad)), "\n"), 0, 1, 0) }
     )
   }
 }
@@ -118,9 +118,9 @@ fn as_received(index: I32, glyphs: alphabet.Glyphs) -> Entry {
   match(decode(glyphs)) {
     (
     , .(good: Ok) {
-        (cat3(shown, decoded_received(good.?{ok}), "\n"), 1, 0, list.length(good.?{ok}))
+        (cat3(shown, decoded_received(Ok.get(good)), "\n"), 1, 0, list.length(Ok.get(good)))
       }
-    , .(bad: Reject) { (cat3(shown, refused(bad.?{reject}), "\n"), 0, 1, 0) }
+    , .(bad: Reject) { (cat3(shown, refused(Reject.get(bad)), "\n"), 0, 1, 0) }
     )
   }
 }
@@ -128,8 +128,8 @@ fn as_received(index: I32, glyphs: alphabet.Glyphs) -> Entry {
 fn entry_for(index: I32, fixture: Fixture) -> Entry {
   match(fixture) {
     (
-    , .(source: Payload) { round_trip(index, source.?{payload}) }
-    , .(wire: Received) { as_received(index, wire.?{received}) }
+    , .(source: Payload) { round_trip(index, Payload.get(source)) }
+    , .(wire: Received) { as_received(index, Received.get(wire)) }
     )
   }
 }
@@ -153,7 +153,7 @@ rec(loop) {
   , refusals: I32
   , bytes: I32
   ) -> String {
-    match(fixtures.>list.List.un_list) {
+    match(fixtures.>list.List.get) {
       (
       , .(fixture: Fixture, rest: list.List[Fixture]) {
           let .(block: String, hit: I32, miss: I32, recovered: I32) = entry_for(index, fixture);

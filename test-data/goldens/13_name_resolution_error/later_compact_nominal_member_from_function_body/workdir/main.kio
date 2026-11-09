@@ -1,0 +1,5 @@
+module main;
+
+fn before() { Later.get(Later.mk(())) }
+
+type { Later: . }

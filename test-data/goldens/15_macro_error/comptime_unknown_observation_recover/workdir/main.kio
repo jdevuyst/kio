@@ -1,0 +1,27 @@
+module main;
+
+import __comptime__;
+
+pure fn unstable_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, target: __Type__
+, clause: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let selected =
+    __either__[__Checked_term__][. | __Diagnostic_text__][__Checked_term__](
+    , __term_specialize__(ct, clause, __type_unit__(ct), target)
+    , .(_matched: __Checked_term__) -> __Checked_term__ {
+        __macro_error__(ct, "known target matched"[__Diagnostic_text__])
+      }
+    , .(_other: . | __Diagnostic_text__) -> __Checked_term__ { __term_unit__(ct) }
+    );
+  (selected, __fill__(ct, fills, target, __type_unit__(ct)))
+}
+
+macro unstable : [T] (. -> T) -> T { impl(fills) unstable_impl }
+
+fn run() {
+  let value = unstable(.() { () });
+  value
+}

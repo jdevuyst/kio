@@ -4,16 +4,13 @@ import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
-labels { hed: String, mid: String, tal: String };
-
-// `mid` shadowed by a `let` binding — the local, not the `mid`
-// label's projector.
+// The local binding determines the returned value.
 fn via_let(s: String) -> String { let mid = s; mid }
 
-// `hed` shadowed by a `fn` value parameter.
+// The function parameter determines the returned value.
 fn via_param(hed: String) -> String { hed }
 
-// `tal` shadowed by a `match` clause value parameter.
+// The match-clause parameter determines the returned value.
 fn via_clause(s: String) -> String {
   match(s) {
     .(tal: String) { tal }

@@ -21,7 +21,7 @@ import queue/list/macros/spine_macros(macro widen_sum);
 /// that self-reference. `cons_cell` builds a cell from the bare sum;
 /// `un_list` projects it back. The user-facing `cons` / `uncons` below
 /// wrap these so a reader never names the bare sum.
-pub rec newtype List[A] : . | (A & List[A]) { pub constructor cons_cell; pub projector un_list }
+pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
 // =====================================================================
 // Constructors
@@ -29,11 +29,11 @@ pub rec newtype List[A] : . | (A & List[A]) { pub constructor cons_cell; pub pro
 /// `nil[A]` is the empty list; `cons(head, tail)` prepends one element;
 /// `singleton(x)` is the one-element list. All three are O(1) and
 /// pure.
-pub fn nil[A] -> List[A] { List.cons_cell(widen_sum(())[. | (A & List[A])]) }
+pub fn nil[A] -> List[A] { List.mk(widen_sum(())[. | (A & List[A])]) }
 
 /// Prepends one element to a cons-list spine in O(1).
 pub fn cons[A](head: A, tail: List[A]) -> List[A] {
-  List.cons_cell(widen_sum((head, tail))[. | (A & List[A])])
+  List.mk(widen_sum((head, tail))[. | (A & List[A])])
 }
 
 /// Builds the one-element structure while preserving the module representation invariant.
@@ -47,7 +47,7 @@ pub fn singleton[A](x: A) -> List[A] { cons(x, nil[A]) }
 /// for a cons cell. `list.kio` matches on this to decide whether to
 /// continue or stop. This is the single seam every
 /// spine-walk crosses to advance one element.
-pub fn uncons[A](xs: List[A]) -> . | (A & List[A]) { List.un_list(xs) }
+pub fn uncons[A](xs: List[A]) -> . | (A & List[A]) { List.get(xs) }
 
 // =====================================================================
 // O(1) shape accessors

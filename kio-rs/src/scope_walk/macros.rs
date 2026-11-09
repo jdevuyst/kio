@@ -142,12 +142,6 @@ impl Classifier {
                 | NeutralItem::ExistentialBinding { name, pattern, .. } => {
                     self.binding(name, pattern.as_ref())
                 }
-                NeutralItem::RowBinding { entries, .. } => {
-                    for entry in entries {
-                        self.id(entry.access_ext);
-                        self.scope.bind(&entry.local);
-                    }
-                }
                 NeutralItem::Expression { .. } => {}
             }
         }
@@ -237,21 +231,6 @@ impl Classifier {
                 self.expr(body);
                 self.restore(mark);
             }
-            Expr::RowLet {
-                entries,
-                value,
-                body,
-                ..
-            } => {
-                self.expr(value);
-                let mark = self.mark();
-                for entry in entries {
-                    self.id(entry.access_ext);
-                    self.scope.bind(&entry.local);
-                }
-                self.expr(body);
-                self.restore(mark);
-            }
             Expr::Seq { value, body, .. } => {
                 self.expr(value);
                 self.expr(body);
@@ -259,26 +238,6 @@ impl Classifier {
             Expr::Tuple { items, .. } => {
                 for item in items {
                     self.expr(item);
-                }
-            }
-            Expr::LabelValue { labels, ext, .. } => {
-                self.id(*ext);
-                for label in labels {
-                    self.expr(&label.value);
-                }
-            }
-            Expr::Elaborator { call, ext, .. } => {
-                self.id(*ext);
-                match call {
-                    ElaboratorCall::FieldAccess { receiver, .. } => self.expr(receiver),
-                    ElaboratorCall::FieldUpdate { base, updates } => {
-                        if let Some(receiver) = base.receiver() {
-                            self.expr(receiver);
-                        }
-                        for update in updates {
-                            self.expr(&update.value);
-                        }
-                    }
                 }
             }
             Expr::OpChain { kind, .. } => {
