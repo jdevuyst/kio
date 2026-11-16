@@ -82,7 +82,10 @@ KIO_DEBUG_TEST_KIO_BIN=$ORCHESTRATOR_TMP/kio
 KIO_DEBUG_TEST_KIO_PRIME_BIN=$ORCHESTRATOR_TMP/kio-prime
 export KIO_DEBUG_TEST_KIO_BIN KIO_DEBUG_TEST_KIO_PRIME_BIN
 
-sh "$REPO_ROOT/ci/cargo.sh" test --all-features
+sh "$REPO_ROOT/ci/cargo.sh" test --all-features \
+  --config 'profile.test.package.kio-lang.opt-level=2' \
+  --config 'profile.test.debug-assertions=true' \
+  --config 'profile.test.overflow-checks=true'
 
 # Source packages carry a self-contained snapshot of the canonical manual.
 sh "$REPO_ROOT/ci/package-kio.sh" package --locked --no-verify

@@ -381,6 +381,9 @@ grep -nE 'test_stable_corpus_tool_target|build_corpus_tool_binary|kio-corpus-too
 grep -nE 'kio-lsp-cli\|kio-prime|profile.dev.package.kio-lang|expected-compiler-profile|changed compiler profile' \
   ci/checks/orchestrators/lib/common.sh \
   ci/checks/repo-lint/schedule-entry-selftest.sh
+grep -nE 'profile.test.package.kio-lang|profile.test.debug-assertions|profile.test.overflow-checks|hygiene_test|test --test lsp_smoke' \
+  ci/checks/hygiene/kio-rs.sh \
+  ci/checks/repo-lint/lsp-executable-snapshot-selftest.sh
 grep -nE 'observer_(is_outermost|fires_for_a_cache_miss)|uses_the_shared_outer_observer_shape|disabled_cache_still_observes|test_compiler_observer_readiness_and_lease' \
   ci/infra/kio-test-runner-rs/src ci/checks/repo-lint/schedule-entry-selftest.sh
 grep -nE 'recursive_context_partition_scan_fires_linearly_at_the_production_seam|exact_recursive_context_bypasses_the_difference_scan' \
@@ -734,6 +737,14 @@ retain the measurement's stated limits.
   exact-argv assertion fail; restoring the branch passes.
   The opt2 expectation also fails against the opt1 helper and passes with opt2.
   [Recorded comparison and controls](../../../evidence/ci-performance.md#package-only-optimization-of-ci-compiler-snapshots).
+
+- **Package-only optimization of CI hygiene tests** (`ci/checks/hygiene/kio-rs.sh`)
+  — the all-features test invocation uses opt-level 2 for `kio-lang` with
+  debug assertions and overflow checks enabled. Ordinary developer Cargo
+  tests and dependencies retain their profiles. The existing snapshot
+  selftest pins the full hygiene test argv and the ordinary LSP test negative
+  control. Check the full-suite, preparation, rebuild, memory and disk evidence
+  as well as the mutation control in [CI performance evidence](../../../evidence/ci-performance.md#package-only-optimization-of-ci-hygiene-tests).
 
 For each retained performance-only realization under review, discharge both:
 

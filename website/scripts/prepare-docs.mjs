@@ -184,29 +184,15 @@ function buildLanguages(hostItems) {
 }
 
 export function runKiodocBuild() {
-  const result = spawnSync('sh', [
-    path.join(repoRoot, 'ci', 'cargo.sh'),
-    'run',
-    '--quiet',
-    '--manifest-path',
-    '../kio-rs/Cargo.toml',
-    '--bin',
-    'kio',
-    '--',
-    'doc',
-    'build',
-    '--html'
-  ], {
-    cwd: docsDir,
-    stdio: 'inherit'
-  })
-  if (result.status !== 0) {
-    fail('kio doc build --html failed')
-  }
+  runKio(['doc', 'build', '--html'], { cwd: docsDir, stdio: 'inherit' })
 }
 
 export function runKio(args, options = {}) {
-  const result = spawnSync('sh', [
+  const compiler = process.env.KIO_BIN
+  const command = compiler ? [
+    path.join(repoRoot, 'ci', 'schedule.sh'),
+    '--resource', 'compiler', '--', compiler, ...args
+  ] : [
     path.join(repoRoot, 'ci', 'cargo.sh'),
     'run',
     '--quiet',
@@ -216,7 +202,8 @@ export function runKio(args, options = {}) {
     'kio',
     '--',
     ...args
-  ], {
+  ]
+  const result = spawnSync('sh', command, {
     cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
     stdio: options.stdio ?? 'pipe'

@@ -111,13 +111,15 @@ Linux requests `--core` to verify/activate general helpers; native target-only
 jobs do not install that helper pool. Swift's SDK selection remains explicit.
 No account config copies or ambient compiler fallback supply version authority.
 
-Cargo invocations in `ci/` scripts use the `dev` profile (output under
+Cargo invocations in `ci/` scripts use the `dev` or `test` profile (output under
 `target/debug/`). The shared corpus-tool helper gives only its full and reduced
 compiler keys (`kio-lsp-cli`, `kio-prime`) package-scoped `kio-lang` opt-level 2,
 with debug assertions and overflow checks enabled. This applies to CI-prepared
 compiler snapshots, including those used by LSP/editor and subprocess tests;
 dependencies, runners and verifiers retain their ordinary dev settings.
-Developer builds, Cargo tests, Clippy and release profiles are unchanged.
+The all-features `kio-rs` hygiene test invocation likewise uses package-only
+`kio-lang` opt-level 2 with debug assertions and overflow checks enabled.
+Ordinary developer builds and Cargo tests, Clippy and release profiles are unchanged.
 The persistent per-tool targets retain these artifacts across invocations;
 no additional named profile or dependency tree is introduced. Reach for
 `--release` only when measuring or shipping a real artifact.
@@ -396,6 +398,9 @@ and retain guarded executable snapshots for their own task lifetime. The
 all-features Rust hygiene suite retains both binaries through
 `KIO_DEBUG_TEST_KIO_BIN` and `KIO_DEBUG_TEST_KIO_PRIME_BIN`; consumers that
 only invoke `kio` retain only that snapshot.
+The website orchestrator exports its snapshot as `KIO_BIN` for example checks
+and documentation generation. Direct website builds without that override use
+the Cargo wrapper. Both routes retain compiler admission.
 Every compiler subprocess integration harness uses the shared test-only
 selection helper. Direct Cargo test invocations without an override use the
 corresponding ordinary `CARGO_BIN_EXE_kio` or `CARGO_BIN_EXE_kio-prime` path.

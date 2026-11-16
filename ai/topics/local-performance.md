@@ -54,8 +54,10 @@ Cargo's worktree-local `target/` cache is the main accelerator for repeated Rust
 
 CI-prepared full and reduced compiler snapshots use package-only `kio-lang`
 opt-level 2 with debug assertions and overflow checks enabled. The shared
-`build_corpus_tool_binary` helper owns this choice; ordinary developer builds,
-Cargo tests, Clippy, dependencies and release profiles are unchanged. Keeping
+`build_corpus_tool_binary` helper owns this choice. The all-features `kio-rs`
+hygiene test invocation also optimizes only `kio-lang`, retaining debug assertions
+and overflow checks; ordinary developer builds and Cargo tests, Clippy,
+dependencies and release profiles are unchanged. Keeping
 the dev output layout reuses each tool's existing persistent target without a
 second dependency tree. A warm target can retain package artifacts for multiple
 optimization levels, so compiler preparation still needs disk and rebuild accounting.
@@ -64,7 +66,8 @@ Account for rebuild time and disk separately for the full and reduced feature
 tuples; neither cost follows from the other or from compiler execution speed.
 The profile firing controls are `schedule-entry-selftest.sh` (both compiler
 keys and admission routes, ordinary-tool negatives) and
-`lsp-executable-snapshot-selftest.sh` (exact full argv and immutable lifetime).
+`lsp-executable-snapshot-selftest.sh` (exact full argv, hygiene test profile,
+ordinary LSP test negative control, and immutable lifetime).
 
 For Rust-heavy editing sessions, keep shared binaries warm during editing with:
 

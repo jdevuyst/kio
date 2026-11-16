@@ -38,7 +38,7 @@ test('source metadata follows real docs and package inputs while synthetic catal
   assert.equal(sources.get('package-boundary.md'), 'docs/docs.pkg.kio')
 })
 
-function invoke(t, expression, status = 0, entry = false) {
+function invoke(t, expression, status = 0, entry = false, compiler = '') {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'website-cargo-test.'))
   t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
   const record = path.join(scratch, 'invocation.json')
@@ -68,7 +68,7 @@ process.exit(Number(process.env.COMMAND_STATUS));
     input: entry === 'stdin' ? source : undefined,
     encoding: 'utf8',
     env: { ...process.env, PATH: status === null ? scratch : `${scratch}${path.delimiter}${process.env.PATH}`,
-      INVOCATION_RECORD: record, COMMAND_STATUS: String(status) }
+      INVOCATION_RECORD: record, COMMAND_STATUS: String(status), KIO_BIN: compiler }
   })
   assert.equal(result.error, undefined)
   return { result, invocation: fs.existsSync(record) ? JSON.parse(fs.readFileSync(record, 'utf8')) : null }
@@ -79,11 +79,33 @@ test('Kiodoc build uses the Cargo wrapper with unchanged cwd, argv and inherited
   assert.equal(result.status, 0)
   assert.equal(invocation.command, 'sh')
   assert.deepEqual(invocation.args, [path.join(repoRoot, 'ci', 'cargo.sh'),
-    'run', '--quiet', '--manifest-path', '../kio-rs/Cargo.toml',
+    'run', '--quiet', '--manifest-path', path.join(repoRoot, 'kio-rs/Cargo.toml'),
     '--bin', 'kio', '--', 'doc', 'build', '--html'])
   assert.equal(invocation.cwd, path.join(repoRoot, 'docs'))
   assert.equal(result.stdout, 'command output')
   assert.equal(result.stderr, 'command diagnostic')
+})
+
+test('prepared compiler retains admission, argument boundaries and helper failures', posixBoundary, t => {
+  const compiler = path.join(os.tmpdir(), 'prepared compiler', 'kio')
+  for (const status of [0, 17]) {
+    for (const [expression, args, cwd] of [
+      ['runKiodocBuild()', ['doc', 'build', '--html'], path.join(repoRoot, 'docs')],
+      ["runKio(['debug', 'tokens', 'a file with spaces.kio'])",
+        ['debug', 'tokens', 'a file with spaces.kio'], repoRoot]
+    ]) {
+      const { result, invocation } = invoke(t, expression, status, false, compiler)
+      assert.equal(invocation.command, 'sh')
+      assert.deepEqual(invocation.args, [path.join(repoRoot, 'ci/schedule.sh'),
+        '--resource', 'compiler', '--', compiler, ...args])
+      assert.equal(invocation.cwd, cwd)
+      assert.equal(result.status, status === 0 ? 0 : 1)
+      if (status !== 0) {
+        assert.equal(result.stdout, 'command output')
+        assert.equal(result.stderr, `command diagnosticprepare-docs: kio ${args.join(' ')} failed\n`)
+      }
+    }
+  }
 })
 
 test('Kio helper preserves spaced arguments and captured/default or inherited/custom output', posixBoundary, t => {

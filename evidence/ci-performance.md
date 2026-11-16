@@ -375,3 +375,138 @@ Initial opt0→opt1 discharge: on source
   execution win;
   this pair does not establish a whole-gate speedup or amortization across
   the broad corpus's warm cohorts.
+
+## Authenticated dynamic-loader typed-cache cohort
+
+The regular golden harness shares a run-scoped typed-module cache among the
+scripts authenticated by `ci/checks/orchestrators/custom-typed-cache/exec-dyn-load-goldens.tsv`.
+Fifteen additional loader scripts use private temporary package trees, invoke
+ordinary compiler commands and the fixed host runner, and do not manipulate the
+shared cache. Their exact script object IDs extend the existing authenticated
+cohort; the harness still snapshots and validates every listed script before
+running it.
+
+An ordered comparison selected twelve loader cases on the JS runner: four
+already in the cohort (`alias_imports`, `type_exports`, `wrapped_params`,
+`diagnostics`) and eight newly added (`applied_literal_alias`,
+`arrow_result_parentheses`, `binding_origins`, `bool_specialization`,
+`boolean_operands`, `conditional_types`, `identity_alias_stages`,
+`named_import_records`); each name has the `00_success/exec_dyn_load_` prefix.
+Each arm invoked `ci/run-tests.sh` with the canonical goldens directory, a
+single `kio@js` implementation using the fixed JS runner, the existing custom
+cohort option, and anchored filters for those twelve names. The baseline used
+the original 26-entry manifest; the candidate added the eight selected IDs.
+No case-binary checks were supplied to this isolated runtime comparison.
+Both arms used the same frozen
+opt2 compiler from source `ac7977d7e48e78ddb899a40c65d5ebe725300681`, the same case inputs and fixed host runner,
+default eight-worker dispatch and adaptive compiler admission, and a fresh
+run-scoped typed cache. All twelve runtime cases passed in each arm. The
+existing cohort took 135.57 seconds wall and 907.65 seconds user plus system
+CPU; the expanded cohort took 99.51 seconds wall and 665.03 seconds CPU.
+Peak RSS was 2,054,292 and 2,023,536 KiB respectively. This single ordered pair
+includes normal operating-system cache and order effects; it measures the
+selected workload, not a whole-gate speedup or every host backend. The compiler
+and JS runner SHA-256 hashes were `37449bb61c20d8b9534e7621040bf3729f01b5068cf475e8e8df0b4684d687b4`
+and `5b659f12afa61123a3f500f83ccee4461a607b6634ce1c667c288d4f5ef23227`.
+
+## Website documentation uses the prepared compiler
+
+The website orchestrator uses the existing full-feature compiler snapshot for
+example validation and documentation generation. The snapshot retains package-only
+opt-level 2, debug assertions and overflow checks, with Cargo fingerprints as
+freshness authority. Its lifetime belongs to the website task, and direct Kio
+calls retain compiler admission. Standalone website builds keep their ordinary
+Cargo route when `KIO_BIN` is absent.
+
+One ordered pair ran `kio --no-cache doc build --html` from `docs/` through
+compiler admission, using compiler source
+`ac7977d7e48e78ddb899a40c65d5ebe725300681` and documentation from
+`a02e2c5ea3be99e35bd95106c460a64fe62b0a26`. The existing ordinary developer
+binary took 318.30 seconds wall, 1,641.71 seconds user plus system CPU, and
+2,777,084 KiB peak RSS. The existing opt2 snapshot took 72.79 seconds wall,
+336.28 seconds CPU, and 2,642,108 KiB peak RSS. Both completed successfully.
+Their SHA-256 hashes were
+`8fdd5c0c79143c4317e71ea08a842a2cc37ca7cbb693e16bcaa84d99213f5cd8` and
+`37449bb61c20d8b9534e7621040bf3729f01b5068cf475e8e8df0b4684d687b4`.
+
+This measures compiler execution on the whole documentation package, with
+semantic caches disabled and no competing build. It excludes compiler
+preparation and the rest of the website build; the broad gate already prepares
+the same opt2 tool key for other consumers. Operating-system caches were not
+reset, and the single ordered pair does not establish a causal whole-gate
+speedup. Generated HTML was not retained separately between arms, so this pair
+does not establish byte equality.
+
+`prepare-docs.test.mjs` checks both invocation routes, argument boundaries,
+admission and failure propagation. `lsp-executable-snapshot-selftest.sh` checks
+the website's exact compiler preparation and private lifetime, including output
+replacement and cleanup after success or failure.
+
+## Ordinary sampled gate after the typed-cache and website changes
+
+Source `6b290a63e363f3f3ad329910c07de6a302cf21ff` passed the ordinary
+`ci/all.sh SAMPLE_IMPL` gate: 91/91 groups, 2,176 seconds wall. The run used
+implementation seed `667989904`, case seed `1794848241`, generator seed
+`2201226477171244282`, and default adaptive resources. Regular goldens passed
+1,776 cases and 1,776 invariants; direct Prime passed 463 and 463; sampled
+dynamic Prime passed 50 cases and 661 invariants. Golden tests took 2,173
+seconds wall and 7,287.1 seconds task CPU, website took 761 and 874.8, and
+`kio-rs` hygiene took 982 and 2,329.7. The gate did not meet the 30-minute
+objective. This successful run provides an observed reference, not a causal
+comparison with earlier gates: tool and cache states, samples and overlapping
+work differ. The task CPU figures omit work delegated to a shared compiler-cache
+daemon.
+
+## Package-only optimization of CI hygiene tests
+
+The all-features hygiene test command uses the Cargo test profile with
+package-only `kio-lang` opt-level 2 and explicit debug assertions and overflow
+checks. Ordinary developer tests and dependency profiles remain unchanged.
+`lsp-executable-snapshot-selftest.sh` pins the full hygiene argv and the
+ordinary LSP test argv as a negative control. Against the original hygiene
+command without these overrides, the unchanged expectation failed with exit 90
+and identified `test --all-features`; the updated command passed.
+
+On source `6b290a63e363f3f3ad329910c07de6a302cf21ff`, frozen all-features
+libtest binaries with matching lists of 6,628 tests each ran once, unfiltered,
+with default test threads, identical pinned full toolchains and fixed compiler
+snapshots. Both passed 6,623 tests and ignored five. The ordinary profile took
+343.99 seconds wall and 2,060.40 seconds process-tree CPU; opt-level 2 took
+81.10 and 503.26 seconds. Their peak RSS was 1,070,060 and 994,600 KiB. A
+third opt-level 1 binary passed the same tests in 149.68 seconds wall and
+914.85 seconds CPU, at 1,019,800 KiB peak RSS. This ordered single-sample
+screen excludes the build and does not establish a whole-gate gain.
+
+With warm dependencies, the first opt2 libtest build took 241.95 seconds wall,
+peaked at 10,164,872 KiB RSS and grew the workspace target by 4,766,412 KiB.
+The opt1 build took 220.02 seconds, peaked at 9,533,384 KiB, and added
+4,584,580 KiB after the opt2 artifacts were already present. A matched
+non-semantic leaf edit rebuilt the ordinary test binary in 29.43 seconds and
+4,088,708 KiB peak RSS, versus 98.18 seconds and 8,312,396 KiB for opt2. The
+source was restored byte-for-byte. These are ordered, warm-worktree samples;
+compiler-cache daemon CPU can escape process-tree accounting, peak RSS is not
+an aggregate concurrent-memory bound, and no cold build was measured.
+
+The full focused hygiene check then passed in 452.93 seconds wall, with
+2,091.50 seconds process-tree CPU and 8,116,148 KiB maximum child RSS. Its
+all-features test preparation took 3m21s and the library suite took 78.22
+seconds; all 20 Cargo test-result groups matched the preceding gate's counts,
+with 7,064 passed and five ignored in total. The workspace target grew by
+8,231,204 KiB during this complete check. It included compiler snapshot
+rebuilds after restoration of the temporary edit and was run without competing
+builds, unlike the preceding broad gate. These conditions prevent treating its
+wall time as a matched broad-gate comparison; the extra preparation, disk use
+and concurrent-memory risk remain material.
+
+The ordinary `ci/all.sh SAMPLE_IMPL` gate on
+`7580341d2c29e2fb9525933f3b71e0d3b16d8e36` passed all 91 groups in
+1,987 seconds wall (33m07s). It used the same three seeds and default adaptive
+resources as the preceding gate on `6b290a63e`; the 2,900 implementation
+assignments and 2,900 baseline assignments matched exactly. Regular goldens
+passed 1,776 cases and 1,776 invariants, direct Prime passed 463 and 463, and
+sampled dynamic Prime passed 50 and 661. Golden tests took 1,985 seconds wall
+and 7,351.5 seconds task CPU, hygiene took 622 and 698.4, and website took
+638 and 970.5. No competing build or performance probe ran. The observed gate
+was 189 seconds shorter, but retained caches and scheduling differences prevent
+attributing that whole difference to the test-profile change. The 30-minute
+objective remains unmet.

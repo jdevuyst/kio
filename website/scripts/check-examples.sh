@@ -25,8 +25,8 @@ cp "$EXAMPLE_DIR/hello.pkg.kio" "$EXAMPLE_DIR/hello.kio" "$work/"
 
 (
   cd "$work"
-  "$KIO_BIN" check
-  "$KIO_BIN" fmt
+  sh "$REPO_ROOT/ci/schedule.sh" --resource compiler -- "$KIO_BIN" check
+  sh "$REPO_ROOT/ci/schedule.sh" --resource compiler -- "$KIO_BIN" fmt
 )
 
 for file in hello.pkg.kio hello.kio; do

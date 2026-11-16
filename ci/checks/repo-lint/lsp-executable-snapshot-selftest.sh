@@ -88,14 +88,20 @@ case "$1" in
     chmod +x "$target/debug/kio-prime"
     ;;
   test)
-    case "$*" in 'test --test lsp_smoke'|'test --all-features') ;; *) exit 90 ;; esac
+    hygiene_test='test --all-features --config profile.test.package.kio-lang.opt-level=2'
+    hygiene_test="$hygiene_test --config profile.test.debug-assertions=true"
+    hygiene_test="$hygiene_test --config profile.test.overflow-checks=true"
+    case "$*" in
+      'test --test lsp_smoke'|"$hygiene_test") ;;
+      *) printf 'test caller changed its expected Cargo profile or arguments: %s\n' "$*" >&2; exit 90 ;;
+    esac
     case "${KIO_DEBUG_TEST_KIO_BIN:-}" in
       "${ORCHESTRATOR_TMP:-}/kio") ;;
       *) printf 'test did not receive a private kio executable\n' >&2; exit 91 ;;
     esac
     [ -x "$KIO_DEBUG_TEST_KIO_BIN" ]
     [ "$("$KIO_DEBUG_TEST_KIO_BIN" --version)" = snapshot-cli ]
-    if [ "$*" = 'test --all-features' ]; then
+    if [ "$*" = "$hygiene_test" ]; then
       [ "${KIO_DEBUG_TEST_KIO_PRIME_BIN:-}" = "$ORCHESTRATOR_TMP/kio-prime" ]
       [ "$("$KIO_DEBUG_TEST_KIO_PRIME_BIN" --version)" = snapshot-prime-cli ]
     fi
@@ -107,7 +113,7 @@ case "$1" in
     printf '#!/bin/sh\nexit 93\n' >target/kio-corpus-tools/kio-lsp-cli/debug/kio-prime
     [ "$("$KIO_DEBUG_TEST_KIO_BIN" --version)" = snapshot-cli ]
     printf '%s\n' "$KIO_DEBUG_TEST_KIO_BIN" >>"$KIO_TEST_SNAPSHOT_PATHS"
-    if [ "$*" = 'test --all-features' ]; then
+    if [ "$*" = "$hygiene_test" ]; then
       [ "$("$KIO_DEBUG_TEST_KIO_PRIME_BIN" --version)" = snapshot-prime-cli ]
       printf '%s\n' "$KIO_DEBUG_TEST_KIO_PRIME_BIN" >>"$KIO_TEST_SNAPSHOT_PATHS"
     fi
@@ -167,6 +173,51 @@ sh "$fake_repo/ci/checks/orchestrators/lsp-tests.sh"
 sh "$fake_repo/ci/checks/hygiene/kio-rs.sh"
 sh "$fake_repo/ci/checks/orchestrators/kiodoc-tests.sh" >/dev/null
 [ "$(wc -l <"$KIO_TEST_SNAPSHOT_PATHS" | tr -d ' ')" = 4 ]
+
+mkdir -p "$fake_repo/website" "$scratch/bin"
+cp "$REPO_ROOT/ci/checks/orchestrators/website-e2e.sh" \
+  "$fake_repo/ci/checks/orchestrators/"
+for tool in node mise wasm-pack cargo; do
+  printf '#!/bin/sh\nexit 0\n' >"$scratch/bin/$tool"
+  chmod +x "$scratch/bin/$tool"
+done
+cat >"$scratch/bin/npm" <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+  'ci --no-fund --no-audit'|'run check:examples'|'run build'|'run audit'|\
+  'run smoke'|'run browser:smoke'|'run browser:history') ;;
+  *) exit 90 ;;
+esac
+[ "$KIO_BIN" = "$ORCHESTRATOR_TMP/kio" ]
+[ "$("$KIO_BIN")" = snapshot-cli ]
+printf '#!/bin/sh\nexit 93\n' >../kio-rs/target/kio-corpus-tools/kio-lsp-cli/debug/kio
+[ "$("$KIO_BIN")" = snapshot-cli ]
+printf '%s\n' "$KIO_BIN" >>"$KIO_TEST_SNAPSHOT_PATHS"
+if [ "$*" = "${KIO_TEST_WEBSITE_FAIL:-}" ]; then exit 17; fi
+EOF
+chmod +x "$scratch/bin/npm"
+PATH="$scratch/bin:$PATH" sh "$fake_repo/ci/checks/orchestrators/website-e2e.sh"
+[ "$(wc -l <"$KIO_TEST_SNAPSHOT_PATHS" | tr -d ' ')" = 11 ]
+website_status=0
+PATH="$scratch/bin:$PATH" KIO_TEST_WEBSITE_FAIL='run smoke' \
+  sh "$fake_repo/ci/checks/orchestrators/website-e2e.sh" || website_status=$?
+[ "$website_status" = 17 ]
+[ "$(wc -l <"$KIO_TEST_SNAPSHOT_PATHS" | tr -d ' ')" = 16 ]
+
+mkdir -p "$fake_repo/website/scripts" "$fake_repo/website/examples/hello-world"
+cp "$REPO_ROOT/website/scripts/check-examples.sh" "$fake_repo/website/scripts/"
+cp "$REPO_ROOT/website/examples/hello-world/hello.kio" \
+  "$REPO_ROOT/website/examples/hello-world/hello.pkg.kio" \
+  "$fake_repo/website/examples/hello-world/"
+cat >"$scratch/admitted-kio" <<'EOF'
+#!/bin/sh
+set -eu
+[ "${KIO_CI_SCHEDULE_HELD:-}" = compiler ] || exit 94
+case "$1" in check|fmt) ;; *) exit 90 ;; esac
+EOF
+chmod +x "$scratch/admitted-kio"
+KIO_BIN="$scratch/admitted-kio" sh "$fake_repo/website/scripts/check-examples.sh"
 while IFS= read -r snapshot; do
   if [ -e "$snapshot" ]; then
     printf 'test caller leaked its completed snapshot: %s\n' "$snapshot" >&2

@@ -45,6 +45,18 @@ if ! (
   exit 2
 fi
 
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib/common.sh"
+init_orchestrator_tmp website-e2e
+trap 'rm -rf "$ORCHESTRATOR_TMP"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+KIO_BIN="$ORCHESTRATOR_TMP/kio"
+build_corpus_tool_binary \
+  kio-lsp-cli "$REPO_ROOT/kio-rs" kio "$KIO_BIN" --all-features --bins
+export KIO_BIN
+
 cd "$WEBSITE_DIR"
 npm ci --no-fund --no-audit
 npm run check:examples
