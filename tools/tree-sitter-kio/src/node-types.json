@@ -2427,11 +2427,82 @@
       "required": true,
       "types": [
         {
+          "type": "bracket_lbrace",
+          "named": true
+        },
+        {
           "type": "keyword_import",
           "named": true
         },
         {
           "type": "module_path",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "incomplete_macro_decl",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bracket_lparen",
+          "named": true
+        },
+        {
+          "type": "bracket_rparen",
+          "named": true
+        },
+        {
+          "type": "forall_type",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "keyword_declaration",
+          "named": true
+        },
+        {
+          "type": "keyword_pub",
+          "named": true
+        },
+        {
+          "type": "module_path",
+          "named": true
+        },
+        {
+          "type": "operator_builtin",
+          "named": true
+        },
+        {
+          "type": "separator_dot",
+          "named": true
+        },
+        {
+          "type": "slot",
+          "named": true
+        },
+        {
+          "type": "type_arrow",
+          "named": true
+        },
+        {
+          "type": "type_group",
+          "named": true
+        },
+        {
+          "type": "type_path",
+          "named": true
+        },
+        {
+          "type": "type_product",
           "named": true
         }
       ]
@@ -2543,6 +2614,57 @@
         },
         {
           "type": "variadic_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "incomplete_nominal_alias",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bracket_lbrace",
+          "named": true
+        },
+        {
+          "type": "bracket_lparen",
+          "named": true
+        },
+        {
+          "type": "bracket_rparen",
+          "named": true
+        },
+        {
+          "type": "entity_name_type",
+          "named": true
+        },
+        {
+          "type": "keyword_pub",
+          "named": true
+        },
+        {
+          "type": "keyword_rec",
+          "named": true
+        },
+        {
+          "type": "keyword_type",
+          "named": true
+        },
+        {
+          "type": "module_path",
+          "named": true
+        },
+        {
+          "type": "operator_builtin",
+          "named": true
+        },
+        {
+          "type": "type_param_list",
           "named": true
         }
       ]
@@ -5314,6 +5436,14 @@
         },
         {
           "type": "incomplete_import_decl",
+          "named": true
+        },
+        {
+          "type": "incomplete_macro_decl",
+          "named": true
+        },
+        {
+          "type": "incomplete_nominal_alias",
           "named": true
         },
         {

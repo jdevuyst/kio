@@ -14,6 +14,9 @@
 
 mod support;
 
+#[path = "lsp_smoke/recovery.rs"]
+mod recovery;
+
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};

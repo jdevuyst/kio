@@ -63,6 +63,9 @@ Check the request-specific rules in `specs/cli.md`, including:
   their specified hierarchy, ranges, supported contexts and refusal cases.
   Public call types and written syntax determine argument display; private
   macro ABI grouping is not source-call authority.
+  For incomplete declarations, check retained neighbouring headers and current
+  overlay ranges through edit/reopen traces, with complete multiline controls.
+  Recovery must not change valid syntax or grant semantic acceptance.
 - Formatting follows `kio fmt` for the selected file kind and current overlay,
   preserving the documented parse-error no-op and URI rules. Semantic tokens
   use the advertised legend and valid UTF-16 delta encoding, including
@@ -92,6 +95,10 @@ as a line-local grammar's limited context. Include all Kio-family file kinds,
 ordinary-name inverses for contextual keywords, incomplete buffers, and
 embedded documentation. Parser/token unit tests do not prove that the shipped
 extension bundles or registers the right provider.
+
+Apply the [incomplete-source recovery checks](../../topics/language-surface-tooling.md#incomplete-source-recovery)
+to grammar changes: explicit recovery state, expected neighbouring declarations,
+fresh/incremental agreement and bounded scanner work are separate obligations.
 
 Audit the language-server lifecycle against the CLI contract: executable
 selection and invalid explicit selection; bounded probe/initialization;

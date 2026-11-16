@@ -23,6 +23,7 @@
 (dependency_remap (keyword_declaration) @keyword.declaration)
 (docs_block (keyword_declaration) @keyword.declaration)
 (macro_decl (keyword_declaration) @keyword.declaration)
+(incomplete_macro_decl (keyword_declaration) @keyword.declaration)
 (macro_captures_clause (keyword_declaration) @keyword.declaration)
 (macro_impl_clause (keyword_declaration) @keyword.declaration)
 (import_decl (keyword_declaration) @keyword.declaration)

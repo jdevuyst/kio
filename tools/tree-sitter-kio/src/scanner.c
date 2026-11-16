@@ -11,7 +11,7 @@ enum {
   PLACEHOLDER_OPEN, EDITOR_EOF,
   DOC_TEXT, DOC_FENCE, DOC_CODE, DOC_REFERENCE, DOC_DIRECTIVE,
   DOC_HEADING, DOC_EMPHASIS, DOC_STRONG, DOC_MARKER, DOC_LINK, DOC_ATTRIBUTE, DOC_KIO_CODE, DOC_KIO_SELF_CODE,
-  DOC_LITERAL_FALLBACK, DOC_LINE_END, TOKEN_COUNT,
+  DOC_LITERAL_FALLBACK, DOC_LINE_END, EDITOR_DECLARATION_BOUNDARY, TOKEN_COUNT,
 };
 
 typedef struct { uint64_t length; uint8_t kind; } DocSegment;
@@ -513,6 +513,7 @@ static bool fn_head_follows(TSLexer *lexer) {
       word[length++] = (char)lexer->lookahead;
       lexer->advance(lexer, false);
     }
+    if (!length) return false;
     if (!skip_trivia_comments(lexer)) return false;
     if (strcmp(word, "fn") == 0) break;
     if (strcmp(word, "pure") == 0 && !pure) {
@@ -720,6 +721,15 @@ static bool scan(Scanner *state, TSLexer *lexer, const bool *valid) {
   if (state->payload && !lexer->eof(lexer)) return doc_inline(state, lexer, valid);
   while (trivia(lexer->lookahead)) {
     lexer->advance(lexer, true);
+  }
+  if (valid[EDITOR_DECLARATION_BOUNDARY] &&
+      !(valid[STAR_OPEN] && valid[OPEN] && valid[STAR_CLOSE] && valid[CLOSE])) {
+    lexer->mark_end(lexer);
+    if (fn_head_follows(lexer)) {
+      lexer->result_symbol = EDITOR_DECLARATION_BOUNDARY;
+      return true;
+    }
+    return false;
   }
   if (valid[EDITOR_EOF] && !(valid[STAR_OPEN] && valid[OPEN] && valid[STAR_CLOSE] && valid[CLOSE]) && lexer->eof(lexer)) {
     lexer->result_symbol = EDITOR_EOF;

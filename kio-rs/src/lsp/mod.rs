@@ -1277,9 +1277,11 @@ fn handle_document_symbol(uri: &Uri, state: &mut ServerState) -> Option<Document
         return Some(DocumentSymbolResponse::Nested(symbols));
     }
     let source = resolve_source(uri, state)?;
-    let lazy = crate::pass::parser::parse_lazy(&source).ok()?;
     let line_index = LineIndex::new(&source);
-    let symbols = document_symbols(lazy.module(), &source, &line_index);
+    let symbols = match crate::pass::parser::parse_lazy(&source) {
+        Ok(lazy) => document_symbols(lazy.module(), &source, &line_index),
+        Err(_) => symbols::recovered_document_symbols(&source, &line_index)?,
+    };
     Some(DocumentSymbolResponse::Nested(symbols))
 }
 

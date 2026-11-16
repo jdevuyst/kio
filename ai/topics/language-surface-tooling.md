@@ -282,6 +282,21 @@ focused analysis, and source-only declarations erased before typechecking.
 
 An authorized change to eligibility moves the affected providers and focused evidence together: exact positive/negative candidate sets, insertion into an otherwise-valid continuation, and edit-driven retraction. Cover document/provider edits, shadowing, incomplete intermediates, and close/reopen or session reload. Shared collector tests do not substitute for the distinct JSON-RPC, interactive terminal, and browser completion boundaries. Static audits inspect implementation and existing evidence; execution follows the scoped validation procedure below when requested or required by an authorized fix.
 
+## Incomplete-source recovery
+
+When an unfinished declaration can be isolated, preserve subsequent complete
+declarations for editor navigation and completion. Recovery follows written
+structure, not provider contents or successful typechecking, and never grants
+an incomplete module semantic acceptance. Check valid multiline continuations
+before choosing a resynchronization boundary.
+
+Use deterministic edit-and-restore traces with expected surviving declarations
+and useful diagnostic ranges. Fresh/incremental parse agreement supplements
+those assertions; two equally unhelpful trees are not successful recovery.
+Tree-sitter incomplete forms retain explicit recovery nodes or ERROR/MISSING
+state, while complete controls contain none. Bound scanner work on long comment
+and delimiter runs, and exercise the actual LSP symbol/completion requests.
+
 ## Focused tooling validation
 
 Before the expected-green broad gate, run the affected executable tooling suites

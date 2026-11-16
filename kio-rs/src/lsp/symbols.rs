@@ -60,9 +60,30 @@ pub fn document_symbols(
     source: &str,
     line_index: &LineIndex,
 ) -> Vec<DocumentSymbol> {
+    symbols_for_items(&module.items, source, line_index)
+}
+
+pub(super) fn recovered_document_symbols(
+    source: &str,
+    line_index: &LineIndex,
+) -> Option<Vec<DocumentSymbol>> {
+    let probe = crate::pass::parser::probe_tooling_source(source, None);
+    probe.facts.module_path.as_ref()?;
+    let items = match &probe.syntax {
+        Some(crate::pass::parser::ToolingSyntax::Module(module)) => &module.items,
+        _ => &probe.facts.prefix_items,
+    };
+    Some(symbols_for_items(items, source, line_index))
+}
+
+fn symbols_for_items(
+    items: &[Item<Surface>],
+    source: &str,
+    line_index: &LineIndex,
+) -> Vec<DocumentSymbol> {
     let tokens = lexer::lex(source).ok();
     let mut symbols = Vec::new();
-    for item in &module.items {
+    for item in items {
         if let Item::RecGroup(group, _) = item {
             symbols.extend(group.members.iter().map(|member| {
                 function_symbol(

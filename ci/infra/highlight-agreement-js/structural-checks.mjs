@@ -176,7 +176,25 @@ export function checkIncrementalHighlighting(parser, querySource) {
   const imported = (head) => `mod source; import ops {op_var ${head}; fn value}\nfn after() { let(x) }`;
   const longOpen = `[${"+".repeat(96)}`;
   const longClose = `${"+".repeat(96)}]`;
+  const recoveryPairs = [
+    ["macro op", "macro op: . -> . { impl run; }"],
+    ["macro operation", "macro operation:\n. -> .\n{ impl run; }"],
+    ["macro operation :", "macro operation : . -> . { impl run; }"],
+    ["import provider {macro as ", "import provider {macro as}"],
+    ["import provider {macro as", "import provider {macro as}"],
+    ["import provider {", "import provider {\nfn value as alias;\nfn other\n}"],
+    ["type { Name: .", "type {\nName: (.) { mk; get; };\n}"],
+    ["type {", "type { Name: .; }"],
+    ["type Result = {", "type Result = {\nName: [A] A -> A;\n} & (.);"],
+    ["op_macro _ &&", "op_macro _ && _ { impl run; }"],
+    ["op_var [*", "op_var [* *] { foldr step empty; }"],
+    ["fn witness() { f[ }", "fn witness() { f[.]() }"],
+    ["fn witness() { f( }", "fn witness() { f() }"]
+  ].flatMap(([incomplete, complete]) => ["fn after() { () }", "fn after[A](value: A) { value }"].map((following) =>
+    [incomplete, complete].map((head) => `mod source;\n${head}\n${following}\nfn probe() { after(()) }\n`)));
+  const recoveryStates = new Map(recoveryPairs.flatMap(([incomplete, complete]) => [[incomplete, true], [complete, false]]));
   const cases = [
+    ...recoveryPairs,
     ["mod source; op _ + _ { impl add }", "mod source; op _ + _ { ; impl add; }"],
     ["mod source; op _ + _ { ; impl add }", "mod source; op _ + _ { ;; impl add }"],
     ["mod source; macro make: . { captures(helper) impl run }", "mod source; macro make: . { captures(helper); impl run }"],
@@ -309,6 +327,27 @@ export function checkIncrementalHighlighting(parser, querySource) {
         tree.delete();
       }
     }
+    for (const head of ["import provider {", "macro operation :", "type Result = {"]) {
+      let previous = null;
+      for (const units of [64, 128, 256]) {
+        const source = `mod source;\n${head}\n${"// gap\n".repeat(units)}fn after[A](value: A) { value }\n`;
+        let external = false, advances = 0;
+        parser.reset();
+        parser.setLogger((message, lexical) => {
+          if (!lexical && message.startsWith("lex_external ")) external = true;
+          else if (!lexical && message.startsWith("lex_internal ")) external = false;
+          if (external && lexical && /^(consume|skip) character:/.test(message)) advances++;
+        });
+        const tree = parser.parse(source);
+        parser.setLogger(null);
+        try {
+          assert.ok(tree.rootNode.descendantsOfType("fn_decl_head").some((node) => node.text.startsWith("fn after[")), `cost subject retains following declaration: ${head}`);
+          assert.ok(advances > 0 && advances <= 2 * source.length, `${head}: ${advances} scanner advances for ${source.length} characters`);
+          if (previous) assert.ok(advances * previous.length <= 1.1 * previous.advances * source.length, `${head}: scanner work per character at ${units}`);
+          previous = { advances, length: source.length };
+        } finally { tree.delete(); }
+      }
+    }
     for (const pair of cases) {
       for (const [before, after] of [pair, [...pair].reverse()]) {
         parser.reset();
@@ -330,6 +369,19 @@ export function checkIncrementalHighlighting(parser, querySource) {
         try {
           assert.deepEqual(snapshot(incremental, query), snapshot(fresh, query),
             `incremental edit ${count}: ${JSON.stringify([before, after])}`);
+          if (recoveryStates.has(after)) {
+            for (const tree of [incremental, fresh]) {
+              const heads = tree.rootNode.descendantsOfType("fn_decl_head").map((node) => node.text);
+              assert.ok(heads.some((head) => /^fn after(?:\[|\()/.test(head)), `retained following declaration: ${after}`);
+              assert.ok(heads.includes("fn probe()"), `retained final declaration: ${after}`);
+              const recovered = (node) => node.type.startsWith("incomplete_") || node.children.some(recovered);
+              if (recoveryStates.get(after)) {
+                assert.ok(tree.rootNode.hasError || recovered(tree.rootNode), `explicit incomplete recovery: ${after}`);
+              } else {
+                assert.ok(!tree.rootNode.hasError && !recovered(tree.rootNode), `complete multiline control: ${after}`);
+              }
+            }
+          }
           count++;
         } finally {
           old.delete(); incremental.delete(); fresh.delete(); freshParser.delete();

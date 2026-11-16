@@ -1671,6 +1671,77 @@ mod tests {
     }
 
     #[test]
+    fn tooling_unfinished_declarations_retain_following_functions() {
+        let mut failures = Vec::new();
+        for following in ["fn after() { () }", "fn after[A](value: A) { value }"] {
+            for unfinished in [
+                "macro op",
+                "macro operation",
+                "macro operation :",
+                "import provider {macro as ",
+                "import provider {macro as",
+                "import provider {",
+                "type { Name: .",
+                "type {",
+                "type Result = {",
+                "op_macro _ &&",
+                "op_var [*",
+                "fn witness() { f[ }",
+                "fn witness() { f( }",
+            ] {
+                let source =
+                    format!("mod app;\n{unfinished}\n{following}\nfn probe() {{ after() }}\n");
+                assert!(
+                    parse(&source).is_err(),
+                    "unfinished syntax stays invalid: {source}"
+                );
+                let cursor = source.rfind("after()").unwrap() as u32;
+                let probe = probe_tooling_source(&source, Some(cursor));
+                let items = match &probe.syntax {
+                    Some(super::ToolingSyntax::Module(module)) => &module.items,
+                    _ => &probe.facts.prefix_items,
+                };
+                let names: Vec<_> = items
+                    .iter()
+                    .filter_map(|item| match item {
+                        crate::ast::Item::FnDef(def) => Some(def.name.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                if !names.contains(&"after") || !names.contains(&"probe") {
+                    failures.push(format!("{unfinished:?}: {names:?}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn tooling_recovery_preserves_complete_multiline_declarations() {
+        for declaration in [
+            "macro operation:\n. -> .\n{ captures (helper); impl run; }",
+            "import provider {\nfn value as alias;\nfn other\n}",
+            "type {\nName: (.) { mk; get; };\n}",
+            "type Result = {\nName: [A] A -> A;\n} & (.);",
+            "op_var [*\n*] { foldr step empty; }",
+            "fn witness() { .(value: .) { value } }",
+        ] {
+            let source = format!("mod app;\n{declaration}\nfn after() {{ () }}\n");
+            let ordinary = parse(&source).expect(&source);
+            let probe = probe_tooling_source(&source, None);
+            assert!(
+                probe.parse_error.is_none(),
+                "{source}: {:?}",
+                probe.parse_error
+            );
+            assert!(
+                matches!(probe.syntax, Some(super::ToolingSyntax::Module(module)) if module == ordinary),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
     fn tooling_placeholder_missing_outer_brace_retains_neighbor() {
         for body in [
             "()",

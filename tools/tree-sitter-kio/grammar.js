@@ -83,6 +83,7 @@ module.exports = grammar({
     $.comment_doc, $.doc_fence, $.doc_code, $.doc_reference, $.doc_directive,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
     $.doc_literal_fallback, $._doc_line_end,
+    $._editor_declaration_boundary,
   ],
   extras: ($) => [/[ \t\r\n]+/, $.comment_doc, $.doc_fence, $.doc_code,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
@@ -103,6 +104,7 @@ module.exports = grammar({
     [$._local_let_pattern, $.incomplete_numbered_binding],
     [$.build_block],
     [$.macro_body],
+    [$.incomplete_macro_decl, $.operator_builtin],
     [$.callable_path],
     [$.callable_path, $.macro_impl_clause],
     [$._expression_atom, $.block_call],
@@ -165,6 +167,8 @@ module.exports = grammar({
         $.literal_definition,
         $.incomplete_op_decl,
         $.incomplete_variadic_decl,
+        $.incomplete_macro_decl,
+        $.incomplete_nominal_alias,
         $.type_alias_decl_head,
       ),
     _unit: ($) => choice($.module_decl, $.import_decl, $._body_unit),
@@ -463,7 +467,11 @@ module.exports = grammar({
         )),
 
     keyword_import: ($) => kw("import"),
-    incomplete_import_decl: ($) => prec.dynamic(-1, prec.right(seq($.keyword_import, $.module_path))),
+    incomplete_import_decl: ($) => prec.dynamic(-1, prec.right(seq(
+      $.keyword_import, $.module_path, optional(seq(
+        $.bracket_lbrace, $._editor_declaration_boundary,
+      )),
+    ))),
     keyword_op: ($) => kw("op"),
     keyword_op_macro: ($) => kw("op_macro"),
     keyword_varop: ($) => kw("op_var"),
@@ -905,6 +913,12 @@ module.exports = grammar({
     ),
 
     type_alias_decl_head: ($) => seq($._type_alias_decl_body, $.separator_semicolon),
+    incomplete_nominal_alias: ($) => prec.dynamic(-1, seq(
+      optional($._visibility_modifier), optional($.keyword_rec), $.keyword_type,
+      alias($.uppercase_identifier, $.entity_name_type), optional($.type_param_list),
+      alias("=", $.operator_builtin), $.bracket_lbrace,
+      choice($._editor_eof, $._editor_declaration_boundary),
+    )),
     _type_alias_decl_body: ($) =>
       prec.dynamic(20, prec.right(
         seq(
@@ -1156,6 +1170,13 @@ module.exports = grammar({
           $.macro_body,
         ),
       ),
+
+    incomplete_macro_decl: ($) => prec.dynamic(-1, prec.right(seq(
+      optional($._visibility_modifier), $.keyword_declaration,
+      alias($._callable_path_segment, $.identifier),
+      optional(seq(alias(":", $.operator_builtin), optional($._type))),
+      choice($._editor_eof, $._editor_declaration_boundary),
+    ))),
 
     macro_body: ($) =>
       semicolonBody($, seq(

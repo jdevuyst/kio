@@ -2870,32 +2870,34 @@ impl<'a> Parser<'a> {
                     .cursor
                     .current_group_close_span()
                     .is_some_and(|span| span.start == span.end)
-                && peek_item_keyword(sub.cursor.remaining_current_frame(), 0).is_some()
             {
                 // A missing closer may hide later declarations inside this
                 // failed item's group. Reuse the ordinary item grammar while
                 // keeping the first error and ending the failed scope here.
                 let remaining = sub.cursor.remaining_current_frame();
-                let boundary = skeleton_node_start(&remaining[0]);
-                let item_start = skeleton_node_start(&slice.children[0]);
-                if let Some(tooling) = &mut sub.tooling {
-                    for region in &mut tooling.facts.regions {
-                        if region.open.start >= item_start
-                            && region.recovered
-                            && region.interior.end > boundary
-                        {
-                            region.close = Span::new(boundary, boundary);
-                            region.interior.end = boundary;
+                let remaining = &remaining[find_next_item_start(remaining, 0)..];
+                if let Some(first) = remaining.first() {
+                    let boundary = skeleton_node_start(first);
+                    let item_start = skeleton_node_start(&slice.children[0]);
+                    if let Some(tooling) = &mut sub.tooling {
+                        for region in &mut tooling.facts.regions {
+                            if region.open.start >= item_start
+                                && region.recovered
+                                && region.interior.end > boundary
+                            {
+                                region.close = Span::new(boundary, boundary);
+                                region.interior.end = boundary;
+                            }
+                        }
+                        for prefix in &mut tooling.facts.scope_prefix {
+                            if prefix.owner.start >= item_start && prefix.interval.end > boundary {
+                                prefix.interval.end = boundary;
+                            }
                         }
                     }
-                    for prefix in &mut tooling.facts.scope_prefix {
-                        if prefix.owner.start >= item_start && prefix.interval.end > boundary {
-                            prefix.interval.end = boundary;
-                        }
+                    for recovered in partition_top_level_items(remaining).into_iter().rev() {
+                        pending.push_front(recovered);
                     }
-                }
-                for recovered in partition_top_level_items(remaining).into_iter().rev() {
-                    pending.push_front(recovered);
                 }
             }
             self.tooling = sub.tooling;
@@ -5772,6 +5774,18 @@ impl<'a> Parser<'a> {
                 let mut items = Vec::new();
                 let mut ends_with_item = false;
                 while !matches!(self.peek(), Some(TokenKind::RBrace)) {
+                    if self.tooling.is_some()
+                        && self
+                            .cursor
+                            .current_group_close_span()
+                            .is_some_and(|span| span.start == span.end)
+                        && self.peek_ident_named("fn")
+                        && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
+                        && (matches!(self.peek_at(2), Some(TokenKind::LParen))
+                            || self.peek_at(2).is_some_and(|kind| kind.is_sym("[")))
+                    {
+                        return Err(self.err_here("expected `}` closing the import list"));
+                    }
                     self.cursor_choices(
                         CursorSlot::ImportSelection,
                         &["fn", "type", "lit", "macro", "op", "op_macro", "op_var"],
@@ -8605,6 +8619,15 @@ impl<'a> Parser<'a> {
     }
 
     fn label_entry_header(&mut self) -> Result<LabelEntryHeader, Error> {
+        if self.tooling.is_some()
+            && self
+                .cursor
+                .current_group_close_span()
+                .is_some_and(|span| span.start == span.end)
+            && peek_item_keyword(self.cursor.remaining_current_frame(), 0).is_some()
+        {
+            return Err(self.err_here("expected nominal entry or `}`"));
+        }
         let (name, name_span) = self.expect_binder()?;
         Self::validate_type_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Type);
