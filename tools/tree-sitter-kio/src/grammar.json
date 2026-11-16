@@ -6380,6 +6380,10 @@
             },
             {
               "type": "SYMBOL",
+              "name": "comptime_literal"
+            },
+            {
+              "type": "SYMBOL",
               "name": "bool_literal"
             },
             {
@@ -11472,6 +11476,121 @@
         {
           "type": "SYMBOL",
           "name": "slot"
+        }
+      ]
+    },
+    "comptime_literal": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "STRING",
+            "value": "__"
+          },
+          "named": true,
+          "value": "slot"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "IMMEDIATE_TOKEN",
+                "content": {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": ".t"
+                    },
+                    {
+                      "type": "STRING",
+                      "value": ".f"
+                    }
+                  ]
+                }
+              },
+              "named": true,
+              "value": "bool_literal"
+            },
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "IMMEDIATE_TOKEN",
+                "content": {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": "\""
+                    },
+                    {
+                      "type": "REPEAT",
+                      "content": {
+                        "type": "CHOICE",
+                        "members": [
+                          {
+                            "type": "PATTERN",
+                            "value": "[^\"\\\\\\n]"
+                          },
+                          {
+                            "type": "PATTERN",
+                            "value": "\\\\(?:[\"\\\\\\/bfnrt]|u[0-9A-Fa-f]{4})"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "type": "STRING",
+                      "value": "\""
+                    }
+                  ]
+                }
+              },
+              "named": true,
+              "value": "string_literal"
+            }
+          ]
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "IMMEDIATE_TOKEN",
+            "content": {
+              "type": "STRING",
+              "value": "__"
+            }
+          },
+          "named": true,
+          "value": "slot"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "bracket_lparen"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "separator_comma"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_expression"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "separator_comma"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "bracket_rparen"
         }
       ]
     },

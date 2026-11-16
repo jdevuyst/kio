@@ -43,6 +43,7 @@ fn rec_call(
     let mut pending = vec![source];
     while let Some(source) = pending.pop() {
         match source {
+            Expr::ComptimeLiteral { proof, .. } => pending.push(proof),
             Expr::RecCall { modes, stages, .. } => {
                 if accepts(modes) {
                     return Some(source);

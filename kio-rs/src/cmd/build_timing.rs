@@ -362,6 +362,7 @@ impl BuildShapeStats {
         self.expr_nodes += 1;
         self.max_expr_depth = self.max_expr_depth.max(depth);
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => self.visit_expr(proof, depth + 1),
             Expr::BlockCall { prefix, blocks, .. } => {
                 for stage in prefix {
                     self.visit_call_args(&stage.args, depth + 1);

@@ -2152,7 +2152,7 @@ fn lower_expr(
         // lowered every `.stem. { e }` to a regular `fn`).
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         // `Expr::Ufcs` is uninhabited: typechecking records the
         // public-type-directed replacement for every ordinary or macro_call-suffix
         // dot-splice, and `Lowered → Prime` substitution installs it.

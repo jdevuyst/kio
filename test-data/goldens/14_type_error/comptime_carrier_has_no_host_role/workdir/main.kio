@@ -1,0 +1,5 @@
+module main;
+
+import __comptime__;
+
+fn invalid() -> Comptime_bool { .t[Comptime_bool] }

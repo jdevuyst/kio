@@ -5,7 +5,7 @@ import __intrinsics__;
 import __comptime__;
 
 pub pure fn id_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: .) -> __Checked_term__ {
-  __macro_error__(ct, "warm diagnostic")
+  __macro_error__(ct, __"warm diagnostic"__(ct))
 }
 
 pub macro id_user : [Source] Source -> [Target] Target { impl id_impl }

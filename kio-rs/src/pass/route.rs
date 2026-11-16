@@ -1674,6 +1674,7 @@ impl<'a> Lowerer<'a> {
             Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
+            | Expr::ComptimeLiteral { ext, .. }
             | Expr::Ufcs { ext, .. } => match *ext {},
             Expr::OpChain { ext, .. } => match *ext {},
             Expr::RecCall { ext, .. } => match *ext {},

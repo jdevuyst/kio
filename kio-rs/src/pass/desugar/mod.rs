@@ -1116,6 +1116,7 @@ fn rec_group_uses_mode(group: &RecGroup<Surface>, mode: RecCallMode) -> bool {
 
 fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => expr_uses_rec_mode(proof, mode),
         crate::ast::Expr::BlockCall { .. } => {
             unreachable!("trailing blocks are projected before desugaring")
         }
@@ -1241,6 +1242,7 @@ fn collect_surface_capture_head(
 
 fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections::HashSet<String>) {
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => collect_surface_expr_names(proof, names),
         crate::ast::Expr::BlockCall { .. } => {
             unreachable!("trailing blocks are projected before desugaring")
         }
@@ -4794,6 +4796,7 @@ impl DesugarVisitor {
         ctx: &std::collections::HashSet<String>,
     ) -> Result<(), Error> {
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => self.validate_no_bad_rec_names(proof, ctx),
             crate::ast::Expr::BlockCall { .. } => {
                 unreachable!("trailing blocks are projected before desugaring")
             }
@@ -6400,6 +6403,7 @@ fn call_intrinsic_with_n_type_args(
 
 fn expr_contains_rec_call(expr: &Expr<Surface>) -> bool {
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => expr_contains_rec_call(proof),
         crate::ast::Expr::BlockCall { .. } => {
             unreachable!("trailing blocks are projected before desugaring")
         }
@@ -6608,6 +6612,7 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
     let mut pending = vec![source];
     while let Some(source) = pending.pop() {
         match source {
+            Expr::ComptimeLiteral { proof, .. } => pending.push(proof),
             Expr::RecQuote { plan, .. } => {
                 if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. }) {
                     return true;
@@ -6678,6 +6683,7 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
 /// names that don't shadow anything the body already references.
 fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<String>) {
     match e {
+        Expr::ComptimeLiteral { proof, .. } => collect_identifiers(proof, out),
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Path { segments, .. } => {
             if let Some(head) = segments.first() {
@@ -6771,6 +6777,21 @@ fn rename_paths(
     renames: &std::collections::HashMap<String, String>,
 ) -> Expr<Desugared> {
     match e {
+        Expr::ComptimeLiteral {
+            occurrence,
+            value,
+            proof,
+            source_trivia,
+            meta,
+            ext,
+        } => Expr::ComptimeLiteral {
+            occurrence,
+            value,
+            proof: Box::new(rename_paths(*proof, renames)),
+            source_trivia,
+            meta,
+            ext,
+        },
         Expr::Path {
             occurrence: _,
             segments,
@@ -7035,6 +7056,7 @@ mod tests {
     ) {
         visit(expr);
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => visit_desugared_expr(proof, visit),
             Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Call { callee, args, .. } => {
                 visit_desugared_expr(callee, visit);

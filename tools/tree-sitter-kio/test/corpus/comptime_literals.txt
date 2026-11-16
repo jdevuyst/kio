@@ -1,0 +1,41 @@
+================================================================================
+Compile-time literals own their proof expression
+================================================================================
+module m; fn f(ct: T) { __.t__(ct); __"hé\n"__(ct) }
+--------------------------------------------------------------------------------
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (comptime_literal
+        (slot)
+        (bool_literal)
+        (slot)
+        (bracket_lparen)
+        (expression_path (identifier))
+        (bracket_rparen))
+      (separator_semicolon)
+      (comptime_literal
+        (slot)
+        (string_literal)
+        (slot)
+        (bracket_lparen)
+        (expression_path (identifier))
+        (bracket_rparen))
+      (bracket_rbrace))))

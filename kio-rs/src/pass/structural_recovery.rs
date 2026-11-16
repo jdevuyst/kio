@@ -560,7 +560,7 @@ impl<'a> Recoverer<'a> {
             Expr::Tuple { ext, .. } => match *ext {},
             Expr::FnPlaceholder { ext, .. } => match *ext {},
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-            Expr::UserMacro { ext, .. } => match *ext {},
+            Expr::UserMacro { ext, .. } | Expr::ComptimeLiteral { ext, .. } => match *ext {},
             Expr::Ufcs { ext, .. } => match *ext {},
             Expr::OpChain { ext, .. } => match *ext {},
             Expr::RecCall { ext, .. } => match *ext {},
@@ -1817,6 +1817,7 @@ fn has_free_value_ref(e: &Expr<Enriched>, name: &str, shadowed: bool) -> bool {
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Ufcs { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::RecCall { ext, .. }

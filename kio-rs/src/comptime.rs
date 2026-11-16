@@ -78,12 +78,51 @@ pub enum ComptimeBuiltin {
     TermSpecialize,
     FillResult,
     TypeForallPrefixFold,
+    ComptimeIfThenElse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComptimeRuntimeErasure {
     Bottom,
-    Unit,
+}
+
+#[cfg(feature = "surface")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ComptimeLiteralConstructor {
+    Bool(bool),
+    Str(String),
+    DiagnosticText(String),
+}
+
+#[cfg(feature = "surface")]
+impl ComptimeLiteralConstructor {
+    pub(crate) fn result_builtin(&self) -> ComptimeBuiltin {
+        match self {
+            Self::Bool(_) => ComptimeBuiltin::ComptimeBool,
+            Self::Str(_) => ComptimeBuiltin::ComptimeStr,
+            Self::DiagnosticText(_) => ComptimeBuiltin::DiagnosticText,
+        }
+    }
+
+    pub(crate) fn signature<P: crate::ast::Phase>(
+        &self,
+        span: crate::span::Span,
+    ) -> crate::ast::Type<P> {
+        use crate::ast::Type;
+        Type::synth_function(
+            vec![Type::synth_path(
+                vec!["__Comptime__".to_owned()],
+                Vec::new(),
+                span,
+            )],
+            Type::synth_path(
+                vec![self.result_builtin().public_name().to_owned()],
+                Vec::new(),
+                span,
+            ),
+            span,
+        )
+    }
 }
 
 impl ComptimeBuiltin {
@@ -134,6 +173,7 @@ impl ComptimeBuiltin {
             "__type_var_display__" => Self::TypeVarDisplay,
             "__type_arity_display__" => Self::TypeArityDisplay,
             "__diagnostic_concat__" => Self::DiagnosticConcat,
+            "__comptime_if_then_else__" => Self::ComptimeIfThenElse,
             "__macro_error__" => Self::MacroError,
             "__type_error__" => Self::TypeError,
             "__structural_recur__" => Self::StructuralRecur,
@@ -210,6 +250,7 @@ impl ComptimeBuiltin {
             Self::TypeVarDisplay => "__type_var_display__",
             Self::TypeArityDisplay => "__type_arity_display__",
             Self::DiagnosticConcat => "__diagnostic_concat__",
+            Self::ComptimeIfThenElse => "__comptime_if_then_else__",
             Self::MacroError => "__macro_error__",
             Self::TypeError => "__type_error__",
             Self::StructuralRecur => "__structural_recur__",
@@ -267,8 +308,9 @@ impl ComptimeBuiltin {
             | Self::TypeName
             | Self::TypeArity
             | Self::DiagnosticText
-            | Self::FillCtx => Some(ComptimeRuntimeErasure::Bottom),
-            Self::ComptimeBool | Self::ComptimeStr => Some(ComptimeRuntimeErasure::Unit),
+            | Self::FillCtx
+            | Self::ComptimeBool
+            | Self::ComptimeStr => Some(ComptimeRuntimeErasure::Bottom),
             Self::ReflectType
             | Self::TypeView
             | Self::TypeIsHost
@@ -328,7 +370,8 @@ impl ComptimeBuiltin {
             | Self::IntrinsicOr
             | Self::Fill
             | Self::FillResult
-            | Self::TermSpecialize => None,
+            | Self::TermSpecialize
+            | Self::ComptimeIfThenElse => None,
         }
     }
 
@@ -417,6 +460,7 @@ pub const PUBLIC_COMPTIME_NAMES: &[&str] = &[
     "__type_var_display__",
     "__type_arity_display__",
     "__diagnostic_concat__",
+    "__comptime_if_then_else__",
     "__macro_error__",
     "__type_error__",
     "__structural_recur__",
@@ -521,6 +565,7 @@ mod tests {
             TermSpecialize,
             FillResult,
             TypeForallPrefixFold,
+            ComptimeIfThenElse,
         ];
         // Compiler-source identity retires caches when the builtin wire layout changes.
         for (ordinal, builtin) in ordered.into_iter().enumerate() {
@@ -543,19 +588,9 @@ mod tests {
 
     #[test]
     fn comptime_names_do_not_overlap_intrinsics() {
-        const INTRINSICS: &[&str] = &[
-            "__absurd__",
-            "__either__",
-            "__fst__",
-            "__if_then_else__",
-            "__left__",
-            "__pair__",
-            "__right__",
-            "__snd__",
-        ];
         for name in PUBLIC_COMPTIME_NAMES {
             assert!(
-                !INTRINSICS.contains(name),
+                !crate::pass::resolve::PRIME_INTRINSICS.contains(name),
                 "`{name}` appears in both __comptime__ and __intrinsics__"
             );
         }

@@ -18,12 +18,10 @@ pure fn retain_impl(
 , value: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ {
   let result =
-    __if_then_else__(
+    __comptime_if_then_else__(ct)(
     , __type_equal__(ct, __reflect_type__(ct)[I32], __term_type__(ct, value))
     , .() -> __Checked_term__ { value }
-    , .() -> __Checked_term__ {
-        __macro_error__(ct, "wrong reflected source type"[__Diagnostic_text__])
-      }
+    , .() -> __Checked_term__ { __macro_error__(ct, __"wrong reflected source type"__(ct)) }
     );
   (result, fills)
 }

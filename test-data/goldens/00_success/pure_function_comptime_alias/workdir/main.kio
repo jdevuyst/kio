@@ -1,10 +1,10 @@
 module main;
 
-import provider(Flag);
+import provider(Flag, Proof, make_flag);
 
-pure fn value() -> Flag { let flag = .t[Flag]; flag }
+pure fn value(ct: Proof) -> Flag { let flag = make_flag(ct); flag }
 
-equiv aliased_boolean() {
-  value();
-  .t[Flag]
+equiv aliased_boolean(ct: Proof) {
+  value(ct);
+  make_flag(ct)
 }

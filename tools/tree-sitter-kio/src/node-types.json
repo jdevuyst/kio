@@ -168,6 +168,10 @@
             "named": true
           },
           {
+            "type": "comptime_literal",
+            "named": true
+          },
+          {
             "type": "expression_path",
             "named": true
           },
@@ -270,6 +274,10 @@
           "named": true
         },
         {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
           "type": "expression_path",
           "named": true
         },
@@ -353,7 +361,7 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "bool_prefix",
@@ -735,6 +743,109 @@
     }
   },
   {
+    "type": "comptime_literal",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "block_call",
+          "named": true
+        },
+        {
+          "type": "block_ufcs_expr",
+          "named": true
+        },
+        {
+          "type": "bool_literal",
+          "named": true
+        },
+        {
+          "type": "bracket_lparen",
+          "named": true
+        },
+        {
+          "type": "bracket_rparen",
+          "named": true
+        },
+        {
+          "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
+          "type": "expression_path",
+          "named": true
+        },
+        {
+          "type": "fn_lambda_expr",
+          "named": true
+        },
+        {
+          "type": "grouped_expression",
+          "named": true
+        },
+        {
+          "type": "incomplete_recursive_call_expression",
+          "named": true
+        },
+        {
+          "type": "incomplete_variadic_expression",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
+          "type": "number_literal",
+          "named": true
+        },
+        {
+          "type": "operator_expression",
+          "named": true
+        },
+        {
+          "type": "placeholder_expression",
+          "named": true
+        },
+        {
+          "type": "recursive_call_expression",
+          "named": true
+        },
+        {
+          "type": "separator_comma",
+          "named": true
+        },
+        {
+          "type": "slot",
+          "named": true
+        },
+        {
+          "type": "string_literal",
+          "named": true
+        },
+        {
+          "type": "ufcs_expr",
+          "named": true
+        },
+        {
+          "type": "unit_expression",
+          "named": true
+        },
+        {
+          "type": "variadic_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "config_field",
     "named": true,
     "fields": {},
@@ -1033,6 +1144,10 @@
           "named": true
         },
         {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
           "type": "expression_path",
           "named": true
         },
@@ -1125,6 +1240,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {
@@ -1678,6 +1797,10 @@
           "named": true
         },
         {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
           "type": "expression_path",
           "named": true
         },
@@ -2190,6 +2313,10 @@
           "named": true
         },
         {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
           "type": "expression_path",
           "named": true
         },
@@ -2328,6 +2455,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {
@@ -2753,6 +2884,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {
@@ -3451,6 +3586,10 @@
           "named": true
         },
         {
+          "type": "comptime_literal",
+          "named": true
+        },
+        {
           "type": "expression_path",
           "named": true
         },
@@ -3567,6 +3706,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {
@@ -4075,6 +4218,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {
@@ -5937,6 +6084,10 @@
             "named": true
           },
           {
+            "type": "comptime_literal",
+            "named": true
+          },
+          {
             "type": "expression_path",
             "named": true
           },
@@ -6313,6 +6464,10 @@
         },
         {
           "type": "call_expr",
+          "named": true
+        },
+        {
+          "type": "comptime_literal",
           "named": true
         },
         {

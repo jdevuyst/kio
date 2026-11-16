@@ -2153,6 +2153,7 @@ fn fold_type(ty: &mut Type<Surface>, scope: &OpScope) -> Result<(), Error> {
 
 fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => fold_expr(proof, scope)?,
         Expr::BlockCall { prefix, blocks, .. } => {
             for stage in prefix {
                 for arg in &mut stage.args {

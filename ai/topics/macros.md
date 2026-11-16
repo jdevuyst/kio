@@ -33,6 +33,30 @@ an abandoned branch, a cache hit, or evaluation order change the typechecking
 result. Making that write idempotent does not repair conflicts, partial failure,
 or rollback; it only makes one repeated successful write harmless.
 
+## Compiler-owned literals and runtime erasure
+
+The exported names of `__comptime__` and `__intrinsics__` are disjoint, so both
+modules can be imported together. Check the actual export inventories when
+adding or renaming an entry; do not maintain a separate list for that check.
+
+The [literal contract](../../specs/language.md#literals) separates host-role
+literals from proof-bearing compiler-owned Boolean and text construction.
+Check the explicit proof through ordinary typing and resolved builtin identity;
+never give compiler-owned scalar types host roles to reuse literal admission.
+Dependency rehosting preserves declared roles through the same alias-aware
+role check for every provider, not a blacklist of compiler types.
+
+Evaluator preparation records each literal payload and carrier in the explicit
+primitive environment. Validate the constructor's fixed proof-to-carrier scheme
+and include the complete primitive semantics in cache and equivalence identities.
+Reserved names supply hygiene, not authority. Standalone artifacts cannot recover
+these operations from their spelling. Runtime erasure maps every compiler-owned
+value type to bottom and consumes proof-taking operations through ordinary
+bottom elimination, including first-class and partially applied values. Do not
+replace compiler Boolean or text values with Unit or rely on unused declarations
+being removed. The source literal node and evaluator environment never survive
+into persistent Kio'.
+
 ## Semantic function reflection
 
 Function reflection observes the logical domain and result. A declaration with

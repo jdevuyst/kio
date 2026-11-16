@@ -1,0 +1,13 @@
+module build_comptime_literal_erasure/main;
+
+import __comptime__;
+
+fn keep_bool(b: Comptime_bool) -> Comptime_bool { b }
+
+fn keep_str(s: Comptime_str) -> Comptime_str { s }
+
+fn true_lit(ct: __Comptime__) -> Comptime_bool { __.t__(ct) }
+
+fn str_lit(ct: __Comptime__) -> Comptime_str { __"text"__(ct) }
+
+pub fn main() { () }

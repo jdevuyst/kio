@@ -141,6 +141,13 @@ generic; AND and OR return their Boolean carrier. A rigid generic Boolean parame
 satisfy the prefix. This requirement searches no ambient declaration set and
 introduces no role constraint or dictionary.
 
+The separate `__comptime_if_then_else__` helper accepts `__Comptime__`, followed
+by a `Comptime_bool` condition and two Unit thunks. It evaluates the whole packet
+strictly before invoking the selected thunk, following the same value evaluation
+order as the runtime conditional. Its condition has no host role; its result
+type may remain generic. Runtime erasure eliminates the bottom-typed proof
+before persistent Kio'.
+
 The registry's contract is
 
 ```text
@@ -657,6 +664,16 @@ from that core typing relation:
 ```
 
 Unannotated surface literals (the concrete contextual inference described in [`language.md`](../language.md) § Literals) are resolved to one of these annotated forms before E-True / E-Float / etc. fires. That resolution is part of the elaborator's responsibility; the rule fires only on the resolved form.
+
+Proof-bearing compile-time Boolean and string literals instead check an explicit
+`__Comptime__` argument. Their carrier is `Comptime_bool`, or the locally
+determined `Comptime_str` / `__Diagnostic_text__`. Evaluator preparation replaces
+each constructor with an ordinary core call whose explicit primitive environment
+records the literal payload and carrier. The entry's validated type is
+`__Comptime__ -> carrier`; its spelling alone grants no primitive authority.
+Runtime lowering replaces that call with bottom elimination of the lowered
+proof. Neither the source constructor nor its primitive entry enters persistent
+Kio'. All compiler-owned value types lower to bottom, including scalar carriers.
 
 ### 7.2. Blocks
 

@@ -281,6 +281,9 @@ impl ValueRenderer<'_> {
                         )
                     }
                     DataConstructorIdentity::Core(_) => data.ctor().to_owned(),
+                    DataConstructorIdentity::LiteralConstructor(_) => {
+                        "<compile-time-literal>".to_owned()
+                    }
                     DataConstructorIdentity::StructuralRecur(_) => {
                         unreachable!("structural-recursion evaluator data renders opaquely")
                     }
@@ -418,6 +421,7 @@ fn render_eval_expr(expr: &EvalAstExpr) -> String {
         Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
         | Expr::OpChain { ext, .. }

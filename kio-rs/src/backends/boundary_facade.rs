@@ -4652,7 +4652,6 @@ fn erase_live_comptime_type_names(ty: Type<Routed>, mut scope: Vec<String>) -> T
                 {
                     return match erasure {
                         crate::comptime::ComptimeRuntimeErasure::Bottom => Type::Bottom { meta },
-                        crate::comptime::ComptimeRuntimeErasure::Unit => Type::Unit { meta },
                     };
                 }
                 Type::Path {
@@ -5303,9 +5302,6 @@ impl FrozenRootTypeResolver<'_> {
                     {
                         let ty = match erasure {
                             crate::comptime::ComptimeRuntimeErasure::Bottom => Type::Bottom {
-                                meta: crate::ast::Meta::new(meta.span),
-                            },
-                            crate::comptime::ComptimeRuntimeErasure::Unit => Type::Unit {
                                 meta: crate::ast::Meta::new(meta.span),
                             },
                         };
@@ -8754,7 +8750,7 @@ v(2) {
         ));
         assert!(matches!(
             erased.facade().use_at(erased_slots[1]),
-            FacadeUse::Unit { .. }
+            FacadeUse::Bottom { .. }
         ));
 
         let erased_fn = prepared
@@ -8776,7 +8772,7 @@ v(2) {
                 .plan()
                 .facade()
                 .use_at(erased_fn.plan().entry().returned),
-            FacadeUse::Unit { .. }
+            FacadeUse::Bottom { .. }
         ));
 
         let binder_site = prepared
@@ -11197,7 +11193,7 @@ v(2) {
         ));
         assert!(matches!(
             retained.plan().facade().use_at(entry.returned),
-            FacadeUse::Unit { .. }
+            FacadeUse::Bottom { .. }
         ));
     }
 

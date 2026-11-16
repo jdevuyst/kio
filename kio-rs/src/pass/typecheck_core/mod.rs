@@ -222,6 +222,8 @@ pub use apply::{apply_mono, check_call_against, synth_call};
 mod synth;
 pub(crate) use synth::newtype_member_scheme_in_routed_module;
 #[cfg(feature = "surface")]
+pub(crate) use synth::synth_path_with_binder_recorder;
+#[cfg(feature = "surface")]
 pub(crate) use synth::unify_pattern_with_holes_state;
 pub use synth::{
     check_literal_annotation, comptime_scheme, intrinsic_scheme, newtype_member_scheme,
@@ -450,7 +452,6 @@ pub trait TyperPhase:
 /// A validated literal carrier and its phase-specific value information.
 pub struct LiteralResolution<P: crate::ast::Phase> {
     pub(crate) ty: InternedType<P>,
-    pub(crate) runtime_erases: bool,
     pub(crate) numeric_value: Option<String>,
 }
 
@@ -458,14 +459,8 @@ impl<P: crate::ast::Phase> LiteralResolution<P> {
     pub(crate) fn annotated(ty: InternedType<P>) -> Self {
         Self {
             ty,
-            runtime_erases: false,
             numeric_value: None,
         }
-    }
-
-    pub(crate) fn with_runtime_erasure(mut self, erases: bool) -> Self {
-        self.runtime_erases = erases;
-        self
     }
 
     pub(crate) fn with_numeric_value(mut self, value: Option<String>) -> Self {
@@ -962,6 +957,14 @@ fn literal_check_parts<P: crate::ast::Phase>(
 ) -> Option<(crate::ast::RoleShape, Option<&crate::ast::Type<P>>, Span)> {
     use crate::ast::{LitAnnotationExt, RoleShape};
     match e {
+        crate::ast::Expr::ComptimeLiteral { value, meta, .. } => Some((
+            match value {
+                crate::ast::ComptimeLiteralValue::Bool(_) => RoleShape::Bool,
+                crate::ast::ComptimeLiteralValue::Str(_) => RoleShape::Str,
+            },
+            None,
+            meta.span,
+        )),
         crate::ast::Expr::StrLit {
             annotation, meta, ..
         } => Some((RoleShape::Str, annotation.as_type(), meta.span)),

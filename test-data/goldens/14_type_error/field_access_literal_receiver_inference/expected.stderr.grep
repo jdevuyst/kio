@@ -1,1 +1,1 @@
-cannot determine the type of this string literal
+cannot infer type argument `A` from the available type information

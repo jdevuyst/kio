@@ -1,0 +1,12 @@
+package comptime_literal_requires_text_carrier;
+
+build {
+  target js {
+    out "out/js";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

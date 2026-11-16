@@ -353,6 +353,7 @@ impl Projection<'_> {
             };
         }
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => self.expr(proof)?,
             Expr::BlockCall { .. } => unreachable!("block projection replaced the current node"),
             Expr::Path { .. }
             | Expr::Unit { .. }

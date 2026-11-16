@@ -429,31 +429,35 @@ where
         self.role_type_identity_in(ty, canonical, &self.alias_ctx())
     }
 
+    #[cfg(feature = "surface")]
+    pub(crate) fn comptime_type_identity_in(
+        &self,
+        ty: &crate::ast::Type<P>,
+        canonical: bool,
+        aliases: &AliasCtx<'_, '_, P>,
+    ) -> Option<crate::comptime::ComptimeBuiltin> {
+        let (segments, owner) = super::aliases::terminal_nominal_in_scope(ty, aliases, canonical)?;
+        let [name] = segments.as_slice() else {
+            return None;
+        };
+        let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name.as_str())?;
+        (builtin.is_type_name()
+            && owner.is_some_and(|owner| {
+                owner
+                    .imports
+                    .iter()
+                    .any(|import| matches!(import.kind, crate::ast::ImportKind::Comptime))
+            }))
+        .then_some(builtin)
+    }
+
     pub(crate) fn role_type_identity_in(
         &self,
         ty: &crate::ast::Type<P>,
         canonical: bool,
         aliases: &AliasCtx<'_, '_, P>,
     ) -> Option<(crate::ast::Role, (String, String))> {
-        let (segments, owner) = super::aliases::terminal_nominal_in_scope(ty, aliases, canonical)?;
-        if segments.len() == 1
-            && owner.is_some_and(|owner| {
-                owner
-                    .imports
-                    .iter()
-                    .any(|import| matches!(import.kind, crate::ast::ImportKind::Comptime))
-            })
-        {
-            let name = segments[0].as_str();
-            let role = match name {
-                "Comptime_bool" => Some(crate::ast::Role::Bool),
-                "Comptime_str" => Some(crate::ast::Role::Str),
-                _ => None,
-            };
-            if let Some(role) = role {
-                return Some((role, ("__comptime__".to_owned(), name.to_owned())));
-            }
-        }
+        let (segments, _owner) = super::aliases::terminal_nominal_in_scope(ty, aliases, canonical)?;
         let (name, path) = segments.split_last()?;
         let module_path = path
             .iter()
@@ -491,10 +495,7 @@ where
         };
         for import in &self.module.imports {
             match &import.kind {
-                ImportKind::Comptime => {
-                    add("Comptime_bool", import.span, None);
-                    add("Comptime_str", import.span, None);
-                }
+                ImportKind::Comptime => {}
                 ImportKind::Selective { items, .. } => {
                     for item in items {
                         if let ImportItem::Name { span, .. } = item {

@@ -16,7 +16,7 @@ rec(loop) fn sizes(table: model.Chart, index: I32, result: String) -> String {
   if(arith.leq_i32(arrays.array_len(table), index)) {
     text.string_concat(result, "]")
   } else {
-    let separator = if(arith.leq_i32(index, 0)) { "" } else { "," };
+    let .(separator: String) = if(arith.leq_i32(index, 0)) { "" } else { "," };
     let size = fmt.int_to_string(arrays.array_len(arrays.array_get(table, index)));
     recur sizes(
     , table
@@ -37,7 +37,7 @@ rec(loop) fn examples(
   } else {
     let fixture = arrays.array_get(inputs, index);
     let .(table: model.Chart, accepted: Bool) = recognize.run(grammar, 0, fixtures.input(fixture));
-    let verdict = if(accepted) { "accepted" } else { "rejected" };
+    let .(verdict: String) = if(accepted) { "accepted" } else { "rejected" };
     io.print(text.string_concat(
     , name
     , text.string_concat(

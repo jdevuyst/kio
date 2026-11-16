@@ -666,6 +666,26 @@ fn surface_forms_appear_in_corpus() {
                         _ => ".",
                     };
                     assert!(implementation.contains(&format!("target: {target})")));
+                    if matches!(
+                        template,
+                        UserMacroTemplate::SourceTargetGuard | UserMacroTemplate::TermTypeGuard
+                    ) {
+                        let body = generated
+                            .split_once(&fn_needle)
+                            .unwrap()
+                            .1
+                            .split("\n}\n")
+                            .next()
+                            .unwrap();
+                        assert!(
+                            body.contains("__comptime_if_then_else__(ct)("),
+                            "generated compile-time guard: {body}"
+                        );
+                        assert!(
+                            body.contains("__type_error__(ct, __\""),
+                            "generated compile-time diagnostic: {body}"
+                        );
+                    }
                     let declaration = format!("impl {} }}\n", spec.impl_name);
                     assert!(
                         generated.contains(&declaration),

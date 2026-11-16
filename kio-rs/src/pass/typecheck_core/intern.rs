@@ -188,6 +188,8 @@ where
     #[cfg(feature = "surface")]
     user_macro_artifacts: Arc<UserMacroArtifactMemo>,
     identity_alias_newtypes: OnceLock<Arc<crate::pass::resolve::IdentityAliasNewtypeIndex>>,
+    #[cfg(feature = "surface")]
+    evaluator_primitives: Option<Arc<crate::normalization::EvalPrimitiveEnv>>,
     #[cfg(feature = "lsp")]
     collect_refactoring_facts: bool,
 }
@@ -211,9 +213,31 @@ where
             #[cfg(feature = "surface")]
             user_macro_artifacts: Arc::new(UserMacroArtifactMemo::default()),
             identity_alias_newtypes: OnceLock::new(),
+            #[cfg(feature = "surface")]
+            evaluator_primitives: None,
             #[cfg(feature = "lsp")]
             collect_refactoring_facts: false,
         })
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn with_evaluator_primitives(
+        mut self: Arc<Self>,
+        primitives: &crate::normalization::EvalPrimitiveEnv,
+    ) -> Arc<Self> {
+        Arc::get_mut(&mut self)
+            .expect("evaluator scope is configured before publication")
+            .evaluator_primitives = Some(Arc::new(primitives.clone()));
+        self
+    }
+
+    #[cfg(feature = "surface")]
+    pub(crate) fn evaluator_literal(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> Option<&crate::comptime::ComptimeLiteralConstructor> {
+        self.evaluator_primitives.as_ref()?.literal(owner, name)
     }
 
     #[cfg(feature = "lsp")]
@@ -226,6 +250,7 @@ where
             #[cfg(feature = "surface")]
             user_macro_artifacts: self.user_macro_artifacts.clone(),
             identity_alias_newtypes: self.identity_alias_newtypes.clone(),
+            evaluator_primitives: self.evaluator_primitives.clone(),
             collect_refactoring_facts: true,
         })
     }

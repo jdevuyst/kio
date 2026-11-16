@@ -1341,6 +1341,158 @@ mod tests {
     }
 
     #[test]
+    fn comptime_literal_import_action_rechecks_and_rejects_stale_diagnostics() {
+        let root = crate::lsp::util::test_file_path("/workspace/comptime-literal-action");
+        let file = root.join("app/main.kio");
+        let provider = "module provider; import __comptime__; pub type Proof = __Comptime__; pub type Flag = Comptime_bool;";
+        let source = "module app/main; import provider(Proof, Flag); fn run(ct: Proof) -> Flag { __.t__(ct) }";
+        let files = BTreeMap::from([
+            (
+                root.join("proof.pkg.kio"),
+                "package proof; bridge { app/main; }".to_owned(),
+            ),
+            (root.join("provider.kio"), provider.to_owned()),
+            (file.clone(), source.to_owned()),
+        ]);
+        let overlay = SourceOverlay::complete(root.clone(), files);
+        let failure = crate::cmd::check::analyze_module_at_with_overlay_lsp(&root, &overlay, &file)
+            .expect_err("missing import must be diagnosed");
+        let located = failure
+            .errors
+            .iter()
+            .find(|located| {
+                located
+                    .error
+                    .diag()
+                    .1
+                    .contains("compile-time literal construction requires")
+            })
+            .unwrap_or_else(|| panic!("missing literal diagnostic: {:?}", failure.errors));
+        let uri = crate::lsp::util::test_file_uri(&file);
+        let diagnostic =
+            super::super::diagnostics::locate_to_diagnostic(located, &LineIndex::new(source), &uri);
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: diagnostic.range,
+            context: CodeActionContext {
+                diagnostics: vec![diagnostic],
+                ..CodeActionContext::default()
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let validation = FixValidationContext {
+            package_root: &root,
+            focus_file: &file,
+            overlay: &overlay,
+        };
+        let actions = handle_code_action(
+            params.clone(),
+            Some(source),
+            None,
+            None,
+            None,
+            None,
+            Some(validation),
+        )
+        .expect("code actions");
+        let action = actions
+            .iter()
+            .find_map(|action| match action {
+                CodeActionOrCommand::CodeAction(action)
+                    if action.title == "Import compile-time APIs" =>
+                {
+                    Some(action)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing import action: {actions:?}"));
+        let edits = action
+            .edit
+            .as_ref()
+            .and_then(|edit| edit.changes.as_ref())
+            .and_then(|changes| changes.get(&uri))
+            .expect("source edits");
+        let repaired = apply_text_edits(source, edits).expect("applicable edits");
+        assert!(repaired.contains("import __comptime__;"), "{repaired}");
+        let mut repaired_overlay = overlay.clone();
+        repaired_overlay.insert(file.clone(), repaired);
+        crate::cmd::check::analyze_module_at_with_overlay_lsp(&root, &repaired_overlay, &file)
+            .expect("the applied action rechecks");
+        let stale = source.replace("__.t__", "__.f__");
+        let mut stale_overlay = overlay.clone();
+        stale_overlay.insert(file.clone(), stale.clone());
+        let stale_validation = FixValidationContext {
+            package_root: &root,
+            focus_file: &file,
+            overlay: &stale_overlay,
+        };
+        let mut stale_params = params;
+        stale_params.context.diagnostics[0].data.as_mut().unwrap()["kioDocumentVersion"] =
+            serde_json::json!(4);
+        let stale_actions = handle_code_action(
+            stale_params,
+            Some(&stale),
+            None,
+            None,
+            None,
+            Some(5),
+            Some(stale_validation),
+        )
+        .expect("stale response");
+        assert!(!stale_actions.iter().any(|action| matches!(action, CodeActionOrCommand::CodeAction(action) if action.title == "Import compile-time APIs")));
+
+        let commented = source.replace("module app/main;", "module app/main // header\n;");
+        let mut commented_overlay = overlay.clone();
+        commented_overlay.insert(file.clone(), commented.clone());
+        let failure =
+            crate::cmd::check::analyze_module_at_with_overlay_lsp(&root, &commented_overlay, &file)
+                .expect_err("missing import remains diagnosed");
+        let located = failure
+            .errors
+            .iter()
+            .find(|located| {
+                located
+                    .error
+                    .diag()
+                    .1
+                    .contains("compile-time literal construction requires")
+            })
+            .expect("literal diagnostic with header comment");
+        let diagnostic = super::super::diagnostics::locate_to_diagnostic(
+            located,
+            &LineIndex::new(&commented),
+            &uri,
+        );
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri },
+            range: diagnostic.range,
+            context: CodeActionContext {
+                diagnostics: vec![diagnostic],
+                ..CodeActionContext::default()
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let validation = FixValidationContext {
+            package_root: &root,
+            focus_file: &file,
+            overlay: &commented_overlay,
+        };
+        let actions = handle_code_action(
+            params,
+            Some(&commented),
+            None,
+            None,
+            None,
+            None,
+            Some(validation),
+        )
+        .expect("commented response");
+        assert!(!actions.iter().any(|action| matches!(action, CodeActionOrCommand::CodeAction(action) if action.title == "Import compile-time APIs")), "header comment ownership must remain intact");
+    }
+
+    #[test]
     fn eager_fixes_do_not_require_a_parsed_syntax_context() {
         let uri = Uri::from_str("file:///workspace/a/b/c.kio").expect("file URI");
         let range = Range::default();

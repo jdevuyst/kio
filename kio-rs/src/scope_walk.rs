@@ -15,8 +15,9 @@ use crate::span::Span;
 mod tooling;
 #[cfg(feature = "lsp")]
 pub(crate) use tooling::{
-    expression_operators, tooling_config_value_field, tooling_keyword_description,
-    tooling_keyword_field, tooling_module, tooling_operators, tooling_path_allowed,
+    expression_operators, tooling_comptime_literals, tooling_config_value_field,
+    tooling_keyword_description, tooling_keyword_field, tooling_module, tooling_operators,
+    tooling_path_allowed,
 };
 #[cfg(any(test, feature = "lsp"))]
 pub(crate) use tooling::{tooling_candidates, tooling_keywords};
@@ -700,6 +701,7 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
         return;
     }
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => expr_scope(proof, offset, ns, out),
         Expr::BlockCall { prefix, blocks, .. } => {
             for stage in prefix {
                 args_scope(&stage.args, offset, ns, out);

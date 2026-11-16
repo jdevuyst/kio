@@ -10662,9 +10662,10 @@ impl<'a> Parser<'a> {
                 matches!(
                     token.kind,
                     TokenKind::Ident(_) | TokenKind::SymbolRun(_) | TokenKind::Slot1
-                ) && token.span.start <= cursor
-                    && cursor <= token.span.end
+                ) || (matches!(slot, CursorSlot::Value | CursorSlot::Argument)
+                    && token.kind == TokenKind::Slot2)
             })
+            .filter(|token| token.span.start <= cursor && cursor <= token.span.end)
             .map_or(Span::new(cursor, cursor), |token| token.span);
         let Some(tooling) = &mut self.tooling else {
             return;
@@ -11765,7 +11766,74 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    // The delimiters and literal are contiguous; trivia may surround the proof.
+    fn comptime_literal_starts_here(&self) -> bool {
+        let Some(prefix) = self.peek_token_at(0) else {
+            return false;
+        };
+        if prefix.kind != TokenKind::Slot2 {
+            return false;
+        }
+        let Some(next) = self.peek_token_at(1) else {
+            return false;
+        };
+        if prefix.span.end != next.span.start {
+            return false;
+        }
+        match next.kind {
+            TokenKind::StrLit(_) => self.peek_token_at(2).is_some_and(|suffix| {
+                suffix.kind == TokenKind::Slot2 && next.span.end == suffix.span.start
+            }),
+            TokenKind::SymbolRun(ref dot) if dot == "." => {
+                self.peek_token_at(2).is_some_and(|name| {
+                    matches!(&name.kind, TokenKind::Ident(s) if s == "t__" || s == "f__")
+                        && next.span.end == name.span.start
+                })
+            }
+            _ => false,
+        }
+    }
+
+    fn comptime_literal(&mut self) -> Result<Expr, Error> {
+        let start = self.advance().span.start;
+        let value = match self.advance().kind {
+            TokenKind::StrLit(value) => {
+                self.advance(); // closing __
+                crate::ast::ComptimeLiteralValue::Str(value)
+            }
+            TokenKind::SymbolRun(_) => {
+                let TokenKind::Ident(name) = self.advance().kind else {
+                    unreachable!()
+                };
+                crate::ast::ComptimeLiteralValue::Bool(name == "t__")
+            }
+            _ => unreachable!(),
+        };
+        let leading = self.peek_leading_trivia();
+        let (mut args, end, source_trivia) = self.call_arg_list(None, leading)?;
+        if args.len() != 1 {
+            return Err(self.err(
+                Span::new(start, end),
+                "a compile-time literal requires exactly one proof expression",
+            ));
+        }
+        let CallArg::Value(proof) = args.remove(0) else {
+            unreachable!()
+        };
+        Ok(Expr::ComptimeLiteral {
+            occurrence: Default::default(),
+            value,
+            proof: Box::new(proof),
+            source_trivia,
+            meta: Meta::new(Span::new(start, end)),
+            ext: self.fresh_node_id(),
+        })
+    }
+
     fn expr_primary(&mut self) -> Result<Expr, Error> {
+        if self.comptime_literal_starts_here() {
+            return self.comptime_literal();
+        }
         let rec_call = self.peek_ident_named("recur") && self.rec_call_starts_here();
         if !rec_call && self.block_call_starts_here() {
             return self.block_call();

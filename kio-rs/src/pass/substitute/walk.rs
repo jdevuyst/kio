@@ -55,6 +55,9 @@ pub(super) trait LoweredToPrePrime {
     fn rewrite_expr_rec_order(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
     fn rewrite_expr_rec_quote(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
+    fn rewrite_expr_comptime_literal(&mut self, e: &Expr<Lowered>)
+    -> Result<Expr<PrePrime>, Error>;
+
     fn rewrite_expr_user_macro(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
     fn rewrite_expr_ufcs(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
@@ -712,6 +715,7 @@ pub(super) trait LoweredToPrePrime {
             Expr::BoolLit { .. } => self.visit_expr_bool_lit(e),
             Expr::RecOrder { .. } => self.rewrite_expr_rec_order(e),
             Expr::RecQuote { .. } => self.rewrite_expr_rec_quote(e),
+            Expr::ComptimeLiteral { .. } => self.rewrite_expr_comptime_literal(e),
             Expr::UserMacro { .. } => self.rewrite_expr_user_macro(e),
             Expr::Ufcs { .. } => self.rewrite_expr_ufcs(e),
             // Statically uninhabited at Lowered (`label_elab` /

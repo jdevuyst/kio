@@ -274,7 +274,7 @@ pure fn with_row_slots(
 , value: __Checked_term__
 , consume: Row_consumer
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, source, __type_unit__(ct))
   , .() -> __Checked_term__ { consume(slot_nil()) }
   , .() -> __Checked_term__ { with_product_slots(ct, source, value, consume) }
@@ -385,7 +385,7 @@ pure fn remove_updated_slots(ct: __Comptime__, patches: Slot_list, source: Slot_
           __either__[Matched_slot][.][Slot_list_result](
           , take_first_matching(ct, patch_type, row_slot_types(ct, rest), rest)
           , .(_duplicate: Matched_slot) -> Slot_list_result {
-              slot_list_err(ct, "with repeats an exact update type"[__Diagnostic_text__])
+              slot_list_err(ct, __"with repeats an exact update type"__(ct))
             }
           , .() -> Slot_list_result {
               __either__[Matched_slot][.][Slot_list_result](
@@ -425,7 +425,7 @@ pure fn normalize_final_bound_slot(ct: __Comptime__, slots: Slot_list) -> Slot_l
       , .(cell: Slot_cell) -> Slot_list {
           let head = __fst__[Slot][Slot_list](cell);
           let tail = __snd__[Slot][Slot_list](cell);
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , slot_empty(ct, tail)
           , .() -> Slot_list { finish(product_slots(ct, slot_type(ct, head), slot_term(ct, head))) }
           , .() -> Slot_list {
@@ -447,7 +447,7 @@ pure fn finish_bound_slots_reordered(ct: __Comptime__, slots: Slot_list, target:
     , product_spine(ct, target)
     , row_slot_types(ct, normalized)
     , normalized
-    , .t
+    , __.t__(ct)
     )
   )
 }
@@ -603,8 +603,8 @@ pure fn select_checked(
                 , selector_slots
                 , row_slot_types(ct, source_slots)
                 , source_slots
-                , "select function input has no exact matching row field"[__Diagnostic_text__]
-                , "select requires a function for each selector"[__Diagnostic_text__]
+                , __"select function input has no exact matching row field"__(ct)
+                , __"select requires a function for each selector"__(ct)
                 )
               , .(selected: Slot_list) -> __Checked_term__ { slots_term(ct, selected) }
               , .(message: __Diagnostic_text__) -> __Checked_term__ { __macro_error__(ct, message) }

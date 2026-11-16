@@ -3,3 +3,7 @@ module provider;
 import __comptime__;
 
 pub type Flag = Comptime_bool;
+
+pub type Proof = __Comptime__;
+
+pub pure fn make_flag(ct: Proof) -> Flag { __.t__(ct) }

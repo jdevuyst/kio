@@ -518,10 +518,18 @@ to the ordinary `Type` grammar. Type positions use exact names such as `Foo`,
 
 ### Surface expression additions
 
+Compile-time literal delimiters adjoin the Boolean or string token:
+`__.t__(ct)` and `__"text"__(ct)`. The parentheses contain one proof expression,
+not a type annotation. Import and carrier requirements follow
+[`language.md` § Literals](language.md#literals). This production is absent
+from Kio'.
+
 ```ebnf
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)                    (* unannotated literal — surface only *)
 
-ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
+ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall | ComptimeLiteral
+
+ComptimeLiteral  ::= '__' (BoolLit | STR_LIT) '__' '(' Expr ')'
 
 TupleLit          ::= '(' Expr ',' Expr (',' Expr)* ','? ')'                  (* n-ary tuple; n >= 2 *)
 BraceUnit         ::= '{' ','* '}'                                            (* unit value *)

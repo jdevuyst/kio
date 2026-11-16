@@ -43,6 +43,30 @@ pub(crate) fn tooling_path_allowed(probe: &ToolingProbe<'_>, outer: Option<&Modu
         })
 }
 
+/// Compiler-literal forms are available only in an importing module's value scope.
+#[cfg(feature = "lsp")]
+pub(crate) fn tooling_comptime_literals(
+    probe: &ToolingProbe<'_>,
+    module: Option<&Module>,
+) -> &'static [&'static str] {
+    let Some(cursor) = &probe.facts.cursor else {
+        return &[];
+    };
+    if probe.facts.suppression.is_some()
+        || cursor.path.is_some()
+        || !matches!(cursor.slot, CursorSlot::Value | CursorSlot::Argument)
+        || !module.is_some_and(|module| {
+            module
+                .imports
+                .iter()
+                .any(|import| matches!(import.kind, ImportKind::Comptime))
+        })
+    {
+        return &[];
+    }
+    &["__.t__", "__.f__", "__\"\"__"]
+}
+
 /// Consumer-declared grammar controls expression syntax independently of the
 /// implementation that the explicitly selected provider resolves.
 #[cfg(feature = "lsp")]

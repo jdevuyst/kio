@@ -101,6 +101,28 @@ pub trait DesugaredToLowered {
         })
     }
 
+    fn visit_expr_comptime_literal(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
+        let Expr::ComptimeLiteral {
+            value,
+            proof,
+            source_trivia,
+            meta,
+            ext,
+            ..
+        } = e
+        else {
+            unreachable!()
+        };
+        Ok(Expr::ComptimeLiteral {
+            occurrence: Default::default(),
+            value,
+            proof: Box::new(self.walk_expr(*proof)?),
+            source_trivia,
+            meta: Meta::new(meta.span),
+            ext,
+        })
+    }
+
     fn visit_expr_call(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Call {
             source_trivia: _,
@@ -774,6 +796,7 @@ pub trait DesugaredToLowered {
 
     fn walk_expr(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         match e {
+            Expr::ComptimeLiteral { .. } => self.visit_expr_comptime_literal(e),
             Expr::Path { .. } => self.visit_expr_path(e),
             Expr::Call { .. } => self.visit_expr_call(e),
             Expr::FnExpr { .. } => self.visit_expr_fn(e),

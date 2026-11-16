@@ -1883,6 +1883,14 @@ where
             );
             return Ok(Synth::value_interned(ty));
         }
+        #[cfg(feature = "surface")]
+        if let Some(constructor) = tcx
+            .env
+            .typecheck_scope
+            .evaluator_literal(&tcx.env.module_path, head)
+        {
+            return Ok(Synth::value(constructor.signature(span)));
+        }
         if let Some(d) = tcx.env.fn_defs.get(head) {
             tcx.require_pure_fn(span, "fn", head, &d.purity)?;
             record_binder_at(
@@ -1963,6 +1971,15 @@ where
             && builtin.is_value_name()
             && let Some(scheme) = comptime_scheme(builtin, span)?
         {
+            record_binder_at(
+                head_span,
+                ResolvedBinderKind::Intrinsic,
+                head,
+                None,
+                None,
+                None,
+                tcx,
+            );
             return Ok(scheme);
         }
         if tcx.env.intrinsics_in_scope
@@ -2728,19 +2745,6 @@ where
     {
         return check_literal_annotation(shape, annotation, span, numeric, tcx);
     }
-    let bound = tcx.in_scope_type_param_binders();
-    let (normalized, _) = super::aliases::unfold_and_qualify_state(
-        expected.as_type(),
-        &tcx.binder_alias_ctx(&bound),
-        expected.identity_is_canonical(),
-    );
-    // The expected type has already passed ordinary type resolution.
-    if shape == crate::ast::RoleShape::Str
-        && matches!(&normalized, crate::ast::Type::Path { segments, args, .. }
-            if segments.len() == 1 && segments[0].as_str() == "__Diagnostic_text__" && args.is_empty())
-    {
-        return Ok(super::LiteralResolution::annotated(expected.clone()));
-    }
     let expected_role =
         annotated_host_role(expected.as_type(), expected.identity_is_canonical(), tcx);
     if shape == crate::ast::RoleShape::Int
@@ -2794,9 +2798,9 @@ where
 
 fn annotated_literal_resolution<P: crate::ast::Phase>(
     written: super::InternedType<P>,
-    (module, _): (String, String),
+    _identity: (String, String),
 ) -> super::LiteralResolution<P> {
-    super::LiteralResolution::annotated(written).with_runtime_erasure(module == "__comptime__")
+    super::LiteralResolution::annotated(written)
 }
 
 pub fn check_literal_annotation<P>(
@@ -2809,24 +2813,6 @@ pub fn check_literal_annotation<P>(
 where
     P: super::DeclarationPhase + crate::ast::Phase + Clone,
 {
-    let bound = tcx.in_scope_type_param_binders();
-    if shape == crate::ast::RoleShape::Str
-        && let Some((segments, owner)) =
-            super::aliases::terminal_nominal_in_scope(annot, &tcx.binder_alias_ctx(&bound), false)
-        && segments.len() == 1
-        && segments[0].as_str() == "__Diagnostic_text__"
-        && owner.is_some_and(|owner| {
-            owner
-                .imports
-                .iter()
-                .any(|import| matches!(import.kind, crate::ast::ImportKind::Comptime))
-        })
-    {
-        super::types::compute_checked_kind(annot, annot.span(), tcx)?;
-        return Ok(super::LiteralResolution::annotated(
-            super::InternedType::fresh_canonical(ty_path("__Diagnostic_text__", annot.span())),
-        ));
-    }
     let crate::ast::Type::Path { segments, .. } = annot else {
         return Err(Error::type_(
             annot.span(),
@@ -3043,6 +3029,16 @@ where
     let result_ty = || ty_path::<P>("result", span);
 
     let scheme = match name {
+        "__comptime_if_then_else__" => refl_scheme_from_parts(
+            vec![
+                tp("a", span),
+                vp("condition", ty_path("Comptime_bool", span), span),
+                vp("then", ty_func(vec![], ty_path("a", span), span), span),
+                vp("else", ty_func(vec![], ty_path("a", span), span), span),
+            ],
+            ty_path("a", span),
+            span,
+        ),
         "__reflect_type__" => refl_scheme_from_parts(vec![tp("a", span)], type_ty(), span),
         "__type_view__" => {
             refl_scheme_from_parts(vec![vp("typ", type_ty(), span)], type_view_ty(span), span)

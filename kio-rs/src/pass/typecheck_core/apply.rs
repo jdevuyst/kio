@@ -2876,7 +2876,7 @@ enum PathUnitShapeDecision<'m> {
 /// commits, so a total structural decline leaves no partial publication.
 #[cfg(feature = "surface")]
 struct PreparedDirectCallee {
-    span: Span,
+    site: crate::ast::ExpressionSite,
     synth: Synth<crate::ast::Lowered>,
     binders: Vec<(Span, crate::pass::typecheck_full::ResolvedBinder)>,
     retained_type: Option<std::sync::Arc<super::env::RetainedLocalType>>,
@@ -2888,17 +2888,18 @@ impl PreparedDirectCallee {
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<Option<Self>, Error> {
-        let crate::ast::Expr::Path { segments, meta, .. } = source else {
+        let crate::ast::Expr::Path { segments, .. } = source else {
             return Ok(None);
         };
-        Self::path_segments(segments, meta.span, tcx).map(Some)
+        Self::path_segments(segments, source.site(), tcx).map(Some)
     }
 
     fn path_segments<'m>(
         segments: &'m [crate::ast::PathSegment],
-        span: Span,
+        site: crate::ast::ExpressionSite,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<Self, Error> {
+        let span = site.span;
         let mut binders = Vec::new();
         let mut retained_type = None;
         let synth = super::synth::synth_path_with_binder_recorder(
@@ -2918,7 +2919,7 @@ impl PreparedDirectCallee {
             },
         )?;
         Ok(Self {
-            span,
+            site,
             synth,
             binders,
             retained_type,
@@ -2933,12 +2934,15 @@ impl PreparedDirectCallee {
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<(), Error> {
         for (span, binder) in &self.binders {
+            if let crate::pass::typecheck_full::ResolvedBinder::Intrinsic { name } = binder {
+                publication.record_primitive_value(self.site, name.clone());
+            }
             publication.record_position_binder(*span, binder.clone());
         }
         stage_direct_callee_position_type(
             &self.synth,
             self.retained_type.as_deref(),
-            self.span,
+            self.site.span,
             owner,
             store,
             publication,
@@ -3379,6 +3383,9 @@ impl<'m> PreparedOrdinaryValue<'m> {
         record_staged_prepared_ordinary_value();
         let scoped = self.scoped_type(owner, store, tcx)?;
         for (span, binder) in self.binders {
+            if let crate::pass::typecheck_full::ResolvedBinder::Intrinsic { name } = &binder {
+                publication.record_primitive_value(self.source.site(), name.clone());
+            }
             publication.record_position_binder(span, binder);
         }
         let is_scheme = self.synth.is_scheme;
@@ -7378,7 +7385,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             crate::ast::Expr::StrLit { .. }
             | crate::ast::Expr::IntLit { .. }
             | crate::ast::Expr::FloatLit { .. }
-            | crate::ast::Expr::BoolLit { .. } => OrdinaryValueSeed::Literal,
+            | crate::ast::Expr::BoolLit { .. }
+            | crate::ast::Expr::ComptimeLiteral { .. } => OrdinaryValueSeed::Literal,
             crate::ast::Expr::Call { callee, args, .. } => {
                 let mut computed = OrdinaryRecursiveFamily::ComputedWithoutImmediate;
                 if search_immediate {
@@ -7549,7 +7557,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     args,
                     None,
                     0,
-                    direct.span,
+                    direct.site.span,
                     call_site,
                     EmptyCallMode::ImplicitUnit,
                     None,
@@ -16341,7 +16349,14 @@ impl<'m> OrdinaryValueCursor<'m> {
             .map(|expected| store.try_zonk_goal_free(delta, expected.clone(), tcx))
             .transpose()?
             .flatten();
-        let explicit = annotation.is_some_and(|ty| !matches!(ty, crate::ast::Type::Infer { .. }));
+        let explicit = annotation.is_some_and(|ty| !matches!(ty, crate::ast::Type::Infer { .. }))
+            || matches!(
+                self.source,
+                crate::ast::Expr::ComptimeLiteral {
+                    value: crate::ast::ComptimeLiteralValue::Bool(_),
+                    ..
+                }
+            );
         if ready.is_none()
             && !explicit
             && mode.is_final_check()
@@ -16368,25 +16383,40 @@ impl<'m> OrdinaryValueCursor<'m> {
                 return Ok(OrdinaryValueAdvance::Waiting(Box::new(self)));
             }
         }
-        let resolved = match ready {
-            Some(ready) => super::synth::resolve_literal_against_unrecorded(
-                shape,
-                annotation,
-                ready.ty(),
-                span,
-                super::numeric_literal_diagnostic(self.source),
-                tcx,
-            )?,
-            None if !explicit && !mode.is_final_check() => {
+        let comptime = matches!(self.source, crate::ast::Expr::ComptimeLiteral { .. });
+        let mut constructor_plan = None;
+        let resolved = if comptime {
+            if ready.is_none() && !explicit && !mode.is_final_check() {
                 return Ok(OrdinaryValueAdvance::pending(self));
             }
-            None => super::synth::synth_literal_unrecorded(
-                shape,
-                annotation,
-                span,
-                super::numeric_literal_diagnostic(self.source),
+            let (ty, plan) = crate::pass::typecheck_full::prepare_comptime_literal(
+                self.source,
+                ready.as_ref().map(|ready| ready.ty()),
                 tcx,
-            )?,
+            )?;
+            constructor_plan = Some(plan);
+            super::LiteralResolution::annotated(ty)
+        } else {
+            match ready {
+                Some(ready) => super::synth::resolve_literal_against_unrecorded(
+                    shape,
+                    annotation,
+                    ready.ty(),
+                    span,
+                    super::numeric_literal_diagnostic(self.source),
+                    tcx,
+                )?,
+                None if !explicit && !mode.is_final_check() => {
+                    return Ok(OrdinaryValueAdvance::pending(self));
+                }
+                None => super::synth::synth_literal_unrecorded(
+                    shape,
+                    annotation,
+                    span,
+                    super::numeric_literal_diagnostic(self.source),
+                    tcx,
+                )?,
+            }
         };
         let (annotation, imports, aliases) =
             crate::pass::typecheck_full::prepare_literal_annotation(
@@ -16399,10 +16429,12 @@ impl<'m> OrdinaryValueCursor<'m> {
             let expected = expected.into_expected_equation_operand(owner, store, span)?;
             store.constrain_equation(delta, actual.clone(), expected, span, tcx)?;
         }
+        if let Some(plan) = constructor_plan {
+            publication.record_comptime_literal(self.source.site(), plan);
+        }
         publication.record_literal_resolution(
             self.source.site(),
             annotation,
-            resolved.runtime_erases,
             resolved.numeric_value,
         );
         publication.record_prime_requalification_bindings(imports, aliases);
@@ -16452,6 +16484,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::IntLit { .. }
             | crate::ast::Expr::FloatLit { .. }
             | crate::ast::Expr::BoolLit { .. }
+            | crate::ast::Expr::ComptimeLiteral { .. }
             | crate::ast::Expr::RecOrder { .. }
             | crate::ast::Expr::RecQuote { .. }
             | crate::ast::Expr::UserMacro { .. }
@@ -22839,7 +22872,7 @@ mod tests {
     fn retained_local_proof_storage_is_one_optional_pointer_per_prepared_use() {
         assert_eq!(std::mem::size_of::<super::super::Local<'_, Lowered>>(), 104);
         assert_eq!(std::mem::size_of::<TypeCtx<'_, '_, Lowered>>(), 112);
-        assert_eq!(std::mem::size_of::<PreparedDirectCallee>(), 96);
+        assert_eq!(std::mem::size_of::<PreparedDirectCallee>(), 104);
         assert_eq!(std::mem::size_of::<PreparedOrdinaryValue<'_>>(), 96);
         assert_eq!(
             std::mem::size_of::<Option<std::sync::Arc<super::super::env::RetainedLocalType>>>(),
@@ -31503,7 +31536,7 @@ mod tests {
                 label,
                 body,
                 accepts,
-                "host fn condition_slot[A](_condition: Comptime_bool, _true: . -> A, _false: . -> A) -> A;",
+                "host fn condition_slot[A](_condition: Bool, _true: . -> A, _false: . -> A) -> A;",
             );
         }
     }
@@ -31519,6 +31552,7 @@ mod tests {
             r#"module main;
             import __comptime__;
             import mechanisms(macro choose_lazy);
+            host type Bool role(bool);
             {extra}
             host fn supply[A]() -> A;
             pure fn unit_checked(ct: __Comptime__, _result: .) -> __Checked_term__ {{ __term_unit__(ct) }}
@@ -31528,8 +31562,8 @@ mod tests {
             fn consume_unit(_first: ., _second: . -> ., _later: .) -> . {{ () }}
             fn hold[A](_first: . -> A) -> . {{ () }}
             fn hold_for[A](_first: . -> A, _value: A) -> . {{ () }}
-            fn hold_bool[A](_first: . -> A) -> Comptime_bool {{ .t }}
-            fn hold_bool_for[A](_first: . -> A, _value: A) -> Comptime_bool {{ .t }}
+            fn hold_bool[A](_first: . -> A) -> Bool {{ .t }}
+            fn hold_bool_for[A](_first: . -> A, _value: A) -> Bool {{ .t }}
             fn retained_source() -> . {{ .() {{ supply() }} }}
             fn witness() -> . {{ {body} }}
         "#

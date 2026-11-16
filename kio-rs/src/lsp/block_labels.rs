@@ -115,6 +115,7 @@ pub(crate) fn record_module(
             return None;
         }
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => pending.push(proof),
             Expr::BlockCall {
                 head,
                 prefix,

@@ -1,0 +1,45 @@
+module constructors;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Proof = __Comptime__;
+
+type Message = __Diagnostic_text__;
+
+pure fn identity[A](value: A) -> A { value }
+
+pure fn text(proof: Proof) -> Comptime_str { __"content"__(identity(proof)) }
+
+pure fn message(packet: Proof & .) -> Message {
+  __"wrong conditional branch"__(__fst__[Proof][.](packet))
+}
+
+pure fn echo_impl(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ { value }
+
+macro echo : Comptime_bool -> Comptime_bool { impl echo_impl }
+
+pure fn echoed_false(packet: Proof & .) -> Comptime_bool { echo(__.f__(__fst__[Proof][.](packet))) }
+
+pure fn true_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  let _ = text(ct);
+  let choose = __comptime_if_then_else__(identity(ct));
+  choose[__Checked_term__](
+  , echo(__.t__(identity(ct)))
+  , .() -> __Checked_term__ { value }
+  , .() -> __Checked_term__ { __macro_error__(ct, message((ct, ()))) }
+  )
+}
+
+pure fn false_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __comptime_if_then_else__(ct)(
+  , echoed_false((ct, ()))
+  , .() -> __Checked_term__ { __macro_error__(ct, message((ct, ()))) }
+  , .() -> __Checked_term__ { value }
+  )
+}
+
+pub macro checked_true : [T] T -> T { impl true_impl }
+
+pub macro checked_false : [T] T -> T { impl false_impl }

@@ -6644,6 +6644,7 @@ impl<'m> Resolver<'m> {
         locals: &HashMap<&'m str, Binding>,
     ) -> Result<(), Error> {
         match e {
+            crate::ast::Expr::ComptimeLiteral { proof, .. } => self.check_expr(proof, locals),
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             crate::ast::Expr::Path {
                 occurrence: _,

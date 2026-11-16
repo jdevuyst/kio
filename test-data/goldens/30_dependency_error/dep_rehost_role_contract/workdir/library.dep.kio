@@ -1,0 +1,7 @@
+dependency library;
+
+source {
+  path "../library/library.pkg.kio"
+}
+
+rehost library/values to provider;

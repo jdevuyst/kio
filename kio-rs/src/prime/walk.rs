@@ -645,6 +645,10 @@ pub trait SurfaceToPrime {
             Expr::UserMacro {
                 name, stages, meta, ..
             } => self.rewrite_expr_user_macro(name, stages, meta),
+            Expr::ComptimeLiteral { meta, .. } => Err(Error::parse(
+                meta.span,
+                "compile-time literal constructors are not part of Kio'; use `kio` to compile full Kio source",
+            )),
             Expr::BlockCall { meta, .. } => Err(Error::parse(
                 meta.span,
                 "trailing blocks are not part of Kio'; use `kio` to compile full Kio source",

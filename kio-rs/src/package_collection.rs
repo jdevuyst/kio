@@ -921,15 +921,21 @@ pub fn materialize_dependencies_filtered(
         .collect();
     let mut retype_graph = RetypeGraph::build(&all_retypes);
 
-    let mut retype_validation = RetypeValidationState::default();
+    let mut validation = DependencyValidationState {
+        has_selected_rehost: parsed.dep_files.iter().any(|(_, dependency)| {
+            only.is_none_or(|only| only.contains(&dependency.name)) && !dependency.rehost.is_empty()
+        }),
+        ..Default::default()
+    };
     if parsed.dep_files.iter().any(|(_, dependency)| {
-        only.is_none_or(|only| only.contains(&dependency.name)) && !dependency.retype.is_empty()
+        only.is_none_or(|only| only.contains(&dependency.name))
+            && (!dependency.retype.is_empty() || !dependency.rehost.is_empty())
     }) {
-        retype_validation.visibility_modules = Some(
+        validation.visibility_modules = Some(
             parsed
                 .modules
                 .iter()
-                .map(|(path, module)| (path.clone(), retype_type_projection(module.clone())))
+                .map(|(path, module)| (path.clone(), dependency_type_projection(module.clone())))
                 .collect(),
         );
     }
@@ -946,21 +952,30 @@ pub fn materialize_dependencies_filtered(
             dependency,
             &local_modules,
             &mut retype_graph,
-            &mut retype_validation,
+            &mut validation,
             force,
         )?;
         outcomes.insert(dependency.name.clone(), outcome);
     }
 
-    if let Some(modules) = retype_validation.visibility_modules.take() {
-        validate_retype_interface(
-            &retype_validation.checks,
-            &retype_validation.imports,
-            &modules,
-        )?;
+    if let Some(modules) = validation.visibility_modules.take() {
+        validate_rehost_roles(&validation.rehost_roles, &modules)?;
+        let (retyped, role_checked): (Vec<_>, Vec<_>) = std::mem::take(&mut validation.pending)
+            .into_iter()
+            .partition(|pending| pending.gate == DependencyPublicationGate::RetypeInterface);
+        validation.pending = retyped;
+        for pending in role_checked {
+            publish_materialized_dependency(
+                &pending.dep_dir,
+                &pending.local_name,
+                pending.source_span,
+                &pending.desired,
+            )?;
+        }
+        validate_retype_interface(&validation.retype_checks, &validation.imports, &modules)?;
     }
-    retype_validation.imports.clear();
-    for pending in retype_validation.pending.drain(..) {
+    validation.imports.clear();
+    for pending in validation.pending.drain(..) {
         publish_materialized_dependency(
             &pending.dep_dir,
             &pending.local_name,
@@ -977,16 +992,16 @@ pub fn materialize_dependencies_filtered(
     // (A skipped, already-up-to-date dependency still registers its
     // congruence check above, so the obligation is discharged against the
     // on-disk tree whether or not this run rewrote it.)
-    if !retype_validation.checks.is_empty() {
+    if !validation.retype_checks.is_empty() {
         let materialized = parse_package_files(&root, &SourceOverlay::empty())
             .map(|p| p.modules)
             .unwrap_or_default();
         let semantics = RetypeSemanticPackage::build(
-            &retype_validation.checks,
-            &retype_validation.source_modules,
+            &validation.retype_checks,
+            &validation.source_modules,
             &materialized,
         )?;
-        for (check, pairs) in retype_validation.checks.iter().zip(&semantics.pairs) {
+        for (check, pairs) in validation.retype_checks.iter().zip(&semantics.pairs) {
             validate_retype_congruence(check, pairs, &semantics.package)?;
         }
     }
@@ -1003,7 +1018,7 @@ pub fn materialize_dependencies_filtered(
 fn validate_retype_congruence(
     check: &DeferredRetypeCheck,
     pairs: &[CanonicalRetypePair],
-    package: &Package<RetypeSemanticPhase>,
+    package: &Package<DependencySemanticPhase>,
 ) -> Result<(), LocatedError> {
     debug_assert_eq!(pairs.len(), check.from_newtypes.len());
     for (snapshot, pair) in check.from_newtypes.iter().zip(pairs) {
@@ -1214,7 +1229,7 @@ fn validate_retype_interface(
         )
         .map(module_path_surface)
         .collect();
-    let projected = retype_semantic_projection(modules, &BTreeMap::new(), roots);
+    let projected = dependency_semantic_projection(modules, &BTreeMap::new(), roots);
     let find_module = |path: &crate::ast::ModulePath| {
         projected
             .iter()
@@ -2413,16 +2428,86 @@ struct DeferredRetypeCheck {
     from_newtypes: Vec<RetypedNewtypeSnapshot>,
 }
 
-/// Deferred inputs accumulated while dependencies are materialized, then
-/// discharged together once every possible counterpart is on disk.
+/// Type-only validation uses the complete dependency overlay because a
+/// replacement provider may be materialized later in the same operation.
 #[cfg(feature = "cli")]
 #[derive(Default)]
-struct RetypeValidationState {
-    checks: Vec<DeferredRetypeCheck>,
+struct DependencyValidationState {
+    retype_checks: Vec<DeferredRetypeCheck>,
+    rehost_roles: Vec<RehostRoleCheck>,
+    has_selected_rehost: bool,
     source_modules: BTreeMap<String, (PathBuf, Module<Surface>)>,
     visibility_modules: Option<Vec<(PathBuf, Module<Surface>)>>,
     imports: Vec<RetypeImport>,
-    pending: Vec<PendingRetypeMaterialization>,
+    pending: Vec<PendingDependencyMaterialization>,
+}
+
+#[cfg(feature = "cli")]
+struct RehostRoleCheck {
+    dep_file_path: PathBuf,
+    span: Span,
+    from: crate::ast::ModulePath,
+    name: String,
+    role: crate::ast::Role,
+}
+
+#[cfg(feature = "cli")]
+fn validate_rehost_roles(
+    checks: &[RehostRoleCheck],
+    modules: &[(PathBuf, Module<Surface>)],
+) -> Result<(), LocatedError> {
+    if checks.is_empty() {
+        return Ok(());
+    }
+    let roots = checks
+        .iter()
+        .map(|check| module_path_surface(&check.from))
+        .collect();
+    let projected = dependency_semantic_projection(modules, &BTreeMap::new(), roots);
+    let package = dependency_projection_package(lower_dependency_type_projection(projected)?)?;
+    let mut by_module = BTreeMap::<String, Vec<&RehostRoleCheck>>::new();
+    for check in checks {
+        by_module
+            .entry(module_path_surface(&check.from))
+            .or_default()
+            .push(check);
+    }
+    for (path, checks) in by_module {
+        let entry = package.module(&path).expect("rehost source was projected");
+        let env = crate::pass::typecheck_core::ModuleEnv::build(
+            &entry.module,
+            None,
+            None,
+            Some(&package),
+        )
+        .map_err(|error| LocatedError {
+            file_path: entry.file_path.clone(),
+            error,
+        })?;
+        for check in checks {
+            let ty = Type::synth_path(vec![check.name.clone()], Vec::new(), check.span);
+            let actual = env.role_type_identity(&ty, false).map(|(role, _)| role);
+            if actual != Some(check.role) {
+                let actual = actual.map_or_else(
+                    || "no literal role".to_owned(),
+                    |role| format!("role({})", role.as_str()),
+                );
+                return Err(LocatedError {
+                    file_path: check.dep_file_path.clone(),
+                    error: Error::dep(
+                        check.span,
+                        format!(
+                            "`rehost` replacement for `{path}.{}` requires role({}), but the replacement has {actual}",
+                            check.name,
+                            check.role.as_str(),
+                        ),
+                    )
+                    .with_help("provide a type with the role declared by the dependency's host type"),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cli")]
@@ -2436,7 +2521,15 @@ struct RetypeImport {
 }
 
 #[cfg(feature = "cli")]
-struct PendingRetypeMaterialization {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DependencyPublicationGate {
+    RehostRoles,
+    RetypeInterface,
+}
+
+#[cfg(feature = "cli")]
+struct PendingDependencyMaterialization {
+    gate: DependencyPublicationGate,
     dep_dir: PathBuf,
     local_name: String,
     source_span: Span,
@@ -2828,17 +2921,17 @@ fn apply_retype(
 }
 
 #[cfg(all(feature = "cli", feature = "surface"))]
-type RetypeSemanticPhase = crate::ast::Lowered;
+type DependencySemanticPhase = crate::ast::Lowered;
 #[cfg(all(feature = "cli", not(feature = "surface")))]
-type RetypeSemanticPhase = Prime;
+type DependencySemanticPhase = Prime;
 
 /// Canonical, alias-free payload schemes for one `retype` pair. Header
 /// binders are represented as outer `forall`s, so the shared structural
 /// comparison keeps alpha-equivalence and binder kinds intact.
 #[cfg(feature = "cli")]
 struct CanonicalRetypePair {
-    from: Type<RetypeSemanticPhase>,
-    to: Type<RetypeSemanticPhase>,
+    from: Type<DependencySemanticPhase>,
+    to: Type<DependencySemanticPhase>,
     counterpart: crate::ast::Newtype<Surface>,
     counterpart_module: crate::ast::ModulePath,
 }
@@ -2850,7 +2943,7 @@ struct CanonicalRetypePair {
 /// alias materializer used by the typer.
 #[cfg(feature = "cli")]
 struct RetypeSemanticPackage {
-    package: Package<RetypeSemanticPhase>,
+    package: Package<DependencySemanticPhase>,
     pairs: Vec<Vec<CanonicalRetypePair>>,
 }
 
@@ -2878,7 +2971,7 @@ impl RetypeSemanticPackage {
             .flat_map(|check| [&check.from, &check.to])
             .map(module_path_surface)
             .collect();
-        let mut projected = retype_semantic_projection(materialized, &BTreeMap::new(), roots);
+        let mut projected = dependency_semantic_projection(materialized, &BTreeMap::new(), roots);
         let mut descriptors = Vec::new();
 
         for check in checks {
@@ -2961,8 +3054,8 @@ impl RetypeSemanticPackage {
             }
         }
 
-        let lowered = lower_retype_type_projection(projected)?;
-        let package = retype_projection_package(lowered)?;
+        let lowered = lower_dependency_type_projection(projected)?;
+        let package = dependency_projection_package(lowered)?;
         let mut pairs = checks
             .iter()
             .map(|check| Vec::with_capacity(check.from_newtypes.len()))
@@ -3069,11 +3162,11 @@ fn validate_retype_source_semantics(
         });
     }
     let roots = source_modules.keys().cloned().collect();
-    let projected = retype_semantic_projection(materialized, source_modules, roots);
+    let projected = dependency_semantic_projection(materialized, source_modules, roots);
 
-    let lowered = lower_retype_type_projection(projected)
+    let lowered = lower_dependency_type_projection(projected)
         .map_err(|error| retype_source_error(source_modules, error))?;
-    let package = retype_projection_package(lowered)
+    let package = dependency_projection_package(lowered)
         .map_err(|error| retype_source_error(source_modules, error))?;
     // Provider modules stay in the package as resolution context, but only
     // original source modules are checked. The projection contains no value
@@ -3136,7 +3229,7 @@ fn retype_payload_params(newtype: &crate::ast::Newtype<Surface>) -> Vec<TypePara
 }
 
 #[cfg(feature = "cli")]
-fn retype_type_projection(mut module: Module<Surface>) -> Module<Surface> {
+fn dependency_type_projection(mut module: Module<Surface>) -> Module<Surface> {
     module.items.retain(retype_type_item);
     module
 }
@@ -3163,7 +3256,7 @@ fn retype_type_item(item: &Item<Surface>) -> bool {
 /// `overrides` supplies the retained pre-rewrite source modules to the source
 /// legality pass. Every other selected module is reduced to its type surface.
 #[cfg(feature = "cli")]
-fn retype_semantic_projection(
+fn dependency_semantic_projection(
     materialized: &[(PathBuf, Module<Surface>)],
     overrides: &BTreeMap<String, (PathBuf, Module<Surface>)>,
     roots: BTreeSet<String>,
@@ -3206,7 +3299,7 @@ fn retype_semantic_projection(
             let key = module_path_surface(&module.path);
             reachable.contains(&key).then(|| {
                 overrides.get(&key).map_or_else(
-                    || (path.clone(), retype_type_projection(module.clone())),
+                    || (path.clone(), dependency_type_projection(module.clone())),
                     |(source_path, source_module)| (source_path.clone(), source_module.clone()),
                 )
             })
@@ -3241,9 +3334,9 @@ fn push_retype_snapshot_alias(
 }
 
 #[cfg(all(feature = "cli", feature = "surface"))]
-fn lower_retype_type_projection(
+fn lower_dependency_type_projection(
     modules: Vec<(PathBuf, Module<Surface>)>,
-) -> Result<Vec<(PathBuf, Module<RetypeSemanticPhase>)>, LocatedError> {
+) -> Result<Vec<(PathBuf, Module<DependencySemanticPhase>)>, LocatedError> {
     let desugared = crate::pass::desugar::desugar_package_with_imports(
         modules,
         &crate::pass::desugar::PackageLiteralAliases::default(),
@@ -3252,9 +3345,9 @@ fn lower_retype_type_projection(
 }
 
 #[cfg(all(feature = "cli", not(feature = "surface")))]
-fn lower_retype_type_projection(
+fn lower_dependency_type_projection(
     modules: Vec<(PathBuf, Module<Surface>)>,
-) -> Result<Vec<(PathBuf, Module<RetypeSemanticPhase>)>, LocatedError> {
+) -> Result<Vec<(PathBuf, Module<DependencySemanticPhase>)>, LocatedError> {
     modules
         .into_iter()
         .map(|(file_path, module)| {
@@ -3266,9 +3359,9 @@ fn lower_retype_type_projection(
 }
 
 #[cfg(feature = "cli")]
-fn retype_projection_package(
-    modules: Vec<(PathBuf, Module<RetypeSemanticPhase>)>,
-) -> Result<Package<RetypeSemanticPhase>, LocatedError> {
+fn dependency_projection_package(
+    modules: Vec<(PathBuf, Module<DependencySemanticPhase>)>,
+) -> Result<Package<DependencySemanticPhase>, LocatedError> {
     let mut entries = BTreeMap::new();
     for (file_path, module) in modules {
         let scope =
@@ -3293,7 +3386,7 @@ fn retype_alias_scheme(
     module: &crate::ast::ModulePath,
     alias: &str,
     params: &[TypeParam],
-) -> Type<RetypeSemanticPhase> {
+) -> Type<DependencySemanticPhase> {
     let span = module.span;
     let args = params
         .iter()
@@ -3317,7 +3410,9 @@ fn retype_alias_scheme(
 }
 
 #[cfg(feature = "cli")]
-fn pack_retype_schemes(mut schemes: Vec<Type<RetypeSemanticPhase>>) -> Type<RetypeSemanticPhase> {
+fn pack_retype_schemes(
+    mut schemes: Vec<Type<DependencySemanticPhase>>,
+) -> Type<DependencySemanticPhase> {
     let mut packed = schemes.pop().expect("a non-empty retype scheme batch");
     while let Some(next) = schemes.pop() {
         let span = next.span();
@@ -3332,9 +3427,9 @@ fn pack_retype_schemes(mut schemes: Vec<Type<RetypeSemanticPhase>>) -> Type<Rety
 
 #[cfg(feature = "cli")]
 fn unpack_retype_schemes(
-    mut packed: Type<RetypeSemanticPhase>,
+    mut packed: Type<DependencySemanticPhase>,
     len: usize,
-) -> Option<Vec<Type<RetypeSemanticPhase>>> {
+) -> Option<Vec<Type<DependencySemanticPhase>>> {
     let mut schemes = Vec::with_capacity(len);
     for _ in 1..len {
         let Type::Product { left, right, .. } = packed else {
@@ -3353,13 +3448,13 @@ fn unpack_retype_schemes(
 /// nested `forall` binders compare positionally with equal effective kinds.
 #[cfg(feature = "cli")]
 fn canonical_retype_payloads_congruent(
-    from: &Type<RetypeSemanticPhase>,
-    to: &Type<RetypeSemanticPhase>,
-    package: &Package<RetypeSemanticPhase>,
+    from: &Type<DependencySemanticPhase>,
+    to: &Type<DependencySemanticPhase>,
+    package: &Package<DependencySemanticPhase>,
 ) -> bool {
     fn host_name<'a>(
         segments: &'a [crate::ast::PathSegment],
-        package: &Package<RetypeSemanticPhase>,
+        package: &Package<DependencySemanticPhase>,
     ) -> Option<&'a str> {
         let (name, owner) = segments.split_last()?;
         if owner.is_empty() {
@@ -3390,9 +3485,9 @@ fn canonical_retype_payloads_congruent(
     }
 
     fn go(
-        from: &Type<RetypeSemanticPhase>,
-        to: &Type<RetypeSemanticPhase>,
-        package: &Package<RetypeSemanticPhase>,
+        from: &Type<DependencySemanticPhase>,
+        to: &Type<DependencySemanticPhase>,
+        package: &Package<DependencySemanticPhase>,
         binders: &mut Vec<(String, String)>,
     ) -> bool {
         match (from, to) {
@@ -3543,7 +3638,7 @@ fn materialize_one_dependency(
     dependency: &crate::ast::DependencyFile<Surface>,
     local_modules: &[(String, PathBuf)],
     retype_graph: &mut RetypeGraph,
-    retype_validation: &mut RetypeValidationState,
+    validation: &mut DependencyValidationState,
     force: bool,
 ) -> Result<MaterializeOutcome, LocatedError> {
     validate_rehost_selectors(&dependency.rehost).map_err(|error| LocatedError {
@@ -3720,7 +3815,7 @@ fn materialize_one_dependency(
         // re-import chain itself).
         let resolved_targets = retype_chain_targets(&decl.to, &newtype_names, retype_graph);
 
-        retype_validation.checks.push(DeferredRetypeCheck {
+        validation.retype_checks.push(DeferredRetypeCheck {
             dep_file_path: dep_file_path.to_path_buf(),
             span: decl.span,
             from: decl.from.clone(),
@@ -3746,7 +3841,7 @@ fn materialize_one_dependency(
     // against disk before any write, and so the prune knows which paths to
     // keep.
     let mut desired: BTreeMap<PathBuf, String> = BTreeMap::new();
-    if let Some(modules) = &mut retype_validation.visibility_modules {
+    if let Some(modules) = &mut validation.visibility_modules {
         // Replace the selected dependency's complete old tree, including
         // removed modules. Unselected on-disk providers remain available.
         modules.retain(|(path, _)| !path.starts_with(&dep_dir));
@@ -3808,6 +3903,25 @@ fn materialize_one_dependency(
             }
         }
 
+        for target in rehost_targets
+            .iter()
+            .filter(|target| target.from.segments == module.path.segments)
+        {
+            for item in &module.items {
+                if let Item::HostType(host) = item
+                    && let Some(role) = &host.role
+                {
+                    validation.rehost_roles.push(RehostRoleCheck {
+                        dep_file_path: dep_file_path.to_owned(),
+                        span: target.span,
+                        from: module.path.clone(),
+                        name: host.name.clone(),
+                        role: role.role,
+                    });
+                }
+            }
+        }
+
         // Apply this dependency's `rehost` statements: drop the module's
         // own host declarations (rebinding them to a provider import) and
         // redirect its imports of other modules' rehosted host items to
@@ -3822,10 +3936,15 @@ fn materialize_one_dependency(
         if retype_targets.iter().any(|target| {
             target.from.segments == module.path.segments && !target.newtype_names.is_empty()
         }) {
-            retype_validation
+            validation
                 .source_modules
                 .entry(module_path_surface(&module.path))
-                .or_insert_with(|| (file_path.clone(), retype_type_projection(module.clone())));
+                .or_insert_with(|| {
+                    (
+                        file_path.clone(),
+                        dependency_type_projection(module.clone()),
+                    )
+                });
         }
 
         // Apply this dependency's `retype` statements the same way, for
@@ -3837,7 +3956,7 @@ fn materialize_one_dependency(
             file_path: dep_file_path.to_path_buf(),
             error,
         })?;
-        retype_validation.imports.extend(rewrite.imports);
+        validation.imports.extend(rewrite.imports);
 
         // The re-rooted module path is the file's location relative to the
         // consumer root: `<local>/<mod-segments>.kio`. Its leading segment
@@ -3851,8 +3970,8 @@ fn materialize_one_dependency(
             .collect::<PathBuf>();
         let out_path = consumer_root.join(&rel).with_extension("kio");
         let canonical_source = crate::pretty::pretty_module(&module);
-        if let Some(modules) = &mut retype_validation.visibility_modules {
-            modules.push((out_path.clone(), retype_type_projection(module)));
+        if let Some(modules) = &mut validation.visibility_modules {
+            modules.push((out_path.clone(), dependency_type_projection(module)));
         }
         desired.insert(out_path, canonical_source);
     }
@@ -3869,18 +3988,21 @@ fn materialize_one_dependency(
         return Ok(MaterializeOutcome::UpToDate);
     }
 
-    if retype_targets
+    let retype_interface = retype_targets
         .iter()
-        .any(|target| !target.newtype_names.is_empty())
-    {
-        retype_validation
-            .pending
-            .push(PendingRetypeMaterialization {
-                dep_dir,
-                local_name,
-                source_span,
-                desired,
-            });
+        .any(|target| !target.newtype_names.is_empty());
+    if retype_interface || validation.has_selected_rehost {
+        validation.pending.push(PendingDependencyMaterialization {
+            gate: if retype_interface {
+                DependencyPublicationGate::RetypeInterface
+            } else {
+                DependencyPublicationGate::RehostRoles
+            },
+            dep_dir,
+            local_name,
+            source_span,
+            desired,
+        });
     } else {
         publish_materialized_dependency(&dep_dir, &local_name, source_span, &desired)?;
     }
@@ -4634,6 +4756,149 @@ mod tests {
         assert_duplicate_rehost_preserves_tree(true, true);
     }
 
+    fn rehost_role_fixture(provider: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (path, source) in [
+            ("consumer/app.pkg.kio", "package app;"),
+            ("consumer/provider.kio", provider),
+            ("library/widget.pkg.kio", "package widget;"),
+            ("library/api.kio", "module api; host type Value role(bool);"),
+            (
+                "consumer/widget.dep.kio",
+                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
+                 rehost widget/api to provider;",
+            ),
+        ] {
+            write_retype_fixture(dir.path(), path, source);
+        }
+        dir
+    }
+
+    #[test]
+    fn rehost_role_follows_aliases_and_rechecks_unchanged_dependencies() {
+        let dir = rehost_role_fixture(
+            "module provider; pub host type Flag role(bool); pub type Value = Flag;",
+        );
+        let root = dir.path().join("consumer");
+        for (force, expected) in [
+            (false, MaterializeOutcome::Fetched),
+            (false, MaterializeOutcome::UpToDate),
+            (true, MaterializeOutcome::Fetched),
+        ] {
+            let outcomes = materialize_dependencies_filtered(&root, None, force).unwrap();
+            assert_eq!(outcomes["widget"], expected);
+        }
+        let before = fs::read(root.join("widget/api.kio")).unwrap();
+        for replacement in [
+            "module provider; pub host type Value;",
+            "module provider; pub host type Value role(str);",
+            "module provider; pub type Value = .;",
+        ] {
+            write_retype_fixture(dir.path(), "consumer/provider.kio", replacement);
+            for force in [false, true] {
+                let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
+                assert!(error.error.diag().1.contains("requires role(bool)"));
+                assert_eq!(
+                    error.file_path,
+                    root.canonicalize().unwrap().join("widget.dep.kio")
+                );
+                assert_eq!(fs::read(root.join("widget/api.kio")).unwrap(), before);
+            }
+        }
+    }
+
+    #[test]
+    fn rehost_role_rejects_before_creating_or_replacing_the_dependency() {
+        for existing in [false, true] {
+            let dir = rehost_role_fixture("module provider; pub host type Value role(bool);");
+            let root = dir.path().join("consumer");
+            let before = if existing {
+                materialize_dependencies_filtered(&root, None, false).unwrap();
+                Some(fs::read(root.join("widget/api.kio")).unwrap())
+            } else {
+                None
+            };
+            write_retype_fixture(
+                dir.path(),
+                "consumer/provider.kio",
+                "module provider; pub host type Value role(i32);",
+            );
+            write_retype_fixture(dir.path(), "library/added.kio", "module added;");
+            for force in [false, true] {
+                let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
+                assert!(error.error.diag().1.contains("replacement has role(i32)"));
+                assert_eq!(fs::read(root.join("widget/api.kio")).ok(), before);
+                assert!(!root.join("widget/added.kio").exists());
+                if !existing {
+                    assert!(!root.join("widget").exists());
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn rehost_role_rejects_compiler_carrier_through_an_alias() {
+        let dir = rehost_role_fixture(
+            "module provider; import __comptime__; \
+             type Flag = Comptime_bool; pub type Value = Flag;",
+        );
+        let root = dir.path().join("consumer");
+        let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
+        assert!(error.error.diag().1.contains("requires role(bool)"));
+        assert!(
+            error
+                .error
+                .diag()
+                .1
+                .contains("replacement has no literal role")
+        );
+        assert!(!root.join("widget").exists());
+    }
+
+    #[test]
+    fn rehost_role_resolves_later_selected_and_unselected_providers() {
+        let dir = rehost_role_fixture(
+            "module provider; import zeta/api as flags; pub type Value = flags.Flag;",
+        );
+        for (path, source) in [
+            ("flags/flags.pkg.kio", "package flags;"),
+            (
+                "flags/api.kio",
+                "module api; pub host type Flag role(bool);",
+            ),
+            (
+                "consumer/zeta.dep.kio",
+                "dependency zeta; source { path \"../flags/flags.pkg.kio\"; }",
+            ),
+        ] {
+            write_retype_fixture(dir.path(), path, source);
+        }
+        let root = dir.path().join("consumer");
+        materialize_dependencies_filtered(&root, None, false).unwrap();
+        let only = BTreeSet::from(["widget".to_owned()]);
+        let outcomes = materialize_dependencies_filtered(&root, Some(&only), false).unwrap();
+        assert_eq!(outcomes["widget"], MaterializeOutcome::UpToDate);
+        let widget_before = fs::read(root.join("widget/api.kio")).unwrap();
+        let zeta_before = fs::read(root.join("zeta/api.kio")).unwrap();
+        write_retype_fixture(
+            dir.path(),
+            "flags/api.kio",
+            "module api; pub host type Flag role(str);",
+        );
+        assert!(materialize_dependencies_filtered(&root, None, true).is_err());
+        assert_eq!(
+            fs::read(root.join("widget/api.kio")).unwrap(),
+            widget_before
+        );
+        assert_eq!(fs::read(root.join("zeta/api.kio")).unwrap(), zeta_before);
+        fs::remove_dir_all(root.join("widget")).unwrap();
+        fs::remove_dir_all(root.join("zeta")).unwrap();
+        assert!(materialize_dependencies_filtered(&root, None, false).is_err());
+        assert!(!root.join("widget").exists());
+        assert!(!root.join("zeta").exists());
+    }
+
     #[test]
     fn retype_rejects_every_second_selector_for_one_exact_source_nominal() {
         let cases = [
@@ -4779,7 +5044,7 @@ mod tests {
             module_path_surface(&original.path),
             (
                 source_path.clone(),
-                retype_type_projection(original.clone()),
+                dependency_type_projection(original.clone()),
             ),
         )]);
         let mut source = original;
@@ -4897,8 +5162,8 @@ mod tests {
         let mut modules = all;
         modules.push((PathBuf::from("store.kio"), fresh));
         let lowered =
-            lower_retype_type_projection(modules).expect("fresh ordinary nominal aliases");
-        let package = retype_projection_package(lowered).expect("ordinary nominal scopes");
+            lower_dependency_type_projection(modules).expect("fresh ordinary nominal aliases");
+        let package = dependency_projection_package(lowered).expect("ordinary nominal scopes");
         package.resolve_imports().expect("fresh exact imports");
     }
 
@@ -4954,7 +5219,8 @@ mod tests {
         let fresh = parsed_module(&crate::pretty::pretty_module(&source));
         let mut all = all;
         all.push((PathBuf::from("store.kio"), fresh));
-        lower_retype_type_projection(all).expect("fresh source retains the ordinary residual SCC");
+        lower_dependency_type_projection(all)
+            .expect("fresh source retains the ordinary residual SCC");
     }
 
     #[cfg(feature = "surface")]
@@ -5013,7 +5279,8 @@ mod tests {
         let fresh = parsed_module(&crate::pretty::pretty_module(&source));
         let mut all = all;
         all.push((PathBuf::from("store.kio"), fresh));
-        lower_retype_type_projection(all).expect("the residual group reparses without label edges");
+        lower_dependency_type_projection(all)
+            .expect("the residual group reparses without label edges");
     }
 
     #[cfg(feature = "surface")]
@@ -5466,7 +5733,7 @@ mod tests {
             module_path_surface(&source_module.path),
             (
                 PathBuf::from("dep/store.kio"),
-                retype_type_projection(source_module),
+                dependency_type_projection(source_module),
             ),
         )]);
         let semantics = RetypeSemanticPackage::build(
@@ -5553,14 +5820,14 @@ mod tests {
                 module_path_surface(&importing_source.path),
                 (
                     PathBuf::from("dep/consumer.kio"),
-                    retype_type_projection(importing_source.clone()),
+                    dependency_type_projection(importing_source.clone()),
                 ),
             ),
             (
                 module_path_surface(&second_source.path),
                 (
                     PathBuf::from("dep/second.kio"),
-                    retype_type_projection(second_source.clone()),
+                    dependency_type_projection(second_source.clone()),
                 ),
             ),
         ]);
@@ -6322,45 +6589,74 @@ mod tests {
 
     #[test]
     fn retype_visibility_uses_later_selected_and_unselected_providers() {
-        let dir = retype_materialization_fixture();
-        let root = dir.path().join("consumer");
-        write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
-        write_retype_fixture(
-            dir.path(),
-            "target/store.kio",
-            "module store; pub type { Token: . { pub mk; pub get; }; };",
-        );
-        write_retype_fixture(
-            dir.path(),
-            "consumer/zcore.dep.kio",
-            "dependency zcore; source { path \"../target/target.pkg.kio\"; }",
-        );
-        write_retype_fixture(
-            dir.path(),
-            "consumer/widget.dep.kio",
-            "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-             retype widget/store.Token to zcore/store.Token;",
-        );
-        materialize_dependencies_filtered(&root, None, false).expect("later selected counterpart");
-        let only = BTreeSet::from(["widget".to_owned()]);
-        materialize_dependencies_filtered(&root, Some(&only), true)
-            .expect("unselected on-disk counterpart");
+        for with_rehost in [false, true] {
+            let dir = retype_materialization_fixture();
+            let root = dir.path().join("consumer");
+            write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
+            write_retype_fixture(
+                dir.path(),
+                "target/store.kio",
+                "module store; pub type { Token: . { pub mk; pub get; }; };",
+            );
+            write_retype_fixture(
+                dir.path(),
+                "consumer/zcore.dep.kio",
+                "dependency zcore; source { path \"../target/target.pkg.kio\"; }",
+            );
+            write_retype_fixture(
+                dir.path(),
+                "consumer/widget.dep.kio",
+                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
+                 retype widget/store.Token to zcore/store.Token;",
+            );
+            if with_rehost {
+                write_retype_fixture(
+                    dir.path(),
+                    "library/strings.kio",
+                    "module strings; host type Str role(str);",
+                );
+                write_retype_fixture(
+                    dir.path(),
+                    "consumer/provider.kio",
+                    "module provider; host type Str role(str);",
+                );
+                let path = root.join("widget.dep.kio");
+                let mut source = fs::read_to_string(&path).unwrap();
+                source.push_str(" rehost widget/strings to provider;");
+                fs::write(path, source).unwrap();
+            }
+            materialize_dependencies_filtered(&root, None, false)
+                .expect("later selected counterpart");
+            let only = BTreeSet::from(["widget".to_owned()]);
+            materialize_dependencies_filtered(&root, Some(&only), true)
+                .expect("unselected on-disk counterpart");
 
-        write_retype_fixture(
-            dir.path(),
-            "target/store.kio",
-            "module store; type { Token: . { pub mk; pub get; }; };",
-        );
-        let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
-        assert!(error.error.diag().1.contains("is not visible everywhere"));
-        // The ordinary target dependency is published immediately, even
-        // though the retyped dependency is rejected later in this fetch.
-        let published = parsed_module(&fs::read_to_string(root.join("zcore/store.kio")).unwrap());
-        let nominal =
-            declared_newtype(&published, "Token").expect("the target nominal is published");
-        assert!(matches!(nominal.vis, crate::ast::Visibility::Private));
-        assert!(nominal.constructor.vis.is_pub());
-        assert!(nominal.projector.vis.is_pub());
+            let previous_widget = fs::read_to_string(root.join("widget/store.kio")).unwrap();
+            write_retype_fixture(
+                dir.path(),
+                "library/store.kio",
+                "module store; pub type { Token: . { pub mk; pub get; }; }; pub fn added() { () }",
+            );
+            write_retype_fixture(
+                dir.path(),
+                "target/store.kio",
+                "module store; type { Token: . { pub mk; pub get; }; };",
+            );
+            let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
+            assert!(error.error.diag().1.contains("is not visible everywhere"));
+            assert_eq!(
+                fs::read_to_string(root.join("widget/store.kio")).unwrap(),
+                previous_widget,
+            );
+            // Rejection of a retyped interface does not roll back its provider.
+            let published =
+                parsed_module(&fs::read_to_string(root.join("zcore/store.kio")).unwrap());
+            let nominal =
+                declared_newtype(&published, "Token").expect("the target nominal is published");
+            assert!(matches!(nominal.vis, crate::ast::Visibility::Private));
+            assert!(nominal.constructor.vis.is_pub());
+            assert!(nominal.projector.vis.is_pub());
+        }
     }
 
     #[test]

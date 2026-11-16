@@ -138,7 +138,7 @@ fn canonical_pair_scheme(
     crate::pass::typecheck_core::require_type_equiv_state(
         input_left,
         result_left,
-        direct.span,
+        direct.site.span,
         &aliases,
         direct.synth.ty.identity_is_canonical(),
         direct.synth.ty.identity_is_canonical(),
@@ -147,7 +147,7 @@ fn canonical_pair_scheme(
         && crate::pass::typecheck_core::require_type_equiv_state(
             input_right,
             result_right,
-            direct.span,
+            direct.site.span,
             &aliases,
             direct.synth.ty.identity_is_canonical(),
             direct.synth.ty.identity_is_canonical(),
@@ -646,7 +646,11 @@ impl<'m> MarkedProjection<'m> {
         if matches!(self.pre_inputs, PreInputCompletion::Unselected) {
             let mut ordinals = Vec::new();
             for producer in 0..self.next_producer {
-                if is_computed_pre_input(self.producer_state(producer)) {
+                if is_computed_pre_input(self.producer_state(producer))
+                    && self
+                        .producer_expected_snapshot(producer, span, frontier, tcx)?
+                        .is_none()
+                {
                     ordinals.push(producer);
                 }
             }
@@ -700,7 +704,10 @@ impl<'m> MarkedProjection<'m> {
                     if matches!(
                         self.producer_state(producer),
                         StagedOperand::OpenCompleted { accepted: true, .. }
-                    ) {
+                    ) || self
+                        .producer_expected_snapshot(producer, span, frontier, tcx)?
+                        .is_some()
+                    {
                         let PreInputCompletion::Producers { index, .. } = &mut self.pre_inputs
                         else {
                             unreachable!("pre-input continuation changed its active phase")
@@ -714,7 +721,7 @@ impl<'m> MarkedProjection<'m> {
                         producer_mode: *mode,
                         inherited_mode,
                         relation_probe: false,
-                        expected: self.producer_expected_snapshot(producer, span, frontier, tcx)?,
+                        expected: None,
                     }));
                 }
                 PreInputCompletion::Headers { next } => {
@@ -7038,37 +7045,6 @@ fn validate_projected_source_before_action<'m>(
     frontier: &mut impl super::OrdinaryFrontierReentry<'m>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
-    if let StagedOperand::Pair(pair) = operand {
-        let ProjectedRecipeNode::Pair(left, right) = recipe.node.as_ref() else {
-            unreachable!("a staged pair lost its sealed recipe topology")
-        };
-        let [left_operand, right_operand] = &pair.operands;
-        validate_projected_source_before_action(
-            left_operand
-                .state
-                .as_ref()
-                .expect("a staged pair left operand lost its state"),
-            left,
-            frontier,
-            tcx,
-        )?;
-        return validate_projected_source_before_action(
-            right_operand
-                .state
-                .as_ref()
-                .expect("a staged pair right operand lost its state"),
-            right,
-            frontier,
-            tcx,
-        );
-    }
-    if let StagedOperand::Ordinary(continuation, _) = operand {
-        continuation.cursor.require_completion_outside(
-            continuation.child.completion_delta(),
-            continuation.child.owner(),
-            frontier.store(),
-        )?;
-    }
     let progressed = {
         let (store, _, delta, _) = frontier.parts_mut();
         if store
@@ -7081,8 +7057,29 @@ fn validate_projected_source_before_action<'m>(
     };
 
     match operand {
-        StagedOperand::Pair(_) => {
-            unreachable!("projected pair admission recurses before inspecting the result type")
+        StagedOperand::Pair(pair) => {
+            let ProjectedRecipeNode::Pair(left, right) = recipe.node.as_ref() else {
+                unreachable!("a staged pair lost its sealed recipe topology")
+            };
+            let [left_operand, right_operand] = &pair.operands;
+            validate_projected_source_before_action(
+                left_operand
+                    .state
+                    .as_ref()
+                    .expect("a staged pair left operand lost its state"),
+                left,
+                frontier,
+                tcx,
+            )?;
+            validate_projected_source_before_action(
+                right_operand
+                    .state
+                    .as_ref()
+                    .expect("a staged pair right operand lost its state"),
+                right,
+                frontier,
+                tcx,
+            )
         }
         StagedOperand::Completed { source, leaf, .. }
         | StagedOperand::OpenCompleted { source, leaf, .. } => {
@@ -12293,7 +12290,7 @@ mod tests {
                 let source = format!(
                     "module p; import __comptime__; host fn value(); \
                          pure fn implementation({implementation}) -> __Checked_term__ {{ \
-                         __macro_error__(ct, \"macro body entered\"[__Diagnostic_text__]) }} \
+                         __macro_error__(ct, __\"macro body entered\"__(ct)) }} \
                          macro staged : {signature} {{ impl implementation }} \
                          fn witness() {{ {call} }}"
                 );
@@ -12445,7 +12442,7 @@ mod tests {
                  pure fn implementation(ct: __Comptime__, _source: __Type__, \
                  _value: __Checked_term__, _selector: __Type__, \
                  _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {{ \
-                 __macro_error__(ct, \"macro body entered\"[__Diagnostic_text__]) }} \
+                 __macro_error__(ct, __\"macro body entered\"__(ct)) }} \
                  macro staged : [Source] Source -> [Selector] Selector -> [Target] Target {{ impl implementation }} \
                  fn witness() -> ({result}) {{ staged[.](produce(.() {{ () }}))[.](()){target} }}"
             );
@@ -12610,12 +12607,12 @@ mod tests {
             pure fn relay_impl(ct: __Comptime__, _source: __Type__,
                 _value: __Checked_term__, _selector: __Type__,
                 _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {
-                __macro_error__(ct, "inner action entered"[__Diagnostic_text__])
+                __macro_error__(ct, __"inner action entered"__(ct))
             }
             macro relay : [Source] Source -> [Selector] Selector -> [Target] Target { impl relay_impl }
             pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__) ->
                 __Checked_term__ & __Fill_ctx__ {
-                (__macro_error__(ct, "outer action entered"[__Diagnostic_text__]), fills)
+                (__macro_error__(ct, __"outer action entered"__(ct)), fills)
             }
             macro retain : . -> . { impl(fills) retain_impl }
             fn witness() { retain(relay(produce(.() { () }))(())[([T] .)]) }
@@ -12647,9 +12644,9 @@ mod tests {
             pure fn producer_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ { value }
             macro producer : [S] S -> [T] S { impl producer_impl }
             pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
-                let result = __if_then_else__(__type_equal__(ct, __reflect_type__(ct)[N], __term_type__(ct, value)),
+                let result = __comptime_if_then_else__(ct)(__type_equal__(ct, __reflect_type__(ct)[N], __term_type__(ct, value)),
                     .() -> __Checked_term__ { value },
-                    .() -> __Checked_term__ { __macro_error__(ct, "wrong reflected source type"[__Diagnostic_text__]) });
+                    .() -> __Checked_term__ { __macro_error__(ct, __"wrong reflected source type"__(ct)) });
                 (result, fills)
             }
             macro retain : [A] A -> N { impl(fills) retain_impl }
@@ -13949,7 +13946,7 @@ mod tests {
         let paths = crate::pass::resolve::PRIME_INTRINSICS
             .iter()
             .map(|name| Expr::Path {
-                occurrence: Default::default(),
+                occurrence: crate::ast::ExpressionOccurrence::fresh(),
                 segments: vec![PathSegment::new((*name).to_owned(), span)],
                 meta: Meta::new(span),
                 ext: (),
@@ -13989,7 +13986,7 @@ mod tests {
         let paths = ["exact", "reordered", "duplicated"].map(|name| {
             let def = env.fn_defs[name];
             Expr::Path {
-                occurrence: Default::default(),
+                occurrence: crate::ast::ExpressionOccurrence::fresh(),
                 segments: vec![PathSegment::new(name.to_owned(), def.meta.span)],
                 meta: Meta::new(def.meta.span),
                 ext: (),

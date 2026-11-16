@@ -4019,6 +4019,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
+            | Expr::ComptimeLiteral { ext, .. }
             | Expr::Ufcs { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::RecCall { ext, .. } => match *ext {},

@@ -1,0 +1,5 @@
+module main;
+
+import __comptime__;
+
+fn invalid(ct: __Comptime__) { let text = __"ambiguous"__(ct); () }

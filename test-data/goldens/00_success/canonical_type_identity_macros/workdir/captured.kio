@@ -71,7 +71,7 @@ pure fn keep_type_name(ct: __Comptime__, source: __Type__, value: __Checked_term
                               type_name_required(ct, source)
                             }
                           , .(name: __Type_name__) -> __Checked_term__ {
-                              __if_then_else__(
+                              __comptime_if_then_else__(ct)(
                               , __type_equal__(ct, __type_name_type__(ct, name), source)
                               , .() -> __Checked_term__ { value }
                               , .() -> __Checked_term__ { type_name_required(ct, source) }
@@ -100,13 +100,13 @@ pub pure fn captured_keep_impl(
 , value: __Checked_term__
 ) -> __Checked_term__ {
   let checked_keep = keep_type_name(ct, source, keep);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, expected, source)
   , .() -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, expected, reflected_actual(ct))
       , .() -> __Checked_term__ {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __type_equal__(ct, reflected_actual(ct), __reflect_type__(ct)[types.Actual])
           , .() -> __Checked_term__ {
               __macro_error__(ct, __type_display__(ct, __reflect_type__(ct)[types.Actual]))

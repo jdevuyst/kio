@@ -774,6 +774,16 @@ mod tests {
     fn fetch_rehost_rebinds_locally() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(
+            dir.path().join("provtypes.kio"),
+            "module provtypes;\n\nhost type Str role(str);\n",
+        )
+        .expect("write type provider");
+        std::fs::write(
+            dir.path().join("provfn.kio"),
+            "module provfn;\n\nimport provtypes(Str);\n\nhost fn shout(s: Str);\n",
+        )
+        .expect("write function provider");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),

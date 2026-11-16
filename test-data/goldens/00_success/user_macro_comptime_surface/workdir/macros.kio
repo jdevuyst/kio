@@ -6,11 +6,19 @@ import __comptime__;
 import testapi(String);
 
 pure fn comptime_bool_and(ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
-  __if_then_else__(left, .() -> Comptime_bool { right }, .() -> Comptime_bool { .f })
+  __comptime_if_then_else__(ct)(
+  , left
+  , .() -> Comptime_bool { right }
+  , .() -> Comptime_bool { __.f__(ct) }
+  )
 }
 
 pure fn comptime_bool_or(_ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
-  __if_then_else__(left, .() -> Comptime_bool { .t }, .() -> Comptime_bool { right })
+  __comptime_if_then_else__(_ct)(
+  , left
+  , .() -> Comptime_bool { __.t__(_ct) }
+  , .() -> Comptime_bool { right }
+  )
 }
 
 pure fn any_product_step(ct: __Comptime__, found: Comptime_bool, typ: __Type__) -> Comptime_bool {
@@ -20,7 +28,7 @@ pure fn any_product_step(ct: __Comptime__, found: Comptime_bool, typ: __Type__) 
 pure fn any_product_member(ct: __Comptime__, typ: __Type__) -> Comptime_bool {
   __type_product_spine_fold__(ct)[Comptime_bool](
   , typ
-  , .f
+  , __.f__(ct)
   , .(found: Comptime_bool, member: __Type__) -> Comptime_bool {
       any_product_step(ct, found, member)
     }
@@ -55,10 +63,10 @@ pub pure fn checked_impl(
 , value: __Checked_term__
 , target: __Type__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , pass_checks(ct, source, target)
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { __macro_error__(ct, "reflection surface check failed") }
+  , .() -> __Checked_term__ { __macro_error__(ct, __"reflection surface check failed"__(ct)) }
   )
 }
 

@@ -1,0 +1,1 @@
+module m; fn f(ct: T) { __.t__(ct); __"hé\n"__(ct) }

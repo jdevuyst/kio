@@ -15,7 +15,7 @@ Own the informational harnesses under [`reports/`](../../../reports/). Select mu
 | kio-gen marginal coverage | [references/kio-gen-coverage.md](references/kio-gen-coverage.md) |
 | Production normalizer reachability | [references/normalizer-reachability.md](references/normalizer-reachability.md) |
 
-Anchors: [`AGENTS.md`](../../../AGENTS.md) § Universal rules — Optimizations are justified, not assumed; Bugs surface; never hide them; Findings do not broaden scope. Generator coverage also anchors [`TESTING.md`](../../../TESTING.md) § Coverage tracking. Reports locate missing evidence; they do not establish semantic conformance, performance wins, or correctness by themselves.
+Anchors: [`AGENTS.md`](../../../AGENTS.md) § Universal rules — Optimizations are justified, not assumed; Bugs surface; never hide them; Account for findings. Generator coverage also anchors [`TESTING.md`](../../../TESTING.md) § Coverage tracking. Reports locate missing evidence; they do not establish semantic conformance, performance wins, or correctness by themselves.
 
 Before execution, read [`local-tools.md`](../../topics/local-tools.md) and [`local-ci.md`](../../topics/local-ci.md). Inspect selected harness flags, actual scope, prerequisites, and preservation behavior. Report missing pinned tools before installing them; follow existing session authority for provisioning. Use the configured temporary root and compiler-cache readiness rules. Run selected harnesses sequentially, recording the commit/worktree state, tool versions, commands, budgets, selected implementations/cases, and retained artifacts. Inspect failures before continuing dependent work. Do not substitute `reports/all.sh` when a subset or different budgets are requested.
 

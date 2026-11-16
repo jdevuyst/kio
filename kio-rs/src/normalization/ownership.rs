@@ -431,7 +431,6 @@ impl Reclaim for EvalExpr {
             | Self::IntAtom(..)
             | Self::FloatAtom(..)
             | Self::StrAtom(_)
-            | Self::DiagnosticText(_)
             | Self::Primitive(_)
             | Self::Local(_)
             | Self::Atom(_)
@@ -451,7 +450,6 @@ impl Reclaim for EvalExpr {
             Self::IntAtom(..) => {}
             Self::FloatAtom(..) => {}
             Self::StrAtom(..) => {}
-            Self::DiagnosticText(..) => {}
             Self::Primitive(..) => {}
             Self::StructuralRecurPrimitive(value) => {
                 shared(value, pending);

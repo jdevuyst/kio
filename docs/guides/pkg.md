@@ -622,9 +622,12 @@ a host *function* becomes a forwarding wrapper that calls the consumer's
 function. The rebound items keep their names and stay exported, so any module
 that imported them keeps its import unchanged — the rewrite is local to the one
 dependency module and touches no other. The consumer module must export an item
-of a compatible type for each rebound name; a missing or mistyped provider is an
-ordinary typecheck error. A dependency file may carry any number of `rehost`
-clauses, one per dependency module to rebind.
+of a compatible type for each rebound name. If a host type declares a literal
+role, its replacement must resolve to a host type with the same role; transparent
+aliases are allowed. `kio dep fetch` checks these roles before publishing the
+rewritten dependency. The rebound aliases and functions also undergo ordinary
+typechecking. A dependency file may carry any number of `rehost` clauses, one per
+dependency module to rebind.
 Repeating a source module is a dependency error even if the target is unchanged.
 Fetch rejects the repeated selector before writing that dependency's module
 tree. Selectors for different source modules may share a target.

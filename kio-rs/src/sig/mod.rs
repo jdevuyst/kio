@@ -1843,7 +1843,8 @@ pub fn wrap(x: Id) -> Id { x }
         let elabs = crate::pass::typecheck_full::Elaborations::new();
         let mut modules = std::collections::BTreeMap::new();
         for (path, lowered_module) in lowered {
-            let prime = crate::pass::substitute::substitute_module(&lowered_module, &elabs);
+            let normalized = crate::pass::alpha_normalize::normalize_module(&lowered_module);
+            let prime = crate::pass::substitute::substitute_module(normalized.module(), &elabs);
             let scope = TopLevelScope::build(&prime).expect("scope");
             let key = prime
                 .path

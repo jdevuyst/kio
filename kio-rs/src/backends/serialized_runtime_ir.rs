@@ -2078,9 +2078,10 @@ fn runtime_expr_expected(
         Expr::Path { ext, .. } | Expr::Call { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
-        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
-            match *ext {}
-        }
+        Expr::RecOrder { ext, .. }
+        | Expr::RecQuote { ext, .. }
+        | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
@@ -2816,7 +2817,7 @@ mod tests {
             | Expr::FnPlaceholder { ext, .. }
 
             | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
-            | Expr::UserMacro { ext, .. }
+            | Expr::UserMacro { ext, .. } | Expr::ComptimeLiteral { ext, .. }
 
 
             | Expr::Ufcs { ext, .. }

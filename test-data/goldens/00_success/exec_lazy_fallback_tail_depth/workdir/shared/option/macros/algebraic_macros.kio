@@ -221,11 +221,11 @@ pure fn branch_can_land_from_factors(
 , target_factors: Type_list
 , flags: Branch_build_flags
 ) -> Comptime_bool {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , flags_allow_dup(ct, flags)
   , .() -> Comptime_bool { type_multiset_contains_all(ct, source_factors, target_factors) }
   , .() -> Comptime_bool {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , flags_allow_drop(ct, flags)
       , .() -> Comptime_bool { type_multiset_contains_all(ct, target_factors, source_factors) }
       , .() -> Comptime_bool { type_multiset_equal(ct, source_factors, target_factors) }
@@ -241,25 +241,25 @@ pure fn build_branch_value_from_parts(
 , source_slots: Slot_list
 , flags: Branch_build_flags
 ) -> Macro_result {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , flags_allow_dup(ct, flags)
   , .() -> Macro_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , type_multiset_contains_all(ct, source_factors, target_factors)
       , .() -> Macro_result {
           build_widen_product_from_slots(ct, target_factors, source_factors, source_slots)
         }
-      , .() -> Macro_result { err(ct, "source DNF branch would be dropped"[__Diagnostic_text__]) }
+      , .() -> Macro_result { err(ct, __"source DNF branch would be dropped"__(ct)) }
       )
     }
   , .() -> Macro_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , flags_allow_drop(ct, flags)
       , .() -> Macro_result {
-          build_product_from_slots(ct, target_factors, source_factors, source_slots, .f)
+          build_product_from_slots(ct, target_factors, source_factors, source_slots, __.f__(ct))
         }
       , .() -> Macro_result {
-          build_product_from_slots(ct, target_factors, source_factors, source_slots, .t)
+          build_product_from_slots(ct, target_factors, source_factors, source_slots, __.t__(ct))
         }
       )
     }
@@ -300,7 +300,7 @@ pure fn take_first_target_for_source(
               __left__[Maybe_spine_take][Spine_take_next](spine_take_none())
             }
           , .(cell: Type_list & Spine_list) -> Spine_take_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , branch_can_land_from_factors(
                 , ct
                 , source_factors
@@ -362,7 +362,7 @@ pure fn sources_fit_targets_consuming(
         .(fuel: Spine_list, available_targets: Consume_state) -> Consume_step {
           __either__[.][Type_list & Spine_list][Consume_step](
           , Spine_list.get(fuel)
-          , .(_done: .) -> Consume_step { __left__[Comptime_bool][Consume_next](.t) }
+          , .(_done: .) -> Consume_step { __left__[Comptime_bool][Consume_next](__.t__(ct)) }
           , .(cell: Type_list & Spine_list) -> Consume_step {
               __either__[Spine_list][.][Consume_step](
               , take_first_target_for_source(
@@ -377,7 +377,7 @@ pure fn sources_fit_targets_consuming(
                   , remaining_targets
                   ))
                 }
-              , .(_missing: .) -> Consume_step { __left__[Comptime_bool][Consume_next](.f) }
+              , .(_missing: .) -> Consume_step { __left__[Comptime_bool][Consume_next](__.f__(ct)) }
               )
             }
           )
@@ -416,7 +416,7 @@ pure fn iso_branch_shape_ok(
 , target: __Type__
 , flags: Branch_build_flags
 ) -> Comptime_bool {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , sources_fit_targets_consuming(
     , ct
     , branch_spines(ct, dnf_branches(ct, source))
@@ -431,7 +431,7 @@ pure fn iso_branch_shape_ok(
       , flags
       )
     }
-  , .() -> Comptime_bool { .f }
+  , .() -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -449,7 +449,7 @@ pure fn source_factors_have_target(
 ) -> Comptime_bool {
   __structural_recur__(ct)[Spine_list][Any_target_state](
   , targets
-  , .f
+  , __.f__(ct)
   , .(
     , loop_recur: (Spine_list & Any_target_state) -> Comptime_bool
     , loop_fuel: Spine_list
@@ -459,20 +459,20 @@ pure fn source_factors_have_target(
         .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
           __either__[.][Type_list & Spine_list][Any_target_step](
           , Spine_list.get(fuel)
-          , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](.f) }
+          , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](__.f__(ct)) }
           , .(cell: Type_list & Spine_list) -> Any_target_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , branch_can_land_from_factors(
                 , ct
                 , source_factors
                 , __fst__[Type_list][Spine_list](cell)
                 , flags
                 )
-              , .() -> Any_target_step { __left__[Comptime_bool][Any_target_next](.t) }
+              , .() -> Any_target_step { __left__[Comptime_bool][Any_target_next](__.t__(ct)) }
               , .() -> Any_target_step {
                   __right__[Comptime_bool][Any_target_next]((
                   , __snd__[Type_list][Spine_list](cell)
-                  , .f
+                  , __.f__(ct)
                   ))
                 }
               )
@@ -501,7 +501,7 @@ pure fn target_factors_have_source(
 ) -> Comptime_bool {
   __structural_recur__(ct)[Spine_list][Any_target_state](
   , sources
-  , .f
+  , __.f__(ct)
   , .(
     , loop_recur: (Spine_list & Any_target_state) -> Comptime_bool
     , loop_fuel: Spine_list
@@ -511,20 +511,20 @@ pure fn target_factors_have_source(
         .(fuel: Spine_list, _found: Any_target_state) -> Any_target_step {
           __either__[.][Type_list & Spine_list][Any_target_step](
           , Spine_list.get(fuel)
-          , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](.f) }
+          , .(_done: .) -> Any_target_step { __left__[Comptime_bool][Any_target_next](__.f__(ct)) }
           , .(cell: Type_list & Spine_list) -> Any_target_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , branch_can_land_from_factors(
                 , ct
                 , __fst__[Type_list][Spine_list](cell)
                 , target_factors
                 , flags
                 )
-              , .() -> Any_target_step { __left__[Comptime_bool][Any_target_next](.t) }
+              , .() -> Any_target_step { __left__[Comptime_bool][Any_target_next](__.t__(ct)) }
               , .() -> Any_target_step {
                   __right__[Comptime_bool][Any_target_next]((
                   , __snd__[Type_list][Spine_list](cell)
-                  , .f
+                  , __.f__(ct)
                   ))
                 }
               )
@@ -559,7 +559,7 @@ pure fn all_sources_have_targets(
 ) -> Comptime_bool {
   __structural_recur__(ct)[Spine_list][All_branch_state](
   , sources
-  , .t
+  , __.t__(ct)
   , .(
     , loop_recur: (Spine_list & All_branch_state) -> Comptime_bool
     , loop_fuel: Spine_list
@@ -569,17 +569,17 @@ pure fn all_sources_have_targets(
         .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
           __either__[.][Type_list & Spine_list][All_branch_step](
           , Spine_list.get(fuel)
-          , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](.t) }
+          , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](__.t__(ct)) }
           , .(cell: Type_list & Spine_list) -> All_branch_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , source_factors_have_target(ct, __fst__[Type_list][Spine_list](cell), targets, flags)
               , .() -> All_branch_step {
                   __right__[Comptime_bool][All_branch_next]((
                   , __snd__[Type_list][Spine_list](cell)
-                  , .t
+                  , __.t__(ct)
                   ))
                 }
-              , .() -> All_branch_step { __left__[Comptime_bool][All_branch_next](.f) }
+              , .() -> All_branch_step { __left__[Comptime_bool][All_branch_next](__.f__(ct)) }
               )
             }
           )
@@ -606,7 +606,7 @@ pure fn all_targets_have_sources(
 ) -> Comptime_bool {
   __structural_recur__(ct)[Spine_list][All_branch_state](
   , targets
-  , .t
+  , __.t__(ct)
   , .(
     , loop_recur: (Spine_list & All_branch_state) -> Comptime_bool
     , loop_fuel: Spine_list
@@ -616,17 +616,17 @@ pure fn all_targets_have_sources(
         .(fuel: Spine_list, _ok_so_far: All_branch_state) -> All_branch_step {
           __either__[.][Type_list & Spine_list][All_branch_step](
           , Spine_list.get(fuel)
-          , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](.t) }
+          , .(_done: .) -> All_branch_step { __left__[Comptime_bool][All_branch_next](__.t__(ct)) }
           , .(cell: Type_list & Spine_list) -> All_branch_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , target_factors_have_source(ct, __fst__[Type_list][Spine_list](cell), sources, flags)
               , .() -> All_branch_step {
                   __right__[Comptime_bool][All_branch_next]((
                   , __snd__[Type_list][Spine_list](cell)
-                  , .t
+                  , __.t__(ct)
                   ))
                 }
-              , .() -> All_branch_step { __left__[Comptime_bool][All_branch_next](.f) }
+              , .() -> All_branch_step { __left__[Comptime_bool][All_branch_next](__.f__(ct)) }
               )
             }
           )
@@ -663,7 +663,7 @@ pure fn choose_target_branch(
   let source_slots = dnf_branch_slots(ct, source_branch, source_value);
   __structural_recur__(ct)[Dnf_branch_list][Search_state][Macro_result](
   , targets
-  , err(ct, "no target DNF branch matches source branch"[__Diagnostic_text__])
+  , err(ct, __"no target DNF branch matches source branch"__(ct))
   , .(
     , loop_recur: (Dnf_branch_list & Search_state) -> Macro_result
     , loop_fuel: Dnf_branch_list
@@ -678,7 +678,7 @@ pure fn choose_target_branch(
               let target_branch = __fst__[Dnf_branch][Dnf_branch_list](cell);
               let target_branch_type = dnf_branch_type(ct, target_branch);
               let target_factors = dnf_branch_spine(ct, target_branch_type);
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , branch_can_land_from_factors(ct, source_factors, target_factors, flags)
               , .() -> Search_step {
                   __either__[__Checked_term__][__Diagnostic_text__][Search_step](
@@ -770,13 +770,13 @@ pure fn preflight_dnf(
   let targets = dnf_branches(ct, target);
   let source_spines = branch_spines(ct, sources);
   let target_spines = branch_spines(ct, targets);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , all_sources_have_targets(ct, source_spines, target_spines, flags)
   , .() -> Preflight_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , require_all_targets
       , .() -> Preflight_result {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , all_targets_have_sources(ct, source_spines, target_spines, flags)
           , .() -> Preflight_result { preflight_ok(sources, targets) }
           , .() -> Preflight_result { preflight_err() }
@@ -798,8 +798,8 @@ pure fn preflight(
 ) -> Comptime_bool {
   __either__[Preflight_payload][.][Comptime_bool](
   , preflight_dnf(ct, source, target, flags, require_all_targets)
-  , .(_payload: Preflight_payload) -> Comptime_bool { .t }
-  , .() -> Comptime_bool { .f }
+  , .(_payload: Preflight_payload) -> Comptime_bool { __.t__(ct) }
+  , .() -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -850,7 +850,7 @@ pure fn algebraic_from_dnf(
   __either__[Dnf_branch][.][__Checked_term__](
   , single_dnf_branch(ct, sources)
   , .(single_source: Dnf_branch) -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, source, dnf_branch_type(ct, single_source))
       , .() -> __Checked_term__ {
           algebraic_from_branch(ct, target, single_source, value, targets, flags)
@@ -895,8 +895,8 @@ pure fn ease_leaf_mapper(
 , target: __Type__
 , flags: Branch_build_flags
 ) -> Ease_adapter_result {
-  __if_then_else__(
-  , preflight(ct, source, target, flags, .f)
+  __comptime_if_then_else__(ct)(
+  , preflight(ct, source, target, flags, __.f__(ct))
   , .() -> Ease_adapter_result {
       ease_adapter_ok(
       , ct
@@ -908,8 +908,8 @@ pure fn ease_leaf_mapper(
             , target
             , value
             , flags
-            , .f
-            , "ease POC found no DNF easing"[__Diagnostic_text__]
+            , __.f__(ct)
+            , __"ease POC found no DNF easing"__(ct)
             )
           , .(term: __Checked_term__) -> __Checked_term__ { term }
           , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
@@ -917,9 +917,7 @@ pure fn ease_leaf_mapper(
         }
       )
     }
-  , .() -> Ease_adapter_result {
-      ease_adapter_err(ct, "ease POC found no DNF easing"[__Diagnostic_text__])
-    }
+  , .() -> Ease_adapter_result { ease_adapter_err(ct, __"ease POC found no DNF easing"__(ct)) }
   )
 }
 
@@ -971,11 +969,11 @@ pure fn ease_function_mapper(
 pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, pair: Type_pair) -> Ease_adapter_result {
   let source = __fst__[__Type__][__Type__](pair);
   let target = __snd__[__Type__][__Type__](pair);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, source, target)
   , .() -> Ease_adapter_result { ease_adapter_ok(ct, identity_mapper(ct, source)) }
   , .() -> Ease_adapter_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, source, __type_bottom__(ct))
       , .() -> Ease_adapter_result {
           ease_adapter_ok(
@@ -995,12 +993,12 @@ pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, pair: Type_pair) ->
                   ease_function_mapper(ct, recur, source, target, source_view, target_view)
                 }
               , .(_target_not_function: .) -> Ease_adapter_result {
-                  ease_leaf_mapper(ct, source, target, (.t, .f))
+                  ease_leaf_mapper(ct, source, target, (__.t__(ct), __.f__(ct)))
                 }
               )
             }
           , .(_source_not_function: .) -> Ease_adapter_result {
-              ease_leaf_mapper(ct, source, target, (.t, .f))
+              ease_leaf_mapper(ct, source, target, (__.t__(ct), __.f__(ct)))
             }
           )
         }
@@ -1020,20 +1018,20 @@ pure fn ease_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__)
 }
 
 pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  __if_then_else__(
-  , iso_branch_shape_ok(ct, source, target, (.f, .f))
+  __comptime_if_then_else__(ct)(
+  , iso_branch_shape_ok(ct, source, target, (__.f__(ct), __.f__(ct)))
   , .() -> Macro_result {
       algebraic_impl(
       , ct
       , source
       , target
       , value
-      , (.f, .f)
-      , .t
-      , "iso POC found no DNF bijection"[__Diagnostic_text__]
+      , (__.f__(ct), __.f__(ct))
+      , __.t__(ct)
+      , __"iso POC found no DNF bijection"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, "iso POC found no DNF bijection"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"iso POC found no DNF bijection"__(ct)) }
   )
 }
 
@@ -1046,20 +1044,20 @@ pure fn iso_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__,
 pub macro iso : [Source] Source -> [Target] Target { impl iso_checked }
 
 pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  __if_then_else__(
-  , into_branch_shape_ok(ct, source, target, (.f, .t))
+  __comptime_if_then_else__(ct)(
+  , into_branch_shape_ok(ct, source, target, (__.f__(ct), __.t__(ct)))
   , .() -> Macro_result {
       algebraic_impl(
       , ct
       , source
       , target
       , value
-      , (.f, .t)
-      , .f
-      , "into POC found no DNF injection"[__Diagnostic_text__]
+      , (__.f__(ct), __.t__(ct))
+      , __.f__(ct)
+      , __"into POC found no DNF injection"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, "into POC found no DNF injection"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"into POC found no DNF injection"__(ct)) }
   )
 }
 
@@ -1077,9 +1075,9 @@ pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   , source
   , target
   , value
-  , (.t, .f)
-  , .t
-  , "onto POC found no DNF surjection"[__Diagnostic_text__]
+  , (__.t__(ct), __.f__(ct))
+  , __.t__(ct)
+  , __"onto POC found no DNF surjection"__(ct)
   )
 }
 
@@ -1097,9 +1095,9 @@ pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
   , source
   , target
   , value
-  , (.f, .f)
-  , .f
-  , "align POC found no DNF alignment"[__Diagnostic_text__]
+  , (__.f__(ct), __.f__(ct))
+  , __.f__(ct)
+  , __"align POC found no DNF alignment"__(ct)
   )
 }
 
@@ -1138,12 +1136,12 @@ pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
       , source
       , target
       , value
-      , (.t, .f)
-      , .t
-      , "atom POC found no single-branch target"[__Diagnostic_text__]
+      , (__.t__(ct), __.f__(ct))
+      , __.t__(ct)
+      , __"atom POC found no single-branch target"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, "atom POC found no single-branch target"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"atom POC found no single-branch target"__(ct)) }
   )
 }
 

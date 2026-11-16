@@ -642,12 +642,10 @@ import __intrinsics__;
 import __comptime__;
 
 pure fn unit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, source, __type_unit__(ct))
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ {
-      __macro_error__(ct, "unit_only requires a unit source"[__Diagnostic_text__])
-    }
+  , .() -> __Checked_term__ { __macro_error__(ct, __"unit_only requires a unit source"__(ct)) }
   )
 }
 

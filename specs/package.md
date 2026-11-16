@@ -452,13 +452,17 @@ rehost foobar/io to testapi/io;
 consumer module providing replacements. During materialization, the rewrite is
 **local to the named module**: every `host` item it declares is replaced in
 place by an ordinary item that forwards to the consumer module. A `host type` T
-becomes a transparent alias `pub type T = <consumer>.T` (the consumer type's
-`role(...)`, if any, is inherited by the alias for literal admission). A `host fn` f becomes a forwarding wrapper
+becomes a transparent alias `pub type T = <consumer>.T`. If the source host type
+declares a role, the replacement must resolve to a host type with that same
+role. Transparent aliases inherit their terminal host type's role. Missing or
+different roles are dependency errors checked before publishing the rewritten
+dependency, including on an unchanged or forced fetch. A roleless source type
+imposes no literal-role requirement. A `host fn` f becomes a forwarding wrapper
 `pub fn f(..) -> R { <consumer>.f(..) }`. The rebound items stay exported, so a
 module that imports them keeps its import unchanged — the rewrite touches no
 other module. The consumer module must export an item of a compatible type for
-each rebound name; a missing or mistyped provider is an ordinary typecheck
-error. A dependency file may carry any number of `rehost` statements — one per
+each rebound name. The rebound aliases and functions also undergo ordinary
+typechecking. A dependency file may carry any number of `rehost` statements — one per
 dependency module to rebind; `kio fmt` sorts them after the `source` block.
 Any second selector for the same source module is a dependency error, even
 when both statements name the same target. It is rejected before that

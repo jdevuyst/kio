@@ -488,6 +488,25 @@ fn complete_source(
         Some(entry_to_lsp(entry, Some(source), module, Some(&metadata)))
     }));
     result.items.extend(
+        crate::scope_walk::tooling_comptime_literals(&probe, module)
+            .iter()
+            .map(|label| CompletionItem {
+                label: (*label).to_owned(),
+                kind: Some(CompletionItemKind::CONSTANT),
+                detail: Some("compile-time literal".to_owned()),
+                insert_text: Some(
+                    match *label {
+                        "__.t__" => "__.t__(${1:proof})",
+                        "__.f__" => "__.f__(${1:proof})",
+                        _ => "__\"${1}\"__(${2:proof})",
+                    }
+                    .to_owned(),
+                ),
+                insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
+                ..Default::default()
+            }),
+    );
+    result.items.extend(
         crate::scope_walk::tooling_keywords(&probe)
             .into_iter()
             .map(|keyword| CompletionItem {
@@ -1162,6 +1181,85 @@ mod tests {
         let offset = source.find(marker).expect("marker in source") + marker.len();
         let pos = LineIndex::new(source).to_position(offset as u32);
         complete_at(source, pos.line, pos.character)
+    }
+
+    #[test]
+    fn comptime_literal_completion_tracks_current_import_and_expression_context() {
+        let with_import = "module m; import __comptime__; fn f(ct: T) { __ }";
+        let items = complete_at_marker(with_import, "{ __");
+        for (label, insertion) in [
+            ("__.t__", "__.t__(${1:proof})"),
+            ("__.f__", "__.f__(${1:proof})"),
+            ("__\"\"__", "__\"${1}\"__(${2:proof})"),
+        ] {
+            let item = items
+                .iter()
+                .find(|item| item.label == label)
+                .unwrap_or_else(|| panic!("missing {label}: {items:?}"));
+            assert_eq!(
+                item.insert_text_format,
+                Some(lsp_types::InsertTextFormat::SNIPPET)
+            );
+            let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                panic!("completion edit")
+            };
+            assert_eq!(edit.new_text, insertion);
+            assert_eq!(edit.range.start.character + 2, edit.range.end.character);
+        }
+        let uri = lsp_types::Uri::from_str("untitled:///test.kio").unwrap();
+        let mut state = crate::lsp::state::ServerState::new();
+        state.completion_snippets = false;
+        state.open(uri.clone(), with_import.to_owned(), 1);
+        let offset = with_import.find("{ __").unwrap() + "{ __".len();
+        let position = LineIndex::new(with_import).to_position(offset as u32);
+        let plain = handle_completion_request(
+            &uri,
+            &make_pos(position.line, position.character),
+            None,
+            &state,
+            None,
+        )
+        .unwrap();
+        let item = plain
+            .list
+            .items
+            .iter()
+            .find(|item| item.label == "__.t__")
+            .unwrap();
+        assert!(item.insert_text_format.is_none());
+        let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+            panic!("plain completion edit")
+        };
+        assert_eq!(edit.new_text, "__.t__");
+        let argument = "module m; import __comptime__; fn f(ct: T) { target(__) }";
+        assert!(
+            complete_at_marker(argument, "target(__")
+                .iter()
+                .any(|item| item.label == "__.t__")
+        );
+        for source in [
+            "module m; fn f(ct: T) { __ }",
+            "module m; import __comptime__; fn f(ct: __) { () }",
+            "module m; import __comptime__; fn f(ct: T) { value.__ }",
+            "module m; import __comptime__; fn f(ct: T) { // __\n () }",
+        ] {
+            let items = complete_at_marker(
+                source,
+                if source.contains("value.__") {
+                    "value.__"
+                } else if source.contains("// __") {
+                    "// __"
+                } else if source.contains("ct: __") {
+                    "ct: __"
+                } else {
+                    "{ __"
+                },
+            );
+            assert!(
+                items.iter().all(|item| item.label != "__.t__"),
+                "{source}: {items:?}"
+            );
+        }
     }
 
     #[test]

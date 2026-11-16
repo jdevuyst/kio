@@ -6,8 +6,8 @@ pure fn observer(ct: __Comptime__) -> [A] . -> Comptime_bool {
   .[A](_unit: .) -> Comptime_bool { __type_is_product_root__(ct, __reflect_type__(ct)[A]) }
 }
 
-pure fn always_false(_ct: __Comptime__) -> [A] . -> Comptime_bool {
-  .[A](_unit: .) -> Comptime_bool { .f }
+pure fn always_false(ct: __Comptime__) -> [A] . -> Comptime_bool {
+  .[A](_unit: .) -> Comptime_bool { __.f__(ct) }
 }
 
 equiv generic_claim(ct: __Comptime__) {

@@ -464,6 +464,7 @@ fn visit_expr<'a>(
         return;
     }
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => visit_expr(proof, offset, visitor),
         Expr::BlockCall { prefix, blocks, .. } => {
             for stage in prefix {
                 visit_call_args(&stage.args, offset, visitor);

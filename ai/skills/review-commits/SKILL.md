@@ -93,7 +93,7 @@ legacy read/write paths, and format-version bumps require that real compatibilit
 obligation; an unreleased implementation experiment does not acquire one merely
 because it already carries a version label.
 
-Also classify fixes in the window under AGENTS.md § Universal rules — "Findings do not broaden scope." Flag unrelated pre-existing work added without user authorization, including issue, ROADMAP, or other tracker mutations; a review or audit finding alone does not put that work in scope.
+Review findings under AGENTS.md § Universal rules — “Account for findings.” Check the user's task and session instructions for repair scope, including read-only limits. Do not flag a clear, bounded repair solely because the defect predates the task. Verify that each material finding was repaired, placed in an authorized tracker, or explicitly reported with its unresolved disposition; flag silently dropped findings and substantial unrelated work without authority. Keep behavioral-contract, protected-content, tracking and publication approvals distinct from ordinary repair scope.
 
 ### Host API stability transitions
 
@@ -310,7 +310,7 @@ Structure the report as a narrative, not a flat list. Suggested shape:
 1. **Headline** — one sentence: which window was reviewed, how many commits, what areas, anything striking.
 2. **What landed** — bulleted summary of the clusters with a line each.
 3. **Hygiene** — sign-off status, message accuracy, granularity issues.
-4. **Contract-authority and scope ledger** — each normative behavior delta and its authority, any unverified/unauthorized blocker, and any finding that expanded scope.
+4. **Contract-authority and scope ledger** — each normative behavior delta and its authority, any unverified/unauthorized blocker, and each material finding’s disposition or unresolved scope decision.
 5. **Pairing gaps** — implementation that landed without its expected spec / docs / test / version-mirror counterpart.
 6. **Partial work introduced** — TODOs, carve-outs, overclaimed fixes.
 7. **ROADMAP / authorization** — settled threads still listed, new entries without paper trail.

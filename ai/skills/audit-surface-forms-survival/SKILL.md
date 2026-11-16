@@ -128,6 +128,7 @@ including its effects or opaque symbolic identity; zero ABI slots do not erase
 it. A type-only application retains its value stage, whereas an explicit empty
 value call supplies Unit. For computed products, native slot adaptation must
 evaluate the whole packet once rather than recompute it per projection.
+
 - `Param.ty: Option<Type<P>>` / `Expr::FnExpr.ret_ty: Option<Type<P>>` — `Some(t)` means the user wrote the annotation, `None` means the typer infers from context. Kio' admits both shapes (`.(x) { … }` and `.(x: T) { … }` are distinct source spellings), the pretty-printer respects the `Option`, and a fresh re-parse re-derives the same `Some`/`None`. The optionality is a genuine Kio' syntactic distinction ("this slot is inferred from context"), not hidden provenance. The only narrowing that would work for these requires filling `None` from a side table at substitute time — which the phase-boundary side-channel rule above rejects, since the inferred type is canonically re-derivable from the surrounding context at re-parse.
 
 For each candidate field on a Prime-surviving node, answer in order:
@@ -172,12 +173,18 @@ For each candidate, perform the fresh-load counterfactual: construct or emit the
 
 ## 9. Compile-time evaluator inputs
 
+Compare the actual exported-name inventories of `__intrinsics__` and
+`__comptime__`; their intersection must be empty. A copied list in a test
+does not establish coverage when new exports are added.
+
 Compile-time evaluator entry points must preserve phase-boundary purity. Audit every caller that feeds the evaluator behind `equiv`, the REPL `:normalize` command, user macros, generated-term templates, and future `__comptime__` hooks.
 
 Check:
 
 - The reducer input is a Kio'-shaped core term plus an explicit primitive environment. In kio-rs this is `UncheckedPrime` while compile-time holes are still explicit and `Prime` after final validation.
 - Primitive behavior, including future `__comptime__` behavior, is represented in that environment rather than as ambient access to builtin modules, compiler internals, or hidden global state.
+- Proof-bearing compiler literals retain their payload and exact carrier in a validated explicit primitive entry, including cache identities. Mutating the payload or carrier, forging its type, or omitting the entry cannot inherit authority from a reserved spelling. Their source nodes disappear before evaluation and runtime Prime; ordinary literal roles do not admit compiler-owned carriers.
+- Every compiler-owned value type lowers to bottom for runtime code, including Boolean and text carriers. Check retained functions, first-class/partial intrinsic applications, and emitted-then-reparsed Prime; replacing distinct compiler values with Unit or relying on dead-code removal is a finding. Role-preserving `rehost` checks follow resolved aliases and declared roles, not a compiler-type blacklist.
 - A boundary adapter may consume typed Lowered terms plus `Elaborations` only before reduction begins, and only by writing the known elaborations into the Kio'-shaped evaluator input.
 - The reducer and its caches do not consume Lowered or surface AST nodes, `Elaborations`, `TypeCtx`, resolver tables, or any other typer-only state after evaluator input construction.
 - The same reduction semantics are shared across the entry points; wrappers may prepare terms, configure primitives, compare results, or reify diagnostics, but must not fork a second evaluator with different redex coverage.

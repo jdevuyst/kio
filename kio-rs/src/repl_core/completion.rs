@@ -270,7 +270,7 @@ impl ScopeProvider for AstScopeProvider<'_> {
     }
 
     fn completion(&self, expr: &str, cursor: usize) -> Completion {
-        let (probe, candidates, block_label) = self.context_scope(expr, cursor);
+        let (probe, candidates, block_label, comptime_literals) = self.context_scope(expr, cursor);
         let Some(context) = probe
             .facts
             .cursor
@@ -307,6 +307,20 @@ impl ScopeProvider for AstScopeProvider<'_> {
                     label: candidate.label,
                     kind: CandidateKind::Identifier(candidate.kind),
                     description: Some(candidate.kind.description().to_owned()),
+                    match_indices: fm.indices,
+                },
+            });
+        }
+        for label in comptime_literals {
+            let Some(fm) = language_match(prefix, label) else {
+                continue;
+            };
+            scored.push(ScoredCandidate {
+                score: fm.score,
+                candidate: Candidate {
+                    label: (*label).to_owned(),
+                    kind: CandidateKind::Builtin,
+                    description: Some("compile-time literal".to_owned()),
                     match_indices: fm.indices,
                 },
             });
@@ -384,6 +398,7 @@ impl AstScopeProvider<'_> {
         crate::pass::parser::ToolingProbe<'a>,
         Vec<ScopeCandidate>,
         Option<String>,
+        &'static [&'static str],
     ) {
         use crate::pass::parser::{CursorSlot, probe_tooling};
         let module = self
@@ -539,7 +554,11 @@ impl AstScopeProvider<'_> {
             }
             header.blocks.get(index)?.1.clone()
         })();
-        (probe, candidates, block_label)
+        let comptime_literals = crate::scope_walk::tooling_comptime_literals(
+            &probe,
+            module.as_ref().map(|module| &module.module),
+        );
+        (probe, candidates, block_label, comptime_literals)
     }
 }
 
@@ -2206,6 +2225,39 @@ mod tests {
             "one candidate per lexical binding"
         );
         assert!(!scope.iter().any(|c| c.label == "__left__"));
+    }
+
+    #[test]
+    fn comptime_literal_completion_uses_current_module_import() {
+        let mut set = walk_set();
+        set.current_module_src = Some("module demo/main; import __comptime__;".to_owned());
+        let provider = AstScopeProvider::new(&set);
+        let completion = complete(&set, &provider, "__", 2);
+        assert_eq!(completion.replace, 0..2);
+        for label in ["__.t__", "__.f__", "__\"\"__"] {
+            assert!(
+                completion
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.label == label),
+                "{label}: {completion:?}"
+            );
+        }
+        assert!(
+            provider
+                .completion("value.__", 8)
+                .candidates
+                .iter()
+                .all(|candidate| candidate.label != "__.t__")
+        );
+        set.current_module_src = Some("module demo/main;".to_owned());
+        assert!(
+            AstScopeProvider::new(&set)
+                .completion("__", 2)
+                .candidates
+                .iter()
+                .all(|candidate| candidate.label != "__.t__")
+        );
     }
 
     #[test]

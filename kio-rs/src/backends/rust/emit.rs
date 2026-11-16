@@ -1158,6 +1158,7 @@ where
     };
     match e {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
+        Expr::ComptimeLiteral { ext, .. } => match *ext {},
         // Phase-only variants discharged via `match *ext {}` at
         // emit time — uninhabited at Routed, so they can't reach
         // this walker in production. Clone-fall-through is safe
@@ -3141,9 +3142,6 @@ impl BodyShapeRegistry {
                     return match erasure {
                         crate::comptime::ComptimeRuntimeErasure::Bottom => {
                             Type::Bottom { meta: meta.clone() }
-                        }
-                        crate::comptime::ComptimeRuntimeErasure::Unit => {
-                            Type::Unit { meta: meta.clone() }
                         }
                     };
                 }
@@ -7406,6 +7404,7 @@ impl<'a> BodyEmitter<'a> {
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
+            | Expr::ComptimeLiteral { ext, .. }
             | Expr::Ufcs { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::RecCall { ext, .. } => match *ext {},

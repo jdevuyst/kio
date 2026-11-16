@@ -138,6 +138,7 @@ pub fn render_markdown_guide() -> String {
     );
     out.push_str("Import and signature blocks are reference fragments and are marked `{ignore}`. Worked examples use standalone checked fences. The first paragraph of each entry is the concise summary used by editor hover; the following text is the long-form reference.\n\n");
     out.push_str("See [literal types and local inference](typechecking.md#literal-types-and-local-inference) for explicit annotations, concrete context and local inference boundaries.\n\n");
+    out.push_str("The two builtin modules export disjoint names and can be imported together. Compile-time literals such as `__.t__(ct)` and `__\"message\"__(ct)` require `__comptime__` and an explicit proof. Their compiler-owned carriers have no host literal roles.\n\n");
     render_module_section(&mut out, BuiltinModule::Intrinsics);
     render_module_section(&mut out, BuiltinModule::Comptime);
     let trimmed_len = out.trim_end().len();
@@ -325,6 +326,7 @@ fn comptime_group(builtin: ComptimeBuiltin) -> &'static str {
         | DiagnosticConcat => "Diagnostics",
         MacroError | TypeError => "Error Sentinels",
         StructuralRecur => "Compile-Time Recursion",
+        ComptimeIfThenElse => "Compile-Time Control",
         TermType | TermLet | TermFn | TermCall | TermTypeFn | TermTypeApp | TermUnit
         | TermHostConvert | TermSpecialize => "Checked Terms",
         Fill | FillResult => "Fill Relations",
@@ -349,12 +351,9 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         TypeName => "Opaque handle for the named head of a reflected named type.",
         TypeArity => "Opaque arity value used by reflected type variables, names, and binders.",
         DiagnosticText => "Compile-time text used in macro diagnostics.",
-        ComptimeBool => {
-            "Compile-time Boolean type with `role(bool)`, exposed by `import __comptime__;`."
-        }
-        ComptimeStr => {
-            "Compile-time string type with `role(str)`, exposed by `import __comptime__;`."
-        }
+        ComptimeBool => "Compiler-owned Boolean type used by compile-time predicates.",
+        ComptimeStr => "Compiler-owned string type used during compile-time evaluation.",
+        ComptimeIfThenElse => "Invokes one of two thunks according to a compile-time Boolean.",
         FillCtx => "Opaque immutable transcript of explicit fill relations for one marked call.",
         ReflectType => {
             "Reflects a type argument into an opaque `__Type__` handle. Macros use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction."
@@ -479,16 +478,19 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Arity is a compile-time natural number used for kinds. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation."
         }
         DiagnosticText => {
-            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `\"message\"[__Diagnostic_text__]`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string."
+            "Diagnostic text is the message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or with `__\"message\"__(ct)` in a diagnostic-text context. The constructor requires an explicit `__Comptime__` proof and `import __comptime__;`. Transparent aliases preserve this contextual typing. Diagnostic text has no host literal role; its runtime representation is bottom."
         }
         ComptimeBool => {
-            "The literals `.t` and `.f` form compile-time predicate results used by reflection helpers and concrete compile-time branching. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type."
+            "Reflection predicates return this compiler-owned Boolean type. Construct its values with `__.t__(ct)` or `__.f__(ct)`, requiring an explicit `__Comptime__` proof and `import __comptime__;`. Branch on it with `__comptime_if_then_else__`. It has no `role(bool)` and its runtime representation is bottom."
         }
         ComptimeStr => {
-            "A concrete `Comptime_str` context or an explicit annotation determines this carrier for a string literal. An already typed `Comptime_str` value is not implicitly converted to `__Diagnostic_text__`; diagnostic-text contexts can instead determine the carrier of an unannotated literal. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code."
+            "Construct compile-time strings with `__\"text\"__(ct)` in a concrete `Comptime_str` context, requiring an explicit `__Comptime__` proof and `import __comptime__;`. A value already typed as `Comptime_str` is not implicitly converted to `__Diagnostic_text__`; the constructor's context determines its carrier. It has no `role(str)` and its runtime representation is bottom."
         }
         FillCtx => {
             "The compiler supplies one fresh context as the second argument of an `impl(fills)` implementation. Both `__fill__` and `__fill_result__` return a descendant context instead of mutating their input, so Kio code threads the returned value explicitly. A context cannot be constructed by source, converted to or from `__Comptime__`, inspected, or allowed to reach runtime."
+        }
+        ComptimeIfThenElse => {
+            "Apply the compile-time proof first, then the condition and two Unit thunks as one argument packet. The packet is evaluated left to right, including both expressions that produce the thunks. Only the selected thunk body runs. The result type is generic and follows ordinary inference. The condition must have type `Comptime_bool`; runtime host Booleans use `__if_then_else__` from `__intrinsics__`. Retained runtime code eliminates the bottom-typed proof, including when the helper is used as a value or partially applied."
         }
         ReflectType => {
             "The type argument must be solved before the helper runs; the result is its exact reflected handle, including nominal identity and kind. An unsolved macro type slot cannot call this helper and is reported as a type-inference error before evaluation."
@@ -673,6 +675,19 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
 fn comptime_example(builtin: ComptimeBuiltin) -> Option<&'static str> {
     use ComptimeBuiltin::*;
     match builtin {
+        ComptimeIfThenElse => Some(
+            r#"module builtin_comptime_conditional_example;
+
+import __comptime__;
+
+pure fn describe(ct: __Comptime__, condition: Comptime_bool) -> __Diagnostic_text__ {
+  __comptime_if_then_else__(ct)(
+  , condition
+  , .() -> __Diagnostic_text__ { __"yes"__(ct) }
+  , .() -> __Diagnostic_text__ { __"no"__(ct) }
+  )
+}"#,
+        ),
         TypeProductSpineFold => Some(
             r#"module builtin_type_fold_example;
 
@@ -790,7 +805,7 @@ mod tests {
         let guide = render_markdown_guide();
         assert!(guide.contains("```kio {ignore}\n"));
         assert!(!guide.contains("```kio\n"));
-        assert_eq!(guide.matches("```kio {}\n").count(), 6);
+        assert_eq!(guide.matches("```kio {}\n").count(), 7);
         assert!(guide.contains(BuiltinModule::Intrinsics.name()));
         assert!(guide.contains(BuiltinModule::Comptime.name()));
         assert!(guide.contains("higher-order use"));

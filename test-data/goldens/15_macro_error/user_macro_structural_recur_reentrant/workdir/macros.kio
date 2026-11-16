@@ -34,11 +34,11 @@ pure fn reenter(ct: __Comptime__, value: __Checked_term__) -> Elaborator_result 
         run(
         , ct
         , .(_again: .) -> Elaborator_result {
-            __right__[__Checked_term__][__Diagnostic_text__]("unreachable")
+            __right__[__Checked_term__][__Diagnostic_text__](__"unreachable"__(ct))
           }
         , value
         );
-      __right__[__Checked_term__][__Diagnostic_text__]("unreachable")
+      __right__[__Checked_term__][__Diagnostic_text__](__"unreachable"__(ct))
     }
   , value
   )

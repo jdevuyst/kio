@@ -57,8 +57,8 @@ pub pure fn finish_macro_result(ct: __Comptime__, result: Macro_result) -> __Che
 pub pure fn macro_result_ok(ct: __Comptime__, result: Macro_result) -> Comptime_bool {
   __either__[__Checked_term__][__Diagnostic_text__][Comptime_bool](
   , result
-  , .(_term: __Checked_term__) -> Comptime_bool { .t }
-  , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+  , .(_term: __Checked_term__) -> Comptime_bool { __.t__(ct) }
+  , .(_message: __Diagnostic_text__) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -69,7 +69,11 @@ pub pure fn choose_checked_term(
 , on_true: __Checked_term__
 , on_false: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(cond, .() -> __Checked_term__ { on_true }, .() -> __Checked_term__ { on_false })
+  __comptime_if_then_else__(ct)(
+  , cond
+  , .() -> __Checked_term__ { on_true }
+  , .() -> __Checked_term__ { on_false }
+  )
 }
 
 pure fn some_type_pair(ct: __Comptime__, pair: Type_pair) -> Maybe_type_pair {
@@ -138,8 +142,8 @@ pub pure fn type_cons(ct: __Comptime__, head: __Type__, tail: Type_list) -> Type
 pure fn type_empty(ct: __Comptime__, xs: Type_list) -> Comptime_bool {
   __either__[.][__Type__ & Type_list][Comptime_bool](
   , Type_list.get(xs)
-  , .(_done: .) -> Comptime_bool { .t }
-  , .(_cell: __Type__ & Type_list) -> Comptime_bool { .f }
+  , .(_done: .) -> Comptime_bool { __.t__(ct) }
+  , .(_cell: __Type__ & Type_list) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -236,7 +240,7 @@ pure fn type_list_equal_state_bool(ct: __Comptime__, state: Type_list_equal_stat
 pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> Comptime_bool {
   __structural_recur__(ct)[Type_list][Type_list_equal_state](
   , left
-  , (right, .t)
+  , (right, __.t__(ct))
   , .(
     , loop_recur: (Type_list & Type_list_equal_state) -> Comptime_bool
     , loop_fuel: Type_list
@@ -244,19 +248,19 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
     ) -> Comptime_bool {
       let loop_step_fn =
         .(fuel: Type_list, state: Type_list_equal_state) -> Type_list_equal_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , type_list_equal_state_bool(ct, state)
           , .() -> Type_list_equal_step {
               __either__[.][__Type__ & Type_list][Type_list_equal_step](
               , Type_list.get(fuel)
               , .(_left_done: .) -> Type_list_equal_step {
-                  __if_then_else__(
+                  __comptime_if_then_else__(ct)(
                   , type_empty(ct, type_list_equal_state_tail(ct, state))
                   , .() -> Type_list_equal_step {
-                      __left__[Comptime_bool][Type_list_equal_next](.t)
+                      __left__[Comptime_bool][Type_list_equal_next](__.t__(ct))
                     }
                   , .() -> Type_list_equal_step {
-                      __left__[Comptime_bool][Type_list_equal_next](.f)
+                      __left__[Comptime_bool][Type_list_equal_next](__.f__(ct))
                     }
                   )
                 }
@@ -264,10 +268,10 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
                   __either__[.][__Type__ & Type_list][Type_list_equal_step](
                   , Type_list.get(type_list_equal_state_tail(ct, state))
                   , .(_right_done: .) -> Type_list_equal_step {
-                      __left__[Comptime_bool][Type_list_equal_next](.f)
+                      __left__[Comptime_bool][Type_list_equal_next](__.f__(ct))
                     }
                   , .(right_cell: __Type__ & Type_list) -> Type_list_equal_step {
-                      __if_then_else__(
+                      __comptime_if_then_else__(ct)(
                       , __type_equal__(
                         , ct
                         , __fst__[__Type__][Type_list](left_cell)
@@ -276,11 +280,11 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
                       , .() -> Type_list_equal_step {
                           __right__[Comptime_bool][Type_list_equal_next]((
                           , __snd__[__Type__][Type_list](left_cell)
-                          , (__snd__[__Type__][Type_list](right_cell), .t)
+                          , (__snd__[__Type__][Type_list](right_cell), __.t__(ct))
                           ))
                         }
                       , .() -> Type_list_equal_step {
-                          __left__[Comptime_bool][Type_list_equal_next](.f)
+                          __left__[Comptime_bool][Type_list_equal_next](__.f__(ct))
                         }
                       )
                     }
@@ -288,7 +292,9 @@ pure fn type_list_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> 
                 }
               )
             }
-          , .() -> Type_list_equal_step { __left__[Comptime_bool][Type_list_equal_next](.f) }
+          , .() -> Type_list_equal_step {
+              __left__[Comptime_bool][Type_list_equal_next](__.f__(ct))
+            }
           )
         };
       __either__[Comptime_bool][Type_list_equal_next][Comptime_bool](
@@ -357,7 +363,7 @@ pub pure fn take_first_type_matching(ct: __Comptime__, target: __Type__, types: 
               __left__[Maybe_type_take][Type_take_next](type_take_none(ct))
             }
           , .(cell: __Type__ & Type_list) -> Type_take_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , __type_equal__(ct, __fst__[__Type__][Type_list](cell), type_take_target(ct, fuel))
               , .() -> Type_take_step {
                   __left__[Maybe_type_take][Type_take_next](type_take_some(
@@ -415,7 +421,7 @@ type Type_multiset_step = Comptime_bool | Type_multiset_next;
 pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, haystack: Type_list) -> Comptime_bool {
   __structural_recur__(ct)[Type_list][Type_multiset_state](
   , needles
-  , (haystack, .t)
+  , (haystack, __.t__(ct))
   , .(
     , loop_recur: (Type_list & Type_multiset_state) -> Comptime_bool
     , loop_fuel: Type_list
@@ -423,13 +429,13 @@ pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, hay
     ) -> Comptime_bool {
       let loop_step_fn =
         .(fuel: Type_list, state: Type_multiset_state) -> Type_multiset_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , type_multiset_ok(ct, state)
           , .() -> Type_multiset_step {
               __either__[.][__Type__ & Type_list][Type_multiset_step](
               , Type_list.get(fuel)
               , .(_done: .) -> Type_multiset_step {
-                  __left__[Comptime_bool][Type_multiset_next](.t)
+                  __left__[Comptime_bool][Type_multiset_next](__.t__(ct))
                 }
               , .(cell: __Type__ & Type_list) -> Type_multiset_step {
                   __either__[Type_take][.][Type_multiset_step](
@@ -441,17 +447,17 @@ pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, hay
                   , .(taken: Type_take) -> Type_multiset_step {
                       __right__[Comptime_bool][Type_multiset_next]((
                       , __snd__[__Type__][Type_list](cell)
-                      , (__snd__[__Type__][Type_list](taken), .t)
+                      , (__snd__[__Type__][Type_list](taken), __.t__(ct))
                       ))
                     }
                   , .(_missing: .) -> Type_multiset_step {
-                      __left__[Comptime_bool][Type_multiset_next](.f)
+                      __left__[Comptime_bool][Type_multiset_next](__.f__(ct))
                     }
                   )
                 }
               )
             }
-          , .() -> Type_multiset_step { __left__[Comptime_bool][Type_multiset_next](.f) }
+          , .() -> Type_multiset_step { __left__[Comptime_bool][Type_multiset_next](__.f__(ct)) }
           )
         };
       __either__[Comptime_bool][Type_list & Type_multiset_state][Comptime_bool](
@@ -470,10 +476,10 @@ pub pure fn type_multiset_contains_all(ct: __Comptime__, needles: Type_list, hay
 
 /// Checks reflected-type multiset equality, ignoring spine order.
 pub pure fn type_multiset_equal(ct: __Comptime__, left: Type_list, right: Type_list) -> Comptime_bool {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , type_multiset_contains_all(ct, left, right)
   , .() -> Comptime_bool { type_multiset_contains_all(ct, right, left) }
-  , .() -> Comptime_bool { .f }
+  , .() -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -510,11 +516,11 @@ pub pure fn single_dnf_branch(ct: __Comptime__, xs: Dnf_branch_list) -> Dnf_bran
 pub pure fn dnf_branch_type(ct: __Comptime__, branch: Dnf_branch) -> __Type__ { branch }
 
 pure fn combine_dnf_branch_type(ct: __Comptime__, left: __Type__, right: __Type__) -> __Type__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, left, __type_unit__(ct))
   , .() -> __Type__ { right }
   , .() -> __Type__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, right, __type_unit__(ct))
       , .() -> __Type__ { left }
       , .() -> __Type__ { __type_product__(ct, left, right) }
@@ -865,8 +871,8 @@ pub pure fn slot_term(ct: __Comptime__, slot: Slot) -> __Checked_term__ {
 pub pure fn slot_empty(ct: __Comptime__, slots: Slot_list) -> Comptime_bool {
   __either__[.][Slot & Slot_list][Comptime_bool](
   , Slot_list.get(slots)
-  , .(_done: .) -> Comptime_bool { .t }
-  , .(_cell: Slot & Slot_list) -> Comptime_bool { .f }
+  , .(_done: .) -> Comptime_bool { __.t__(ct) }
+  , .(_cell: Slot & Slot_list) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -1088,7 +1094,7 @@ pub pure fn product_slots(ct: __Comptime__, source: __Type__, value: __Checked_t
 
 /// Returns the product spine for one DNF branch.
 pub pure fn dnf_branch_spine(ct: __Comptime__, branch_type: __Type__) -> Type_list {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, branch_type, __type_unit__(ct))
   , .() -> Type_list { type_nil() }
   , .() -> Type_list { product_spine(ct, branch_type) }
@@ -1097,7 +1103,7 @@ pub pure fn dnf_branch_spine(ct: __Comptime__, branch_type: __Type__) -> Type_li
 
 /// Explodes a branch value into typed slots for that DNF branch.
 pub pure fn dnf_branch_slots(ct: __Comptime__, branch_type: __Type__, value: __Checked_term__) -> Slot_list {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, branch_type, __type_unit__(ct))
   , .() -> Slot_list { slot_nil() }
   , .() -> Slot_list { product_slots(ct, branch_type, value) }
@@ -1111,17 +1117,17 @@ pure fn combine_dnf_branch_value(
 , right_type: __Type__
 , right_value: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, left_type, __type_unit__(ct))
   , .() -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, right_type, __type_unit__(ct))
       , .() -> __Checked_term__ { __term_unit__(ct) }
       , .() -> __Checked_term__ { right_value }
       )
     }
   , .() -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, right_type, __type_unit__(ct))
       , .() -> __Checked_term__ { left_value }
       , .() -> __Checked_term__ { __intrinsic_pair__(ct, left_value, right_value) }
@@ -1297,7 +1303,7 @@ pure fn split_type_prefix(ct: __Comptime__, prefix: Type_list, xs: Type_list) ->
           , Type_list.get(loop_state)
           , .(_short: .) -> Maybe_type_list { no_type_list_value() }
           , .(source_cell: __Type__ & Type_list) -> Maybe_type_list {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , __type_equal__(
                 , ct
                 , __fst__[__Type__][Type_list](prefix_cell)
@@ -1370,7 +1376,7 @@ pure fn split_slots_by_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_l
           , Slot_list.get(slot_prefix_remaining(loop_state))
           , .(_short: .) -> Maybe_slot_split { no_slot_split() }
           , .(slot_cell: Slot & Slot_list) -> Maybe_slot_split {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , __type_equal__(
                 , ct
                 , __fst__[__Type__][Type_list](prefix_cell)
@@ -1415,49 +1421,45 @@ pure fn literal_factors(input: Literal_input) -> Type_list { __fst__[Type_list][
 pure fn literal_slots(input: Literal_input) -> Slot_list { __snd__[Type_list][Slot_list](input) }
 
 pure fn literal_unit(ct: __Comptime__, factors: Type_list, slots: Slot_list) -> Macro_result {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , type_empty(ct, factors)
   , .() -> Macro_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , slot_empty(ct, slots)
       , .() -> Macro_result { ok(ct, __term_unit__(ct)) }
-      , .() -> Macro_result { err(ct, "DNF branch has extra unit slots"[__Diagnostic_text__]) }
+      , .() -> Macro_result { err(ct, __"DNF branch has extra unit slots"__(ct)) }
       )
     }
-  , .() -> Macro_result { err(ct, "DNF branch is not unit"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"DNF branch is not unit"__(ct)) }
   )
 }
 
 pure fn literal_atom(ct: __Comptime__, target: __Type__, factors: Type_list, slots: Slot_list) -> Macro_result {
   let single = type_cons(ct, target, type_nil());
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , type_list_equal(ct, factors, single)
   , .() -> Macro_result {
       __either__[Slot_split][.][Macro_result](
       , split_slots_by_prefix(ct, single, slots)
       , .(parts: Slot_split) -> Macro_result {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , slot_empty(ct, __snd__[Slot_list][Slot_list](parts))
           , .() -> Macro_result {
               __either__[.][Slot & Slot_list][Macro_result](
               , Slot_list.get(__fst__[Slot_list][Slot_list](parts))
-              , .(_empty: .) -> Macro_result {
-                  err(ct, "DNF branch atom slot is empty"[__Diagnostic_text__])
-                }
+              , .(_empty: .) -> Macro_result { err(ct, __"DNF branch atom slot is empty"__(ct)) }
               , .(cell: Slot & Slot_list) -> Macro_result {
                   ok(ct, slot_term(ct, __fst__[Slot][Slot_list](cell)))
                 }
               )
             }
-          , .() -> Macro_result { err(ct, "DNF branch has extra atom slots"[__Diagnostic_text__]) }
+          , .() -> Macro_result { err(ct, __"DNF branch has extra atom slots"__(ct)) }
           )
         }
-      , .(_bad: .) -> Macro_result {
-          err(ct, "DNF branch atom slot does not match target"[__Diagnostic_text__])
-        }
+      , .(_bad: .) -> Macro_result { err(ct, __"DNF branch atom slot does not match target"__(ct)) }
       )
     }
-  , .() -> Macro_result { err(ct, "DNF branch atom does not match target"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"DNF branch atom does not match target"__(ct)) }
   )
 }
 
@@ -1489,7 +1491,7 @@ pure fn materialize_product_search(
   let attempt =
     __structural_recur__(ct)[Product_materialize_fuel][Product_materialize_state][Product_materialize_attempt](
     , (__type_product__(ct, left, right), candidates)
-    , err(ct, "DNF branch does not match target product"[__Diagnostic_text__])
+    , err(ct, __"DNF branch does not match target product"__(ct))
     , .(
       , loop_recur: (Product_materialize_fuel & Product_materialize_state) -> Product_materialize_attempt
       , loop_fuel: Product_materialize_fuel
@@ -1569,7 +1571,7 @@ pure fn materialize_sum(
           ok(ct, __intrinsic_right__(ct, target, right_term))
         }
       , .(_right_message: __Diagnostic_text__) -> Macro_result {
-          err(ct, "DNF branch does not match target sum"[__Diagnostic_text__])
+          err(ct, __"DNF branch does not match target sum"__(ct))
         }
       )
     }
@@ -1590,17 +1592,15 @@ pure fn materialize_literal_target(
     , loop_fuel: __Type__
     , loop_state: Literal_input
     ) -> Macro_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, loop_fuel, __type_unit__(ct))
       , .() -> Macro_result {
           literal_unit(ct, literal_factors(loop_state), literal_slots(loop_state))
         }
       , .() -> Macro_result {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __type_equal__(ct, loop_fuel, __type_bottom__(ct))
-          , .() -> Macro_result {
-              err(ct, "DNF branch cannot materialize bottom target"[__Diagnostic_text__])
-            }
+          , .() -> Macro_result { err(ct, __"DNF branch cannot materialize bottom target"__(ct)) }
           , .() -> Macro_result {
               __either__[Type_pair][.][Macro_result](
               , product_view(ct, loop_fuel)
@@ -1764,7 +1764,7 @@ pub pure fn take_first_matching(
                   __left__[Maybe_matched_slot][Take_next](no_matched_slot(ct))
                 }
               , .(slot_cell: Slot & Slot_list) -> Take_step {
-                  __if_then_else__(
+                  __comptime_if_then_else__(ct)(
                   , __type_equal__(ct, __fst__[__Type__][Type_list](type_cell), target)
                   , .() -> Take_step {
                       __left__[Maybe_matched_slot][Take_next](matched_slot(
@@ -1864,13 +1864,13 @@ pure fn finish_product_build(
 ) -> Macro_result {
   let built =
     right_fold_term_product_from_reversed(ct, build_term_types_rev(state), build_terms_rev(state));
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , require_all
   , .() -> Macro_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , slot_empty(ct, build_slots(state))
       , .() -> Macro_result { ok(ct, built) }
-      , .() -> Macro_result { err(ct, "source has unused product slots"[__Diagnostic_text__]) }
+      , .() -> Macro_result { err(ct, __"source has unused product slots"__(ct)) }
       )
     }
   , .() -> Macro_result { ok(ct, built) }
@@ -1935,7 +1935,7 @@ pub pure fn build_product_from_slots(
               , .(_missing: .) -> Build_product_step {
                   __left__[Macro_result][Build_product_next](err(
                   , ct
-                  , "target product slot not provided by source"[__Diagnostic_text__]
+                  , __"target product slot not provided by source"__(ct)
                   ))
                 }
               )
@@ -1978,7 +1978,7 @@ pure fn build_widen_missing(
       ))
     }
   , .(_missing: .) -> Build_product_step {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, target, __type_unit__(ct))
       , .() -> Build_product_step {
           __right__[Macro_result][Build_product_next]((
@@ -1995,7 +1995,7 @@ pure fn build_widen_missing(
       , .() -> Build_product_step {
           __left__[Macro_result][Build_product_next](err(
           , ct
-          , "target product slot cannot be widened"[__Diagnostic_text__]
+          , __"target product slot cannot be widened"__(ct)
           ))
         }
       )
@@ -2108,9 +2108,7 @@ pub pure fn pick_first_slot(
   __either__[Matched_slot][.][Macro_result](
   , take_first_matching(ct, target, slot_types, slots)
   , .(taken: Matched_slot) -> Macro_result { ok(ct, slot_term(ct, matched_slot_value(ct, taken))) }
-  , .(_missing: .) -> Macro_result {
-      err(ct, "no product slot matches target"[__Diagnostic_text__])
-    }
+  , .(_missing: .) -> Macro_result { err(ct, __"no product slot matches target"__(ct)) }
   )
 }
 
@@ -2334,7 +2332,7 @@ pub pure fn take_first_target_matching(ct: __Comptime__, target: __Type__, slots
               __left__[Maybe_target_slot_take][Target_take_next](no_target_slot_take(ct))
             }
           , .(cell: Target_slot & Target_slot_list) -> Target_take_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , __type_equal__(
                 , ct
                 , target_slot_type(ct, __fst__[Target_slot][Target_slot_list](cell))
@@ -2432,8 +2430,8 @@ pub type Route_result = Route_list | __Diagnostic_text__;
 pub pure fn route_result_present(ct: __Comptime__, result: Route_result) -> Comptime_bool {
   __either__[Route_list][__Diagnostic_text__][Comptime_bool](
   , result
-  , .(_routes: Route_list) -> Comptime_bool { .t }
-  , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+  , .(_routes: Route_list) -> Comptime_bool { __.t__(ct) }
+  , .(_message: __Diagnostic_text__) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -2505,7 +2503,7 @@ pub pure fn route_source_arms_unique(
               , .(_missing: .) -> Unique_route_step {
                   __left__[Route_result][Unique_route_next](routes_err(
                   , ct
-                  , "no matching target sum arm"[__Diagnostic_text__]
+                  , __"no matching target sum arm"__(ct)
                   ))
                 }
               )
@@ -2558,7 +2556,7 @@ pub pure fn route_source_arms_collapse(
             }
           , .(cell: __Type__ & Type_list) -> Collapse_route_step {
               __either__[Target_slot_take][.][Collapse_route_step](
-              , __if_then_else__(
+              , __comptime_if_then_else__(ct)(
                 , __type_equal__(ct, __fst__[__Type__][Type_list](cell), __type_bottom__(ct))
                 , .() -> Target_slot_take | . {
                     __left__[Target_slot_take][.](((__type_bottom__(ct), type_nil()), targets))
@@ -2579,7 +2577,7 @@ pub pure fn route_source_arms_collapse(
               , .(_missing: .) -> Collapse_route_step {
                   __left__[Route_result][Collapse_route_next](routes_err(
                   , ct
-                  , "source sum arm has no target arm"[__Diagnostic_text__]
+                  , __"source sum arm has no target arm"__(ct)
                   ))
                 }
               )
@@ -2624,7 +2622,7 @@ pure fn prefix_before_suffix(ct: __Comptime__, targets: Type_list, suffix: Type_
     ) -> Type_list {
       let loop_step_fn =
         .(fuel: Type_list, state: Prefix_state) -> Prefix_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , type_list_equal(ct, fuel, prefix_target(state))
           , .() -> Prefix_step { __left__[Type_list][Prefix_next](prefix_acc(state)) }
           , .() -> Prefix_step {
@@ -2686,7 +2684,7 @@ pure fn suffix_base_term(
   , Type_list.get(suffix)
   , .(_empty: .) -> __Checked_term__ { value }
   , .(cell: __Type__ & Type_list) -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , type_empty(ct, __snd__[__Type__][Type_list](cell))
       , .() -> __Checked_term__ { value }
       , .() -> __Checked_term__ { __intrinsic_left__(ct, suffix_type, value) }
@@ -2784,7 +2782,7 @@ pure fn apply_sum_route(
 , route: Type_list
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, source_type, __type_bottom__(ct))
   , .() -> __Checked_term__ { __intrinsic_absurd__(ct, value, target_type) }
   , .() -> __Checked_term__ { inject_at_suffix(ct, target_spine, route, value) }
@@ -2838,7 +2836,7 @@ pure fn finish_dispatch(ct: __Comptime__, state: Dispatch_loop_state) -> Dispatc
       dispatch_ok(ct, dispatch_mapper(ct, dispatch_state(ct, state)))
     }
   , .(_extra: Type_list & Route_list) -> Dispatch_result {
-      dispatch_err(ct, "sum dispatch route count mismatch"[__Diagnostic_text__])
+      dispatch_err(ct, __"sum dispatch route count mismatch"__(ct))
     }
   )
 }
@@ -2852,15 +2850,11 @@ pure fn build_sum_dispatcher(
 ) -> Dispatch_result {
   __either__[.][__Type__ & Type_list][Dispatch_result](
   , Type_list.get(type_reverse(ct, source_spine))
-  , .(_no_source: .) -> Dispatch_result {
-      dispatch_err(ct, "sum source spine is empty"[__Diagnostic_text__])
-    }
+  , .(_no_source: .) -> Dispatch_result { dispatch_err(ct, __"sum source spine is empty"__(ct)) }
   , .(source_cell: __Type__ & Type_list) -> Dispatch_result {
       __either__[.][Type_list & Route_list][Dispatch_result](
       , Route_list.get(route_reverse(ct, routes))
-      , .(_no_route: .) -> Dispatch_result {
-          dispatch_err(ct, "sum route list is empty"[__Diagnostic_text__])
-        }
+      , .(_no_route: .) -> Dispatch_result { dispatch_err(ct, __"sum route list is empty"__(ct)) }
       , .(route_cell: Type_list & Route_list) -> Dispatch_result {
           __structural_recur__(ct)[Type_list][Dispatch_loop_state][Dispatch_result](
           , __snd__[__Type__][Type_list](source_cell)
@@ -2895,7 +2889,7 @@ pure fn build_sum_dispatcher(
                       , .(_missing_route: .) -> Dispatch_step {
                           __left__[Dispatch_result][Dispatch_next](dispatch_err(
                           , ct
-                          , "sum dispatch route count mismatch"[__Diagnostic_text__]
+                          , __"sum dispatch route count mismatch"__(ct)
                           ))
                         }
                       , .(route_head: Type_list & Route_list) -> Dispatch_step {
@@ -2966,13 +2960,13 @@ fn first_two_types(ct: __Comptime__, types: Type_list) -> Type_pair_result {
   __either__[.][__Type__ & Type_list][Type_pair_result](
   , Type_list.get(types)
   , .(_empty: .) -> Type_pair_result {
-      type_pair_err("type spine has fewer than two slots"[__Diagnostic_text__])
+      type_pair_err(__"type spine has fewer than two slots"__(ct))
     }
   , .(first_cell: __Type__ & Type_list) -> Type_pair_result {
       __either__[.][__Type__ & Type_list][Type_pair_result](
       , Type_list.get(__snd__[__Type__][Type_list](first_cell))
       , .(_one: .) -> Type_pair_result {
-          type_pair_err("type spine has fewer than two slots"[__Diagnostic_text__])
+          type_pair_err(__"type spine has fewer than two slots"__(ct))
         }
       , .(second_cell: __Type__ & Type_list) -> Type_pair_result {
           type_pair_ok(
@@ -3025,7 +3019,7 @@ pure fn flatten_product_once(ct: __Comptime__, current_type: __Type__, value: __
   __either__[Type_pair][.][Type_term_result](
   , product_view(ct, current_type)
   , .(outer: Type_pair) -> Type_term_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_is_product_root__(ct, __fst__[__Type__][__Type__](outer))
       , .() -> Type_term_result {
           __either__[Type_pair][.][Type_term_result](
@@ -3034,23 +3028,17 @@ pure fn flatten_product_once(ct: __Comptime__, current_type: __Type__, value: __
               flatten_product_step_from_parts(ct, current_type, value, outer, inner)
             }
           , .(_not_inner_product: .) -> Type_term_result {
-              type_term_err(
-              , ct
-              , "product source has no left-nested product to flatten"[__Diagnostic_text__]
-              )
+              type_term_err(ct, __"product source has no left-nested product to flatten"__(ct))
             }
           )
         }
       , .() -> Type_term_result {
-          type_term_err(
-          , ct
-          , "product source has no left-nested product to flatten"[__Diagnostic_text__]
-          )
+          type_term_err(ct, __"product source has no left-nested product to flatten"__(ct))
         }
       )
     }
   , .(_not_product: .) -> Type_term_result {
-      type_term_err(ct, "product source has no left-nested product to flatten"[__Diagnostic_text__])
+      type_term_err(ct, __"product source has no left-nested product to flatten"__(ct))
     }
   )
 }
@@ -3109,7 +3097,7 @@ pure fn flatten_sum_once(ct: __Comptime__, current_type: __Type__, value: __Chec
   __either__[Type_pair][.][Type_term_result](
   , sum_view(ct, current_type)
   , .(outer: Type_pair) -> Type_term_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_is_sum_root__(ct, __fst__[__Type__][__Type__](outer))
       , .() -> Type_term_result {
           __either__[Type_pair][.][Type_term_result](
@@ -3118,17 +3106,17 @@ pure fn flatten_sum_once(ct: __Comptime__, current_type: __Type__, value: __Chec
               flatten_sum_step_from_parts(ct, current_type, value, outer, inner)
             }
           , .(_not_inner_sum: .) -> Type_term_result {
-              type_term_err(ct, "sum source has no left-nested sum to flatten"[__Diagnostic_text__])
+              type_term_err(ct, __"sum source has no left-nested sum to flatten"__(ct))
             }
           )
         }
       , .() -> Type_term_result {
-          type_term_err(ct, "sum source has no left-nested sum to flatten"[__Diagnostic_text__])
+          type_term_err(ct, __"sum source has no left-nested sum to flatten"__(ct))
         }
       )
     }
   , .(_not_sum: .) -> Type_term_result {
-      type_term_err(ct, "sum source has no left-nested sum to flatten"[__Diagnostic_text__])
+      type_term_err(ct, __"sum source has no left-nested sum to flatten"__(ct))
     }
   )
 }
@@ -3164,7 +3152,7 @@ pub pure fn flatten_product_to(
     ) -> Macro_result {
       let loop_step_fn =
         .(_fuel: __Type__, state: Flatten_state) -> Flatten_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __type_equal__(ct, flatten_state_type(ct, state), target)
           , .() -> Flatten_step {
               __left__[Macro_result][Flatten_next](ok(ct, flatten_state_term(ct, state)))
@@ -3188,7 +3176,7 @@ pub pure fn flatten_product_to(
                   , .(_not_product: .) -> Flatten_step {
                       __left__[Macro_result][Flatten_next](err(
                       , ct
-                      , "product source has no left-nested product to flatten"[__Diagnostic_text__]
+                      , __"product source has no left-nested product to flatten"__(ct)
                       ))
                     }
                   )
@@ -3231,7 +3219,7 @@ pub pure fn flatten_sum_to(
     ) -> Macro_result {
       let loop_step_fn =
         .(_fuel: __Type__, state: Flatten_state) -> Flatten_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __type_equal__(ct, flatten_state_type(ct, state), target)
           , .() -> Flatten_step {
               __left__[Macro_result][Flatten_next](ok(ct, flatten_state_term(ct, state)))
@@ -3251,7 +3239,7 @@ pub pure fn flatten_sum_to(
                   , .(_not_sum: .) -> Flatten_step {
                       __left__[Macro_result][Flatten_next](err(
                       , ct
-                      , "sum source has no left-nested sum to flatten"[__Diagnostic_text__]
+                      , __"sum source has no left-nested sum to flatten"__(ct)
                       ))
                     }
                   )

@@ -65,7 +65,7 @@ function ordinaryAtoms($) {
     $.recursive_call_expression, $.incomplete_recursive_call_expression,
     $.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr),
     $.expression_path, $.grouped_expression, $.unit_expression,
-    $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation,
+    $.comptime_literal, $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation,
     $.fn_lambda_expr,
     $.placeholder_expression,
   );
@@ -1277,6 +1277,15 @@ module.exports = grammar({
     slot: ($) => choice("___", "__", "_"),
     delayed_slot: ($) => seq($.separator_dot, $.slot),
 
+    comptime_literal: ($) => seq(
+      alias("__", $.slot),
+      choice(
+        alias(token.immediate(choice(".t", ".f")), $.bool_literal),
+        alias(token.immediate(seq('"', repeat(choice(/[^"\\\n]/, /\\(?:["\\\/bfnrt]|u[0-9A-Fa-f]{4})/)), '"')), $.string_literal),
+      ),
+      alias(token.immediate("__"), $.slot),
+      $.bracket_lparen, repeat($.separator_comma), $._expression, repeat($.separator_comma), $.bracket_rparen,
+    ),
     bool_literal: ($) => seq(alias($.separator_dot, $.bool_prefix), $.bool_value),
     bool_value: ($) => token.immediate(choice("t", "f")),
     number_literal: ($) => choice(token(NUMBER), prec(4, seq($._minus, token.immediate(NUMBER)))),

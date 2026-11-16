@@ -4788,8 +4788,23 @@ impl<P: Phase> RecQuotePlan<P> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ComptimeLiteralValue {
+    Bool(bool),
+    Str(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Expr<P: Phase = Surface> {
+    ComptimeLiteral {
+        #[serde(skip)]
+        occurrence: P::ExpressionOccurrence,
+        value: ComptimeLiteralValue,
+        proof: Box<Expr<P>>,
+        source_trivia: P::SourceDelimitedTrivia,
+        meta: Meta<P>,
+        ext: P::ExprElab,
+    },
     /// A source-local block call. Descriptor selection and projection erase
     /// this variant before ordinary desugaring; parsing never reads providers.
     BlockCall {
@@ -6786,7 +6801,7 @@ where
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
@@ -7097,6 +7112,7 @@ impl<P: Phase> Expr<P> {
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
             | Self::UserMacro { occurrence, .. }
+            | Self::ComptimeLiteral { occurrence, .. }
             | Self::BlockCall { occurrence, .. }
             | Self::Ufcs { occurrence, .. }
             | Self::OpChain { occurrence, .. }
@@ -7141,6 +7157,7 @@ impl<P: Phase> Expr<P> {
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
             | Self::UserMacro { occurrence, .. }
+            | Self::ComptimeLiteral { occurrence, .. }
             | Self::BlockCall { occurrence, .. }
             | Self::Ufcs { occurrence, .. }
             | Self::OpChain { occurrence, .. }
@@ -7193,6 +7210,7 @@ impl<P: Phase> Expr<P> {
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
             | Expr::UserMacro { meta, .. }
+            | Expr::ComptimeLiteral { meta, .. }
             | Expr::BlockCall { meta, .. }
             | Expr::Ufcs { meta, .. }
             | Expr::OpChain { meta, .. }
@@ -7241,6 +7259,7 @@ impl<P: Phase> Expr<P> {
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
             | Expr::UserMacro { meta, .. }
+            | Expr::ComptimeLiteral { meta, .. }
             | Expr::BlockCall { meta, .. }
             | Expr::Ufcs { meta, .. }
             | Expr::OpChain { meta, .. }

@@ -568,7 +568,6 @@ fn is_terminal(expr: &EvalExpr) -> bool {
             | EvalExpr::IntAtom(..)
             | EvalExpr::FloatAtom(..)
             | EvalExpr::StrAtom(_)
-            | EvalExpr::DiagnosticText(_)
             | EvalExpr::Primitive(_)
             | EvalExpr::StructuralRecurPrimitive(_)
             | EvalExpr::NewtypeMember(_)
@@ -589,7 +588,6 @@ fn terminal(expr: &EvalExpr, mut local: impl FnMut(usize) -> Option<Value>) -> V
             Value::FloatAtom(digits.clone(), annotation.clone())
         }
         EvalExpr::StrAtom(value) => Value::StrAtom(value.clone()),
-        EvalExpr::DiagnosticText(value) => Value::DiagnosticText(value.clone()),
         EvalExpr::Primitive(builtin) => Value::Primitive(*builtin),
         EvalExpr::StructuralRecurPrimitive(primitive) => Value::Data(primitive.clone()),
         EvalExpr::NewtypeMember(member) => Value::NewtypeMember(member.clone()),
@@ -1312,13 +1310,37 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
         if let Value::Stuck(callee, prefix) = &callee
             && args.len() != 0
-            && !prefix.is_empty()
-            && is_reflection_proof(&prefix[0])
             && let Value::Primitive(builtin) = callee.as_ref()
+            && if *builtin == ComptimeBuiltin::ComptimeIfThenElse {
+                prefix.len() == 1
+            } else {
+                prefix.first().is_some_and(is_reflection_proof)
+            }
         {
             let mut combined = prefix.as_ref().clone();
             combined.extend(args.into_vec());
             return self.primitive(*builtin, combined, result);
+        }
+        if let Value::Data(primitive) = &callee
+            && let DataConstructorIdentity::LiteralConstructor(constructor) = &primitive.identity
+        {
+            let args = args.into_vec();
+            // The checked unary domain supplies the proof type. Its evaluated
+            // value may remain opaque, as for an `equiv` parameter.
+            *result = if args.len() == 1 {
+                match constructor {
+                    crate::comptime::ComptimeLiteralConstructor::Bool(value) => Value::Bool(*value),
+                    crate::comptime::ComptimeLiteralConstructor::Str(value) => {
+                        Value::StrAtom(value.clone())
+                    }
+                    crate::comptime::ComptimeLiteralConstructor::DiagnosticText(value) => {
+                        Value::DiagnosticText(value.clone())
+                    }
+                }
+            } else {
+                Value::Stuck(EvalRef::new(callee), args.into())
+            };
+            return Control::Return;
         }
         if let Value::Data(primitive) = &callee
             && let Some(StructuralRecurDataIdentity::Primitive { stage }) =
@@ -1424,6 +1446,27 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         args: Vec<Value>,
         result: &mut Value,
     ) -> Control<'code> {
+        if builtin == ComptimeBuiltin::ComptimeIfThenElse {
+            let mut args = args;
+            // The semantic stages determine packet placement even when the
+            // already-evaluated proof is an opaque value.
+            if args.len() == 2 {
+                let packet = args.pop().expect("runtime packet follows proof");
+                args.extend(split_product_packet_slots(packet, 3));
+            }
+            if let [_proof, Value::Bool(condition), on_true, on_false] = args.as_slice() {
+                return self.task(Task::Handler {
+                    handler: Handler::Value(if *condition { on_true } else { on_false }.clone()),
+                    args: EvalArgs::Empty,
+                });
+            }
+            *result = if args.is_empty() {
+                Value::Primitive(builtin)
+            } else {
+                Value::Stuck(EvalRef::new(Value::Primitive(builtin)), args.into())
+            };
+            return Control::Return;
+        }
         self.reflect(
             builtin,
             adapt_reflection_packet(builtin, args),
@@ -2833,6 +2876,238 @@ mod tests {
                 captured: Vec::new().into(),
             })),
             args: vec![EvalRef::new(EvalExpr::Bool(true))],
+        }
+    }
+
+    #[test]
+    fn literal_constructors_reduce_under_opaque_comptime_proof_values() {
+        use crate::comptime::ComptimeLiteralConstructor as Literal;
+        let ctx = EvalCtx::new();
+        for (constructor, expected) in [
+            (Literal::Bool(true), Value::Bool(true)),
+            (Literal::Bool(false), Value::Bool(false)),
+            (
+                Literal::Str("text".to_owned()),
+                Value::StrAtom("text".to_owned()),
+            ),
+            (
+                Literal::DiagnosticText("message".to_owned()),
+                Value::DiagnosticText("message".to_owned()),
+            ),
+        ] {
+            let actual = apply(
+                Value::Data(EvalRef::new(DataValue::literal_constructor(constructor))),
+                vec![Value::Atom("abstract_proof_value".to_owned())],
+                &ctx,
+            );
+            assert!(super::super::nf_eq(&actual, &expected, &ctx), "{actual:?}");
+        }
+    }
+
+    #[test]
+    fn conditional_reduces_under_opaque_comptime_proof_values_at_each_stage() {
+        fn thunk(value: bool) -> Value {
+            Value::EvalClosure {
+                function: test_eval_function(&[], EvalExpr::Bool(value)),
+                captured: Vec::new().into(),
+            }
+        }
+        fn pair(left: Value, right: Value) -> Value {
+            Value::Data(EvalRef::new(DataValue::new("__pair__", vec![left, right])))
+        }
+        let ctx = EvalCtx::new();
+        for condition in [false, true] {
+            let proof = Value::Atom("abstract_proof_value".to_owned());
+            let direct = apply(
+                Value::Primitive(ComptimeBuiltin::ComptimeIfThenElse),
+                vec![
+                    proof.clone(),
+                    Value::Bool(condition),
+                    thunk(true),
+                    thunk(false),
+                ],
+                &ctx,
+            );
+            assert!(
+                matches!(direct, Value::Bool(value) if value == condition),
+                "{direct:?}"
+            );
+            let partial = apply(
+                Value::Primitive(ComptimeBuiltin::ComptimeIfThenElse),
+                vec![proof],
+                &ctx,
+            );
+            assert!(erases_type_stage(&partial));
+            let staged = apply(
+                partial,
+                vec![pair(
+                    Value::Bool(condition),
+                    pair(thunk(true), thunk(false)),
+                )],
+                &ctx,
+            );
+            assert!(
+                matches!(staged, Value::Bool(value) if value == condition),
+                "{staged:?}"
+            );
+        }
+        let unknown = apply(
+            Value::Primitive(ComptimeBuiltin::ComptimeIfThenElse),
+            vec![
+                Value::Atom("abstract_proof_value".to_owned()),
+                Value::Atom("abstract_condition".to_owned()),
+                Value::EvalClosure {
+                    function: test_eval_function(&[], EvalExpr::Const(thunk(true))),
+                    captured: Vec::new().into(),
+                },
+                Value::EvalClosure {
+                    function: test_eval_function(&[], EvalExpr::Const(thunk(false))),
+                    captured: Vec::new().into(),
+                },
+            ],
+            &ctx,
+        );
+        let applied_result = apply(unknown, vec![Value::Unit], &ctx);
+        assert!(
+            matches!(applied_result, Value::Stuck(callee, args)
+            if matches!(callee.as_ref(), Value::Stuck(_, prefix) if prefix.len() == 4)
+                && matches!(args.as_slice(), [Value::Unit])),
+            "an application of an unknown conditional result retains its own stage"
+        );
+    }
+
+    #[test]
+    fn comptime_literal_proof_and_conditional_packets_execute_once() {
+        fn call_value(value: Value) -> EvalRef<EvalExpr> {
+            EvalRef::new(EvalExpr::CallFn {
+                function: test_eval_function(&[], EvalExpr::Const(value)),
+                args: Vec::new(),
+            })
+        }
+        fn thunk(value: bool) -> Value {
+            Value::EvalClosure {
+                function: test_eval_function(&[], EvalExpr::Bool(value)),
+                captured: Vec::new().into(),
+            }
+        }
+        for proof in [
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+            Value::Atom("abstract_proof_value".to_owned()),
+        ] {
+            let metrics = Arc::new(EvalMetrics::default());
+            let ctx = EvalCtx::new().with_metrics(metrics.clone());
+            let constructor = Value::Data(EvalRef::new(DataValue::literal_constructor(
+                crate::comptime::ComptimeLiteralConstructor::Bool(true),
+            )));
+            let expr = EvalExpr::Call {
+                callee: EvalRef::new(EvalExpr::Const(constructor.clone())),
+                args: vec![call_value(proof.clone())],
+            };
+            assert!(matches!(
+                eval(&expr, &mut EvalSlots::root(Vec::new()), &ctx),
+                Value::Bool(true)
+            ));
+            assert_eq!(metrics.snapshot().apply_fn_calls, 1);
+            assert!(matches!(
+                apply(constructor, vec![proof.clone(), proof.clone()], &ctx),
+                Value::Stuck(_, _)
+            ));
+
+            let before = metrics.snapshot().apply_fn_calls;
+            let expr = EvalExpr::CallPrimitive {
+                builtin: ComptimeBuiltin::ComptimeIfThenElse,
+                args: vec![
+                    call_value(proof.clone()),
+                    call_value(Value::Bool(false)),
+                    call_value(thunk(true)),
+                    call_value(thunk(false)),
+                ],
+            };
+            assert!(matches!(
+                eval(&expr, &mut EvalSlots::root(Vec::new()), &ctx),
+                Value::Bool(false)
+            ));
+            assert_eq!(
+                metrics.snapshot().apply_fn_calls - before,
+                5,
+                "proof, condition, both factories, and selected thunk each execute once"
+            );
+            assert!(matches!(
+                apply(
+                    Value::Primitive(ComptimeBuiltin::ComptimeIfThenElse),
+                    vec![
+                        proof,
+                        Value::Atom("unknown_condition".to_owned()),
+                        thunk(true),
+                        thunk(false)
+                    ],
+                    &ctx
+                ),
+                Value::Stuck(_, _)
+            ));
+        }
+    }
+
+    #[test]
+    fn comptime_conditional_preserves_strict_stage_fault_order() {
+        fn stage(index: usize, faults: &[usize], value: Value) -> EvalExpr {
+            let result = EvalExpr::Const(value);
+            if !faults.contains(&index) {
+                return result;
+            }
+            EvalExpr::Seq {
+                value: EvalRef::new(EvalExpr::Call {
+                    callee: EvalRef::new(EvalExpr::Const(Value::StructuralRecur {
+                        root_measure: 10 + index,
+                        current_measure: 0,
+                        step: EvalRef::new(Value::Unit),
+                    })),
+                    args: vec![
+                        EvalRef::new(EvalExpr::Const(Value::ReflTypeArity(0))),
+                        EvalRef::new(EvalExpr::Unit),
+                    ],
+                }),
+                body: EvalRef::new(result),
+            }
+        }
+        for proof in [
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+            Value::Atom("abstract_proof_value".to_owned()),
+        ] {
+            for first_fault in 0..=4 {
+                let faults = (first_fault..=4).collect::<Vec<_>>();
+                let thunk = |index, fault_stages: &[usize]| Value::EvalClosure {
+                    function: test_eval_function(&[], stage(index, fault_stages, Value::Unit)),
+                    captured: Vec::new().into(),
+                };
+                let values = [
+                    proof.clone(),
+                    Value::Bool(true),
+                    thunk(4, &faults),
+                    thunk(5, &[5]),
+                ];
+                let expr = EvalExpr::CallPrimitive {
+                    builtin: ComptimeBuiltin::ComptimeIfThenElse,
+                    args: values
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            EvalRef::new(EvalExpr::CallFn {
+                                function: test_eval_function(&[], stage(index, &faults, value)),
+                                args: Vec::new(),
+                            })
+                        })
+                        .collect(),
+                };
+                let ctx = EvalCtx::new();
+                let operation = ctx.enter_eval_operation();
+                let result = operation.finish(eval(&expr, &mut EvalSlots::root(Vec::new()), &ctx));
+                assert!(
+                    matches!(result, Value::Stuck(callee, _) if matches!(callee.as_ref(),
+                Value::StructuralRecur { root_measure, .. } if *root_measure == 10 + first_fault)),
+                    "proof, condition, both factories and the selected body preserve their first fault"
+                );
+            }
         }
     }
 

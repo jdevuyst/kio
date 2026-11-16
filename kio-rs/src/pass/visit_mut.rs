@@ -361,6 +361,7 @@ where
                 visitor.visit_type(ty);
             }
         }
+        Expr::ComptimeLiteral { proof, .. } => visitor.visit_expr(proof),
         Expr::RecOrder { plan, .. } => {
             if let Some(continuation) = &mut plan.tail_continuation {
                 visitor.visit_expr(continuation);

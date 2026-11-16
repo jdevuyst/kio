@@ -2019,6 +2019,26 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             delimited_closing(source_trivia),
             text(")"),
         ),
+        Expr::ComptimeLiteral {
+            value,
+            proof,
+            source_trivia,
+            ..
+        } => {
+            let literal = match value {
+                crate::ast::ComptimeLiteralValue::Bool(value) => {
+                    text(if *value { ".t" } else { ".f" })
+                }
+                crate::ast::ComptimeLiteralValue::Str(value) => text(escape_string(value)),
+            };
+            doc_comma_list_with_trivia(
+                concat_all([text("__"), literal, text("__(")]),
+                vec![doc_expr_no_own_trivia(proof)],
+                &[proof.meta().leading_trivia.clone()],
+                delimited_closing(source_trivia),
+                text(")"),
+            )
+        }
         Expr::StrLit {
             value, annotation, ..
         } => concat(

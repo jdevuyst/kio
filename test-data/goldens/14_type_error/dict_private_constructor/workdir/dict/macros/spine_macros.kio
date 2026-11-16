@@ -145,8 +145,8 @@ pure fn adapter_err(ct: __Comptime__, message: __Diagnostic_text__) -> Adapter_r
 pure fn adapter_result_ok(ct: __Comptime__, result: Adapter_result) -> Comptime_bool {
   __either__[Term_mapper][__Diagnostic_text__][Comptime_bool](
   , result
-  , .(_mapper: Term_mapper) -> Comptime_bool { .t }
-  , .(_message: __Diagnostic_text__) -> Comptime_bool { .f }
+  , .(_mapper: Term_mapper) -> Comptime_bool { __.t__(ct) }
+  , .(_message: __Diagnostic_text__) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -318,7 +318,7 @@ pure fn build_product_from_mapper_routes_step(
       , .(_extra_route: Mapper_route & Mapper_route_list) -> Product_mapper_step {
           __left__[Macro_result][Product_mapper_next](err(
           , ct
-          , "recursive product route count mismatch"[__Diagnostic_text__]
+          , __"recursive product route count mismatch"__(ct)
           ))
         }
       )
@@ -329,7 +329,7 @@ pure fn build_product_from_mapper_routes_step(
       , .(_missing_route: .) -> Product_mapper_step {
           __left__[Macro_result][Product_mapper_next](err(
           , ct
-          , "recursive product route count mismatch"[__Diagnostic_text__]
+          , __"recursive product route count mismatch"__(ct)
           ))
         }
       , .(route_cell: Mapper_route & Mapper_route_list) -> Product_mapper_step {
@@ -373,7 +373,7 @@ pure fn build_product_from_mapper_routes_step(
           , .(_missing: .) -> Product_mapper_step {
               __left__[Macro_result][Product_mapper_next](err(
               , ct
-              , "recursive product route lost its source slot"[__Diagnostic_text__]
+              , __"recursive product route lost its source slot"__(ct)
               ))
             }
           )
@@ -557,7 +557,7 @@ pure fn finish_sum_dispatch(ct: __Comptime__, state: Sum_dispatch_state) -> Sum_
       sum_dispatch_ok(ct, sum_mapper_mapper(ct, sum_dispatch_state(ct, state)))
     }
   , .(_extra: Term_mapper & Mapper_list) -> Sum_dispatch_result {
-      sum_dispatch_err(ct, "sum mapper route count mismatch"[__Diagnostic_text__])
+      sum_dispatch_err(ct, __"sum mapper route count mismatch"__(ct))
     }
   )
 }
@@ -571,13 +571,13 @@ pure fn build_sum_dispatcher_from_mappers(
   __either__[.][__Type__ & Type_list][Sum_dispatch_result](
   , Type_list.get(type_reverse(ct, source_spine))
   , .(_no_source: .) -> Sum_dispatch_result {
-      sum_dispatch_err(ct, "sum source spine is empty"[__Diagnostic_text__])
+      sum_dispatch_err(ct, __"sum source spine is empty"__(ct))
     }
   , .(source_cell: __Type__ & Type_list) -> Sum_dispatch_result {
       __either__[.][Term_mapper & Mapper_list][Sum_dispatch_result](
       , Mapper_list.get(mapper_reverse_by_types(ct, source_spine, routes))
       , .(_no_route: .) -> Sum_dispatch_result {
-          sum_dispatch_err(ct, "sum mapper route list is empty"[__Diagnostic_text__])
+          sum_dispatch_err(ct, __"sum mapper route list is empty"__(ct))
         }
       , .(route_cell: Term_mapper & Mapper_list) -> Sum_dispatch_result {
           __structural_recur__(ct)[Type_list][Sum_dispatch_state][Sum_dispatch_result](
@@ -610,7 +610,7 @@ pure fn build_sum_dispatcher_from_mappers(
                       , .(_missing_route: .) -> Sum_dispatch_step {
                           __left__[Sum_dispatch_result][Sum_dispatch_next](sum_dispatch_err(
                           , ct
-                          , "sum mapper route count mismatch"[__Diagnostic_text__]
+                          , __"sum mapper route count mismatch"__(ct)
                           ))
                         }
                       , .(route_head: Term_mapper & Mapper_list) -> Sum_dispatch_step {
@@ -728,7 +728,7 @@ pure fn find_recursive_product_candidate(
           , .(_done: .) -> Product_candidate_step {
               __left__[Product_candidate_result][Product_candidate_next](product_candidate_err(
               , ct
-              , "no recursive product source slot fits target slot"[__Diagnostic_text__]
+              , __"no recursive product source slot fits target slot"__(ct)
               ))
             }
           , .(cell: __Type__ & Type_list) -> Product_candidate_step {
@@ -953,7 +953,7 @@ pure fn find_recursive_sum_candidate(
           , .(_done: .) -> Sum_candidate_step {
               __left__[Sum_candidate_result][Sum_candidate_next](sum_candidate_err(
               , ct
-              , "no recursive target sum arm accepts source arm"[__Diagnostic_text__]
+              , __"no recursive target sum arm accepts source arm"__(ct)
               ))
             }
           , .(cell: Target_slot & Target_slot_list) -> Sum_candidate_step {
@@ -1044,7 +1044,7 @@ pure fn select_sum_routes(
             }
           , .(cell: __Type__ & Type_list) -> Sum_route_step {
               let source = __fst__[__Type__][Type_list](cell);
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , __type_equal__(ct, source, __type_bottom__(ct))
               , .() -> Sum_route_step {
                   __right__[Sum_route_result][Sum_route_next]((
@@ -1217,11 +1217,11 @@ pure fn function_mapper(
 pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, pair: Type_pair) -> Adapter_result {
   let source = __fst__[__Type__][__Type__](pair);
   let target = __snd__[__Type__][__Type__](pair);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, source, target)
   , .() -> Adapter_result { adapter_ok(ct, identity_mapper(ct, source)) }
   , .() -> Adapter_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, source, __type_bottom__(ct))
       , .() -> Adapter_result {
           adapter_ok(
@@ -1241,34 +1241,28 @@ pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, pair: Type_pair) -> A
                   function_mapper(ct, recur, source, target, source_view, target_view)
                 }
               , .(_target_not_function: .) -> Adapter_result {
-                  adapter_err(
-                  , ct
-                  , "fit POC cannot coerce a function to a non-function"[__Diagnostic_text__]
-                  )
+                  adapter_err(ct, __"fit POC cannot coerce a function to a non-function"__(ct))
                 }
               )
             }
           , .(_source_not_function: .) -> Adapter_result {
-              __if_then_else__(
-              , __if_then_else__(
+              __comptime_if_then_else__(ct)(
+              , __comptime_if_then_else__(ct)(
                 , __type_is_sum_root__(ct, target)
-                , .() -> Comptime_bool { .t }
+                , .() -> Comptime_bool { __.t__(ct) }
                 , .() -> Comptime_bool { __type_is_sum_root__(ct, source) }
                 )
               , .() -> Adapter_result { sum_mapper(ct, recur, source, target) }
               , .() -> Adapter_result {
-                  __if_then_else__(
-                  , __if_then_else__(
+                  __comptime_if_then_else__(ct)(
+                  , __comptime_if_then_else__(ct)(
                     , __type_is_product_root__(ct, target)
-                    , .() -> Comptime_bool { .t }
+                    , .() -> Comptime_bool { __.t__(ct) }
                     , .() -> Comptime_bool { __type_is_product_root__(ct, source) }
                     )
                   , .() -> Adapter_result { product_mapper(ct, recur, source, target) }
                   , .() -> Adapter_result {
-                      adapter_err(
-                      , ct
-                      , "fit POC found no compatible structural path"[__Diagnostic_text__]
-                      )
+                      adapter_err(ct, __"fit POC found no compatible structural path"__(ct))
                     }
                   )
                 }
@@ -1313,11 +1307,11 @@ pub pure fn fit_or_raw(
 pure fn spine_identity_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__) ->
   __Checked_term__ | __Diagnostic_text__
    {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, right_fold_product(ct, product_spine(ct, source)), source)
   , .() -> __Checked_term__ | __Diagnostic_text__ { ok(ct, value) }
   , .() -> __Checked_term__ | __Diagnostic_text__ {
-      __right__[__Checked_term__][__Diagnostic_text__]("product spine utility failed"[__Diagnostic_text__])
+      __right__[__Checked_term__][__Diagnostic_text__](__"product spine utility failed"__(ct))
     }
   )
 }
@@ -1344,7 +1338,7 @@ pure fn reorder_prod_impl(
   , product_spine(ct, target)
   , product_spine(ct, source)
   , product_slots(ct, source, value)
-  , .t
+  , __.t__(ct)
   )
 }
 
@@ -1398,7 +1392,7 @@ pure fn narrow_prod_impl(
   , product_spine(ct, target)
   , product_spine(ct, source)
   , product_slots(ct, source, value)
-  , .f
+  , __.f__(ct)
   )
 }
 
@@ -1416,8 +1410,8 @@ pub macro narrow_prod : [Source] Source -> [Target] Target { impl narrow_prod_ch
 pure fn type_list_contains(ct: __Comptime__, needle: __Type__, haystack: Type_list) -> Comptime_bool {
   __either__[Type_take][.][Comptime_bool](
   , take_first_type_matching(ct, needle, haystack)
-  , .(_take: Type_take) -> Comptime_bool { .t }
-  , .(_missing: .) -> Comptime_bool { .f }
+  , .(_take: Type_take) -> Comptime_bool { __.t__(ct) }
+  , .(_missing: .) -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -1445,10 +1439,10 @@ pure fn unique_non_bottom_types(ct: __Comptime__, xs: Type_list) -> Type_list {
             }
           , .(cell: __Type__ & Type_list) -> Unique_types_step {
               let head = __fst__[__Type__][Type_list](cell);
-              __if_then_else__(
-              , __if_then_else__(
+              __comptime_if_then_else__(ct)(
+              , __comptime_if_then_else__(ct)(
                 , __type_equal__(ct, head, __type_bottom__(ct))
-                , .() -> Comptime_bool { .t }
+                , .() -> Comptime_bool { __.t__(ct) }
                 , .() -> Comptime_bool { type_list_contains(ct, head, acc_rev) }
                 )
               , .() -> Unique_types_step {
@@ -1489,7 +1483,7 @@ pure fn narrow_sum_impl(
 ) -> Macro_result {
   let source_spine = sum_spine(ct, source);
   let target_spine = sum_spine(ct, target);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , route_result_present(
     , ct
     , route_source_arms_unique(ct, target_spine, target_slots(ct, source_spine))
@@ -1503,7 +1497,7 @@ pure fn narrow_sum_impl(
       , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
       )
     }
-  , .() -> Macro_result { err(ct, "target sum arm is not provided by source"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"target sum arm is not provided by source"__(ct)) }
   )
 }
 
@@ -1646,7 +1640,7 @@ pure fn one_prod_natural_result(ct: __Comptime__, source: __Type__, value: __Che
   __either__[__Type__][.][Macro_result](
   , first_product_type(ct, source, value)
   , .(target_type: __Type__) -> Macro_result { one_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro could not infer a target type"[__Diagnostic_text__]) }
+  , .() -> Macro_result { err(ct, __"macro could not infer a target type"__(ct)) }
   )
 }
 
@@ -1674,11 +1668,9 @@ pub macro one_prod_ : [Source] Source -> [Target] Target { impl one_prod_natural
 pure fn one_sum_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
   let source_spine = sum_spine(ct, source);
   let target_spine = sum_spine(ct, target);
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_is_sum_root__(ct, target)
-  , .() -> Macro_result {
-      err(ct, "one_sum target must not be a top-level sum"[__Diagnostic_text__])
-    }
+  , .() -> Macro_result { err(ct, __"one_sum target must not be a top-level sum"__(ct)) }
   , .() -> Macro_result {
       __either__[Route_list][__Diagnostic_text__][Macro_result](
       , route_source_arms_collapse(ct, source_spine, target_slots(ct, target_spine))
@@ -1697,7 +1689,7 @@ pure fn one_sum_natural_result(ct: __Comptime__, source: __Type__, value: __Chec
     , source
     , __type_bottom__(ct)
     , .(selected: __Type__, arm: __Type__) -> __Type__ {
-        __if_then_else__(
+        __comptime_if_then_else__(ct)(
         , __type_equal__(ct, selected, __type_bottom__(ct))
         , .() -> __Type__ { arm }
         , .() -> __Type__ { selected }

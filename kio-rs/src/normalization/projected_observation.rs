@@ -64,6 +64,7 @@ fn requirements(
         | MacroError
         | TypeError
         | StructuralRecur
+        | ComptimeIfThenElse
         | TermType
         | TermLet
         | TermTypeFn

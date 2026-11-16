@@ -852,6 +852,52 @@ mod tests {
     }
 
     #[test]
+    fn browser_comptime_literal_completion_tracks_loaded_module() {
+        let root = PathBuf::from("/kio-wasm-tests/comptime-literal-completion");
+        let files = BTreeMap::from([
+            (
+                root.join("app.pkg.kio"),
+                "package app; bridge { app/**; }".to_owned(),
+            ),
+            (
+                root.join("app/first.kio"),
+                "module app/first; import __comptime__;".to_owned(),
+            ),
+            (root.join("app/second.kio"), "module app/second;".to_owned()),
+        ]);
+        let mut repl = Repl {
+            poc_id: "completion".to_owned(),
+            session: Session::new_in_memory(root, files),
+            init_banner: String::new(),
+            completion_names: OnceCell::new(),
+        };
+        for (module, expected) in [
+            ("app/first", true),
+            ("app/second", false),
+            ("app/first", true),
+        ] {
+            let loaded = repl.run_command(Command::Load(module.to_owned()));
+            assert!(
+                strip_ansi(&loaded.output).contains(&format!("loaded {module}")),
+                "{}",
+                loaded.output
+            );
+            let completion = repl.complete_core("__", 2);
+            assert_eq!(
+                completion
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.label == "__.t__"),
+                expected,
+                "{completion:?}"
+            );
+            if expected {
+                assert_eq!(completion.replace, 0..2);
+            }
+        }
+    }
+
+    #[test]
     fn completion_snapshot_is_reused_and_invalidated_by_commands() {
         let root = PathBuf::from("/kio-wasm-tests/completion");
         let files = BTreeMap::from([

@@ -281,6 +281,7 @@ impl<'a> Classifier<'_, 'a> {
 
     fn expr(&mut self, expr: &'a mut Expr) -> Result<(), Error> {
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => self.expr(proof)?,
             Expr::BlockCall {
                 head,
                 prefix,

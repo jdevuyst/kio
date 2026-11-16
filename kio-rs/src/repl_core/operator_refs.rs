@@ -31,6 +31,7 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
     let mut hits = Vec::new();
     while let Some(expr) = pending.pop() {
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => pending.push(proof),
             Expr::OpChain { kind, .. } => {
                 let (actual, children, first) = match kind {
                     OpChainKind::Normal {

@@ -128,9 +128,18 @@ impl UserMacroArtifactTypecheck {
         elaborations.discharge_deferred_with_execution(env, Self::EXECUTION)
     }
 
+    #[cfg(test)]
     fn check_package(
         package: &Package,
         type_interner: std::sync::Arc<crate::pass::typecheck_core::TypeInterner<Lowered>>,
+    ) -> Result<CheckedLoweredPackage, Vec<LocatedError>> {
+        Self::check_package_with_primitives(package, type_interner, None)
+    }
+
+    fn check_package_with_primitives(
+        package: &Package,
+        type_interner: std::sync::Arc<crate::pass::typecheck_core::TypeInterner<Lowered>>,
+        primitives: Option<&crate::normalization::EvalPrimitiveEnv>,
     ) -> Result<CheckedLoweredPackage, Vec<LocatedError>> {
         let normalized = crate::pass::alpha_normalize::normalize_transformed_package(package);
         let typecheck_scope =
@@ -138,6 +147,10 @@ impl UserMacroArtifactTypecheck {
                 &normalized,
                 type_interner,
             );
+        let typecheck_scope = match primitives {
+            Some(primitives) => typecheck_scope.with_evaluator_primitives(primitives),
+            None => typecheck_scope,
+        };
         check_normalized_package_with_scope_and_execution(
             normalized,
             typecheck_scope,
@@ -387,7 +400,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
             &mp,
             literal_site.id,
             annotation,
-            resolved.runtime_erases,
             resolved.numeric_value,
         );
     }
@@ -3718,12 +3730,15 @@ pub struct Elaborations {
     /// Kio call. Keeping both in one record makes the Lowered → PrePrime
     /// consumer observe exactly the call plan that committed with inference.
     call_plans: HashMap<(String, crate::ast::ExpressionOccurrenceId), RecordedCallPlan>,
-    /// The selected type, runtime-erasure flag, and checked numeric value,
-    /// keyed by `(module_path, literal_id)`. Substitution bakes the type and
-    /// canonical value into ordinary Prime literals for every later consumer.
+    /// Resolved primitive values whose semantic schemes determine runtime erasure.
+    primitive_values: HashMap<(String, crate::ast::ExpressionOccurrenceId), String>,
+    comptime_literals: HashMap<(String, crate::ast::ExpressionOccurrenceId), ComptimeLiteralPlan>,
+    comptime_literal_names: HashMap<String, HashSet<String>>,
+    /// The selected type and checked numeric value, keyed by `(module_path, literal_id)`.
+    /// Substitution bakes these into ordinary Prime literals for every later consumer.
     literal_resolutions: HashMap<
         (String, crate::ast::ExpressionOccurrenceId),
-        (RecordedTypeResolution, bool, Option<String>),
+        (RecordedTypeResolution, Option<String>),
     >,
     /// Checked lambda parameter types, plus the body result for proof-gated
     /// lambdas whose body is erased before Prime. `Some(index)` identifies a
@@ -3773,7 +3788,16 @@ pub(crate) struct RecLoopDiagnosticRecord {
 #[derive(Debug, Clone)]
 pub enum RecordedElaboration {
     Lowered(Expr),
-    UncheckedPrime(UncheckedPrimeExpr),
+    UncheckedPrime {
+        expression: UncheckedPrimeExpr,
+        primitives: Option<std::sync::Arc<crate::normalization::EvalPrimitiveEnv>>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ComptimeLiteralPlan {
+    pub(crate) binding: String,
+    pub(crate) constructor: crate::comptime::ComptimeLiteralConstructor,
 }
 
 #[derive(Debug)]
@@ -5364,6 +5388,9 @@ impl Elaborations {
             type_resolutions: HashMap::new(),
             call_plans: HashMap::new(),
             literal_resolutions: HashMap::new(),
+            primitive_values: HashMap::new(),
+            comptime_literals: HashMap::new(),
+            comptime_literal_names: HashMap::new(),
             fn_signature_types: HashMap::new(),
             generated_imports: HashMap::new(),
             prime_requalification_imports: HashMap::new(),
@@ -5533,10 +5560,14 @@ impl Elaborations {
         module_path: &str,
         node_id: NodeId,
         elaborated: UncheckedPrimeExpr,
+        primitives: Option<std::sync::Arc<crate::normalization::EvalPrimitiveEnv>>,
     ) {
         self.entries.insert(
             (module_path.to_owned(), node_id),
-            RecordedElaboration::UncheckedPrime(elaborated),
+            RecordedElaboration::UncheckedPrime {
+                expression: elaborated,
+                primitives,
+            },
         );
     }
 
@@ -5747,6 +5778,7 @@ impl Elaborations {
                     replay_env.module_path,
                     ob.node_id,
                     elaborated.expression,
+                    elaborated.primitives,
                 );
             }
         }
@@ -5937,12 +5969,11 @@ impl Elaborations {
         module_path: &str,
         literal_id: crate::ast::ExpressionOccurrenceId,
         resolved: InternedType,
-        runtime_erases: bool,
         numeric_value: Option<String>,
     ) {
         self.literal_resolutions.insert(
             (module_path.to_owned(), literal_id),
-            (resolved.into(), runtime_erases, numeric_value),
+            (resolved.into(), numeric_value),
         );
     }
 
@@ -5952,9 +5983,51 @@ impl Elaborations {
         &self,
         module_path: &str,
         literal_id: crate::ast::ExpressionOccurrenceId,
-    ) -> Option<&(RecordedTypeResolution, bool, Option<String>)> {
+    ) -> Option<&(RecordedTypeResolution, Option<String>)> {
         self.literal_resolutions
             .get(&(module_path.to_owned(), literal_id))
+    }
+
+    pub(crate) fn replay_primitives_for(
+        &self,
+        module: &str,
+    ) -> impl Iterator<Item = &crate::normalization::EvalPrimitiveEnv> {
+        self.entries
+            .iter()
+            .filter_map(move |((owner, _), entry)| match entry {
+                RecordedElaboration::UncheckedPrime {
+                    primitives: Some(primitives),
+                    ..
+                } if owner == module => Some(primitives.as_ref()),
+                _ => None,
+            })
+    }
+
+    pub(crate) fn primitive_value_for(
+        &self,
+        module: &str,
+        occurrence: crate::ast::ExpressionOccurrenceId,
+    ) -> Option<&str> {
+        self.primitive_values
+            .get(&(module.to_owned(), occurrence))
+            .map(String::as_str)
+    }
+
+    pub(crate) fn comptime_literal_for(
+        &self,
+        module: &str,
+        occurrence: crate::ast::ExpressionOccurrenceId,
+    ) -> Option<&ComptimeLiteralPlan> {
+        self.comptime_literals.get(&(module.to_owned(), occurrence))
+    }
+
+    pub(crate) fn comptime_literals_for(
+        &self,
+        module: &str,
+    ) -> impl Iterator<Item = &ComptimeLiteralPlan> {
+        self.comptime_literals
+            .iter()
+            .filter_map(move |((owner, _), plan)| (owner == module).then_some(plan))
     }
 
     pub fn record_fn_param_type(
@@ -6106,6 +6179,14 @@ impl Elaborations {
             if let Some(stage) = plan.macro_output_stage {
                 self.record_macro_output_stage(&module_path, span, stage);
             }
+        }
+        self.primitive_values.extend(other.primitive_values);
+        self.comptime_literals.extend(other.comptime_literals);
+        for (module, names) in other.comptime_literal_names {
+            self.comptime_literal_names
+                .entry(module)
+                .or_default()
+                .extend(names);
         }
         for (key, value) in other.literal_resolutions {
             self.literal_resolutions.insert(key, value);
@@ -6345,8 +6426,181 @@ pub(crate) fn deferred_rec_tail_error(
     crate::pass::desugar::rec_boundary_error(source, span, true)
 }
 
+fn comptime_literal_reserved_names(module: &Module, include_references: bool) -> HashSet<String> {
+    comptime_literal_reserved_names_in(&mut module.clone(), include_references)
+}
+
+fn comptime_literal_reserved_names_in(
+    module: &mut Module,
+    include_references: bool,
+) -> HashSet<String> {
+    use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr, walk_type};
+    struct Names(HashSet<String>, bool);
+    impl TypecheckVisitMut<Lowered> for Names {
+        fn enter_value_binder(&mut self, name: &mut String, _: Span, _: Span) {
+            self.0.insert(name.clone());
+        }
+        fn enter_type_binder(&mut self, param: &mut TypeParam, _: Span) {
+            self.0.insert(param.name.clone());
+        }
+        fn visit_expr(&mut self, expr: &mut Expr) {
+            if self.1
+                && let Expr::Path { segments, .. } = expr
+            {
+                self.0
+                    .extend(segments.iter().map(|segment| segment.name.clone()));
+            }
+            walk_expr(self, expr);
+        }
+        fn visit_type(&mut self, ty: &mut Type) {
+            if self.1
+                && let Type::Path { segments, .. } = ty
+            {
+                self.0
+                    .extend(segments.iter().map(|segment| segment.name.clone()));
+            }
+            walk_type(self, ty);
+        }
+    }
+    let mut names = Names(HashSet::new(), include_references);
+    for item in &module.items {
+        crate::pass::resolve::for_each_item_declaration(item, |declaration| {
+            let name = declaration
+                .fn_def()
+                .map(|def| def.name.as_str())
+                .or_else(|| declaration.host_fn().map(|def| def.name.as_str()))
+                .or_else(|| declaration.host_type().map(|def| def.name.as_str()))
+                .or_else(|| declaration.type_alias().map(|def| def.name.as_str()))
+                .or_else(|| declaration.newtype().map(|def| def.name.as_str()));
+            if let Some(name) = name {
+                names.0.insert(name.to_owned());
+            }
+        });
+    }
+    for import in &module.imports {
+        match &import.kind {
+            ImportKind::Qualified { alias, .. } => {
+                names.0.insert(alias.clone());
+            }
+            ImportKind::Selective { items, .. } => names.0.extend(
+                items
+                    .iter()
+                    .filter_map(crate::ast::ImportItem::as_local_name)
+                    .map(str::to_owned),
+            ),
+            _ => {}
+        }
+    }
+    names.visit_module(module);
+    names.0
+}
+
+fn check_comptime_literal<'m>(
+    expr: &'m Expr,
+    expected: Option<&InternedType>,
+    tcx: &mut TypeCtx<'m, '_>,
+) -> Result<InternedType, Error> {
+    let (result, plan) = prepare_comptime_literal(expr, expected, tcx)?;
+    tcx.elaborations
+        .comptime_literals
+        .insert((tcx.env.module_path.clone(), expr.site().id), plan);
+    Ok(result)
+}
+
+pub(crate) fn prepare_comptime_literal<'m>(
+    expr: &'m Expr,
+    expected: Option<&InternedType>,
+    tcx: &mut TypeCtx<'m, '_>,
+) -> Result<(InternedType, ComptimeLiteralPlan), Error> {
+    use crate::ast::ComptimeLiteralValue;
+    use crate::comptime::{ComptimeBuiltin, ComptimeLiteralConstructor};
+    let Expr::ComptimeLiteral {
+        value, proof, ext, ..
+    } = expr
+    else {
+        unreachable!()
+    };
+    if !tcx.env.comptime_in_scope {
+        let insertion = tcx.env.module.path.span.end + 1;
+        let next = tcx
+            .env
+            .module
+            .imports
+            .first()
+            .map(|import| import.span.start)
+            .or_else(|| tcx.env.module.items.first().map(|item| item.span().start))
+            .unwrap_or(insertion);
+        return Err(Error::type_(
+            expr.span(),
+            "compile-time literal construction requires `import __comptime__;`",
+        )
+        .with_help("add `import __comptime__;` to this module")
+        .with_fix(crate::error::Fix::machine_applicable(
+            "Import compile-time APIs",
+            vec![crate::error::FixEdit::from_parts(
+                Span::new(insertion, insertion),
+                vec![crate::error::FixReplacementPart::Text(
+                    "\n\nimport __comptime__;".to_owned(),
+                )],
+                vec![Span::new(insertion, next)],
+            )],
+        )));
+    }
+    let proof_type = InternedType::fresh(Type::synth_path(
+        vec!["__Comptime__".to_owned()],
+        Vec::new(),
+        proof.span(),
+    ));
+    check_value_against(proof, &proof_type, tcx)?;
+    let constructor = match value {
+        ComptimeLiteralValue::Bool(value) => ComptimeLiteralConstructor::Bool(*value),
+        ComptimeLiteralValue::Str(value) => {
+            let bound = tcx.in_scope_type_param_binders();
+            match expected.and_then(|ty| tcx.env.comptime_type_identity_in(ty.as_type(), ty.identity_is_canonical(), &tcx.binder_alias_ctx(&bound))) {
+                Some(ComptimeBuiltin::ComptimeStr) => ComptimeLiteralConstructor::Str(value.clone()),
+                Some(ComptimeBuiltin::DiagnosticText) => ComptimeLiteralConstructor::DiagnosticText(value.clone()),
+                _ => return Err(Error::type_(expr.span(), "cannot determine the compile-time text carrier")
+                    .with_help("supply a `Comptime_str` or `__Diagnostic_text__` binding, argument, or return type")),
+            }
+        }
+    };
+    let module = tcx.env.module_path.clone();
+    let reserved = tcx
+        .elaborations
+        .comptime_literal_names
+        .entry(module.clone())
+        .or_insert_with(|| comptime_literal_reserved_names(tcx.env.module, true));
+    let tag = match constructor {
+        ComptimeLiteralConstructor::Bool(_) => "bool",
+        ComptimeLiteralConstructor::Str(_) => "str",
+        ComptimeLiteralConstructor::DiagnosticText(_) => "diagnostic",
+    };
+    let base = format!("__ct_{tag}_literal{}", ext.0);
+    let mut binding = base.clone();
+    let mut suffix = 2;
+    while reserved.contains(&binding) {
+        binding = crate::naming::indexed_name(&base, suffix);
+        suffix += 1;
+    }
+    let result = InternedType::fresh(Type::synth_path(
+        vec![constructor.result_builtin().public_name().to_owned()],
+        Vec::new(),
+        expr.span(),
+    ));
+    Ok((
+        result,
+        ComptimeLiteralPlan {
+            binding,
+            constructor,
+        },
+    ))
+}
+
 fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error> {
     match e {
+        Expr::ComptimeLiteral { .. } => {
+            check_comptime_literal(e, None, tcx).map(Synth::value_interned)
+        }
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Unit {
             source_trivia: _,
@@ -6359,7 +6613,24 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
             segments,
             meta: Meta { span, .. },
             ..
-        } => synth_path(segments, *span, tcx),
+        } => crate::pass::typecheck_core::synth_path_with_binder_recorder(
+            segments,
+            *span,
+            tcx,
+            |segment_span, kind, name, parent, qualifier, _local_index, tcx| {
+                if matches!(
+                    kind,
+                    crate::pass::typecheck_core::ResolvedBinderKind::Intrinsic
+                ) {
+                    tcx.elaborations
+                        .primitive_values
+                        .insert((tcx.env.module_path.clone(), e.site().id), name.to_owned());
+                }
+                let binder = resolved_binder_for_position(kind, name, parent, qualifier, tcx);
+                tcx.elaborations
+                    .record_position_binder(&tcx.env.module_path, segment_span, binder);
+            },
+        ),
         Expr::Let {
             name,
             name_span,
@@ -6635,6 +6906,17 @@ fn check_value_against<'m>(
     expected: &InternedType,
     tcx: &mut TypeCtx<'m, '_>,
 ) -> Result<(), Error> {
+    if matches!(e, Expr::ComptimeLiteral { .. }) {
+        let actual = check_comptime_literal(e, Some(expected), tcx)?;
+        return crate::pass::typecheck_core::require_type_equiv_state(
+            actual.as_type(),
+            expected.as_type(),
+            e.span(),
+            &tcx.binder_alias_ctx(&tcx.in_scope_type_param_binders()),
+            actual.identity_is_canonical(),
+            expected.identity_is_canonical(),
+        );
+    }
     if matches!(e, Expr::Call { .. }) {
         crate::pass::typecheck_core::apply::run_general_ordinary_value(e, Some(expected), tcx)?;
         return Ok(());
@@ -7149,6 +7431,7 @@ fn collect_eval_fn_refs(
     out: &mut std::collections::BTreeSet<EvalFnIdentity>,
 ) {
     match expr {
+        crate::ast::Expr::ComptimeLiteral { ext, .. } => match *ext {},
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         crate::ast::Expr::Path { segments, .. } => {
             if let Some(identity) = eval_fn_identity_for_path(segments, bound, env, elaborations) {
@@ -7483,7 +7766,7 @@ fn staged_user_macro_artifact(
             None,
         );
         let primitives =
-            substitute::primitive_env_for_eval_module(root_module, &root_env.module_path);
+            substitute::primitive_env_for_eval_module(root_module, &root_env.module_path, &staged);
         Ok((
             crate::normalization::EvalArtifactInput::new(package, primitives),
             root_expr,
@@ -7687,12 +7970,28 @@ pub(crate) fn validate_user_macro_eval_artifact(
     implementation: &UncheckedPrimeExpr,
     implementation_module_path: &str,
 ) -> Result<(), Error> {
+    for (owner, entries) in artifact.primitives().bindings() {
+        if artifact.package().module(owner).is_none() {
+            return Err(Error::type_(
+                Span::new(0, 0),
+                "compile-time primitive dependency names an absent module",
+            ));
+        }
+        for (name, builtin) in entries {
+            if name != builtin.public_name() {
+                return Err(Error::type_(
+                    Span::new(0, 0),
+                    "compile-time primitive dependency has a mismatched binding name",
+                ));
+            }
+        }
+    }
     let comptime_modules = artifact
         .primitives()
         .bindings()
         .map(|(module_path, _)| module_path.to_owned())
         .collect::<HashSet<_>>();
-    let modules = artifact
+    let mut modules = artifact
         .package()
         .modules()
         .map(|(path, entry)| {
@@ -7733,6 +8032,148 @@ pub(crate) fn validate_user_macro_eval_artifact(
             ))
         })
         .collect::<Result<std::collections::BTreeMap<_, _>, Error>>()?;
+    use crate::pass::visit_mut::TypecheckVisitMut;
+    struct PrimitiveReferences<'a> {
+        owner: &'a str,
+        primitives: &'a crate::normalization::EvalPrimitiveEnv,
+        type_binders: Vec<String>,
+        value_binders: Vec<String>,
+        error: Option<Error>,
+    }
+    impl PrimitiveReferences<'_> {
+        fn check(&mut self, segments: &[PathSegment], span: Span, is_type: bool) {
+            let [name] = segments else { return };
+            let binders = if is_type {
+                &self.type_binders
+            } else {
+                &self.value_binders
+            };
+            if binders.iter().any(|bound| bound == name.as_str()) {
+                return;
+            }
+            if let Some(builtin) = crate::comptime::ComptimeBuiltin::from_public_name(name.as_str())
+                && builtin.is_type_name() == is_type
+                && self.primitives.resolve(self.owner, name.as_str()) != Some(builtin)
+                && self.error.is_none()
+            {
+                self.error = Some(Error::type_(
+                    span,
+                    format!(
+                        "compile-time primitive `{}` requires its exact evaluator dependency",
+                        name.as_str()
+                    ),
+                ));
+            }
+        }
+    }
+    impl TypecheckVisitMut<Lowered> for PrimitiveReferences<'_> {
+        fn enter_type_binder(&mut self, param: &mut TypeParam, _: Span) {
+            self.type_binders.push(param.name.clone());
+        }
+        fn exit_type_binder(&mut self, _: &mut TypeParam, _: Span) {
+            self.type_binders.pop();
+        }
+        fn enter_value_binder(&mut self, name: &mut String, _: Span, _: Span) {
+            self.value_binders.push(name.clone());
+        }
+        fn exit_value_binder(&mut self, _: &mut String, _: Span, _: Span) {
+            self.value_binders.pop();
+        }
+        fn visit_type(&mut self, ty: &mut Type) {
+            if let Type::Path { segments, meta, .. } = ty {
+                self.check(segments, meta.span, true);
+            }
+            crate::pass::visit_mut::walk_type(self, ty);
+        }
+        fn visit_expr(&mut self, expr: &mut Expr) {
+            if let Expr::Path { segments, meta, .. } = expr {
+                self.check(segments, meta.span, false);
+            }
+            crate::pass::visit_mut::walk_expr(self, expr);
+        }
+    }
+    let mut reserved_names = HashMap::new();
+    for (owner, entry) in &mut modules {
+        if entry
+            .module
+            .imports
+            .iter()
+            .any(|import| matches!(import.kind, ImportKind::Comptime))
+        {
+            let mut references = PrimitiveReferences {
+                owner,
+                primitives: artifact.primitives(),
+                type_binders: Vec::new(),
+                value_binders: Vec::new(),
+                error: None,
+            };
+            references.visit_module(&mut entry.module);
+            if let Some(error) = references.error {
+                return Err(error);
+            }
+        }
+        if artifact
+            .primitives()
+            .literal_bindings()
+            .any(|(literal_owner, _, _)| literal_owner == owner)
+        {
+            reserved_names.insert(
+                owner.clone(),
+                comptime_literal_reserved_names_in(&mut entry.module, false),
+            );
+        }
+    }
+    for (owner, binding, constructor) in artifact.primitives().literal_bindings() {
+        let entry = modules.get(owner).ok_or_else(|| {
+            Error::type_(
+                Span::new(0, 0),
+                "compile-time literal dependency names an absent module",
+            )
+        })?;
+        if !comptime_modules.contains(owner)
+            || !entry
+                .module
+                .imports
+                .iter()
+                .any(|import| matches!(import.kind, ImportKind::Comptime))
+        {
+            return Err(Error::type_(
+                entry.module.meta.span,
+                "compile-time literal dependency requires the explicit compile-time primitive environment",
+            ));
+        }
+        for builtin in [
+            crate::comptime::ComptimeBuiltin::ComptimeProof,
+            constructor.result_builtin(),
+        ] {
+            if artifact.primitives().resolve(owner, builtin.public_name()) != Some(builtin) {
+                return Err(Error::type_(
+                    entry.module.meta.span,
+                    "compile-time literal dependency is missing a signature type dependency",
+                ));
+            }
+        }
+        crate::naming::validate_reference_name(
+            binding,
+            crate::naming::NameRole::Value,
+            entry.module.meta.span,
+        )?;
+        if reserved_names
+            .get(owner)
+            .is_some_and(|names| names.contains(binding))
+            || crate::comptime::ComptimeBuiltin::from_public_name(binding).is_some()
+            || crate::pass::typecheck_core::intrinsic_scheme::<Lowered>(
+                binding,
+                entry.module.meta.span,
+            )
+            .is_some()
+        {
+            return Err(Error::type_(
+                entry.module.meta.span,
+                "compile-time literal dependency collides with a declared binding",
+            ));
+        }
+    }
     let package = Package::from_parts(modules, None);
     package
         .resolve_imports()
@@ -7741,28 +8182,34 @@ pub(crate) fn validate_user_macro_eval_artifact(
         .check_no_value_cycles()
         .map_err(LocatedError::into_error)?;
     let type_interner = std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default());
-    let checked =
-        UserMacroArtifactTypecheck::check_package(&package, type_interner).map_err(|errors| {
-            errors
-                .into_iter()
-                .next()
-                .expect("collected evaluator artifact errors are non-empty")
-                .into_error()
-        })?;
+    let checked = UserMacroArtifactTypecheck::check_package_with_primitives(
+        &package,
+        type_interner,
+        Some(artifact.primitives()),
+    )
+    .map_err(|errors| {
+        errors
+            .into_iter()
+            .next()
+            .expect("collected evaluator artifact errors are non-empty")
+            .into_error()
+    })?;
     let package = checked.normalized();
     let module = &package
         .module(implementation_module_path)
-        .unwrap_or_else(|| {
-            unreachable!(
-                "validated evaluator artifact is missing implementation module `{implementation_module_path}`"
+        .ok_or_else(|| {
+            Error::type_(
+                implementation.span(),
+                "evaluator implementation names an absent module",
             )
-        })
+        })?
         .module;
     let typecheck_scope =
         crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
             package,
             std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-        );
+        )
+        .with_evaluator_primitives(artifact.primitives());
     let env = ModuleEnv::build_with_typecheck_scope(
         module,
         None,
@@ -7773,7 +8220,20 @@ pub(crate) fn validate_user_macro_eval_artifact(
     let mut elaborations = Elaborations::new();
     let mut tcx = TypeCtx::new(&env, &mut elaborations);
     tcx.pure_context = true;
-    let implementation = crate::ast::convert_expr::<UncheckedPrime, Lowered>(implementation);
+    let mut implementation = crate::ast::convert_expr::<UncheckedPrime, Lowered>(implementation);
+    if env.comptime_in_scope {
+        let mut references = PrimitiveReferences {
+            owner: implementation_module_path,
+            primitives: artifact.primitives(),
+            type_binders: Vec::new(),
+            value_binders: Vec::new(),
+            error: None,
+        };
+        references.visit_expr(&mut implementation);
+        if let Some(error) = references.error {
+            return Err(error);
+        }
+    }
     synth_expr(&implementation, &mut tcx).map(|_| ())
 }
 
@@ -8305,6 +8765,7 @@ struct UserMacroReplayInputs<'a> {
 
 struct UserMacroReplayResult {
     expression: UncheckedPrimeExpr,
+    primitives: Option<std::sync::Arc<crate::normalization::EvalPrimitiveEnv>>,
     computation: bool,
 }
 
@@ -8558,8 +9019,16 @@ fn user_macro_template_to_elaboration(
             replay
                 .elaborations
                 .record_generated_type_aliases(replay.module_path, &aliases);
+            let mut expr = expr;
+            let primitives = substitute::primitive_env_for_replayed_expr(
+                &mut expr,
+                replay.module,
+                replay.module_path,
+                replay.elaborations,
+            );
             Ok(UserMacroReplayResult {
                 expression: substitute::finish_replayed_elaboration(expr, ambient_type_names),
+                primitives,
                 computation: emitted_computation,
             })
         }
@@ -8803,6 +9272,210 @@ mod tests {
     use crate::pass::resolve::Package;
     use crate::pipeline::Pipeline;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn comptime_literal_constructors_execute_with_transported_proofs() {
+        check_package_sources(&[r#"module main;
+            import __comptime__;
+            import __intrinsics__;
+            type Proof = __Comptime__;
+            type Message = __Diagnostic_text__;
+            pure fn identity[A](value: A) -> A { value }
+            pure fn text(proof: Proof) -> Comptime_str { __"content"__(identity(proof)) }
+            pure fn message(packet: Proof & .) -> Message { __"literal failure"__(__fst__[Proof][.](packet)) }
+            pure fn implementation(proof: Proof) -> __Checked_term__ {
+                let _ = text(proof);
+                let choose = __comptime_if_then_else__(identity(proof));
+                choose[__Checked_term__](
+                    __.t__(identity(proof)),
+                    .() -> __Checked_term__ { __term_unit__(proof) },
+                    .() -> __Checked_term__ { __macro_error__(proof, message(__pair__[Proof][.](proof, ()))) }
+                )
+            }
+            macro make : . -> . { impl implementation }
+            fn run() -> . { make(()) }
+        "#]).expect("the evaluator constructs values only after receiving the transported proof");
+    }
+
+    #[test]
+    fn comptime_literal_checked_term_replay_preserves_its_proof_dependency() {
+        check_package_sources(&[r#"module main;
+            import __comptime__;
+            import __intrinsics__;
+            pure fn implementation(ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ { value }
+            macro echo : Comptime_bool -> Comptime_bool { impl implementation }
+            fn run(packet: __Comptime__ & .) -> Comptime_bool { echo(__.t__(__fst__(packet))) }
+        "#]).expect("checked-term replay retains a validated proof-bearing constructor");
+    }
+
+    #[test]
+    fn comptime_literal_diagnostic_payload_is_evaluated() {
+        let error = check_package_sources(&[r#"module main;
+            import __comptime__;
+            pure fn implementation(proof: __Comptime__) -> __Checked_term__ {
+                __macro_error__(proof, __"constructed diagnostic"__(proof))
+            }
+            macro make : . -> . { impl implementation }
+            fn run() -> . { make(()) }
+        "#])
+        .expect_err("the constructed diagnostic must reach the macro error operation");
+        assert!(
+            error.diag().1.contains("constructed diagnostic"),
+            "{error:?}"
+        );
+        assert_eq!(error.exit_code(), crate::exit_code::ExitCode::Macro);
+    }
+
+    #[test]
+    fn comptime_literal_requires_exact_proof_and_concrete_text_context() {
+        for (body, expected) in [
+            ("__.t__(())", "type mismatch"),
+            ("let _ = __comptime_if_then_else__(()); ()", "type mismatch"),
+            (
+                "let text = __\"ambiguous\"__(proof); ()",
+                "compile-time text carrier",
+            ),
+        ] {
+            let source = format!(
+                "module main; import __comptime__; fn invalid(proof: __Comptime__) {{ {body} }}"
+            );
+            let error = check_package_sources(&[&source]).expect_err("invalid constructor");
+            assert!(error.diag().1.contains(expected), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn comptime_literal_artifact_dependencies_are_exact_and_independently_checked() {
+        fn validate(source: &str, grant: bool) -> Result<(), Error> {
+            let package = lowered_package(&[("main.kio", source)]);
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let input = substitute::substitute_package_for_eval(&normalized, &Elaborations::new())
+                .expect("prepare ordinary core artifact");
+            let (package, mut primitives) = input.into_parts();
+            if grant {
+                primitives.grant_literal(
+                    "main",
+                    "literal_value",
+                    crate::comptime::ComptimeLiteralConstructor::Bool(true),
+                );
+            }
+            let input = crate::normalization::EvalArtifactInput::new(package, primitives);
+            let entry = UncheckedPrimeExpr::Path {
+                occurrence: Default::default(),
+                segments: vec![PathSegment::new(
+                    "implementation".to_owned(),
+                    Span::new(0, 0),
+                )],
+                meta: Meta::new(Span::new(0, 0)),
+                ext: (),
+            };
+            validate_user_macro_eval_artifact(&input, &entry, "main")
+        }
+        let source = "module main; import __comptime__; pure fn implementation(proof: __Comptime__) -> Comptime_bool { literal_value(proof) }";
+        validate(source, true)
+            .expect("the exact dependency supplies its derived pure function type");
+        validate(source, false).expect_err("the binding spelling does not supply an operation");
+        validate(
+            &source.replace("literal_value(proof)", "literal_value(())"),
+            true,
+        )
+        .expect_err("the dependency does not waive proof typing");
+        let collision = validate(
+            &format!(
+                "{source} pure fn literal_value(proof: __Comptime__) -> Comptime_bool {{ .f }}"
+            ),
+            true,
+        )
+        .expect_err("a primitive grant cannot replace an ordinary declaration");
+        assert!(
+            collision
+                .diag()
+                .1
+                .contains("collides with a declared binding"),
+            "{collision:?}"
+        );
+        let collision = validate(&source.replace("literal_value(proof)", "let literal_value = .(p: __Comptime__) -> Comptime_bool { .f }; literal_value(proof)"), true)
+            .expect_err("a primitive grant cannot capture a lexical declaration");
+        assert!(
+            collision
+                .diag()
+                .1
+                .contains("collides with a declared binding"),
+            "{collision:?}"
+        );
+    }
+
+    #[test]
+    fn comptime_artifact_builtin_dependencies_are_exact_and_binder_aware() {
+        use crate::comptime::ComptimeBuiltin;
+        let source = "module main; import __comptime__; pure fn implementation(proof: __Comptime__) -> __Type__ { __type_unit__(proof) } pure fn shadowed[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }";
+        let package = lowered_package(&[("main.kio", source)]);
+        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+        let input = substitute::substitute_package_for_eval(&normalized, &Elaborations::new())
+            .expect("prepare core artifact");
+        let (package, _) = input.into_parts();
+        let entry = UncheckedPrimeExpr::Path {
+            occurrence: Default::default(),
+            segments: vec![PathSegment::new(
+                "implementation".to_owned(),
+                Span::new(0, 0),
+            )],
+            meta: Meta::new(Span::new(0, 0)),
+            ext: (),
+        };
+        let mut primitives = crate::normalization::EvalPrimitiveEnv::default();
+        for builtin in [
+            ComptimeBuiltin::ComptimeProof,
+            ComptimeBuiltin::Type,
+            ComptimeBuiltin::TypeUnit,
+        ] {
+            primitives.grant("main", builtin);
+        }
+        let validate = |primitives| {
+            let input = crate::normalization::EvalArtifactInput::new(package.clone(), primitives);
+            validate_user_macro_eval_artifact(&input, &entry, "main")
+        };
+        validate(primitives.clone())
+            .expect("only the exact referenced grants are required; rigid binders remain ordinary");
+        for missing in [
+            ComptimeBuiltin::ComptimeProof,
+            ComptimeBuiltin::Type,
+            ComptimeBuiltin::TypeUnit,
+        ] {
+            let mut encoded = serde_json::to_value(&primitives).unwrap();
+            encoded["modules"]["main"]
+                .as_object_mut()
+                .unwrap()
+                .remove(missing.public_name());
+            validate(serde_json::from_value(encoded).unwrap())
+                .expect_err("another grant cannot authorize a missing dependency");
+        }
+        let mut encoded = serde_json::to_value(&primitives).unwrap();
+        encoded["modules"]["main"]["__type_unit__"] =
+            serde_json::to_value(ComptimeBuiltin::TermUnit).unwrap();
+        validate(serde_json::from_value(encoded).unwrap())
+            .expect_err("serialized names cannot change primitive meaning");
+        let mut missing_implementation = entry.clone();
+        if let UncheckedPrimeExpr::Path { segments, .. } = &mut missing_implementation {
+            segments[0].name = ComptimeBuiltin::TermUnit.public_name().to_owned();
+        }
+        let artifact =
+            crate::normalization::EvalArtifactInput::new(package.clone(), primitives.clone());
+        let missing = validate_user_macro_eval_artifact(&artifact, &missing_implementation, "main")
+            .expect_err("implementation expressions require their own exact primitive dependency");
+        assert!(
+            missing
+                .diag()
+                .1
+                .contains("requires its exact evaluator dependency"),
+            "{missing:?}"
+        );
+        validate_user_macro_eval_artifact(&artifact, &entry, "absent")
+            .expect_err("the implementation owner is an explicit artifact dependency");
+
+        primitives.grant("absent", ComptimeBuiltin::TypeUnit);
+        validate(primitives).expect_err("dependency owners must exist in the artifact");
+    }
 
     #[test]
     fn rec_loop_diagnostic_scratch_is_lazy_and_retains_exact_sites() {
@@ -11146,32 +11819,33 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn diagnostic_text_literals_use_checked_context_or_imported_annotations() {
+    fn diagnostic_text_literals_require_proof_and_preserve_contextual_identity() {
         for declaration in ["", "type Message = __Diagnostic_text__;"] {
             let annotation = if declaration.is_empty() {
                 "__Diagnostic_text__"
             } else {
                 "Message"
             };
-            check_package_sources(&[&format!("module main; import __comptime__; {declaration} pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ let text = \"message\"[{annotation}]; text }}")])
-                .expect("explicit diagnostic text keeps its existing compiler type");
+            check_package_sources(&[&format!("module main; import __comptime__; {declaration} pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ let .(text: {annotation}) = __\"message\"__(ct); text }}")])
+                .expect("a contextual alias selects diagnostic text");
         }
-        check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\" }"])
-            .expect("checked diagnostic context admits a string literal");
-        let error = check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"[Comptime_str] }"])
-            .expect_err("a diagnostic result cannot retarget a string literal");
+        check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { __\"message\"__(ct) }"])
+            .expect("the result supplies the diagnostic carrier");
+        let error = check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { let .(text: Comptime_str) = __\"message\"__(ct); text }"])
+            .expect_err("constructed compile-time string values do not become diagnostics");
         assert!(error.diag().1.contains("type mismatch"), "{error:?}");
-        check_package_sources(&[
-            "module main; fn message() -> . { let text = \"message\"[__Diagnostic_text__]; () }",
-        ])
-        .expect_err("a reserved spelling does not import the diagnostic type");
-        for literal in ["\"message\"[Message]", "\"message\""] {
+        for body in [
+            "consume(__\"message\"__(ct))",
+            "let .(text: Message) = __\"message\"__(ct); consume(text)",
+        ] {
             check_package_sources(&[
                 "module provider; import __comptime__; pub type Message = __Diagnostic_text__; pure fn consume_impl(ct: __Comptime__, _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } pub macro consume : Message -> . { impl consume_impl; };",
-                &format!("module main; import provider(Message, macro consume); fn message() -> . {{ consume({literal}) }}"),
-            ]).expect("the provider's imported diagnostic identity is consumed before runtime");
+                &format!("module main; import __comptime__; import provider(Message, macro consume); fn message(ct: __Comptime__) -> . {{ {body} }}"),
+            ]).expect("imported diagnostic aliases retain their exact compiler identity");
         }
         for literal in [
+            "\"message\"",
+            "\"message\"[__Diagnostic_text__]",
             "17[__Diagnostic_text__]",
             ".t[__Diagnostic_text__]",
             "1.5[__Diagnostic_text__]",
@@ -11179,15 +11853,15 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             let source = format!(
                 "module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ {literal} }}"
             );
-            let error =
-                check_package_sources(&[&source]).expect_err("diagnostic text admits only strings");
+            let error = check_package_sources(&[&source])
+                .expect_err("ordinary literals require host roles");
             assert!(
-                error.diag().1.contains("not a role-bearing host type"),
+                error.diag().1.contains("role-bearing host type"),
                 "{error:?}"
             );
         }
         let error = check_package_sources(&["module main; import __comptime__; host type String role(str); pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"[String] }"])
-            .expect_err("a diagnostic expectation cannot override an explicit ordinary carrier");
+            .expect_err("diagnostic context cannot override an ordinary explicit carrier");
         assert!(error.diag().1.contains("type mismatch"), "{error:?}");
     }
 
@@ -11264,22 +11938,22 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .contains("requires an admitting role-bearing host type"),
             "{error:?}"
         );
-        check_package_sources(&["module main; import __comptime__; type Flag = Comptime_bool; fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x }"]).expect("an explicit alias retains its owner under a same-spelled source binder");
+        check_package_sources(&["module main; import __comptime__; type Flag = Comptime_bool; fn keep(ct: __Comptime__)[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let .(separate: Flag) = __.t__(ct); x }"]).expect("an explicit alias retains its owner under a same-spelled source binder");
     }
 
     #[test]
-    fn imported_builtin_literal_annotations_retain_owner_identity_and_erase_without_capture() {
-        let provider = "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity[Comptime_bool];";
-        let keep = "module main; import provider(Flag); fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x }";
+    fn imported_builtin_literal_contexts_retain_owner_identity_and_erase_without_capture() {
+        let provider = "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity[Comptime_bool]; pub type Proof = __Comptime__; pub pure fn make(ct: Proof) -> Flag { __.t__(ct) }";
+        let keep = "module main; import __comptime__; import provider(Flag); fn keep(ct: __Comptime__)[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let .(separate: Flag) = __.t__(ct); x }";
         check_package_sources(&[provider, keep])
-            .expect("imported builtin aliases preserve their owner identity");
-        let wrong = "module main; import provider(Flag); fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }";
+            .expect("imported aliases preserve their owner under a source binder");
+        let wrong = "module main; import __comptime__; import provider(Flag); fn wrong(ct: __Comptime__)[Comptime_bool](x: Comptime_bool) -> Comptime_bool { __.t__(ct) }";
         check_package_sources(&[provider, wrong])
-            .expect_err("alias expansion cannot capture a consumer binder");
-        let expected = "module main; import provider(Flag); fn expected() -> Flag { .t } fn explicit() -> Flag { .t[Flag] }";
+            .expect_err("a constructed compiler value cannot inhabit an arbitrary binder");
+        let expected = "module main; import __comptime__; import provider(Flag); fn expected(ct: __Comptime__) -> Flag { __.t__(ct) } fn explicit(ct: __Comptime__) -> Flag { let .(flag: Flag) = __.t__(ct); flag }";
         check_package_sources(&[provider, expected])
-            .expect("explicit imported builtin aliases need no default");
-        let colliding = "module main; import provider(Flag); host type Comptime_bool[A]; pure fn value() -> Flag { let flag = .t[Flag]; flag } equiv selected_boolean() { value(); .t[Flag] }";
+            .expect("imported contextual aliases need no default");
+        let colliding = "module main; import provider(Flag, Proof, make); host type Comptime_bool[A]; pure fn value(ct: Proof) -> Flag { let .(flag: Flag) = make(ct); flag } equiv selected_boolean(ct: Proof) { value(ct); make(ct) }";
         check_package_sources(&[provider, colliding])
             .expect("a canonical builtin keeps its kind under a same-leaf nominal declaration");
     }
@@ -11317,13 +11991,12 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 false,
             ),
         ] {
-            let package = lowered_package(&[
-                ("provider.kio", provider),
-                (
-                    "main.kio",
-                    "module main; import provider(Flag); pure fn value() -> Flag { let flag = .t[Flag]; flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x } equiv selected_boolean() { value(); .t[Flag] }",
-                ),
-            ]);
+            let consumer = if erases {
+                "module main; import __comptime__; import provider(Flag); pure fn value(ct: __Comptime__) -> Flag { let .(flag: Flag) = __.t__(ct); flag } fn keep(ct: __Comptime__)[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let .(separate: Flag) = __.t__(ct); x } equiv selected_boolean(ct: __Comptime__) { value(ct); __.t__(ct) }"
+            } else {
+                "module main; import provider(Flag); pure fn value() -> Flag { let flag = .t[Flag]; flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x } equiv selected_boolean() { value(); .t[Flag] }"
+            };
+            let package = lowered_package(&[("provider.kio", provider), ("main.kio", consumer)]);
             let completed = check_package_preserving_normalization(&package)
                 .expect("check imported alias")
                 .complete()
@@ -11359,25 +12032,31 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .eval_artifact()
                 .expect("preserved evaluator artifact");
             let module = artifact.module("main").expect("evaluator consumer");
-            let body = module
+            let value_fn = module
                 .module
                 .items
                 .iter()
                 .find_map(|item| match item {
-                    Item::FnDef(def) if def.name == "value" => Some(&def.body),
+                    Item::FnDef(def) if def.name == "value" => Some(def),
                     _ => None,
                 })
                 .expect("preserved value body");
             let ctx = crate::normalization::AuthenticatedEvalCtx::for_module(
                 artifact.prepare_module("main").expect("evaluator module"),
             );
+            let mut values = crate::normalization::Env::new();
+            if erases {
+                let proof = value_fn.sig.value_params().next().expect("proof parameter");
+                values.insert(
+                    proof.name.clone(),
+                    crate::normalization::Value::Primitive(
+                        crate::comptime::ComptimeBuiltin::ComptimeProof,
+                    ),
+                );
+            }
             assert!(
                 matches!(
-                    crate::normalization::eval_authenticated(
-                        body,
-                        &crate::normalization::Env::new(),
-                        &ctx,
-                    ),
+                    crate::normalization::eval_authenticated(&value_fn.body, &values, &ctx,),
                     crate::normalization::Value::Bool(true)
                 ),
                 "evaluation must preserve the Boolean literal"
@@ -12687,7 +13366,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             .expect("replay fn");
         def.body = original;
         let mut elaborations = Elaborations::new();
-        elaborations.record_unchecked_prime_elaboration("x", node_id, replay);
+        elaborations.record_unchecked_prime_elaboration("x", node_id, replay, None);
 
         let prime = crate::pass::substitute::substitute_module(&module, &elaborations);
 
@@ -15132,7 +15811,7 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
     }
 
     #[test]
-    fn literal_carrier_hidden_source_completes_its_sibling_before_outer_action() {
+    fn literal_carrier_hidden_source_completes_its_sibling_once() {
         let macros = r#"module macros; import __comptime__;
             pure fn natural_checked(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ { value }
             pub macro natural : [Source] Source -> [Target] Target { impl natural_checked }
@@ -15165,6 +15844,62 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
                 );
                 validate_substituted_package(checked.substituted())
                     .expect("source completion preserves independent Prime validity");
+            }
+        }
+    }
+
+    #[test]
+    fn literal_carrier_hidden_source_checks_callbacks_and_runs_each_macro_once() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn natural_checked(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pub macro natural : [Source] Source -> [Target] Target { impl natural_checked }
+            pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+            pub macro ignore : [A] A -> . { impl(fills) ignore_impl }
+        "#;
+        let callback = ".() -> . { () }";
+        for arguments in ["0, natural(known)", "natural(known), 0"] {
+            for (parameters, arguments) in [
+                (
+                    "_left: T, _right: T, _callback: . -> .",
+                    format!("{arguments}, {callback}"),
+                ),
+                (
+                    "_callback: . -> ., _left: T, _right: T",
+                    format!("{callback}, {arguments}"),
+                ),
+            ] {
+                let call = format!("ignore(consume({arguments}))");
+                let main = format!(
+                    "module main; import macros(macro natural, macro ignore); host type Carrier role(i32); fn consume[T]({parameters}) {{ () }} fn run(known: Carrier) {{ {call} }}"
+                );
+                let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+                let original = retained_call_at(&package, "main", source_span(&main, &call));
+                crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+                let (checked, scope) = check_retained_success(&package);
+                for name in ["natural", "ignore"] {
+                    assert_eq!(
+                        scope
+                            .memo()
+                            .user_macro_template_executions_for("macros", name),
+                        1,
+                        "{arguments}: {name}"
+                    );
+                }
+                assert_eq!(
+                    crate::pass::typecheck_core::apply::take_lambda_body_entries(),
+                    vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
+                        span: source_span(&main, callback),
+                        macro_executions: if parameters.starts_with("_callback") {
+                            1
+                        } else {
+                            2
+                        },
+                    }],
+                    "{arguments}"
+                );
+                assert_retained_call_published(checked.elaborations(), "main", &original);
+                validate_substituted_package(checked.substituted())
+                    .expect("closed callback validation preserves independent Prime validity");
             }
         }
     }
@@ -15441,7 +16176,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pub type { Rep: . { pub mk; pub get; }; }; \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
+                __macro_error__(ct, __\"not evaluated\"__(ct)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -15456,7 +16191,7 @@ fn generic_last() -> . {
               pub type Rep_payload = Rep; \
             } \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
+                __macro_error__(ct, __\"not evaluated\"__(ct)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -16126,16 +16861,18 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn inference_only_unanchored_macro_input_rejects_before_action() {
+    fn inference_only_unanchored_macro_inputs_reject_at_their_completion_boundary() {
         let macros = "module macros; import __comptime__; pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) } pub macro ignore : [A] A -> . { impl(fills) ignore_impl; };";
-        for argument in [
-            "1",
-            "identity(1)",
-            "discard(1)",
-            "discard(identity(1))",
-            "(discard(1), ())",
-            "((), discard(1))",
-            "((), (discard(identity(1)), ()))",
+        for (argument, projected_type_is_open) in [
+            ("1", true),
+            ("identity(1)", true),
+            ("(1, ())", true),
+            ("((), 1)", true),
+            ("discard(1)", false),
+            ("discard(identity(1))", false),
+            ("(discard(1), ())", false),
+            ("((), discard(1))", false),
+            ("((), (discard(identity(1)), ()))", false),
         ] {
             let call = format!("ignore({argument})");
             let main = format!(
@@ -16160,11 +16897,18 @@ fn generic_last() -> . {
                     && diagnostic_span.end <= argument_span.end,
                 "{argument}: {diagnostic_span:?}"
             );
-            assert_eq!(
-                scope.memo().user_macro_template_executions(),
-                0,
-                "{argument}"
-            );
+            if projected_type_is_open {
+                assert_eq!(
+                    scope.memo().user_macro_template_executions(),
+                    0,
+                    "{argument}"
+                );
+            } else {
+                assert!(
+                    scope.memo().user_macro_template_executions() <= 1,
+                    "{argument}"
+                );
+            }
             assert_retained_call_unpublished(&elaborations, "main", &original);
         }
     }
@@ -16321,12 +17065,12 @@ fn generic_last() -> . {
                       ) \
                     }, \
                     .(_failed: Specialize_tail) -> (__Checked_term__ & __Fill_ctx__) { \
-                      (__macro_error__(ct, \"specialization failed\"[__Diagnostic_text__]), fills) \
+                      (__macro_error__(ct, __\"specialization failed\"__(ct)), fills) \
                     } \
                   ) \
                 }, \
                 .() -> (__Checked_term__ & __Fill_ctx__) { \
-                  (__macro_error__(ct, \"expected forall\"[__Diagnostic_text__]), fills) \
+                  (__macro_error__(ct, __\"expected forall\"__(ct)), fills) \
                 } \
               ) \
             } \
@@ -16922,7 +17666,7 @@ fn generic_last() -> . {
                      import label_dep(Slot); import label_shadow as label_dep; \
                      import shadow as dep; import other as types; \
                      pure fn local_impl(ct: __Comptime__, _source: __Type__) -> __Checked_term__ { \
-                         __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
+                         __macro_error__(ct, __\"not evaluated\"__(ct)) \
                        } \
                      macro local : [A] . -> A { impl local_impl; };",
                 ),
@@ -17430,7 +18174,7 @@ fn generic_last() -> . {
              import __comptime__; \
              import pkg/helper as h; \
              pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                 __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
+                 __macro_error__(ct, __\"not evaluated\"__(ct)) \
                } \
              pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
         );
@@ -17920,7 +18664,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  pure fn package_content_probe_impl( \
                    ct: __Comptime__, _source: __Type__, _value: __Checked_term__ \
-                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\"[__Diagnostic_text__]) }} \
+                 ) -> __Checked_term__ {{ __macro_error__(ct, __\"{message}\"__(ct)) }} \
                  pub macro package_content_probe : [Source] Source -> Source {{ \
                    impl package_content_probe_impl; \
                  }};"
@@ -19454,7 +20198,7 @@ fn generic_last() -> . {
         ok("module main; import __intrinsics__; \
             import __comptime__; \
             pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                __if_then_else__[Comptime_bool][__Checked_term__](.t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
+                __comptime_if_then_else__(ct)[__Checked_term__](__.t__(ct), .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
               } \
             macro choose : . -> . { impl choose_impl; }; \
             host type Later role(bool);");
@@ -19466,7 +20210,7 @@ fn generic_last() -> . {
             "module provider; import __intrinsics__; \
              import __comptime__; \
              pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                 __if_then_else__[Comptime_bool][__Checked_term__](.t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
+                 __comptime_if_then_else__(ct)[__Checked_term__](__.t__(ct), .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
                } \
              pub macro choose : . -> . { impl choose_impl; }; \
              host type Later role(bool);",
@@ -23064,7 +23808,7 @@ fn generic_last() -> . {
     #[test]
     fn pure_fn_keeps_comptime_literal_type() {
         ok("module main; import __comptime__; \
-            pure fn f(_ct: __Comptime__) -> Comptime_bool { .t }");
+            pure fn f(_ct: __Comptime__) -> Comptime_bool { __.t__(_ct) }");
     }
 
     #[test]
@@ -23590,7 +24334,8 @@ fn generic_last() -> . {
             fn consume[T](_make: . -> T) -> . { () } \
             fn run() -> . { consume(.() { 42 }) }");
         assert!(
-            message.contains("cannot determine the type of this integer literal"),
+            message.contains("cannot determine the type of this integer literal")
+                || message.contains("cannot infer type argument `T`"),
             "{message}"
         );
     }
@@ -24981,7 +25726,7 @@ fn generic_last() -> . {
         pub macro contextual_pair_first : [Source] ((Source -> .) & Source) -> . { impl(fills) contextual_pair_impl }
         pub macro contextual_nested : [Source] (. & (Source & (Source -> .))) -> . { impl(fills) contextual_pair_impl }
         pure fn fail_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, _value: __Checked_term__)
-            -> __Checked_term__ & __Fill_ctx__ { (__macro_error__(ct, \"outer failure\"[__Diagnostic_text__]), fills) }
+            -> __Checked_term__ & __Fill_ctx__ { (__macro_error__(ct, __\"outer failure\"__(ct)), fills) }
         pub macro fail : [Source] Source -> . { impl(fills) fail_impl }";
 
     #[test]

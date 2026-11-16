@@ -3,7 +3,7 @@ module macros;
 import __comptime__;
 
 pure fn infer_result_impl(ct: __Comptime__, _phantom: __Type__, _result: .) -> __Checked_term__ {
-  __macro_error__(ct, "phantom elaborator executed")
+  __macro_error__(ct, __"phantom elaborator executed"__(ct))
 }
 
 pub macro infer_result : [Phantom][Result] . -> Result { impl infer_result_impl }

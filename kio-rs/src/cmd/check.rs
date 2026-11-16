@@ -2843,6 +2843,9 @@ fn collect_unused_expr_decls(
     use crate::ast::Expr;
 
     match expr {
+        Expr::ComptimeLiteral { proof, .. } => {
+            collect_unused_expr_decls(source, file_path, module_path, proof, declarations)
+        }
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Call { callee, args, .. } => {
             collect_unused_expr_decls(source, file_path, module_path, callee, declarations);
@@ -6666,7 +6669,7 @@ mod tests {
                value\n\
              }\n\n\
              pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
-               __macro_error__(ct, \"bad macro ran\"[__Diagnostic_text__])\n\
+               __macro_error__(ct, __\"bad macro ran\"__(ct))\n\
              }\n\n\
              pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
              pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
@@ -7060,7 +7063,7 @@ mod tests {
         let provider = std::fs::read_to_string(&provider_path).expect("read macro provider");
         let edited = provider.replace(
             "\nvalue\n",
-            "\n__macro_error__(ct, \"edited macro ran\"[__Diagnostic_text__])\n",
+            "\n__macro_error__(ct, __\"edited macro ran\"__(ct))\n",
         );
         assert_ne!(
             edited, provider,

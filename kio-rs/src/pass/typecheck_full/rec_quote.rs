@@ -269,10 +269,20 @@ pub(super) fn finish_expansion(
     assert!(!crate::pass::typecheck_core::type_contains_goal(
         public.as_type()
     ));
+    let mut body = body;
+    let primitives = crate::pass::substitute::primitive_env_for_replayed_expr(
+        &mut body,
+        replay.module,
+        replay.module_path,
+        replay.elaborations,
+    );
     let body = crate::pass::substitute::finish_replayed_elaboration(body, &ambient);
-    replay
-        .elaborations
-        .record_unchecked_prime_elaboration(replay.module_path, node, body);
+    replay.elaborations.record_unchecked_prime_elaboration(
+        replay.module_path,
+        node,
+        body,
+        primitives,
+    );
     Ok(())
 }
 
@@ -280,6 +290,7 @@ pub(super) fn finish_expansion(
 /// continuation have their own ordinary checking, not quoted value identities.
 fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Expr<Lowered>>) {
     match source {
+        Expr::ComptimeLiteral { proof, .. } => pending.push(proof),
         Expr::Call { callee, args, .. } => {
             pending.push(callee);
             push_arguments(args, pending);

@@ -473,17 +473,17 @@ fn render_generated_macro_body(template: UserMacroTemplate) -> String {
     match template {
         UserMacroTemplate::Direct | UserMacroTemplate::RequiredTarget => "value".to_string(),
         UserMacroTemplate::SourceTargetGuard => "\
-__if_then_else__(
+__comptime_if_then_else__(ct)(
   , __type_equal__(ct, source, target)
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen source/target mismatch\") }
+  , .() -> __Checked_term__ { __type_error__(ct, __\"kio-gen source/target mismatch\"__(ct)) }
   )"
         .to_string(),
         UserMacroTemplate::TermTypeGuard => "\
-__if_then_else__(
+__comptime_if_then_else__(ct)(
   , __type_equal__(ct, __term_type__(ct, value), target)
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { __type_error__(ct, \"kio-gen term/target mismatch\") }
+  , .() -> __Checked_term__ { __type_error__(ct, __\"kio-gen term/target mismatch\"__(ct)) }
   )"
         .to_string(),
         UserMacroTemplate::LetIdentity => "\
@@ -1024,9 +1024,15 @@ build {
     fn generated_required_target_guards_keep_their_failure_branches() {
         let source_guard = render_generated_macro_body(UserMacroTemplate::SourceTargetGuard);
         assert!(source_guard.contains("__type_equal__(ct, source, target)"));
-        assert!(source_guard.contains("__type_error__(ct, \"kio-gen source/target mismatch\")"));
+        assert!(source_guard.contains("__comptime_if_then_else__(ct)("));
+        assert!(
+            source_guard.contains("__type_error__(ct, __\"kio-gen source/target mismatch\"__(ct))")
+        );
         let term_guard = render_generated_macro_body(UserMacroTemplate::TermTypeGuard);
         assert!(term_guard.contains("__type_equal__(ct, __term_type__(ct, value), target)"));
-        assert!(term_guard.contains("__type_error__(ct, \"kio-gen term/target mismatch\")"));
+        assert!(term_guard.contains("__comptime_if_then_else__(ct)("));
+        assert!(
+            term_guard.contains("__type_error__(ct, __\"kio-gen term/target mismatch\"__(ct))")
+        );
     }
 }

@@ -1176,6 +1176,9 @@ import __comptime__;
 
 The block imports the complete compile-time helper surface. There is no qualified form, selective form, alias, wildcard, or per-name import for `__comptime__`. Public helper type and value names use the documented double-underscore spellings such as `__Type__`, `__Checked_term__`, `__type_view__`, `__term_call__`, and `__structural_recur__`. See [`specs/formal/elaboration.md`](formal/elaboration.md) for the compile-time boundary: user macros return reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
 
+The exported names of `__comptime__` and `__intrinsics__` are disjoint.
+Importing both blocks introduces no name conflict between them.
+
 Function reflection observes semantic function types. The function arm of
 `__type_view__(ct, typ)` is the pair `(domain & result)`, and
 `__type_arrow__(ct, domain, result)` constructs `domain -> result`. The domain
@@ -2236,6 +2239,15 @@ forall keeps its own body scope, so `A -> [B] B & B` is a function returning
 a universally quantified product, not a direct product result.
 
 ### Conditionals
+
+The Boolean intrinsics accept a concrete host `role(bool)` carrier.
+Compile-time predicates instead return `Comptime_bool`, which has no host role.
+The separate `__comptime_if_then_else__` helper accepts a `__Comptime__` proof,
+then a condition of that type and two Unit thunks. It evaluates the complete
+argument packet in order and invokes only the selected thunk; the result type
+is generic. It has no runtime counterpart: retained code eliminates its
+bottom-typed proof. `rehost` preserves a source host declaration's role and
+therefore cannot replace the reference library's host `Bool` with `Comptime_bool`.
 
 *Surface only; elaborates to Kio'.* The reference library's conditional is an
 ordinary imported block macro:
@@ -3414,9 +3426,9 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 
 **Literal-type inference.** An explicit literal annotation such as `42[I32]`
 selects the carrier. It must normalize to a role-bearing host type whose role
-admits the literal's category. A string may also use the compiler-owned diagnostic text type through an
-explicit annotation or concrete expected diagnostic-text context; see the
-[compile-time diagnostic text contract](../docs/guides/builtin-modules.md#diagnostic-text).
+admits the literal's category. Compiler-owned Boolean and text types have no
+host literal role; their construction uses the separate proof-bearing form
+below.
 
 Without a concrete annotation, a scalar literal obtains its carrier from
 concrete local context: an expected return, argument or binding type, or the
@@ -3447,6 +3459,23 @@ normalized body, including through saturated alias applications. If that body
 is a role-bearing host type, annotations and concrete contextual inference
 use its role. An alias changes neither literal category nor host identity,
 and its presence does not select an unresolved literal.
+
+**Compile-time literals.** With `import __comptime__;`, the full surface
+language admits `__.t__(ct)`, `__.f__(ct)` and `__"text"__(ct)`. The argument
+is one ordinary expression of type `__Comptime__`, evaluated once to provide
+the proof that construction occurs during compile-time evaluation. The Boolean
+forms construct `Comptime_bool`. A concrete expected type selects
+`Comptime_str` or `__Diagnostic_text__` for the string form, including through
+transparent aliases; an unresolved or different carrier is an error. String
+contents use the ordinary string escape rules. These forms construct values
+used by the macro implementation, not quoted runtime literals.
+
+Compiler-owned types and operations do not survive into persistent Kio'.
+Their runtime type is bottom, including Boolean and text carriers; a retained
+proof-taking operation eliminates its bottom-typed proof. Compile-time
+evaluation uses an explicit primitive environment instead. The proof-bearing
+literal syntax itself is surface-only. See
+[compile-time values](../docs/guides/macros.md#reflected-types-and-checked-terms).
 
 The full-Kio typer records each inferred scalar carrier on the Lowered tree.
 The Lowered → Prime substitute pass materializes it as an explicit annotation.

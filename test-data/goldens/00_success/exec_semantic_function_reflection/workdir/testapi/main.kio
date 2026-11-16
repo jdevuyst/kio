@@ -76,7 +76,7 @@ pure fn rebuild_impl(ct: __Comptime__, typ: __Type__, value: __Checked_term__) -
       let domain = __fst__[__Type__][__Type__](view);
       let result = __snd__[__Type__][__Type__](view);
       let rebuilt = __type_arrow__(ct, domain, result);
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, rebuilt, typ)
       , .() -> __Checked_term__ {
           __term_fn__(
@@ -87,10 +87,10 @@ pure fn rebuild_impl(ct: __Comptime__, typ: __Type__, value: __Checked_term__) -
             }
           )
         }
-      , .() -> __Checked_term__ { __macro_error__(ct, "function domain/result changed") }
+      , .() -> __Checked_term__ { __macro_error__(ct, __"function domain/result changed"__(ct)) }
       )
     }
-  , .() -> __Checked_term__ { __macro_error__(ct, "expected a function") }
+  , .() -> __Checked_term__ { __macro_error__(ct, __"expected a function"__(ct)) }
   )
 }
 

@@ -1,0 +1,1 @@
+compile-time literal construction requires `import __comptime__;`

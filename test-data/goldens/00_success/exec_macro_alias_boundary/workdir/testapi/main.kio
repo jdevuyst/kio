@@ -19,10 +19,12 @@ pure fn require_same(
 , expected: __Type__
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, actual, expected)
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { __macro_error__(ct, "transparent alias reflection changed the type") }
+  , .() -> __Checked_term__ {
+      __macro_error__(ct, __"transparent alias reflection changed the type"__(ct))
+    }
   )
 }
 

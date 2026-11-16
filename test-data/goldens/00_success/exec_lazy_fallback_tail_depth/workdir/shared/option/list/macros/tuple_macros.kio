@@ -133,7 +133,7 @@ pure fn flatten_product_type(ct: __Comptime__, typ: __Type__) -> Type_list {
   , typ
   , ()
   , .(loop_recur: (__Type__ & .) -> Type_list, loop_fuel: __Type__, _loop_state: .) -> Type_list {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, loop_fuel, __type_unit__(ct))
       , .() -> Type_list { type_nil() }
       , .() -> Type_list {
@@ -227,7 +227,7 @@ pure fn flatten_product_slots(ct: __Comptime__, source: __Type__, value: __Check
     , loop_fuel: __Type__
     , loop_state: __Checked_term__
     ) -> Slot_list {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_equal__(ct, loop_fuel, __type_unit__(ct))
       , .() -> Slot_list { slot_nil() }
       , .() -> Slot_list {
@@ -317,9 +317,7 @@ pub macro group : [Source] Source -> [Target] Target { impl group_checked }
 pure fn head_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[.][Slot & Slot_list][Macro_result](
   , Slot_list.get(flatten_product_slots(ct, source, value))
-  , .(_empty: .) -> Macro_result {
-      err(ct, "head source has no product slots"[__Diagnostic_text__])
-    }
+  , .(_empty: .) -> Macro_result { err(ct, __"head source has no product slots"__(ct)) }
   , .(cell: Slot & Slot_list) -> Macro_result {
       let slot = __fst__[Slot][Slot_list](cell);
       ok(ct, slot_term(ct, slot))
@@ -338,9 +336,7 @@ pub macro head : [Source] Source -> [Target] Target { impl head_checked }
 pure fn tail_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Macro_result {
   __either__[.][Slot & Slot_list][Macro_result](
   , Slot_list.get(flatten_product_slots(ct, source, value))
-  , .(_empty: .) -> Macro_result {
-      err(ct, "tail source has no product slots"[__Diagnostic_text__])
-    }
+  , .(_empty: .) -> Macro_result { err(ct, __"tail source has no product slots"__(ct)) }
   , .(cell: Slot & Slot_list) -> Macro_result { finish_slots(ct, __snd__[Slot][Slot_list](cell)) }
   )
 }
@@ -385,9 +381,7 @@ pure fn last_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) 
   __either__[Slot][.][Macro_result](
   , last_slot(ct, flatten_product_slots(ct, source, value))
   , .(slot: Slot) -> Macro_result { ok(ct, slot_term(ct, slot)) }
-  , .(_empty: .) -> Macro_result {
-      err(ct, "last source has no product slots"[__Diagnostic_text__])
-    }
+  , .(_empty: .) -> Macro_result { err(ct, __"last source has no product slots"__(ct)) }
   )
 }
 
@@ -457,7 +451,7 @@ pure fn split_slots_prefix(ct: __Comptime__, prefix: Type_list, slots: Slot_list
                   __left__[Maybe_tuple_slot_split][Split_prefix_next](tuple_slot_split_none())
                 }
               , .(slot_cell: Slot & Slot_list) -> Split_prefix_step {
-                  __if_then_else__(
+                  __comptime_if_then_else__(ct)(
                   , __type_equal__(
                     , ct
                     , __fst__[__Type__][Type_list](prefix_cell)
@@ -531,13 +525,11 @@ pure fn split_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
           )
         }
       , .(_mismatch: .) -> Macro_result {
-          err(ct, "split source does not provide the requested left prefix"[__Diagnostic_text__])
+          err(ct, __"split source does not provide the requested left prefix"__(ct))
         }
       )
     }
-  , .(_not_product: .) -> Macro_result {
-      err(ct, "split target must be a product"[__Diagnostic_text__])
-    }
+  , .(_not_product: .) -> Macro_result { err(ct, __"split target must be a product"__(ct)) }
   )
 }
 
@@ -591,7 +583,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
           __either__[.][Slot & Slot_list][Zip_step](
           , Slot_list.get(fuel)
           , .(_left_done: .) -> Zip_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , slot_empty(ct, zip_rights(state))
               , .() -> Zip_step {
                   __left__[Slot_list_result][Zip_next](slot_list_ok(
@@ -602,7 +594,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
               , .() -> Zip_step {
                   __left__[Slot_list_result][Zip_next](slot_list_err(
                   , ct
-                  , "zip operands have different lengths"[__Diagnostic_text__]
+                  , __"zip operands have different lengths"__(ct)
                   ))
                 }
               )
@@ -613,7 +605,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
               , .(_right_done: .) -> Zip_step {
                   __left__[Slot_list_result][Zip_next](slot_list_err(
                   , ct
-                  , "zip operands have different lengths"[__Diagnostic_text__]
+                  , __"zip operands have different lengths"__(ct)
                   ))
                 }
               , .(right_cell: Slot & Slot_list) -> Zip_step {
@@ -726,7 +718,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
           __either__[.][Slot & Slot_list][Map_step](
           , Slot_list.get(fuel)
           , .(_fn_done: .) -> Map_step {
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , slot_empty(ct, map_values(state))
               , .() -> Map_step {
                   __left__[Slot_list_result][Map_next](slot_list_ok(
@@ -737,7 +729,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
               , .() -> Map_step {
                   __left__[Slot_list_result][Map_next](slot_list_err(
                   , ct
-                  , "map operands have different lengths"[__Diagnostic_text__]
+                  , __"map operands have different lengths"__(ct)
                   ))
                 }
               )
@@ -748,7 +740,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
               , .(_value_done: .) -> Map_step {
                   __left__[Slot_list_result][Map_next](slot_list_err(
                   , ct
-                  , "map operands have different lengths"[__Diagnostic_text__]
+                  , __"map operands have different lengths"__(ct)
                   ))
                 }
               , .(value_cell: Slot & Slot_list) -> Map_step {
@@ -757,7 +749,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                   __either__[Function_view][.][Map_step](
                   , function_view(ct, slot_type(ct, fn_slot))
                   , .(view: Function_view) -> Map_step {
-                      __if_then_else__(
+                      __comptime_if_then_else__(ct)(
                       , __type_equal__(ct, function_param(ct, view), slot_type(ct, value_slot))
                       , .() -> Map_step {
                           let result_type = function_result(ct, view);
@@ -787,7 +779,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                       , .() -> Map_step {
                           __left__[Slot_list_result][Map_next](slot_list_err(
                           , ct
-                          , "map function parameter does not match value slot"[__Diagnostic_text__]
+                          , __"map function parameter does not match value slot"__(ct)
                           ))
                         }
                       )
@@ -795,7 +787,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                   , .(_not_function: .) -> Map_step {
                       __left__[Slot_list_result][Map_next](slot_list_err(
                       , ct
-                      , "map function slot is not a function"[__Diagnostic_text__]
+                      , __"map function slot is not a function"__(ct)
                       ))
                     }
                   )
@@ -858,11 +850,11 @@ pure fn type_contains(ct: __Comptime__, target: __Type__, xs: Type_list) -> Comp
   , .(loop_recur: (Type_list & .) -> Comptime_bool, loop_fuel: Type_list, _loop_state: .) -> Comptime_bool {
       __either__[.][__Type__ & Type_list][Comptime_bool](
       , Type_list.get(loop_fuel)
-      , .(_done: .) -> Comptime_bool { .f }
+      , .(_done: .) -> Comptime_bool { __.f__(ct) }
       , .(cell: __Type__ & Type_list) -> Comptime_bool {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __type_equal__(ct, target, __fst__[__Type__][Type_list](cell))
-          , .() -> Comptime_bool { .t }
+          , .() -> Comptime_bool { __.t__(ct) }
           , .() -> Comptime_bool { loop_recur(__snd__[__Type__][Type_list](cell), ()) }
           )
         }
@@ -911,7 +903,7 @@ pure fn distinct_slots(ct: __Comptime__, slots: Slot_list) -> Slot_list {
             }
           , .(cell: Slot & Slot_list) -> Distinct_step {
               let current = __fst__[Slot][Slot_list](cell);
-              __if_then_else__(
+              __comptime_if_then_else__(ct)(
               , type_contains(ct, slot_type(ct, current), distinct_seen(state))
               , .() -> Distinct_step {
                   __right__[Slot_list][Distinct_next]((__snd__[Slot][Slot_list](cell), state))

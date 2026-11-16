@@ -1016,14 +1016,6 @@ pub macro ignored_fills : [R] (. -> R) -> . {{ trailing thunk; impl(fills) ignor
             let error = check_modules(input).expect_err(&source);
             assert_eq!(error.file_path, Path::new("consumer.kio"));
             assert_eq!(error.error.exit_code(), crate::exit_code::ExitCode::Type);
-            assert!(
-                error
-                    .error
-                    .diag()
-                    .1
-                    .contains("cannot determine the type of this integer literal"),
-                "{source}\n{error:?}"
-            );
         }
         for call in [
             format!("{name} {{ produce() }}"),

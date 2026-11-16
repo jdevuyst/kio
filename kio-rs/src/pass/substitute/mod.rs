@@ -476,7 +476,7 @@ pub(crate) fn substitute_package_for_eval(
     let package = normalized.package();
     let mut primitives = crate::normalization::EvalPrimitiveEnv::default();
     for (path, entry) in package.modules() {
-        enable_module_primitives_for_eval(&mut primitives, &entry.module, path);
+        enable_module_primitives_for_eval(&mut primitives, &entry.module, path, elaborations);
     }
     let pkg_name = package
         .package_file()
@@ -522,9 +522,10 @@ pub(crate) fn substitute_package_for_eval(
 pub(crate) fn primitive_env_for_eval_module(
     module: &Module<Lowered>,
     module_path: &str,
+    elaborations: &Elaborations,
 ) -> crate::normalization::EvalPrimitiveEnv {
     let mut primitives = crate::normalization::EvalPrimitiveEnv::default();
-    enable_module_primitives_for_eval(&mut primitives, module, module_path);
+    enable_module_primitives_for_eval(&mut primitives, module, module_path, elaborations);
     primitives
 }
 
@@ -532,7 +533,21 @@ fn enable_module_primitives_for_eval(
     primitives: &mut crate::normalization::EvalPrimitiveEnv,
     module: &Module<Lowered>,
     module_path: &str,
+    elaborations: &Elaborations,
 ) {
+    for dependency in elaborations.replay_primitives_for(module_path) {
+        for (owner, bindings) in dependency.bindings() {
+            for (_, builtin) in bindings {
+                primitives.grant(owner, builtin);
+            }
+        }
+        for (owner, binding, constructor) in dependency.literal_bindings() {
+            primitives.grant_literal(owner, binding, constructor.clone());
+        }
+    }
+    for plan in elaborations.comptime_literals_for(module_path) {
+        primitives.grant_literal(module_path, &plan.binding, plan.constructor.clone());
+    }
     if module
         .imports
         .iter()
@@ -540,6 +555,94 @@ fn enable_module_primitives_for_eval(
     {
         primitives.enable_comptime_module(module_path);
     }
+}
+
+pub(super) fn primitive_env_for_replayed_expr(
+    expr: &mut Expr<PrePrime>,
+    module: &Module<Lowered>,
+    owner: &str,
+    elabs: &Elaborations,
+) -> Option<std::sync::Arc<crate::normalization::EvalPrimitiveEnv>> {
+    use crate::pass::visit_mut::TypecheckVisitMut;
+    #[derive(Default)]
+    struct Names {
+        bound: Vec<String>,
+        referenced: std::collections::HashSet<String>,
+    }
+    impl TypecheckVisitMut<PrePrime> for Names {
+        fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
+            self.bound.push(param.name.clone());
+        }
+        fn exit_type_binder(&mut self, _param: &mut TypeParam, _scope: Span) {
+            self.bound.pop();
+        }
+        fn enter_value_binder(&mut self, name: &mut String, _span: Span, _scope: Span) {
+            self.bound.push(name.clone());
+        }
+        fn exit_value_binder(&mut self, _name: &mut String, _span: Span, _scope: Span) {
+            self.bound.pop();
+        }
+        fn visit_type(&mut self, ty: &mut Type<PrePrime>) {
+            if let Type::Path { segments, .. } = ty
+                && let [name] = segments.as_slice()
+                && !self.bound.iter().any(|bound| bound == name.as_str())
+            {
+                self.referenced.insert(name.as_str().to_owned());
+            }
+            crate::pass::visit_mut::walk_type(self, ty);
+        }
+        fn visit_expr(&mut self, expr: &mut Expr<PrePrime>) {
+            if let Expr::Path { segments, .. } = expr
+                && let [name] = segments.as_slice()
+                && !self.bound.iter().any(|bound| bound == name.as_str())
+            {
+                self.referenced.insert(name.as_str().to_owned());
+            }
+            crate::pass::visit_mut::walk_expr(self, expr);
+        }
+    }
+    let mut names = Names::default();
+    names.visit_expr(expr);
+    let mut dependencies = crate::normalization::EvalPrimitiveEnv::default();
+    if module
+        .imports
+        .iter()
+        .any(|import| matches!(import.kind, ImportKind::Comptime))
+    {
+        for name in &names.referenced {
+            if let Some(builtin) = crate::comptime::ComptimeBuiltin::from_public_name(name) {
+                dependencies.grant(owner, builtin);
+            }
+        }
+    }
+    for plan in elabs.comptime_literals_for(owner) {
+        if names.referenced.contains(&plan.binding) {
+            dependencies.grant_literal(owner, &plan.binding, plan.constructor.clone());
+            dependencies.grant(owner, crate::comptime::ComptimeBuiltin::ComptimeProof);
+            dependencies.grant(owner, plan.constructor.result_builtin());
+        }
+    }
+    for prior in elabs.replay_primitives_for(owner) {
+        for (dependency_owner, entries) in prior.bindings() {
+            for (name, builtin) in entries {
+                if names.referenced.contains(name) {
+                    dependencies.grant(dependency_owner, builtin);
+                }
+            }
+        }
+        for (dependency_owner, name, constructor) in prior.literal_bindings() {
+            if names.referenced.contains(name) {
+                dependencies.grant_literal(dependency_owner, name, constructor.clone());
+                dependencies.grant(
+                    dependency_owner,
+                    crate::comptime::ComptimeBuiltin::ComptimeProof,
+                );
+                dependencies.grant(dependency_owner, constructor.result_builtin());
+            }
+        }
+    }
+    (dependencies.bindings().next().is_some() || dependencies.literal_bindings().next().is_some())
+        .then(|| std::sync::Arc::new(dependencies))
 }
 
 pub fn substitute_module_for_eval(
@@ -963,14 +1066,12 @@ fn comptime_erased_path_kind(
     }
     match crate::comptime::ComptimeBuiltin::from_public_name(single.as_str())?.runtime_erasure()? {
         crate::comptime::ComptimeRuntimeErasure::Bottom => Some(ComptimeEraseKind::Bottom),
-        crate::comptime::ComptimeRuntimeErasure::Unit => Some(ComptimeEraseKind::Unit),
     }
 }
 
 #[derive(Clone, Copy)]
 enum ComptimeEraseKind {
     Bottom,
-    Unit,
 }
 
 fn proof_param_name(d: &FnDef<Lowered>) -> Option<&str> {
@@ -1022,8 +1123,205 @@ fn erased_proof_body(
     )
 }
 
-fn type_is_unit(ty: &Type<PrePrime>) -> bool {
-    matches!(ty, Type::Unit { .. })
+fn erased_primitive_value(mut scheme: Type<PrePrime>, span: Span) -> Expr<PrePrime> {
+    use crate::pass::visit_mut::TypecheckVisitMut;
+    struct Binders {
+        next: usize,
+        stack: Vec<(String, String)>,
+    }
+    impl TypecheckVisitMut<PrePrime> for Binders {
+        fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
+            let fresh = format!("_Primitive_t{}", self.next);
+            self.next += 1;
+            self.stack.push((param.name.clone(), fresh.clone()));
+            param.rename(fresh);
+        }
+        fn exit_type_binder(&mut self, _param: &mut TypeParam, _scope: Span) {
+            self.stack.pop();
+        }
+        fn visit_type(&mut self, ty: &mut Type<PrePrime>) {
+            if let Type::Path { segments, .. } = ty
+                && let [name] = segments.as_mut_slice()
+                && let Some((_, fresh)) = self
+                    .stack
+                    .iter()
+                    .rev()
+                    .find(|(old, _)| old == name.as_str())
+            {
+                *name = PathSegment::new(fresh.clone(), name.span);
+            }
+            crate::pass::visit_mut::walk_type(self, ty);
+        }
+    }
+    Binders {
+        next: 0,
+        stack: Vec::new(),
+    }
+    .visit_type(&mut scheme);
+    let mut groups = Vec::new();
+    while let Type::Forall { param, body, .. } = scheme {
+        groups.push(crate::ast::SignatureGroup::Type(vec![param]));
+        scheme = *body;
+    }
+    let Type::Function { param, ret, .. } = scheme else {
+        unreachable!("a compile-time value primitive has a proof-bearing function scheme")
+    };
+    let packet_name = "__primitive_packet__".to_owned();
+    let packet = Expr::Path {
+        occurrence: Default::default(),
+        segments: vec![PathSegment::new(packet_name.clone(), span)],
+        meta: Meta::new(span),
+        ext: (),
+    };
+    fn bottom_projection(
+        ty: &Type<PrePrime>,
+        value: Expr<PrePrime>,
+        span: Span,
+    ) -> Option<Expr<PrePrime>> {
+        match ty {
+            Type::Bottom { .. } => Some(value),
+            Type::Product { left, right, .. } => {
+                for (name, component) in [("__fst__", left), ("__snd__", right)] {
+                    let projection = Expr::synth_call(
+                        Expr::Path {
+                            occurrence: Default::default(),
+                            segments: vec![PathSegment::new(name.to_owned(), span)],
+                            meta: Meta::new(span),
+                            ext: (),
+                        },
+                        vec![
+                            CallArg::Type(*left.clone()),
+                            CallArg::Type(*right.clone()),
+                            CallArg::Value(value.clone()),
+                        ],
+                        span,
+                    );
+                    if let Some(bottom) = bottom_projection(component, projection, span) {
+                        return Some(bottom);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    let proof = bottom_projection(&param, packet, span)
+        .expect("every compiler-only primitive's first semantic packet carries its proof");
+    groups.push(crate::ast::SignatureGroup::Value(vec![Param {
+        name: packet_name,
+        ty: Some(*param),
+        pattern: (),
+        meta: Meta::new(span),
+    }]));
+    let body = Expr::synth_call(
+        Expr::Path {
+            occurrence: Default::default(),
+            segments: vec![PathSegment::new("__absurd__".to_owned(), span)],
+            meta: Meta::new(span),
+            ext: (),
+        },
+        vec![CallArg::Type(*ret.clone()), CallArg::Value(proof)],
+        span,
+    );
+    Expr::FnExpr {
+        occurrence: Default::default(),
+        sig: Signature::from_groups(groups),
+        ret_ty: Some(*ret),
+        body: Box::new(body),
+        meta: Meta::new(span),
+        caps: (),
+    }
+}
+
+/// Consume the replay artifact's explicit compiler-only dependencies before it
+/// enters persistent Prime. Ordinary lexical binders keep their own meaning.
+fn erase_replayed_comptime(
+    expr: &mut Expr<PrePrime>,
+    primitives: &crate::normalization::EvalPrimitiveEnv,
+    owner: &str,
+    ambient: &[String],
+) {
+    use crate::pass::visit_mut::TypecheckVisitMut;
+    struct Erase<'a> {
+        primitives: &'a crate::normalization::EvalPrimitiveEnv,
+        owner: &'a str,
+        types: Vec<String>,
+        values: Vec<String>,
+        signature: bool,
+    }
+    impl TypecheckVisitMut<PrePrime> for Erase<'_> {
+        fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
+            self.types.push(param.name.clone());
+        }
+        fn exit_type_binder(&mut self, _param: &mut TypeParam, _scope: Span) {
+            self.types.pop();
+        }
+        fn enter_value_binder(&mut self, name: &mut String, _span: Span, _scope: Span) {
+            self.values.push(name.clone());
+        }
+        fn exit_value_binder(&mut self, _name: &mut String, _span: Span, _scope: Span) {
+            self.values.pop();
+        }
+        fn visit_type(&mut self, ty: &mut Type<PrePrime>) {
+            if let Type::Path {
+                segments,
+                args,
+                meta,
+            } = ty
+                && args.is_empty()
+                && let [name] = segments.as_slice()
+                && !self.types.iter().any(|bound| bound == name.as_str())
+                && (if self.signature {
+                    crate::comptime::ComptimeBuiltin::from_public_name(name.as_str())
+                } else {
+                    self.primitives.resolve(self.owner, name.as_str())
+                })
+                .is_some_and(|builtin| builtin.is_type_name())
+            {
+                *ty = Type::Bottom { meta: meta.clone() };
+                return;
+            }
+            crate::pass::visit_mut::walk_type(self, ty);
+        }
+        fn visit_expr(&mut self, expr: &mut Expr<PrePrime>) {
+            if let Expr::Path { segments, meta, .. } = expr
+                && let [name] = segments.as_slice()
+                && !self.values.iter().any(|bound| bound == name.as_str())
+            {
+                let scheme =
+                    if let Some(constructor) = self.primitives.literal(self.owner, name.as_str()) {
+                        Some(constructor.signature::<PrePrime>(meta.span))
+                    } else {
+                        self.primitives
+                            .resolve(self.owner, name.as_str())
+                            .filter(|builtin| builtin.is_value_name())
+                            .and_then(|builtin| {
+                                crate::pass::typecheck_core::comptime_scheme::<PrePrime>(
+                                    builtin, meta.span,
+                                )
+                                .expect("validated primitive scheme")
+                            })
+                            .map(|scheme| scheme.ty.clone_type())
+                    };
+                if let Some(mut scheme) = scheme {
+                    self.signature = true;
+                    self.visit_type(&mut scheme);
+                    self.signature = false;
+                    *expr = erased_primitive_value(scheme, meta.span);
+                    return;
+                }
+            }
+            crate::pass::visit_mut::walk_expr(self, expr);
+        }
+    }
+    Erase {
+        primitives,
+        owner,
+        types: ambient.to_vec(),
+        values: Vec::new(),
+        signature: false,
+    }
+    .visit_expr(expr);
 }
 
 impl<'a> SubstituteVisitor<'a> {
@@ -1208,7 +1506,7 @@ impl<'a> SubstituteVisitor<'a> {
     fn numeric_value(&self, expr: &Expr<Lowered>) -> Option<&str> {
         self.semantic_occurrence(expr)
             .and_then(|id| self.elabs.literal_resolution_for(&self.module_path, id))
-            .and_then(|(_, _, value)| value.as_deref())
+            .and_then(|(_, value)| value.as_deref())
     }
 
     fn rewrite_literal(
@@ -1220,13 +1518,6 @@ impl<'a> SubstituteVisitor<'a> {
     ) -> Result<Expr<PrePrime>, Error> {
         let annotation = self.walk_literal_annotation(annotation, meta.span, occurrence)?;
         let meta = convert_meta(meta);
-        if type_is_unit(&annotation) {
-            return Ok(Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta,
-            });
-        }
         Ok(keep(annotation, meta))
     }
 
@@ -1447,14 +1738,74 @@ impl<'a> SubstituteVisitor<'a> {
     ) -> Result<Expr<PrePrime>, Error> {
         match elaboration {
             RecordedElaboration::Lowered(expr) => self.walk_expr(expr),
-            RecordedElaboration::UncheckedPrime(expr) => {
-                Ok(convert_expr::<UncheckedPrime, PrePrime>(expr))
+            RecordedElaboration::UncheckedPrime {
+                expression,
+                primitives,
+            } => {
+                let mut expression = convert_expr::<UncheckedPrime, PrePrime>(expression);
+                if matches!(
+                    self.comptime_lowering_mode,
+                    ComptimeLoweringMode::RuntimeErase
+                ) && let Some(primitives) = primitives
+                {
+                    erase_replayed_comptime(
+                        &mut expression,
+                        primitives,
+                        &self.module_path,
+                        &self.type_binders,
+                    );
+                }
+                Ok(expression)
             }
         }
     }
 }
 
 impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
+    fn rewrite_expr_comptime_literal(
+        &mut self,
+        e: &Expr<Lowered>,
+    ) -> Result<Expr<PrePrime>, Error> {
+        let Expr::ComptimeLiteral { proof, meta, .. } = e else {
+            unreachable!()
+        };
+        let plan = self
+            .elabs
+            .comptime_literal_for(
+                &self.module_path,
+                self.semantic_occurrence(e)
+                    .expect("checked literal has an occurrence"),
+            )
+            .expect("checked compile-time literal has a constructor plan");
+        let callee = match self.comptime_lowering_mode {
+            ComptimeLoweringMode::EvalPreserve => plan.binding.clone(),
+            ComptimeLoweringMode::RuntimeErase => "__absurd__".to_owned(),
+        };
+        let mut args = Vec::new();
+        if matches!(
+            self.comptime_lowering_mode,
+            ComptimeLoweringMode::RuntimeErase
+        ) {
+            let result = Type::synth_path(
+                vec![plan.constructor.result_builtin().public_name().to_owned()],
+                Vec::new(),
+                meta.span,
+            );
+            args.push(CallArg::Type(self.walk_type(&result)?));
+        }
+        args.push(CallArg::Value(self.walk_expr(proof)?));
+        Ok(Expr::synth_call(
+            Expr::Path {
+                occurrence: Default::default(),
+                segments: vec![PathSegment::new(callee, meta.span)],
+                meta: convert_meta(meta),
+                ext: (),
+            },
+            args,
+            meta.span,
+        ))
+    }
+
     fn completed_source_binding(&self, source: &Expr<Lowered>) -> Option<Expr<PrePrime>> {
         let name = self
             .source_bindings?
@@ -1504,10 +1855,22 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             .iter()
             .filter_map(|u| self.rewrite_prime_import(u))
             .collect();
-        if module
+        if (module
             .items
             .iter()
             .any(|item| matches!(item, Item::FnDef(d) if proof_param_name(d).is_some()))
+            || self
+                .elabs
+                .comptime_literals_for(&self.module_path)
+                .next()
+                .is_some()
+            || (matches!(
+                self.comptime_lowering_mode,
+                ComptimeLoweringMode::RuntimeErase
+            ) && module
+                .imports
+                .iter()
+                .any(|import| matches!(import.kind, ImportKind::Comptime))))
             && !imports
                 .iter()
                 .any(|u| matches!(u.kind, ImportKind::Intrinsics))
@@ -1688,6 +2051,22 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         let Expr::Path { segments, meta, .. } = e else {
             unreachable!()
         };
+        if matches!(
+            self.comptime_lowering_mode,
+            ComptimeLoweringMode::RuntimeErase
+        ) && let Some(name) = self
+            .semantic_occurrence(e)
+            .and_then(|id| self.elabs.primitive_value_for(&self.module_path, id))
+            && let Some(builtin) = crate::comptime::ComptimeBuiltin::from_public_name(name)
+            && builtin.is_value_name()
+        {
+            let scheme =
+                crate::pass::typecheck_core::comptime_scheme::<Lowered>(builtin, meta.span)?
+                    .expect("a resolved compile-time primitive has a function scheme")
+                    .ty;
+            let scheme = self.walk_type(scheme.as_type())?;
+            return Ok(erased_primitive_value(scheme, meta.span));
+        }
         let path = Expr::Path {
             occurrence: Default::default(),
             segments: segments.clone(),
@@ -1937,22 +2316,8 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
     ) -> Result<Option<Type<PrePrime>>, Error> {
         let recorded = occurrence
             .and_then(|id| self.elabs.literal_resolution_for(&self.module_path, id))
-            .map(|(ty, erases, _)| (ty.clone(), *erases));
-        match recorded {
-            Some((ty, erases))
-                if erases
-                    && matches!(
-                        self.comptime_lowering_mode,
-                        ComptimeLoweringMode::RuntimeErase
-                    ) =>
-            {
-                Ok(Some(Type::Unit {
-                    meta: Meta::new(ty.resolved.span()),
-                }))
-            }
-            Some((ty, _)) => Ok(Some(self.walk_recorded_type(&ty)?)),
-            None => Ok(None),
-        }
+            .map(|(ty, _)| ty.clone());
+        recorded.map(|ty| self.walk_recorded_type(&ty)).transpose()
     }
 
     fn visit_expr_str_lit(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
@@ -2071,9 +2436,6 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         {
             return Ok(match kind {
                 ComptimeEraseKind::Bottom => Type::Bottom {
-                    meta: crate::ast::convert_meta(meta),
-                },
-                ComptimeEraseKind::Unit => Type::Unit {
                     meta: crate::ast::convert_meta(meta),
                 },
             });
@@ -2606,6 +2968,7 @@ mod tests {
 
     fn has_reserved_value_binder<P: BinderInspectionPhase>(expr: &Expr<P>) -> bool {
         match expr {
+            Expr::ComptimeLiteral { ext, .. } => match *ext {},
             Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Let {
                 name, value, body, ..
@@ -3679,37 +4042,6 @@ mod tests {
         )
     }
 
-    fn comptime_role_types_from_env() -> Vec<(crate::ast::Role, String)> {
-        let parsed = parse("module x/main; import __comptime__;").expect("parse");
-        let (lowered_modules, _lowered_package_file) =
-            FullPipeline::lower_package(vec![(module_file_path("x/main"), parsed)], None)
-                .expect("lower_package");
-        let package = Package::build(Path::new(""), lowered_modules, None).expect("Package::build");
-        let module = &package.module("x/main").expect("module present").module;
-        let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
-            .expect("ModuleEnv::build");
-        env.annotation_candidates
-            .iter()
-            .map(|candidate| (candidate.role, candidate.visible_name.to_owned()))
-            .collect()
-    }
-
-    fn comptime_role_type_names_from_env() -> Vec<String> {
-        comptime_role_types_from_env()
-            .into_iter()
-            .map(|(_, name)| name)
-            .collect()
-    }
-
-    fn literal_for_role(role: crate::ast::Role) -> &'static str {
-        match role.shape() {
-            crate::ast::RoleShape::Int => "1",
-            crate::ast::RoleShape::Float => "1.0",
-            crate::ast::RoleShape::Str => "\"erased\"",
-            crate::ast::RoleShape::Bool => ".t",
-        }
-    }
-
     fn pair_values<P: Phase>(packet: &Expr<P>) -> (&Expr<P>, &Expr<P>) {
         let Expr::Call { callee, args, .. } = packet else {
             panic!("expected one synthesized product packet")
@@ -3756,13 +4088,6 @@ mod tests {
 
     fn assert_bottom_type(ty: &Type<Prime>) {
         assert!(matches!(ty, Type::Bottom { .. }), "expected !, got {ty:?}");
-    }
-
-    fn assert_unit_or_bottom_type(ty: &Type<Prime>) {
-        assert!(
-            matches!(ty, Type::Unit { .. } | Type::Bottom { .. }),
-            "expected () or !, got {ty:?}"
-        );
     }
 
     fn assert_path_type<P: crate::ast::Phase + std::fmt::Debug>(ty: &Type<P>, name: &str) {
@@ -4224,7 +4549,7 @@ mod tests {
                 .elaborations
                 .literal_resolution_for("main", literal.site().id);
             assert_eq!(annotation.is_some(), succeeds, "{name} literal publication");
-            if let Some((annotation, _, _)) = annotation {
+            if let Some((annotation, _)) = annotation {
                 assert!(!annotation.identity_canonical);
                 assert_path_type(&annotation.resolved, &aliases[0].alias);
             }
@@ -4273,7 +4598,6 @@ mod tests {
                 Vec::new(),
                 span,
             )),
-            false,
             None,
         );
         let mut visitor = SubstituteVisitor {
@@ -4306,49 +4630,67 @@ mod tests {
         assert_path_type(&annotation, "I64");
     }
 
+    #[cfg(feature = "prime")]
     #[test]
-    fn comptime_role_types_erase_to_unit_at_substitution() {
-        let unit_erased_types = comptime_role_type_names_from_env();
-        assert!(
-            !unit_erased_types.is_empty(),
-            "expected at least one role-bearing comptime type"
-        );
+    fn comptime_literal_primitive_values_preserve_complete_schemes_in_prime() {
+        let mut source = "module main; import __comptime__; import __intrinsics__; ".to_owned();
+        for (index, name) in crate::comptime::PUBLIC_COMPTIME_NAMES.iter().enumerate() {
+            let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name).unwrap();
+            if builtin.is_value_name() {
+                source.push_str(&format!(
+                    " fn value{index}() -> . {{ let primitive = {name}; () }}"
+                ));
+            }
+        }
+        source.push_str(" fn identity[A](value: A) -> A { value } fn transported(packet: __Comptime__ & .) -> __Checked_term__ { let primitive = identity(__term_unit__); primitive(__fst__(packet)) }");
+        let module = substitute_one("main", &source);
+        let emitted = crate::backends::kio_prime::emit_module_for_test(&module);
+        assert!(!emitted.contains("__comptime__"), "{emitted}");
+        let (modules, _) = crate::prime::pipeline::PrimePipeline::lower_package(
+            vec![(
+                module_file_path("main"),
+                parse(&emitted).expect("ordinary shared syntax"),
+            )],
+            None,
+        )
+        .expect("core syntax");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        package.resolve_imports().expect("imports");
+        crate::prime::pipeline::PrimePipeline::typecheck(&package)
+            .expect("independent primitive wrapper types");
+    }
 
+    #[test]
+    fn comptime_literal_types_erase_to_bottom_at_substitution() {
         let mut src = "module x/main; import __comptime__;".to_owned();
-        for (idx, name) in unit_erased_types.iter().enumerate() {
+        for (idx, name) in ["Comptime_bool", "Comptime_str", "__Diagnostic_text__"]
+            .iter()
+            .enumerate()
+        {
             src.push_str(&format!(
-                " fn keep_unit{idx}(value: {name}) -> {name} {{ value }}"
+                " fn keep{idx}(value: {name}) -> {name} {{ value }}"
             ));
         }
         let module = substitute_one("x/main", &src);
-        for (idx, name) in unit_erased_types.iter().enumerate() {
-            let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name)
-                .expect("role-bearing comptime type should be a builtin");
-            assert_eq!(
-                builtin.runtime_erasure(),
-                Some(crate::comptime::ComptimeRuntimeErasure::Unit),
-                "`{name}` has a role, so it must erase to ()"
-            );
-            let d = prime_fn(&module, &format!("keep_unit{idx}"));
-            let params = value_param_tys(d);
-            assert_eq!(params.len(), 1);
-            assert_unit_type(params[0]);
-            assert_unit_type(&d.ret);
+        for idx in 0..3 {
+            let d = prime_fn(&module, &format!("keep{idx}"));
+            assert!(matches!(value_param_tys(d)[0], Type::Bottom { .. }));
+            assert!(matches!(&d.ret, Type::Bottom { .. }));
         }
     }
 
     #[cfg(feature = "prime")]
     #[test]
     fn literal_aliases_follow_comptime_erasure_and_reparse() {
-        let source = "module main; import __comptime__; host type Int role(i64); \
+        let source = "module main; import __comptime__; import __intrinsics__; host type Int role(i64); \
             type Identity[A] = A; type Flag = Identity[Comptime_bool]; \
             type Text = Comptime_str; \
-            fn value() -> . { let flag = .t[Flag]; let text = \"hello\"[Text]; let number = 42[Int]; () }";
+            fn value(packet: __Comptime__ & .) -> . { let .(flag: Flag) = __.t__(__fst__(packet)); let .(text: Text) = __\"hello\"__(__fst__(packet)); let number = 42[Int]; () }";
         let prime = substitute_one("main", source);
         let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
         assert!(emitted.contains("host type Int role(i64)"), "{emitted}");
         assert!(
-            emitted.contains("type Flag = Identity[.];") && emitted.contains("type Text = .;"),
+            emitted.contains("type Flag = Identity[!];") && emitted.contains("type Text = !;"),
             "{emitted}"
         );
         assert!(!emitted.contains("__comptime__"), "{emitted}");
@@ -4489,7 +4831,7 @@ mod tests {
         };
         let params = value_param_tys(keep);
         assert_eq!(params.len(), 2);
-        assert_unit_type(params[0]);
+        assert_bottom_type(params[0]);
         assert_path_type(params[1], &bound.name);
         assert_path_type(&keep.ret, &bound.name);
 
@@ -4510,7 +4852,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(params.len(), 2);
-        assert_unit_type(params[0]);
+        assert_bottom_type(params[0]);
         let crate::ast::HostFnParam::Type(bound) = &host.params[1] else {
             panic!("ordered host function retains its type binder");
         };
@@ -4519,42 +4861,30 @@ mod tests {
     }
 
     #[test]
-    fn comptime_role_literals_erase_to_unit_at_substitution() {
-        let unit_erased_types = comptime_role_types_from_env();
-        assert!(
-            !unit_erased_types.is_empty(),
-            "expected at least one role-bearing comptime type"
-        );
-
-        let mut src = "module x/main; import __comptime__;".to_owned();
-        for (idx, (role, name)) in unit_erased_types.iter().enumerate() {
-            src.push_str(&format!(
-                " fn literal_unit{idx}() -> {name} {{ {} }}",
-                literal_for_role(*role)
-            ));
-        }
-        let module = substitute_one("x/main", &src);
-        for (idx, (_, name)) in unit_erased_types.iter().enumerate() {
-            let keep = prime_fn(&module, &format!("literal_unit{idx}"));
-            assert_unit_type(&keep.ret);
-            assert!(
-                matches!(keep.body, Expr::Unit { .. }),
-                "`{name}` literal should erase to `()`, got {body:?}",
-                body = keep.body
-            );
+    fn comptime_literal_carriers_have_no_runtime_roles() {
+        let parsed = parse("module main; import __comptime__;").expect("parse");
+        let (modules, _) =
+            FullPipeline::lower_package(vec![(module_file_path("main"), parsed)], None)
+                .expect("lower");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        let module = &package.module("main").unwrap().module;
+        let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
+            .expect("env");
+        assert!(env.annotation_candidates.is_empty());
+        for name in ["Comptime_bool", "Comptime_str", "__Diagnostic_text__"] {
+            let ty = Type::synth_path(vec![name.to_owned()], Vec::new(), Span::new(0, 0));
+            assert!(env.role_type_identity(&ty, false).is_none());
         }
     }
 
     #[test]
     fn comptime_non_role_opaque_types_erase_to_runtime_only_types_at_substitution() {
-        let role_names = comptime_role_type_names_from_env();
         let erased_types = crate::comptime::PUBLIC_COMPTIME_NAMES
             .iter()
             .filter_map(|name| {
                 let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name)
                     .expect("public comptime name should map to builtin");
                 (builtin.is_type_name()
-                    && !role_names.iter().any(|role_name| role_name == name)
                     && builtin != crate::comptime::ComptimeBuiltin::ComptimeProof)
                     .then_some((builtin, *name))
             })
@@ -4579,8 +4909,8 @@ mod tests {
             let keep = prime_fn(&module, &format!("keep_erased{idx}"));
             let params = value_param_tys(keep);
             assert_eq!(params.len(), 1);
-            assert_unit_or_bottom_type(params[0]);
-            assert_unit_or_bottom_type(&keep.ret);
+            assert_bottom_type(params[0]);
+            assert_bottom_type(&keep.ret);
         }
     }
 

@@ -181,12 +181,19 @@ enum PublicationCommand<T> {
         resolved: T,
         binders: super::TypeBinderScope,
     },
+    PrimitiveValue {
+        site: crate::ast::ExpressionSite,
+        name: String,
+    },
+    ComptimeLiteral {
+        literal_site: crate::ast::ExpressionSite,
+        plan: super::ComptimeLiteralPlan,
+    },
     LiteralResolution {
         literal_site: crate::ast::ExpressionSite,
         // Literal admission has already closed this lexical artifact annotation;
         // owner closure must not canonicalize its paths back into solver identities.
         resolved: InternedType,
-        runtime_erases: bool,
         numeric_value: Option<String>,
     },
     PrimeRequalificationBindings {
@@ -341,15 +348,19 @@ impl<T> PublicationCommand<T> {
                 resolved: map(resolved),
                 binders,
             },
+            Self::PrimitiveValue { site, name } => {
+                PublicationCommand::PrimitiveValue { site, name }
+            }
+            Self::ComptimeLiteral { literal_site, plan } => {
+                PublicationCommand::ComptimeLiteral { literal_site, plan }
+            }
             Self::LiteralResolution {
                 literal_site,
                 resolved,
-                runtime_erases,
                 numeric_value,
             } => PublicationCommand::LiteralResolution {
                 literal_site,
                 resolved,
-                runtime_erases,
                 numeric_value,
             },
             Self::PrimeRequalificationBindings { imports, aliases } => {
@@ -1044,17 +1055,31 @@ impl PublicationBuilder {
         });
     }
 
+    pub(crate) fn record_primitive_value(
+        &mut self,
+        site: crate::ast::ExpressionSite,
+        name: String,
+    ) {
+        self.push_command(PublicationCommand::PrimitiveValue { site, name });
+    }
+
+    pub(crate) fn record_comptime_literal(
+        &mut self,
+        literal_site: crate::ast::ExpressionSite,
+        plan: super::ComptimeLiteralPlan,
+    ) {
+        self.push_command(PublicationCommand::ComptimeLiteral { literal_site, plan });
+    }
+
     pub(crate) fn record_literal_resolution(
         &mut self,
         literal_site: crate::ast::ExpressionSite,
         resolved: InternedType,
-        runtime_erases: bool,
         numeric_value: Option<String>,
     ) {
         self.push_command(PublicationCommand::LiteralResolution {
             literal_site,
             resolved,
-            runtime_erases,
             numeric_value,
         });
     }
@@ -1839,17 +1864,25 @@ impl ClosedPublicationDelta {
                     resolved.into_interned_type().clone_type(),
                     binders,
                 ),
+                PublicationCommand::PrimitiveValue { site, name } => {
+                    elaborations
+                        .primitive_values
+                        .insert((module_path.to_owned(), site.id), name);
+                }
+                PublicationCommand::ComptimeLiteral { literal_site, plan } => {
+                    elaborations
+                        .comptime_literals
+                        .insert((module_path.to_owned(), literal_site.id), plan);
+                }
                 PublicationCommand::LiteralResolution {
                     literal_site,
                     resolved,
-                    runtime_erases,
                     numeric_value,
                 } => {
                     elaborations.record_literal_resolution(
                         module_path,
                         literal_site.id,
                         resolved,
-                        runtime_erases,
                         numeric_value,
                     );
                 }

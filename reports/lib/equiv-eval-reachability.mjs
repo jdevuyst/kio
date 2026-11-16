@@ -196,6 +196,10 @@ function sourceInfo(source) {
     if (!/^#\[cfg\(.*\btest\b/.test(line)) continue;
     if (line === '#[cfg(any(feature = "repl-core", test))]') { replCfg++; continue; }
     if (line === '#[cfg(any(all(feature = "surface", feature = "cli"), test))]') continue;
+    const any = /^#\[cfg\(any\((.*)\)\)\]$/.exec(line);
+    const alternatives = any?.[1].split(",").map((atom) => atom.trim());
+    if (alternatives?.includes("test") && alternatives.some((atom) => /^feature\s*=/.test(atom)) &&
+        alternatives.every((atom) => atom === "test" || /^feature\s*=\s*"[^",]*"$/.test(atom))) continue;
     const all = /^#\[cfg\(all\((.*)\)\)\]$/.exec(line);
     const atoms = all?.[1].split(",").map((atom) => atom.trim());
     const testOnly = line === "#[cfg(test)]" || atoms?.includes("test") && atoms.every((atom) =>
@@ -402,7 +406,14 @@ function selfTest([productionSource]) {
   const cfgSource = ["fn live() {}", '#[cfg(all(feature = "surface", test))]', "thread_local! {", "  static ONE: usize = 1;", "  static TWO: usize = 2;", "}", "fn after_macro() {}", '#[cfg(all(test, target_os = "linux"))]', "#[derive(Clone, Copy)]", "struct Helper {", "  field: usize,", "}", "fn after_struct() {}", "#[cfg(test)]", "mod tests {", "  fn ignored() {}", "}", ""].join("\n");
   const cfgInfo = sourceInfo(cfgSource);
   need([1,7,13].every((line) => !excluded(line, cfgInfo)) && [2,3,4,5,6,8,9,10,11,12].every((line) => excluded(line, cfgInfo)), "test-only cfg conjunction exclusion failed");
-  need(fails(() => sourceInfo(cfgSource.replace('all(feature = "surface", test)', 'any(feature = "surface", test)'))), "production-capable cfg(test) conjunction was excluded");
+  for (const cfg of ['any(feature = "surface", test)', 'any(test, feature = "surface")']) {
+    const productionInfo = sourceInfo(cfgSource.replace('all(feature = "surface", test)', cfg));
+    need(!excluded(3, productionInfo) && !excluded(4, productionInfo), "production-capable cfg was excluded");
+    const productionSource = mixedSource.replace('any(all(feature = "surface", feature = "cli"), test)', cfg);
+    const production = analyzeValues(mixedLcov, mixedCoverage, productionSource, aliases);
+    need(production.zeroExecutedFunctions.some((fn) => fn.name === "surface_cli"), "production cfg function vanished from reachability");
+  }
+  need(fails(() => sourceInfo(cfgSource.replace('all(feature = "surface", test)', 'not(test)'))), "unknown test cfg was silently accepted");
   const cfgFieldSource = ["fn live() {}", "struct Mixed {", "  #[cfg(test)]", "  test_only: usize,", "  live: usize,", "}", "#[cfg(test)]", "mod tests {", "}", ""].join("\n");
   const cfgFieldInfo = sourceInfo(cfgFieldSource);
   need(excluded(3, cfgFieldInfo) && excluded(4, cfgFieldInfo) && !excluded(5, cfgFieldInfo) && !excluded(6, cfgFieldInfo), "cfg(test) field exclusion escaped its comma terminator");

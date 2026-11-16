@@ -150,6 +150,7 @@ impl Classifier {
 
     fn expr(&mut self, expr: &Expr) {
         match expr {
+            Expr::ComptimeLiteral { proof, .. } => self.expr(proof),
             Expr::BlockCall {
                 id,
                 head,

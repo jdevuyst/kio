@@ -782,6 +782,28 @@ fn dump_with_ast_overrides_and_docs(
             }
         }
 
+        if i > 0
+            && raw[i - 1].kind == LexTokenKind::Slot2
+            && raw[i - 1].span.end == raw[i].span.start
+            && raw[i].kind.is_sym(".")
+            && let Some(next) = raw.get(i + 1)
+            && raw[i].span.end == next.span.start
+            && matches!(&next.kind, LexTokenKind::Ident(word) if word == "t__" || word == "f__")
+        {
+            out.push(ClassifiedToken {
+                span: Span::new(raw[i].span.start, next.span.start + 1),
+                kind: TokenKind::LiteralBool,
+                in_documentation: false,
+            });
+            out.push(ClassifiedToken {
+                span: Span::new(next.span.start + 1, next.span.end),
+                kind: TokenKind::Slot,
+                in_documentation: false,
+            });
+            i += 2;
+            continue;
+        }
+
         if let Some(fused) = try_fuse_dot_bool(raw, i) {
             out.push(fused);
             i += 2;
@@ -1841,6 +1863,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             }
         }
         Unit { .. } => {}
+        ComptimeLiteral { proof, .. } => walk_expr(proof, raw, overrides),
         StrLit { annotation, .. }
         | IntLit { annotation, .. }
         | FloatLit { annotation, .. }

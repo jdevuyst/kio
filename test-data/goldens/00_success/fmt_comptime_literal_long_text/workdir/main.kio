@@ -1,0 +1,9 @@
+module main;
+
+fn keep(ct: Token) {
+  __"A long compile-time message with Unicode λ and an escaped newline\nremains one complete constructor literal even after formatting."__(
+  // proof comment
+  , ct
+  // closing comment
+  )
+}

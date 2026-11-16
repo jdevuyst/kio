@@ -64,6 +64,13 @@ replaced by its completed checked term exactly as an ordinary macro is;
 the resulting tree carries no marker, transcript, certificate, or staging
 privilege and is validated as standalone Kio'.
 
+All compiler-owned value types, including compile-time Boolean and text types,
+have bottom as their runtime representation. A retained proof-taking operation
+lowers to ordinary bottom elimination of its proof argument. No compile-time
+literal constructor, scalar carrier exception or primitive environment is
+serialized into runtime Kio'. This applies to retained functions as well as
+macro expansions; their validity does not depend on being unreachable.
+
 This document is a strict subset of [`language.md`](language.md); read that one for the full surface.
 
 ## What's in Kio'

@@ -203,6 +203,8 @@ impl EvalSourceOccurrence {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EvalPrimitiveEnv {
     modules: BTreeMap<String, BTreeMap<String, ComptimeBuiltin>>,
+    literal_constructors:
+        BTreeMap<String, BTreeMap<String, crate::comptime::ComptimeLiteralConstructor>>,
 }
 
 impl EvalPrimitiveEnv {
@@ -224,7 +226,46 @@ impl EvalPrimitiveEnv {
             .insert(builtin.public_name().to_owned(), builtin);
     }
 
-    fn resolve(&self, module_path: &str, name: &str) -> Option<ComptimeBuiltin> {
+    #[cfg(any(test, feature = "surface"))]
+    pub(crate) fn grant_literal(
+        &mut self,
+        owner: &str,
+        name: &str,
+        constructor: crate::comptime::ComptimeLiteralConstructor,
+    ) {
+        let bindings = self
+            .literal_constructors
+            .entry(owner.to_owned())
+            .or_default();
+        if let Some(previous) = bindings.insert(name.to_owned(), constructor.clone()) {
+            assert_eq!(
+                previous, constructor,
+                "one evaluator literal binding must have one meaning"
+            );
+        }
+    }
+
+    pub(crate) fn literal(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> Option<&crate::comptime::ComptimeLiteralConstructor> {
+        self.literal_constructors.get(owner)?.get(name)
+    }
+
+    pub(crate) fn literal_bindings(
+        &self,
+    ) -> impl Iterator<Item = (&str, &str, &crate::comptime::ComptimeLiteralConstructor)> {
+        self.literal_constructors
+            .iter()
+            .flat_map(|(owner, bindings)| {
+                bindings
+                    .iter()
+                    .map(move |(name, constructor)| (owner.as_str(), name.as_str(), constructor))
+            })
+    }
+
+    pub(crate) fn resolve(&self, module_path: &str, name: &str) -> Option<ComptimeBuiltin> {
         self.modules.get(module_path)?.get(name).copied()
     }
 
@@ -2699,6 +2740,7 @@ enum DataConstructorIdentity {
     #[cfg(feature = "surface")]
     FillContext(crate::pass::typecheck_core::apply::fills::FillContext),
     IncompleteObservation(ComptimeBuiltin),
+    LiteralConstructor(crate::comptime::ComptimeLiteralConstructor),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2741,6 +2783,7 @@ impl PartialEq for DataConstructorIdentity {
             }
             #[cfg(feature = "surface")]
             (Self::FillContext(left), Self::FillContext(right)) => left.same_snapshot(right),
+            (Self::LiteralConstructor(left), Self::LiteralConstructor(right)) => left == right,
             (Self::IncompleteObservation(left), Self::IncompleteObservation(right)) => {
                 left == right
             }
@@ -2765,6 +2808,14 @@ impl DataValue {
             identity: DataConstructorIdentity::Core(ctor.clone()),
             ctor,
             args: args.into(),
+        }
+    }
+
+    fn literal_constructor(constructor: crate::comptime::ComptimeLiteralConstructor) -> Self {
+        Self {
+            ctor: "<compile-time-literal>".to_owned(),
+            identity: DataConstructorIdentity::LiteralConstructor(constructor),
+            args: Vec::new().into(),
         }
     }
 
@@ -3462,7 +3513,6 @@ enum EvalExpr {
     IntAtom(String, Option<String>),
     FloatAtom(String, Option<String>),
     StrAtom(String),
-    DiagnosticText(String),
     Primitive(ComptimeBuiltin),
     StructuralRecurPrimitive(EvalRef<DataValue>),
     Const(Value),
@@ -4366,16 +4416,6 @@ fn compile_eval_expr(
             };
             EvalExpr::FloatAtom(digits, literal_annotation_name(annotation.as_ref()))
         }
-        Expr::StrLit {
-            value, annotation, ..
-        } if literal_is_primitive_type(
-            annotation.as_ref(),
-            ComptimeBuiltin::DiagnosticText,
-            state,
-        ) =>
-        {
-            EvalExpr::DiagnosticText(value.clone())
-        }
         Expr::StrLit { value, .. } => EvalExpr::StrAtom(value.clone()),
         Expr::Path { segments, .. } => compile_eval_path(segments, state)?,
         Expr::Let {
@@ -4432,9 +4472,10 @@ fn compile_eval_expr(
                 }
             }
         }
-        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
-            match *ext {}
-        }
+        Expr::RecOrder { ext, .. }
+        | Expr::RecQuote { ext, .. }
+        | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
@@ -4494,27 +4535,6 @@ fn compile_staged_eval_call(
         });
     }
     Some(callee)
-}
-
-fn compile_eval_expr_against(
-    expr: &EvalAstExpr,
-    expected: Option<&EvalAstType>,
-    state: &mut EvalCompileState<'_, '_>,
-) -> Option<EvalRef<EvalExpr>> {
-    if literal_is_primitive_type(expected, ComptimeBuiltin::DiagnosticText, state) {
-        return compile_diagnostic_text_expr(expr, state);
-    }
-    compile_eval_expr(expr, state)
-}
-
-fn compile_diagnostic_text_expr(
-    expr: &EvalAstExpr,
-    state: &mut EvalCompileState<'_, '_>,
-) -> Option<EvalRef<EvalExpr>> {
-    match expr {
-        Expr::StrLit { value, .. } => Some(EvalRef::new(EvalExpr::DiagnosticText(value.clone()))),
-        _ => compile_eval_expr(expr, state),
-    }
 }
 
 fn compile_direct_known_function_call(
@@ -4643,7 +4663,15 @@ fn compile_eval_path(
                     }
                     return Some(EvalExpr::Primitive(builtin));
                 }
-                ResolvedUnqualifiedEvalValue::Atom => {}
+                ResolvedUnqualifiedEvalValue::Atom => {
+                    if let Some(constructor) =
+                        state.ctx.primitive_env.literal(&state.module_path, name)
+                    {
+                        return Some(EvalExpr::Const(Value::Data(EvalRef::new(
+                            DataValue::literal_constructor(constructor.clone()),
+                        ))));
+                    }
+                }
             }
             Some(EvalExpr::Atom(name.to_string()))
         }
@@ -4860,9 +4888,10 @@ fn collect_capture_slots(
             collect_capture_slots(body, outer_locals, bound, captures);
             bound.truncate(old_len);
         }
-        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
-            match *ext {}
-        }
+        Expr::RecOrder { ext, .. }
+        | Expr::RecQuote { ext, .. }
+        | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::Unit { .. }
         | Expr::BoolLit { .. }
         | Expr::IntLit { .. }
@@ -5391,6 +5420,14 @@ fn compile_direct_path_call(
                     },
                 ));
             }
+            if state
+                .ctx
+                .primitive_env
+                .literal(&state.module_path, name)
+                .is_some()
+            {
+                return None;
+            }
             compile_direct_atom_call(name.to_string(), args, call_span, state).map(Some)
         }
         [alias, name] => {
@@ -5580,7 +5617,6 @@ fn is_obvious_eval_value(expr: &EvalExpr) -> bool {
             | EvalExpr::IntAtom(_, _)
             | EvalExpr::FloatAtom(_, _)
             | EvalExpr::StrAtom(_)
-            | EvalExpr::DiagnosticText(_)
             | EvalExpr::Primitive(_)
             | EvalExpr::StructuralRecurPrimitive(_)
             // Compiler-produced reflected constants are inert type snapshots.
@@ -5696,7 +5732,6 @@ fn inline_small_eval_expr(
             Some(EvalExpr::FloatAtom(digits.clone(), annotation.clone()))
         }
         EvalExpr::StrAtom(value) => Some(EvalExpr::StrAtom(value.clone())),
-        EvalExpr::DiagnosticText(value) => Some(EvalExpr::DiagnosticText(value.clone())),
         EvalExpr::Primitive(builtin) => Some(EvalExpr::Primitive(*builtin)),
         EvalExpr::StructuralRecurPrimitive(primitive) => {
             Some(EvalExpr::StructuralRecurPrimitive(primitive.clone()))
@@ -6240,24 +6275,18 @@ fn compile_direct_comptime_operands(
             Some(EvalExpr::CallPrimitive {
                 builtin: ComptimeBuiltin::DiagnosticConcat,
                 args: vec![
-                    compile_diagnostic_text_expr(left, state)?,
-                    compile_diagnostic_text_expr(right, state)?,
+                    compile_eval_expr(left, state)?,
+                    compile_eval_expr(right, state)?,
                 ],
             })
         }
         "__macro_error__" => Some(EvalExpr::CallPrimitive {
             builtin: ComptimeBuiltin::MacroError,
-            args: vec![compile_diagnostic_text_expr(
-                trailing_value_arg1(args)?,
-                state,
-            )?],
+            args: vec![compile_eval_expr(trailing_value_arg1(args)?, state)?],
         }),
         "__type_error__" => Some(EvalExpr::CallPrimitive {
             builtin: ComptimeBuiltin::TypeError,
-            args: vec![compile_diagnostic_text_expr(
-                trailing_value_arg1(args)?,
-                state,
-            )?],
+            args: vec![compile_eval_expr(trailing_value_arg1(args)?, state)?],
         }),
         "__term_type__" => Some(EvalExpr::ReflTermType {
             term: compile_eval_expr(trailing_value_arg1(args)?, state)?,
@@ -6455,10 +6484,9 @@ fn compile_value_arg_exprs_for_fn_def(
                 };
                 out.push(EvalRef::new(compile_type_template(ty, state)?.expression()));
             }
-            Some(SignatureParam::Value(param)) => {
+            Some(SignatureParam::Value(_)) => {
                 if let CallArg::Value(v) = arg {
-                    let expected = param.ty.as_ref().map(convert_type::<EvalPhase, EvalPhase>);
-                    out.push(compile_eval_expr_against(v, expected.as_ref(), state)?);
+                    out.push(compile_eval_expr(v, state)?);
                 }
             }
             None => {
@@ -6748,7 +6776,6 @@ fn is_memo_candidate_expr_inner(expr: &EvalExpr, budget: &mut usize) -> bool {
         | EvalExpr::IntAtom(_, _)
         | EvalExpr::FloatAtom(_, _)
         | EvalExpr::StrAtom(_)
-        | EvalExpr::DiagnosticText(_)
         | EvalExpr::Primitive(_)
         | EvalExpr::StructuralRecurPrimitive(_)
         | EvalExpr::NewtypeMember(_)
@@ -6771,7 +6798,6 @@ fn is_simple_handler_expr_inner(expr: &EvalExpr, budget: &mut usize) -> bool {
         | EvalExpr::IntAtom(_, _)
         | EvalExpr::FloatAtom(_, _)
         | EvalExpr::StrAtom(_)
-        | EvalExpr::DiagnosticText(_)
         | EvalExpr::Primitive(_)
         | EvalExpr::StructuralRecurPrimitive(_)
         | EvalExpr::NewtypeMember(_)
@@ -6805,7 +6831,6 @@ fn eval_simple_handler_expr(
             Some(Value::FloatAtom(digits.clone(), annotation.clone()))
         }
         EvalExpr::StrAtom(value) => Some(Value::StrAtom(value.clone())),
-        EvalExpr::DiagnosticText(value) => Some(Value::DiagnosticText(value.clone())),
         EvalExpr::Primitive(builtin) => Some(Value::Primitive(*builtin)),
         EvalExpr::StructuralRecurPrimitive(primitive) => Some(Value::Data(primitive.clone())),
         EvalExpr::Const(value) => Some(value.clone()),
@@ -7451,7 +7476,7 @@ fn erases_type_stage(value: &Value) -> bool {
         ),
         Value::Stuck(callee, args) if args.len() == 1 => {
             matches!(callee.as_ref(), Value::Primitive(builtin)
-                if builtin.is_fold() || *builtin == ComptimeBuiltin::StructuralRecur)
+                if builtin.is_fold() || matches!(builtin, ComptimeBuiltin::StructuralRecur | ComptimeBuiltin::ComptimeIfThenElse))
         }
         _ => false,
     }
@@ -8509,7 +8534,8 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
         | DiagnosticConcat
         | MacroError
         | TypeError
-        | StructuralRecur => ProjectedHelperClass::ContextInsensitive,
+        | StructuralRecur
+        | ComptimeIfThenElse => ProjectedHelperClass::ContextInsensitive,
         TypeHostConverters | TypeEqual | TypeDisplay | TypeShortName | TermHostConvert => {
             ProjectedHelperClass::GoalFreeOnly
         }
@@ -10073,23 +10099,6 @@ fn literal_annotation_role(
     })
 }
 
-fn literal_is_primitive_type(
-    typ: Option<&EvalAstType>,
-    builtin: ComptimeBuiltin,
-    state: &EvalCompileState<'_, '_>,
-) -> bool {
-    matches!(
-        typ,
-        Some(Type::Path { segments, args, .. })
-            if segments.len() == 1
-                && args.is_empty()
-                && state
-                    .ctx
-                    .primitive_env
-                    .resolve(&state.module_path, segments[0].as_str()) == Some(builtin)
-    )
-}
-
 // =========================================================================
 // NF equality (alpha + eta)
 // =========================================================================
@@ -11621,6 +11630,7 @@ mod tests {
         DirectDiagnostic,
         DirectTerm,
         StructuralRecur,
+        Conditional,
         GenericOnly,
     }
 
@@ -11674,6 +11684,7 @@ mod tests {
             | ComptimeBuiltin::IntrinsicAnd
             | ComptimeBuiltin::IntrinsicOr => ComptimeEvalSurface::DirectTerm,
             ComptimeBuiltin::StructuralRecur => ComptimeEvalSurface::StructuralRecur,
+            ComptimeBuiltin::ComptimeIfThenElse => ComptimeEvalSurface::Conditional,
             ComptimeBuiltin::TypeIsHost
             | ComptimeBuiltin::TypeHostConverters
             | ComptimeBuiltin::TypeArrow
@@ -12112,9 +12123,9 @@ mod tests {
         call_args: Vec<CallArg<EvalPhase>>,
         env: &Env,
         _elaborations: &Elaborations,
+        mut primitive_env: EvalPrimitiveEnv,
     ) -> (Value, EvalMetricsSnapshot) {
         let metrics = Arc::new(EvalMetrics::default());
-        let mut primitive_env = EvalPrimitiveEnv::default();
         primitive_env.grant("", builtin);
         let ctx = EvalCtx::new()
             .with_primitive_env(primitive_env)
@@ -12176,7 +12187,13 @@ mod tests {
                 CallArg::Value(path_expr(&name))
             })
             .collect();
-        eval_direct_comptime_call_args(builtin, call_args, &env, elaborations)
+        eval_direct_comptime_call_args(
+            builtin,
+            call_args,
+            &env,
+            elaborations,
+            EvalPrimitiveEnv::default(),
+        )
     }
 
     fn eval_direct_diagnostic_builtin(
@@ -12184,21 +12201,28 @@ mod tests {
         args: &[Value],
         elaborations: &Elaborations,
     ) -> (Value, EvalMetricsSnapshot) {
+        let mut primitives = EvalPrimitiveEnv::default();
         let call_args = args
             .iter()
-            .map(|value| {
+            .enumerate()
+            .map(|(index, value)| {
                 let Value::DiagnosticText(value) = value else {
                     panic!("valid direct diagnostic fixture must be diagnostic text")
                 };
-                CallArg::Value(Expr::StrLit {
-                    occurrence: Default::default(),
-                    value: value.clone(),
-                    annotation: None,
-                    meta: zero_meta(),
-                })
+                let binding = format!("literal_message{index}");
+                primitives.grant_literal(
+                    "",
+                    &binding,
+                    crate::comptime::ComptimeLiteralConstructor::DiagnosticText(value.clone()),
+                );
+                CallArg::Value(Expr::synth_call(
+                    path_expr(&binding),
+                    vec![CallArg::Value(path_expr("fixture_proof"))],
+                    zero_span(),
+                ))
             })
             .collect();
-        eval_direct_comptime_call_args(builtin, call_args, &Env::new(), elaborations)
+        eval_direct_comptime_call_args(builtin, call_args, &Env::new(), elaborations, primitives)
     }
 
     fn apply_comptime_builtin(
@@ -20377,17 +20401,6 @@ mod tests {
             Some("other.I32".to_owned()),
             "an artifact annotation follows its lexical module import"
         );
-
-        assert!(literal_is_primitive_type(
-            Some(&type_path("__Diagnostic_text__")),
-            ComptimeBuiltin::DiagnosticText,
-            &state,
-        ));
-        assert!(!literal_is_primitive_type(
-            Some(&type_path("u8")),
-            ComptimeBuiltin::DiagnosticText,
-            &state,
-        ));
     }
 
     #[test]
@@ -20536,9 +20549,24 @@ mod tests {
         assert_eq!(snapshot.exact_call_memo_misses, 1, "{snapshot:?}");
     }
 
+    fn diagnostic_literal_ctx() -> EvalCtx<'static> {
+        let mut primitives = EvalPrimitiveEnv::default();
+        for builtin in [ComptimeBuiltin::MacroError, ComptimeBuiltin::TypeError] {
+            primitives.grant("", builtin);
+        }
+        for (name, payload) in [("message_boom", "boom"), ("message_nope", "nope")] {
+            primitives.grant_literal(
+                "",
+                name,
+                crate::comptime::ComptimeLiteralConstructor::DiagnosticText(payload.to_owned()),
+            );
+        }
+        EvalCtx::new().with_primitive_env(primitives)
+    }
+
     #[test]
     fn macro_and_type_error_reduce_to_diagnostic_error_values() {
-        let ctx = test_primitive_ctx(&[ComptimeBuiltin::MacroError, ComptimeBuiltin::TypeError]);
+        let ctx = diagnostic_literal_ctx();
         let eval_body = |body: &str| {
             let m = parse_module(&format!(
                 "module x; import __intrinsics__; import __comptime__; equiv probe {{ {body}; () }}"
@@ -20551,10 +20579,7 @@ mod tests {
             eval(equiv_terms(&m)[0], &env, &ctx)
         };
 
-        // A bare string message coerces to diagnostic text and raises the
-        // error value — without the coercion / arm it stays a StrAtom and
-        // the builtin sticks.
-        let macro_error_value = eval_body("__macro_error__(ct, \"boom\")");
+        let macro_error_value = eval_body("__macro_error__(ct, message_boom(ct))");
         let Value::CheckedTerm(term) = &macro_error_value else {
             panic!("__macro_error__ must raise a checked error value, got {macro_error_value:?}");
         };
@@ -20563,7 +20588,7 @@ mod tests {
             Some((CheckedTermErrorKind::Macro, "boom"))
         );
 
-        let type_err = eval_body("__type_error__(ct, \"nope\")");
+        let type_err = eval_body("__type_error__(ct, message_nope(ct))");
         let Value::CheckedTerm(term) = &type_err else {
             panic!("__type_error__ must raise a checked error value, got {type_err:?}");
         };
@@ -20571,17 +20596,20 @@ mod tests {
             term.checked_error(),
             Some((CheckedTermErrorKind::Type, "nope"))
         );
+        for body in [
+            "__macro_error__(ct, \"boom\")",
+            "__type_error__(ct, \"nope\"[__Diagnostic_text__])",
+        ] {
+            assert!(
+                matches!(eval_body(body), Value::Stuck(_, _)),
+                "unchecked raw strings do not acquire diagnostic identity"
+            );
+        }
     }
 
     #[test]
     fn let_bound_diagnostic_text_literal_keeps_diagnostic_identity() {
-        // An annotated `"…"[__Diagnostic_text__]` literal reaching general
-        // expression compilation through a `let` (not the direct-arm
-        // message coercion) must still compile as diagnostic text: the
-        // bound value is a DiagnosticText, and `__macro_error__` over the
-        // local raises the error rather than going stuck on a StrAtom.
-        let ctx =
-            test_primitive_ctx(&[ComptimeBuiltin::DiagnosticText, ComptimeBuiltin::MacroError]);
+        let ctx = diagnostic_literal_ctx();
         let eval_body = |body: &str| {
             let (_m, [extracted]) = parse_module_with_bodies(
                 "module x; import __intrinsics__; import __comptime__; equiv probe { (); () }",
@@ -20595,13 +20623,12 @@ mod tests {
             eval(&extracted, &env, &ctx)
         };
 
-        let bound = eval_body("let m = \"boom\"[__Diagnostic_text__]; m");
+        let bound = eval_body("let m = message_boom(ct); m");
         assert!(
             matches!(&bound, Value::DiagnosticText(s) if s == "boom"),
-            "let-bound annotated literal must stay diagnostic text, got {bound:?}"
+            "let-bound constructor result keeps diagnostic identity, got {bound:?}"
         );
-
-        let raised = eval_body("let m = \"boom\"[__Diagnostic_text__]; __macro_error__(ct, m)");
+        let raised = eval_body("let m = message_boom(ct); __macro_error__(ct, m)");
         let Value::CheckedTerm(term) = &raised else {
             panic!("__macro_error__ over the bound text must raise, got {raised:?}");
         };
@@ -20609,6 +20636,8 @@ mod tests {
             term.checked_error(),
             Some((CheckedTermErrorKind::Macro, "boom"))
         );
+        let raw = eval_body("let m = \"boom\"[__Diagnostic_text__]; m");
+        assert!(matches!(raw, Value::StrAtom(text) if text == "boom"));
     }
 
     #[test]

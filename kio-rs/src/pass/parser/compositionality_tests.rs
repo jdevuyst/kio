@@ -35,6 +35,7 @@ fn expr_tag(expr: &Expr<Surface>) -> &'static str {
         Expr::IntLit { .. } => "integer-literal",
         Expr::FloatLit { .. } => "float-literal",
         Expr::BoolLit { .. } => "boolean-literal",
+        Expr::ComptimeLiteral { .. } => "comptime-literal",
         Expr::Tuple { .. } => "tuple",
         Expr::FnPlaceholder { .. } => "placeholder-lambda",
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
@@ -184,6 +185,20 @@ const EXPR_FORMS: &[ExprForm] = &[
         declarations: "",
         source: ".t",
         root_tag: "boolean-literal",
+    },
+    ExprForm {
+        id: "comptime-boolean-literal",
+        grammar: "ComptimeLiteral",
+        declarations: "",
+        source: "__.t__(form_proof)",
+        root_tag: "comptime-literal",
+    },
+    ExprForm {
+        id: "comptime-string-literal",
+        grammar: "ComptimeLiteral",
+        declarations: "",
+        source: "__\"form\"__(form_proof)",
+        root_tag: "comptime-literal",
     },
     ExprForm {
         id: "annotated-literal",
@@ -404,6 +419,13 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         grammar: "ExprAtom",
         declarations: "",
         item: "fn subject() -> . { (__EXPR_HOLE__) }",
+        subject: Subject::Function,
+    },
+    ExprContext {
+        id: "comptime-literal-proof",
+        grammar: "ComptimeLiteral",
+        declarations: "",
+        item: "fn subject() -> . { __.t__(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -1712,6 +1734,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "ValueApplication",
     "TypeApplication",
     "ExprAtom",
+    "ComptimeLiteral",
     "LiteralCall",
     "BoolLit",
     "FnExpr",
@@ -1765,6 +1788,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
 const DIRECT_EXPR_OWNERS: &[&str] = &[
     "BlockBody",
     "BlockValueArgs",
+    "ComptimeLiteral",
     "Equiv",
     "ExistentialLet",
     "ExprAtom",
@@ -1856,8 +1880,9 @@ ExprSuffix += DotSpliceSuffix | ReverseSpliceSuffix | OperatorTail
 ValueApplication ::= '(' (Expr (',' Expr)*)? ')'
 TypeApplication ::= '[' Type ']'
 ExprAtom ::= LiteralCall | '(' ')' | '(' Expr ')' | ValuePath | FnExpr
-ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
+ExprAtom += TupleLit | BraceUnit | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall | ComptimeLiteral
 ExprAtom += VariadicLiteral | ClosedFixedOpExpr
+ComptimeLiteral ::= '__' (BoolLit | STR_LIT) '__' '(' Expr ')'
 LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '[' Type ']'
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)
 BoolLit ::= '.' ('t' | 'f')

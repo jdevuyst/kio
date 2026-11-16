@@ -1215,6 +1215,7 @@
     },
     "expression-tokens": {
       "patterns": [
+        { "include": "#comptime-literal" },
         {
           "include": "#comment-doc"
         },
@@ -2184,6 +2185,7 @@
     },
     "lexical-tokens": {
       "patterns": [
+        { "include": "#comptime-literal" },
         { "include": "#comment-doc" },
         { "include": "#comment" },
         { "include": "#string" },
@@ -2198,6 +2200,26 @@
         { "include": "#punctuation-bracket" },
         { "include": "#punctuation-separator" },
         { "include": "#identifier" }
+      ]
+    },
+    "comptime-literal": {
+      "patterns": [
+        {
+          "match": "(__)(\\.[tf])(__)",
+          "captures": {
+            "1": { "name": "variable.parameter.slot.kio" },
+            "2": { "name": "constant.language.boolean.kio" },
+            "3": { "name": "variable.parameter.slot.kio" }
+          }
+        },
+        {
+          "match": "(__)(\"(?:[^\"\\\\\\n]|\\\\.)*\")(__)",
+          "captures": {
+            "1": { "name": "variable.parameter.slot.kio" },
+            "2": { "name": "string.quoted.double.kio" },
+            "3": { "name": "variable.parameter.slot.kio" }
+          }
+        }
       ]
     },
     "operator-builtin": {

@@ -217,10 +217,10 @@ pure fn select_param_branch(ct: __Comptime__, arm_type: __Type__, param_type: __
       , .() -> Maybe_param_branch { __right__[__Type__][.](()) }
       , .(cell: __Type__ & Type_list) -> Maybe_param_branch {
           let branch = __fst__[__Type__][Type_list](cell);
-          __if_then_else__(
-          , __if_then_else__(
+          __comptime_if_then_else__(ct)(
+          , __comptime_if_then_else__(ct)(
             , __type_equal__(ct, branch, __type_unit__(ct))
-            , .() -> Comptime_bool { .t }
+            , .() -> Comptime_bool { __.t__(ct) }
             , .() -> Comptime_bool { fit_accepts(ct, arm_type, branch) }
             )
           , .() -> Maybe_param_branch { __left__[__Type__][.](branch) }
@@ -233,18 +233,18 @@ pure fn select_param_branch(ct: __Comptime__, arm_type: __Type__, param_type: __
 }
 
 pure fn param_accepts_branch(ct: __Comptime__, arm_type: __Type__, param_type: __Type__) -> Comptime_bool {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, param_type, __type_unit__(ct))
-  , .() -> Comptime_bool { .t }
+  , .() -> Comptime_bool { __.t__(ct) }
   , .() -> Comptime_bool {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , fit_accepts(ct, arm_type, param_type)
-      , .() -> Comptime_bool { .t }
+      , .() -> Comptime_bool { __.t__(ct) }
       , .() -> Comptime_bool {
           __either__[__Type__][.][Comptime_bool](
           , select_param_branch(ct, arm_type, param_type)
-          , .(_branch: __Type__) -> Comptime_bool { .t }
-          , .() -> Comptime_bool { .f }
+          , .(_branch: __Type__) -> Comptime_bool { __.t__(ct) }
+          , .() -> Comptime_bool { __.f__(ct) }
           )
         }
       )
@@ -264,9 +264,7 @@ pure fn clause_param_type(ct: __Comptime__, clause_type: __Type__) -> Type_resul
   __either__[Function_view][.][Type_result](
   , function_view(ct, clause_body_type(ct, clause_type))
   , .(view: Function_view) -> Type_result { type_result_ok(ct, function_view_param(ct, view)) }
-  , .() -> Type_result {
-      type_result_err(ct, "match clause is not a function"[__Diagnostic_text__])
-    }
+  , .() -> Type_result { type_result_err(ct, __"match clause is not a function"__(ct)) }
   )
 }
 
@@ -274,9 +272,7 @@ pure fn clause_return_type(ct: __Comptime__, clause_type: __Type__) -> Type_resu
   __either__[Function_view][.][Type_result](
   , function_view(ct, clause_body_type(ct, clause_type))
   , .(view: Function_view) -> Type_result { type_result_ok(ct, function_view_result(ct, view)) }
-  , .() -> Type_result {
-      type_result_err(ct, "match clause is not a function"[__Diagnostic_text__])
-    }
+  , .() -> Type_result { type_result_err(ct, __"match clause is not a function"__(ct)) }
   )
 }
 
@@ -361,8 +357,8 @@ pure fn specialize_clause(ct: __Comptime__, clause: Slot, pattern: __Type__, tar
 pure fn clause_is_polymorphic(ct: __Comptime__, clause_type: __Type__) -> Comptime_bool {
   __either__[Forall_view][.][Comptime_bool](
   , forall_view(ct, clause_type)
-  , .(_forall: Forall_view) -> Comptime_bool { .t }
-  , .() -> Comptime_bool { .f }
+  , .(_forall: Forall_view) -> Comptime_bool { __.t__(ct) }
+  , .() -> Comptime_bool { __.f__(ct) }
   )
 }
 
@@ -392,7 +388,7 @@ pure fn split_first_slot(ct: __Comptime__, slots: Slot_list) -> Slot_split_resul
   __either__[.][Slot & Slot_list][Slot_split_result](
   , Slot_list.get(slots)
   , .(_done: .) -> Slot_split_result {
-      __right__[Slot_take][__Diagnostic_text__]("slot list is empty"[__Diagnostic_text__])
+      __right__[Slot_take][__Diagnostic_text__](__"slot list is empty"__(ct))
     }
   , .(cell: Slot & Slot_list) -> Slot_split_result {
       __left__[Slot_take][__Diagnostic_text__](cell)
@@ -406,7 +402,7 @@ fn split_first_type(ct: __Comptime__, types: Type_list) -> Type_split_result {
   __either__[.][__Type__ & Type_list][Type_split_result](
   , Type_list.get(types)
   , .(_done: .) -> Type_split_result {
-      __right__[__Type__ & Type_list][__Diagnostic_text__]("type list is empty"[__Diagnostic_text__])
+      __right__[__Type__ & Type_list][__Diagnostic_text__](__"type list is empty"__(ct))
     }
   , .(cell: __Type__ & Type_list) -> Type_split_result {
       __left__[__Type__ & Type_list][__Diagnostic_text__](cell)
@@ -429,7 +425,7 @@ pure fn try_select_clause(ct: __Comptime__, arm_type: __Type__, clause_slot: Slo
   __either__[__Type__][__Diagnostic_text__][Clause_select_step](
   , clause_param_type(ct, clause_type)
   , .(param_type: __Type__) -> Clause_select_step {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , clause_is_polymorphic(ct, clause_type)
       , .() -> Clause_select_step {
           __either__[Slot][Clause_specialize_tail][Clause_select_step](
@@ -438,7 +434,7 @@ pure fn try_select_clause(ct: __Comptime__, arm_type: __Type__, clause_slot: Slo
               __either__[__Type__][__Diagnostic_text__][Clause_select_step](
               , clause_param_type(ct, slot_type(ct, specialized))
               , .(specialized_param: __Type__) -> Clause_select_step {
-                  __if_then_else__(
+                  __comptime_if_then_else__(ct)(
                   , param_accepts_branch(ct, arm_type, specialized_param)
                   , .() -> Clause_select_step {
                       selected_clause_step(ct, specialized_param, specialized)
@@ -463,7 +459,7 @@ pure fn try_select_clause(ct: __Comptime__, arm_type: __Type__, clause_slot: Slo
           )
         }
       , .() -> Clause_select_step {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , param_accepts_branch(ct, arm_type, param_type)
           , .() -> Clause_select_step { selected_clause_step(ct, param_type, clause_slot) }
           , .() -> Clause_select_step { clause_select_miss(ct) }
@@ -511,7 +507,7 @@ pure fn select_clause_for_branch(ct: __Comptime__, arm_type: __Type__, clauses: 
       __either__[.][Slot & Slot_list][Clause_result](
       , Slot_list.get(remaining)
       , .() -> Clause_result {
-          clause_result_err(ct, "no match clause accepts this source arm"[__Diagnostic_text__])
+          clause_result_err(ct, __"no match clause accepts this source arm"__(ct))
         }
       , .(cell: Slot & Slot_list) -> Clause_result {
           __either__[Clause_result][.][Clause_result](
@@ -532,7 +528,7 @@ type Coverage_state = Type_list & Comptime_bool;
 pure fn remove_clause_coverage(ct: __Comptime__, clause: Slot, remaining: Type_list) -> Coverage_result {
   __structural_recur__(ct)[Type_list][Coverage_state][Coverage_result](
   , remaining
-  , (type_nil(), .f)
+  , (type_nil(), __.f__(ct))
   , .(
     , recur: (Type_list & Coverage_state) -> Coverage_result
     , branches: Type_list
@@ -541,7 +537,7 @@ pure fn remove_clause_coverage(ct: __Comptime__, clause: Slot, remaining: Type_l
       __either__[.][__Type__ & Type_list][Coverage_result](
       , Type_list.get(branches)
       , .() -> Coverage_result {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __snd__[Type_list][Comptime_bool](state)
           , .() -> Coverage_result {
               __left__[Type_list][__Diagnostic_text__](type_reverse(
@@ -550,7 +546,7 @@ pure fn remove_clause_coverage(ct: __Comptime__, clause: Slot, remaining: Type_l
               ))
             }
           , .() -> Coverage_result {
-              __right__[Type_list][__Diagnostic_text__]("match clause is unreachable"[__Diagnostic_text__])
+              __right__[Type_list][__Diagnostic_text__](__"match clause is unreachable"__(ct))
             }
           )
         }
@@ -563,7 +559,7 @@ pure fn remove_clause_coverage(ct: __Comptime__, clause: Slot, remaining: Type_l
               __either__[Clause_info][__Diagnostic_text__][Coverage_result](
               , result
               , .(_matched: Clause_info) -> Coverage_result {
-                  recur(tail, (__fst__[Type_list][Comptime_bool](state), .t))
+                  recur(tail, (__fst__[Type_list][Comptime_bool](state), __.t__(ct)))
                 }
               , .(message: __Diagnostic_text__) -> Coverage_result {
                   __right__[Type_list][__Diagnostic_text__](message)
@@ -604,7 +600,7 @@ pure fn validate_clause_coverage(ct: __Comptime__, source_spine: Type_list, clau
           , Type_list.get(remaining_branches)
           , .() -> Coverage_check { __left__[.][__Diagnostic_text__](()) }
           , .(_uncovered: __Type__ & Type_list) -> Coverage_check {
-              __right__[.][__Diagnostic_text__]("no match clause accepts this source arm"[__Diagnostic_text__])
+              __right__[.][__Diagnostic_text__](__"no match clause accepts this source arm"__(ct))
             }
           )
         }
@@ -639,7 +635,7 @@ pure fn fit_param_branch(
       , value
       , .(bound: __Checked_term__) -> __Checked_term__ {
           let adapted =
-            __if_then_else__(
+            __comptime_if_then_else__(ct)(
             , __type_equal__(ct, branch_type, __type_unit__(ct))
             , .() -> __Checked_term__ { __term_unit__(ct) }
             , .() -> __Checked_term__ { fit_or_raw(ct, source_type, branch_type, bound) }
@@ -649,7 +645,7 @@ pure fn fit_param_branch(
       )
     }
   , .() -> __Checked_term__ {
-      __macro_error__(ct, "matched source arm has no fitting parameter branch"[__Diagnostic_text__])
+      __macro_error__(ct, __"matched source arm has no fitting parameter branch"__(ct))
     }
   )
 }
@@ -662,7 +658,7 @@ pure fn apply_clause_with_param(
 , branch_value: __Checked_term__
 ) -> __Checked_term__ {
   let arg =
-    __if_then_else__(
+    __comptime_if_then_else__(ct)(
     , __type_equal__(ct, param_type, __type_unit__(ct))
     , .() -> __Checked_term__ {
         __term_let__(
@@ -677,7 +673,7 @@ pure fn apply_clause_with_param(
         , materialize_dnf_branch(ct, param_type, source_type, branch_value)
         , .(materialized: __Checked_term__) -> __Checked_term__ { materialized }
         , .(_message: __Diagnostic_text__) -> __Checked_term__ {
-            __if_then_else__(
+            __comptime_if_then_else__(ct)(
             , fit_accepts(ct, source_type, param_type)
             , .() -> __Checked_term__ { fit_or_raw(ct, source_type, param_type, branch_value) }
             , .() -> __Checked_term__ {
@@ -778,12 +774,12 @@ fn finish_match_dispatch(ct: __Comptime__, state: Match_dispatch_loop_state) -> 
           match_dispatch_ok(match_dispatch_mapper(match_dispatch_state(state)))
         }
       , .(_extra_param: __Type__ & Type_list) -> Match_dispatch_result {
-          match_dispatch_err("match clause route count mismatch"[__Diagnostic_text__])
+          match_dispatch_err(__"match clause route count mismatch"__(ct))
         }
       )
     }
   , .(_extra: Slot & Slot_list) -> Match_dispatch_result {
-      match_dispatch_err("match clause route count mismatch"[__Diagnostic_text__])
+      match_dispatch_err(__"match clause route count mismatch"__(ct))
     }
   )
 }
@@ -798,7 +794,7 @@ fn build_clause_dispatcher(
   __either__[.][__Type__ & Type_list][Match_dispatch_result](
   , Type_list.get(type_reverse(ct, source_spine))
   , .(_no_source: .) -> Match_dispatch_result {
-      match_dispatch_err("match source spine is empty"[__Diagnostic_text__])
+      match_dispatch_err(__"match source spine is empty"__(ct))
     }
   , .(source_cell: __Type__ & Type_list) -> Match_dispatch_result {
       __either__[Slot_take][__Diagnostic_text__][Match_dispatch_result](
@@ -1027,11 +1023,11 @@ pure fn match_emit_factor(
 , factor_type: __Type__
 , factor_value: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_equal__(ct, factor_type, __type_bottom__(ct))
   , .() -> __Checked_term__ { __intrinsic_absurd__(ct, factor_value, target) }
   , .() -> __Checked_term__ {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , __type_is_sum_root__(ct, factor_type)
       , .() -> __Checked_term__ {
           let attempt =
@@ -1197,7 +1193,7 @@ pure fn emit_match_dispatch(
             , branch_types
             , branch_types
             , match_emit_branch_slots(ct, loop_state)
-            , .t
+            , __.t__(ct)
             )
           , .(branch_value: __Checked_term__) -> __Checked_term__ {
               dispatch_dnf_branch(
@@ -1294,7 +1290,7 @@ pure fn fill_polymorphic_clause_results(
 ) -> Fill_result {
   __structural_recur__(ct)[Type_list][Clause_fill_state][Fill_result](
   , source_spine
-  , (fills, .f)
+  , (fills, __.f__(ct))
   , .(
     , loop_recur: (Type_list & Clause_fill_state) -> Fill_result
     , loop_fuel: Type_list
@@ -1303,7 +1299,7 @@ pure fn fill_polymorphic_clause_results(
       __either__[.][__Type__ & Type_list][Fill_result](
       , Type_list.get(loop_fuel)
       , .(_done: .) -> Fill_result {
-          __if_then_else__(
+          __comptime_if_then_else__(ct)(
           , __snd__[__Fill_ctx__][Comptime_bool](loop_state)
           , .() -> Fill_result { fill_ok(ct, __fst__[__Fill_ctx__][Comptime_bool](loop_state)) }
           , .() -> Fill_result {
@@ -1328,7 +1324,10 @@ pure fn fill_polymorphic_clause_results(
                   , .(result: __Type__) -> Fill_result {
                       loop_recur(
                       , __snd__[__Type__][Type_list](source_cell)
-                      , (append(__fst__[__Fill_ctx__][Comptime_bool](loop_state), result), .t)
+                      , (
+                        , append(__fst__[__Fill_ctx__][Comptime_bool](loop_state), result)
+                        , __.t__(ct)
+                        )
                       )
                     }
                   , .(message: __Diagnostic_text__) -> Fill_result {
@@ -1360,7 +1359,7 @@ pure fn fill_clause_results(
   __either__[__Type__][__Diagnostic_text__][Fill_result](
   , clause_param_type(ct, clause_type)
   , .(_pattern: __Type__) -> Fill_result {
-      __if_then_else__(
+      __comptime_if_then_else__(ct)(
       , clause_is_polymorphic(ct, clause_type)
       , .() -> Fill_result {
           fill_polymorphic_clause_results(ct, fills, append, clause, clause_type, source_spine)
@@ -1381,7 +1380,7 @@ pure fn fill_match_results(
 ) -> Fill_result {
   __either__[.][Slot & Slot_list][Fill_result](
   , Slot_list.get(clauses)
-  , .(_empty: .) -> Fill_result { fill_err(ct, fills, "match has no clauses"[__Diagnostic_text__]) }
+  , .(_empty: .) -> Fill_result { fill_err(ct, fills, __"match has no clauses"__(ct)) }
   , .(_nonempty: Slot & Slot_list) -> Fill_result {
       __structural_recur__(ct)[Slot_list][__Fill_ctx__][Fill_result](
       , clauses
@@ -1512,9 +1511,7 @@ pure fn natural_match_checked(
       let result =
         __either__[.][__Type__ & Type_list][__Checked_term__](
         , Type_list.get(source_spine)
-        , .() -> __Checked_term__ {
-            __macro_error__(ct, "match source spine is empty"[__Diagnostic_text__])
-          }
+        , .() -> __Checked_term__ { __macro_error__(ct, __"match source spine is empty"__(ct)) }
         , .(first: __Type__ & Type_list) -> __Checked_term__ {
             __either__[Clause_info][__Diagnostic_text__][__Checked_term__](
             , select_clause_for_branch(ct, __fst__[__Type__][Type_list](first), clause_slots)

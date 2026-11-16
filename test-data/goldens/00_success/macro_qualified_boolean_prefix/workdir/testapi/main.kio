@@ -1,11 +1,8 @@
 module testapi/main;
 
-import __comptime__;
 import helpers as a;
 import helpers(macro choose);
 import testapi/io(print);
-
-type Bool = Comptime_bool;
 
 fn combine(_first: ., last: .) { last }
 

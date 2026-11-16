@@ -448,6 +448,26 @@ inspection does not evaluate a source argument twice.
 Every callable helper takes `__Comptime__` first. Both `__fill__` and
 `__fill_result__` take `__Fill_ctx__` second and return the descendant context.
 
+Compile-time literals also take this proof: `__.t__(ct)` and `__.f__(ct)`
+construct `Comptime_bool`, while `__"message"__(ct)` constructs compile-time
+text. The surrounding parameter or return type determines whether that text
+is `Comptime_str` or `__Diagnostic_text__`; the latter is used by diagnostic
+helpers. These forms require `__comptime__` to be imported in the current
+module. Ordinary `.t[Bool]` and `"message"[String]` construct host values
+instead. Compiler-owned types have no host literal roles and cannot replace a
+role-bearing host type through `rehost`.
+
+Use `__comptime_if_then_else__(ct)(condition, yes, no)` to branch on a
+compile-time Boolean. The last two arguments are Unit thunks; only the selected
+body runs. The helper evaluates their expressions in order before choosing,
+just as the runtime conditional does. Runtime `__if_then_else__`, `__and__`
+and `__or__` instead require a host Boolean with `role(bool)`.
+
+The proof keeps these values inside compile-time evaluation. Every compiler-owned
+value type lowers to bottom for runtime code, so there is no runtime Boolean or
+string representation hidden behind a compile-time type. To generate an ordinary
+runtime literal, construct a checked term using the template API.
+
 `__reflect_type__(ct)[T]` reflects a solved type argument. `__type_view__`
 decomposes a type into the complete structural view: unit, bottom, product,
 sum, function, forall, type variable, or named head. Equality helpers preserve
@@ -627,8 +647,8 @@ defined for the supplied shape. It reports the macro-error category at
 the macro call. Return `__type_error__(ct, message)` when the appropriate result
 is an ordinary type error. Both are checked-term sentinels, not runtime terms.
 
-Build messages as `__Diagnostic_text__` with the display and concatenation
-helpers. Include the operation, the reflected type or shape that failed, and
+Build messages as `__Diagnostic_text__` with `__"message"__(ct)` and the display
+and concatenation helpers. Include the operation, the reflected type or shape that failed, and
 the constraint the caller can satisfy. Do not panic for a user-selectable input
 shape; reserve an internal failure for an invariant that earlier checked-term
 construction promised was unreachable.

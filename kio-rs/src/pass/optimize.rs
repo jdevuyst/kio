@@ -2009,6 +2009,7 @@ fn walk_count_free(e: &Expr<Enriched>, name: &str, count: &mut usize) {
         Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2617,6 +2618,7 @@ fn collect_free_vars(
         Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2723,6 +2725,7 @@ fn collect_binders<'a>(e: &'a Expr<Enriched>, out: &mut std::collections::HashSe
         Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -3359,6 +3362,7 @@ fn ir_node_count(e: &Expr<Enriched>) -> usize {
         Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
         | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},

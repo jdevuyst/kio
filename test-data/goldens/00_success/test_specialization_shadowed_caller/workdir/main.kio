@@ -24,7 +24,9 @@ pure fn specialize_impl(
     , .(tail: . | __Diagnostic_text__) -> __Checked_term__ {
         __either__(
         , tail
-        , .(_miss: .) -> __Checked_term__ { __macro_error__(ct, "specialization did not match") }
+        , .(_miss: .) -> __Checked_term__ {
+            __macro_error__(ct, __"specialization did not match"__(ct))
+          }
         , .(message: __Diagnostic_text__) -> __Checked_term__ { __macro_error__(ct, message) }
         )
       }

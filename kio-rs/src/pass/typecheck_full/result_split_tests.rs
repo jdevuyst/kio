@@ -26,7 +26,7 @@ fn prefix(marked: bool, required: bool, error: bool) -> String {
         "__Checked_term__"
     };
     let term = if error {
-        "__macro_error__(ct, \"implementation executed\"[__Diagnostic_text__])"
+        "__macro_error__(ct, __\"implementation executed\"__(ct))"
     } else {
         "__term_unit__(ct)"
     };

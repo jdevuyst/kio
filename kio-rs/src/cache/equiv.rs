@@ -208,12 +208,19 @@ impl<'a> EvalPackageSharedKeyInputs<'a> {
 
 #[derive(serde::Serialize)]
 struct EvalPrimitiveKeyInputs {
+    literals: Vec<(String, String, crate::comptime::ComptimeLiteralConstructor)>,
     modules: Vec<(String, Vec<(String, crate::comptime::ComptimeBuiltin)>)>,
 }
 
 impl EvalPrimitiveKeyInputs {
     fn from_env(env: &crate::normalization::EvalPrimitiveEnv) -> Self {
         Self {
+            literals: env
+                .literal_bindings()
+                .map(|(owner, name, constructor)| {
+                    (owner.to_owned(), name.to_owned(), constructor.clone())
+                })
+                .collect(),
             modules: env
                 .bindings()
                 .map(|(module, bindings)| {
@@ -560,9 +567,10 @@ fn collect_expr_refs(
         | Expr::BoolLit { .. } => {}
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } | Expr::UserMacro { ext, .. } => {
-            match *ext {}
-        }
+        Expr::RecOrder { ext, .. }
+        | Expr::RecQuote { ext, .. }
+        | Expr::UserMacro { ext, .. }
+        | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -1240,6 +1248,36 @@ fn absolutize(workspace_root: &Path, path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comptime_literal_cache_keys_include_owner_binding_carrier_and_payload() {
+        use crate::comptime::ComptimeLiteralConstructor as Literal;
+        fn key(owner: &str, name: &str, literal: Literal) -> Vec<u8> {
+            let mut env = crate::normalization::EvalPrimitiveEnv::default();
+            env.enable_comptime_module(owner);
+            env.grant_literal(owner, name, literal);
+            let encoded = postcard::to_allocvec(&env).expect("serialize explicit dependencies");
+            let decoded = postcard::from_bytes(&encoded).expect("deserialize dependencies");
+            postcard::to_allocvec(&EvalPrimitiveKeyInputs::from_env(&decoded)).expect("cache key")
+        }
+        let base = key("owner", "literal", Literal::Str("value".to_owned()));
+        for changed in [
+            key("other", "literal", Literal::Str("value".to_owned())),
+            key("owner", "other", Literal::Str("value".to_owned())),
+            key("owner", "literal", Literal::Str("other".to_owned())),
+            key(
+                "owner",
+                "literal",
+                Literal::DiagnosticText("value".to_owned()),
+            ),
+        ] {
+            assert_ne!(base, changed);
+        }
+        assert_ne!(
+            key("owner", "literal", Literal::Bool(true)),
+            key("owner", "literal", Literal::Bool(false))
+        );
+    }
 
     fn empty_eval_module(path: &str) -> Module<UncheckedPrime> {
         let span = crate::span::Span::new(0, 0);

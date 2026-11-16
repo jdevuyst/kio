@@ -11,6 +11,8 @@ Import and signature blocks are reference fragments and are marked `{ignore}`. W
 
 See [literal types and local inference](typechecking.md#literal-types-and-local-inference) for explicit annotations, concrete context and local inference boundaries.
 
+The two builtin modules export disjoint names and can be imported together. Compile-time literals such as `__.t__(ct)` and `__"message"__(ct)` require `__comptime__` and an explicit proof. Their compiler-owned carriers have no host literal roles.
+
 ## `__intrinsics__`
 
 Compiler-provided module containing the Kio' core value intrinsics.
@@ -199,7 +201,7 @@ type __Diagnostic_text__
 
 Compile-time text used in macro diagnostics.
 
-Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `"message"[__Diagnostic_text__]`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string.
+Diagnostic text is the message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or with `__"message"__(ct)` in a diagnostic-text context. The constructor requires an explicit `__Comptime__` proof and `import __comptime__;`. Transparent aliases preserve this contextual typing. Diagnostic text has no host literal role; its runtime representation is bottom.
 
 #### `Comptime_bool`
 
@@ -207,9 +209,9 @@ Diagnostic text is the only message payload accepted by `__macro_error__` and `_
 type Comptime_bool
 ```
 
-Compile-time Boolean type with `role(bool)`, exposed by `import __comptime__;`.
+Compiler-owned Boolean type used by compile-time predicates.
 
-The literals `.t` and `.f` form compile-time predicate results used by reflection helpers and concrete compile-time branching. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type.
+Reflection predicates return this compiler-owned Boolean type. Construct its values with `__.t__(ct)` or `__.f__(ct)`, requiring an explicit `__Comptime__` proof and `import __comptime__;`. Branch on it with `__comptime_if_then_else__`. It has no `role(bool)` and its runtime representation is bottom.
 
 #### `Comptime_str`
 
@@ -217,9 +219,9 @@ The literals `.t` and `.f` form compile-time predicate results used by reflectio
 type Comptime_str
 ```
 
-Compile-time string type with `role(str)`, exposed by `import __comptime__;`.
+Compiler-owned string type used during compile-time evaluation.
 
-A concrete `Comptime_str` context or an explicit annotation determines this carrier for a string literal. An already typed `Comptime_str` value is not implicitly converted to `__Diagnostic_text__`; diagnostic-text contexts can instead determine the carrier of an unannotated literal. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
+Construct compile-time strings with `__"text"__(ct)` in a concrete `Comptime_str` context, requiring an explicit `__Comptime__` proof and `import __comptime__;`. A value already typed as `Comptime_str` is not implicitly converted to `__Diagnostic_text__`; the constructor's context determines its carrier. It has no `role(str)` and its runtime representation is bottom.
 
 #### `__Fill_ctx__`
 
@@ -623,6 +625,34 @@ __diagnostic_concat__ : (__Comptime__ & __Diagnostic_text__ & __Diagnostic_text_
 Concatenates two pieces of diagnostic text.
 
 Concatenates two diagnostic fragments without inserting whitespace or punctuation. Both inputs must be compile-time diagnostic text; host strings are rejected by the type checker.
+
+### Compile-Time Control
+
+#### `__comptime_if_then_else__`
+
+```kio {ignore}
+__comptime_if_then_else__ : __Comptime__ -> [a] (Comptime_bool & (. -> a) & (. -> a)) -> a
+```
+
+Invokes one of two thunks according to a compile-time Boolean.
+
+Apply the compile-time proof first, then the condition and two Unit thunks as one argument packet. The packet is evaluated left to right, including both expressions that produce the thunks. Only the selected thunk body runs. The result type is generic and follows ordinary inference. The condition must have type `Comptime_bool`; runtime host Booleans use `__if_then_else__` from `__intrinsics__`. Retained runtime code eliminates the bottom-typed proof, including when the helper is used as a value or partially applied.
+
+##### Checked example: `__comptime_if_then_else__`
+
+```kio {}
+module builtin_comptime_conditional_example;
+
+import __comptime__;
+
+pure fn describe(ct: __Comptime__, condition: Comptime_bool) -> __Diagnostic_text__ {
+  __comptime_if_then_else__(ct)(
+  , condition
+  , .() -> __Diagnostic_text__ { __"yes"__(ct) }
+  , .() -> __Diagnostic_text__ { __"no"__(ct) }
+  )
+}
+```
 
 ### Error Sentinels
 

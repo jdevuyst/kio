@@ -602,6 +602,7 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
             | Expr::UserMacro { ext, .. }
+            | Expr::ComptimeLiteral { ext, .. }
             | Expr::Ufcs { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::EnrichedTuple { ext, .. }

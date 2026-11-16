@@ -149,5 +149,5 @@ pub pure fn checked_sum_dispatch(
         )
       }
     );
-  (result, __fill__(ct, fills, result_type, __term_type__(ct, fallback_term)))
+  (result, __fill_result__(ct, fills, __term_type__(ct, fallback_term)))
 }

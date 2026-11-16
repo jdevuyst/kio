@@ -12,7 +12,7 @@ pure fn unstable_impl(
     __either__[__Checked_term__][. | __Diagnostic_text__][__Checked_term__](
     , __term_specialize__(ct, clause, __type_unit__(ct), target)
     , .(_matched: __Checked_term__) -> __Checked_term__ {
-        __macro_error__(ct, "known target matched"[__Diagnostic_text__])
+        __macro_error__(ct, __"known target matched"__(ct))
       }
     , .(_other: . | __Diagnostic_text__) -> __Checked_term__ { __term_unit__(ct) }
     );

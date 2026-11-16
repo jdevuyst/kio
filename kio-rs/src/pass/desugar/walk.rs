@@ -954,6 +954,21 @@ pub trait SurfaceToDesugared {
 
     fn walk_expr(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         match e {
+            Expr::ComptimeLiteral {
+                value,
+                proof,
+                source_trivia: _,
+                meta,
+                ext,
+                ..
+            } => Ok(Expr::ComptimeLiteral {
+                occurrence: Default::default(),
+                value,
+                proof: Box::new(self.walk_expr(*proof)?),
+                source_trivia: (),
+                meta: Meta::new(meta.span),
+                ext,
+            }),
             Expr::Path { .. } => self.visit_expr_path(e),
             Expr::Call { .. } => self.visit_expr_call(e),
             Expr::RecCall {

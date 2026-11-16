@@ -264,7 +264,8 @@ impl Typer<Prime> for PrimeTyper {
             crate::ast::Expr::RecOrder { ext, .. } | crate::ast::Expr::RecQuote { ext, .. } => {
                 match *ext {}
             }
-            crate::ast::Expr::UserMacro { ext, .. } => match *ext {},
+            crate::ast::Expr::UserMacro { ext, .. }
+            | crate::ast::Expr::ComptimeLiteral { ext, .. } => match *ext {},
             crate::ast::Expr::Ufcs { ext, .. } => match *ext {},
             // Statically uninhabited at `Prime` — the enriched
             // structural variants are produced *after* the typer, by
@@ -992,7 +993,7 @@ fn bake_expr(
         Expr::RecCall { ext, .. } => match *ext {},
         // Elaboration-bearing variants — uninhabited at Prime.
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } | Expr::ComptimeLiteral { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         // Enriched structural variants only exist post-typecheck.
         Expr::EnrichedTuple { ext, .. }

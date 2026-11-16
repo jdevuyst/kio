@@ -155,3 +155,59 @@ fn every_written_block_prefix_uses_an_argument_list() {
         }
     }
 }
+
+#[test]
+fn comptime_literal_surface_and_formatting() {
+    use crate::ast::ComptimeLiteralValue;
+    for (source, expected) in [
+        ("__.t__(ct)", ComptimeLiteralValue::Bool(true)),
+        ("__.f__(ct)", ComptimeLiteralValue::Bool(false)),
+        (
+            r#"__"hé\n"__(ct)"#,
+            ComptimeLiteralValue::Str("hé\n".into()),
+        ),
+    ] {
+        let module_source = format!("module main; fn run(ct: T) {{ {source} }}");
+        let module = super::parse(&module_source).unwrap();
+        let Item::FnDef(def) = &module.items[0] else {
+            panic!("function")
+        };
+        assert!(matches!(&def.body, Expr::ComptimeLiteral { value, .. } if *value == expected));
+        let formatted = crate::pretty::pretty_module(&module);
+        assert_eq!(
+            crate::pretty::pretty_module(&super::parse(&formatted).unwrap()),
+            formatted
+        );
+    }
+    for source in ["__.t__", "__.t__()", "__.t__(ct, other)", "__42__(ct)"] {
+        assert!(
+            super::parse(&format!("module main; fn run(ct: T) {{ {source} }}")).is_err(),
+            "{source}"
+        );
+    }
+    let literal = r"long compile-time text with an escaped newline\n and Unicode λ, repeated to exceed the ordinary string reflow threshold";
+    let text = literal.replace(r"\n", "\n");
+    let source = format!(
+        r#"module main; fn run(ct: T) {{ __"{literal}"__( // proof
+ ct // closing
+ ) }}"#
+    );
+    let parsed = super::parse(&source).unwrap();
+    let formatted = crate::pretty::pretty_module(&parsed);
+    assert!(formatted.contains("// proof") && formatted.contains("// closing"));
+    let reparsed = super::parse(&formatted).unwrap();
+    let Item::FnDef(def) = &reparsed.items[0] else {
+        panic!("function")
+    };
+    assert!(
+        matches!(&def.body, Expr::ComptimeLiteral { value: ComptimeLiteralValue::Str(value), .. } if value == &text)
+    );
+    assert_eq!(crate::pretty::pretty_module(&reparsed), formatted);
+    let source = "module main; fn run(ct: T) { __.t__( // proof\n ct // closing\n ) }";
+    let formatted = crate::pretty::pretty_module(&super::parse(source).unwrap());
+    assert!(formatted.contains("// proof") && formatted.contains("// closing"));
+    assert_eq!(
+        crate::pretty::pretty_module(&super::parse(&formatted).unwrap()),
+        formatted
+    );
+}

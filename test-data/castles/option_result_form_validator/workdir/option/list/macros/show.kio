@@ -95,10 +95,7 @@ pure fn concat_text_right(
 }
 
 pure fn unsupported_show(ct: __Comptime__) -> __Checked_term__ {
-  __macro_error__(
-  , ct
-  , "show supports only host leaves, unit, products, sums, and bottom"[__Diagnostic_text__]
-  )
+  __macro_error__(ct, __"show supports only host leaves, unit, products, sums, and bottom"__(ct))
 }
 
 pure fn render_host_or_error(
@@ -109,7 +106,7 @@ pure fn render_host_or_error(
 , typ: __Type__
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __if_then_else__(
+  __comptime_if_then_else__(ct)(
   , __type_is_host__(ct, typ)
   , .() -> __Checked_term__ {
       __term_host_convert__(ct, string_type, converter_source, converters, value)

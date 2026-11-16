@@ -1,0 +1,72 @@
+module main;
+
+import __comptime__;
+
+pure fn text(proof: __Comptime__) -> Comptime_str { __"content"__(proof) }
+
+pure fn diagnostic(proof: __Comptime__) -> __Diagnostic_text__ { __"message"__(proof) }
+
+equiv boolean(first: __Comptime__, second: __Comptime__) {
+  __.t__(first);
+  __.t__(second)
+}
+
+equiv string(first: __Comptime__, second: __Comptime__) {
+  text(first);
+  text(second)
+}
+
+equiv message(first: __Comptime__, second: __Comptime__) {
+  diagnostic(first);
+  diagnostic(second)
+}
+
+equiv conditional_true[A](proof: __Comptime__, left: A, right: A) {
+  __comptime_if_then_else__(proof)[A](
+  , __type_is_product_root__(proof, __reflect_type__(proof)[. & .])
+  , .() -> A { left }
+  , .() -> A { right }
+  );
+  left
+}
+
+equiv conditional_false[A](proof: __Comptime__, left: A, right: A) {
+  __comptime_if_then_else__(proof)[A](
+  , __type_is_product_root__(proof, __reflect_type__(proof)[.])
+  , .() -> A { left }
+  , .() -> A { right }
+  );
+  right
+}
+
+pure fn partial[A](proof: __Comptime__, left: A, right: A) -> A {
+  let choose = __comptime_if_then_else__(proof);
+  choose[A](
+  , __type_is_product_root__(proof, __reflect_type__(proof)[.])
+  , .() -> A { left }
+  , .() -> A { right }
+  )
+}
+
+equiv conditional_partial[A](proof: __Comptime__, left: A, right: A) {
+  partial[A](proof, left, right);
+  right
+}
+
+pure fn function_result[A](proof: __Comptime__, value: A) -> A {
+  let choose = __comptime_if_then_else__(proof);
+  choose[. -> A](
+  , __.t__(proof)
+  , .() -> . -> A {
+      .() -> A { value }
+    }
+  , .() -> . -> A {
+      .() -> A { value }
+    }
+  )()
+}
+
+equiv conditional_function_result[A](proof: __Comptime__, value: A) {
+  function_result[A](proof, value);
+  value
+}
