@@ -1327,6 +1327,20 @@ pure fn spine_identity_checked(
 /// Validates the product-spine round trip and returns the original value.
 pub macro spine_identity : [Source] Source -> [Target] Target { impl spine_identity_checked }
 
+pure fn bind_product_target(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, target: __Type__
+, build: __Checked_term__ -> __Checked_term__
+) -> __Checked_term__ {
+  __comptime_if_then_else__(ct)(
+  , __type_equal__(ct, target, __type_unit__(ct))
+  , .() -> __Checked_term__ { build(value) }
+  , .() -> __Checked_term__ { __term_let__(ct, source, value, build) }
+  )
+}
+
 pure fn reorder_prod_impl(
 , ct: __Comptime__
 , source: __Type__
@@ -1348,7 +1362,17 @@ pure fn reorder_prod_checked(
 , source: __Type__
 , value: __Checked_term__
 , target: __Type__
-) -> __Checked_term__ { finish_macro_result(ct, reorder_prod_impl(ct, source, value, target)) }
+) -> __Checked_term__ {
+  bind_product_target(
+  , ct
+  , source
+  , value
+  , target
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, reorder_prod_impl(ct, source, saved, target))
+    }
+  )
+}
 
 /// Reorders product slots to match the requested target product.
 pub macro reorder_prod : [Source] Source -> [Target] Target { impl reorder_prod_checked }
@@ -1402,7 +1426,17 @@ pure fn narrow_prod_checked(
 , source: __Type__
 , value: __Checked_term__
 , target: __Type__
-) -> __Checked_term__ { finish_macro_result(ct, narrow_prod_impl(ct, source, value, target)) }
+) -> __Checked_term__ {
+  bind_product_target(
+  , ct
+  , source
+  , value
+  , target
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, narrow_prod_impl(ct, source, saved, target))
+    }
+  )
+}
 
 /// Drops product slots not present in the requested target product.
 pub macro narrow_prod : [Source] Source -> [Target] Target { impl narrow_prod_checked }
@@ -1551,7 +1585,17 @@ pure fn widen_prod_checked(
 , source: __Type__
 , value: __Checked_term__
 , target: __Type__
-) -> __Checked_term__ { finish_macro_result(ct, widen_prod_impl(ct, source, value, target)) }
+) -> __Checked_term__ {
+  bind_product_target(
+  , ct
+  , source
+  , value
+  , target
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, widen_prod_impl(ct, source, saved, target))
+    }
+  )
+}
 
 /// Builds a wider product target from compatible source slots.
 pub macro widen_prod : [Source] Source -> [Target] Target { impl widen_prod_checked }
@@ -1597,7 +1641,17 @@ pure fn flatten_prod_checked(
 , source: __Type__
 , value: __Checked_term__
 , target: __Type__
-) -> __Checked_term__ { finish_macro_result(ct, flatten_prod_impl(ct, source, value, target)) }
+) -> __Checked_term__ {
+  bind_product_target(
+  , ct
+  , source
+  , value
+  , target
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, flatten_prod_impl(ct, source, saved, target))
+    }
+  )
+}
 
 /// Flattens nested product structure to the requested product target.
 pub macro flatten_prod : [Source] Source -> [Target] Target { impl flatten_prod_checked }
@@ -1626,7 +1680,14 @@ pure fn fit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, ta
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn fit_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, fit_impl(ct, source, value, target))
+  __term_let__(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, fit_impl(ct, source, saved, target))
+    }
+  )
 }
 
 /// Composes compatible structural adaptations across product, sum, and function boundaries.

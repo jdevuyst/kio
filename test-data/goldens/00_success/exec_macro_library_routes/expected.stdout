@@ -1,0 +1,18 @@
+lookup hit: source A done
+lookup miss: done
+contains hit: yes done
+contains miss: no done
+lookup nested: source A done
+sum miss: source no done
+onto: source A done
+erase: done
+erase sum: source done
+align: source B A done
+onto nested: source A B done
+ease: factory ready call A done
+map: functions source first second A B done
+zip: source right done
+empty zip: done
+tail atom: done
+derive: seed factory unused factory seed A done
+type_of: unit done

@@ -1981,7 +1981,7 @@ fn repl_query_wrapper_stays_distinct_from_macro_capture() {
          import __comptime__;\n\n\
          pub pure fn _expr0() -> . { () }\n\n\
          pub pure fn captured_call_impl(\n\
-           ct: __Comptime__, captured: __Checked_term__\n\
+           ct: __Comptime__, captured: __Checked_term__, _unit: __Checked_term__\n\
          ) -> __Checked_term__ {\n\
            __term_call__(ct, __term_type__(ct, captured), captured, __term_unit__(ct))\n\
          }\n\n\

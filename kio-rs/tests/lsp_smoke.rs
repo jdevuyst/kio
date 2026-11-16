@@ -2675,7 +2675,7 @@ fn lsp_hover_returns_type_on_elaborator_implementation_path() {
             "\n",
             "import __comptime__;\n",
             "\n",
-            "pub(pkg) pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ {\n",
+            "pub(pkg) pure fn unit_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {\n",
             "  __term_unit__(ct)\n",
             "}\n",
         ),
@@ -2748,7 +2748,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
         "pub fn finish(value: .) -> . { value }\n",
         "pure fn echo_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n",
         "pub macro echo : [A] A -> A { impl echo_impl; }\n",
-        "pub pure fn elab_impl(ct: __Comptime__) -> __Checked_term__ {\n",
+        "pub pure fn elab_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {\n",
         "  __term_unit__(ct)\n",
         "}\n",
     );

@@ -162,8 +162,11 @@ and the macro's semantic checks determine admission. Once all blocks are present
 ordinary macro residualization applies. There is no partial application within
 a product domain.
 
-A macro may omit its whole quoted input from the generated code. If the
-generated code evaluates a product input, its components evaluate in order.
+A macro may omit its whole quoted input from the generated code or use it
+several times. Each use evaluates the expression where it appears in that
+code. A generated `let` can evaluate it once and reuse the saved value; a
+compile-time variable holding the quotation does not do that by itself.
+If the generated code evaluates a product input, its components evaluate in order.
 Pass a component as a thunk when it must be independently skippable; the
 generated code can choose whether to invoke it.
 
@@ -292,7 +295,11 @@ It then calls the implementation with:
 3. one reflected argument for every call slot, in declaration order; and
 4. an expected return value of `__Checked_term__`.
 
-A value slot such as `Source` becomes `__Checked_term__`. A type slot normally
+A function stage such as `Source -> ...` supplies one `__Checked_term__` for
+its complete input. A product input is one quotation, and a unit input also
+has a quotation: an expression returning `()` can still perform effects.
+A stage that supplies only a type argument has no value quotation.
+A type slot normally
 becomes `__Type__`. A binder used only in the terminal result may instead use
 `.` in the private implementation: it always receives unit, even when the
 caller supplies an expected type. This natural mode lets the implementation

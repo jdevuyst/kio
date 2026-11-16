@@ -2097,7 +2097,7 @@ mod tests {
         let provider = |item: &str, body: &str, doc: &str| {
             format!(
                 "module provider; import __comptime__; pub fn produce() -> {item} {{ {body} }}
-             pure fn expand_body(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}
+             pure fn expand_body(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}
              /// {doc}
              pub macro expand : . -> . {{ impl expand_body; }};
              pub literal answer = 1;"
@@ -2287,7 +2287,7 @@ mod tests {
                 pub fn zero() -> . {{ () }}
                 pub type Unit = .;
                 pub type {{ Field: .; }};
-                pure fn expand_body(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}
+                pure fn expand_body(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}
                 pub macro expand : . -> . {{ impl expand_body; }};
                 pub op _ {operator} _ {{ impl pair; }};
                 pub varop [{marker} {marker}] {{ foldl pair zero; }};"

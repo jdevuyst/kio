@@ -2573,7 +2573,17 @@ pure fn derive_checked(
 , candidates: __Checked_term__
 , target: __Type__
 ) -> __Checked_term__ & __Fill_ctx__ {
-  (derive_checked_impl(ct, candidates_type, candidates, target), fills)
+  (
+  , __term_let__(
+    , ct
+    , candidates_type
+    , candidates
+    , .(saved: __Checked_term__) -> __Checked_term__ {
+        derive_checked_impl(ct, candidates_type, saved, target)
+      }
+    )
+  , fills
+  )
 }
 
 /// Searches candidate rules at compile time to synthesize a value of the requested target type.

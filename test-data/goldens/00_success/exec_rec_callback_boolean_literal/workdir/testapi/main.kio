@@ -1,0 +1,22 @@
+module testapi/main;
+
+import __comptime__;
+import testapi(Bool);
+import testapi/io as io;
+import testapi/iter(loop);
+
+pure fn construct(ct: __Comptime__, fills: __Fill_ctx__, callback: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (__term_call__(ct, __term_type__(ct, callback), callback, __term_unit__(ct)), fills) }
+
+macro invoke : (. -> Bool) -> Bool { impl(fills) construct }
+
+rec(loop) {
+  fn source() { io.print("source\n") };
+  fn witness() {
+    let value = invoke(.() -> Bool { recur(cont) source(); .t });
+    io.print("done\n")
+  }
+}
+
+pub fn main() { witness() }

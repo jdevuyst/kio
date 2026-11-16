@@ -785,7 +785,7 @@ precondition is a sub-goal discharged from the same candidate set:
 
 ```text
 equiv derive_recursive_law() {
-  Derived_wrap.un_derived_wrap[Derived_base](
+  Derived_wrap.get[Derived_base](
     derive((derive_wrap_rule, derive_base_rule))[Derived_wrap[Derived_base]]
   );
   ()
@@ -795,10 +795,10 @@ equiv derive_recursive_law() {
 with the candidates (verbatim from `main`):
 
 ```text
-fn derive_base_rule() -> Derived_base { Derived_base.mk_derived_base(()) }
+fn derive_base_rule() -> Derived_base { Derived_base.mk(()) }
 
 fn derive_wrap_rule(_base: Derived_base) -> Derived_wrap[Derived_base] {
-  Derived_wrap.mk_derived_wrap[Derived_base](())
+  Derived_wrap.mk[Derived_base](())
 }
 ```
 
@@ -814,14 +814,14 @@ resolution terminates. The package also exercises **polymorphic** derivation
 
 ```text
 equiv derive_polymorphic_law() {
-  Witness.un_witness[String](derive((derive_unit_rule, derive_witness_rule))[Witness[String]]);
+  Witness.get[String](derive((derive_unit_rule, derive_witness_rule))[Witness[String]]);
   ()
 }
 
 equiv derive_functor_law() {
-  Identity.un_id[String](
-    Functor.fmap[Identity](derive((box_functor, identity_functor))[Functor[Identity]])[String][String](
-      (.(value) { value }, Identity.mk_id[String]("derive functor: ok\n"))
+  Identity.get[String](
+    Functor.get[Identity](derive((box_functor, identity_functor))[Functor[Identity]])[String][String](
+      (.(value) { value }, Identity.mk[String]("derive functor: ok\n"))
     )
   );
   "derive functor: ok\n"
@@ -916,15 +916,18 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
   ```text
   equiv type_of_product_law() {
-    type_of(. & ., ());
+    type_of[. & .](());
     rep_product(rep_unit(), rep_unit())
   }
   ```
 
 - **`show`** ([`show.kio`](../../test-data/poc/macros/workdir/show.kio)) —
-  builds a renderer for a supplied value. Calling that renderer takes two
+  evaluates and saves the supplied value once, then builds a renderer for it.
+  This happens even for unit or when the renderer is never called. If producing
+  the value fails, renderer construction fails. Calling that renderer takes two
   arguments: a string-concatenation function and a tuple of converters for
-  the value's host types. In the demo, `show(("show", (42, .t)))` uses
+  the value's host types. Each call evaluates those arguments normally and
+  renders the saved value. In the demo, `show(("show", (42, .t)))` uses
   converters of type `(String -> String) & (I32 -> String) & (Bool -> String)`;
   applying its renderer to `string_concat` and those converters produces
   `"(show, 42, true)"`. The supported shapes are host leaves, unit, products,

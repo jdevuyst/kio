@@ -1,0 +1,44 @@
+module quote;
+
+import __comptime__;
+
+pure fn omit_impl(ct: __Comptime__, _value: __Checked_term__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+pure fn repeat_impl(ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_pair__(ct, value, value)
+}
+
+pure fn share_impl(ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ {
+  __term_let__(
+  , ct
+  , __type_unit__(ct)
+  , value
+  , .(saved: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, saved, saved) }
+  )
+}
+
+pure fn marked_omit_impl(ct: __Comptime__, fills: __Fill_ctx__, _value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (__term_unit__(ct), fills) }
+
+pure fn marked_repeat_impl(ct: __Comptime__, fills: __Fill_ctx__, value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (repeat_impl(ct, value), fills) }
+
+pure fn marked_share_impl(ct: __Comptime__, fills: __Fill_ctx__, value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (share_impl(ct, value), fills) }
+
+pub macro omit : . -> . { impl omit_impl }
+
+pub macro repeat : . -> (. & .) { impl repeat_impl }
+
+pub macro share : . -> (. & .) { impl share_impl }
+
+pub macro marked_omit : . -> . { impl(fills) marked_omit_impl }
+
+pub macro marked_repeat : . -> (. & .) { impl(fills) marked_repeat_impl }
+
+pub macro marked_share : . -> (. & .) { impl(fills) marked_share_impl }

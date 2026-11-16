@@ -1136,21 +1136,21 @@ pure fn combine_dnf_branch_value(
   )
 }
 
-type Dnf_term_mapper = (__Type__ & __Checked_term__) -> __Checked_term__;
+type Dnf_term_mapper = (__Type__ & __Checked_term__) -> (Comptime_bool & __Checked_term__);
 
-type Dnf_emitter = (__Checked_term__ & Dnf_term_mapper) -> __Checked_term__;
+type Dnf_emitter = (__Checked_term__ & Dnf_term_mapper) -> (Comptime_bool & __Checked_term__);
 
 type Dnf_emitter_recur = (__Type__ & __Type__) -> Dnf_emitter;
 
 pure fn dnf_unit_emitter(ct: __Comptime__) -> Dnf_emitter {
-  .(_value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
+  .(_value: __Checked_term__, mapper: Dnf_term_mapper) -> Comptime_bool & __Checked_term__ {
     mapper(__type_unit__(ct), __term_unit__(ct))
   }
 }
 
 pure fn dnf_bottom_emitter(ct: __Comptime__, result_type: __Type__) -> Dnf_emitter {
-  .(value: __Checked_term__, _mapper: Dnf_term_mapper) -> __Checked_term__ {
-    __intrinsic_absurd__(ct, value, result_type)
+  .(value: __Checked_term__, _mapper: Dnf_term_mapper) -> Comptime_bool & __Checked_term__ {
+    (__.t__(ct), __intrinsic_absurd__(ct, value, result_type))
   }
 }
 
@@ -1162,15 +1162,17 @@ pure fn dnf_product_emitter(
 , left_emit: Dnf_emitter
 , right_emit: Dnf_emitter
 ) -> Dnf_emitter {
-  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> Comptime_bool & __Checked_term__ {
     let left_value = __intrinsic_fst__(ct, source, value);
     let right_value = __intrinsic_snd__(ct, source, value);
     left_emit(
     , left_value
-    , .(left_branch: __Type__, left_branch_value: __Checked_term__) -> __Checked_term__ {
+    , .(left_branch: __Type__, left_branch_value: __Checked_term__) -> & Comptime_bool
+      & __Checked_term__ {
         right_emit(
         , right_value
-        , .(right_branch: __Type__, right_branch_value: __Checked_term__) -> __Checked_term__ {
+        , .(right_branch: __Type__, right_branch_value: __Checked_term__) -> & Comptime_bool
+          & __Checked_term__ {
             mapper(
             , combine_dnf_branch_type(ct, left_branch, right_branch)
             , combine_dnf_branch_value(
@@ -1195,20 +1197,29 @@ pure fn dnf_sum_emitter(
 , left_emit: Dnf_emitter
 , right_emit: Dnf_emitter
 ) -> Dnf_emitter {
-  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ {
-    __intrinsic_either__(
-    , ct
-    , source
-    , result_type
-    , value
-    , .(left_value: __Checked_term__) -> __Checked_term__ { left_emit(left_value, mapper) }
-    , .(right_value: __Checked_term__) -> __Checked_term__ { right_emit(right_value, mapper) }
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> Comptime_bool & __Checked_term__ {
+    (
+    , __.t__(ct)
+    , __intrinsic_either__(
+      , ct
+      , source
+      , result_type
+      , value
+      , .(left_value: __Checked_term__) -> __Checked_term__ {
+          __snd__[Comptime_bool][__Checked_term__](left_emit(left_value, mapper))
+        }
+      , .(right_value: __Checked_term__) -> __Checked_term__ {
+          __snd__[Comptime_bool][__Checked_term__](right_emit(right_value, mapper))
+        }
+      )
     )
   }
 }
 
 pure fn dnf_atom_emitter(ct: __Comptime__, source: __Type__) -> Dnf_emitter {
-  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> __Checked_term__ { mapper(source, value) }
+  .(value: __Checked_term__, mapper: Dnf_term_mapper) -> Comptime_bool & __Checked_term__ {
+    mapper(source, value)
+  }
 }
 
 pure fn dnf_eliminate_step(
@@ -1271,6 +1282,17 @@ pure fn dnf_eliminate_emitter(ct: __Comptime__, source: __Type__, result_type: _
   )
 }
 
+/// Builds a DNF branch dispatcher and reports whether it consumes its source.
+pub pure fn dnf_eliminate_with_use(
+, ct: __Comptime__
+, source: __Type__
+, result_type: __Type__
+, value: __Checked_term__
+, branch: (__Type__ & __Checked_term__) -> (Comptime_bool & __Checked_term__)
+) -> Comptime_bool & __Checked_term__ {
+  dnf_eliminate_emitter(ct, source, result_type)(value, branch)
+}
+
 /// Builds a DNF branch dispatcher over a reflected sum value.
 pub pure fn dnf_eliminate(
 , ct: __Comptime__
@@ -1278,7 +1300,17 @@ pub pure fn dnf_eliminate(
 , result_type: __Type__
 , value: __Checked_term__
 , branch: (__Type__ & __Checked_term__) -> __Checked_term__
-) -> __Checked_term__ { dnf_eliminate_emitter(ct, source, result_type)(value, branch) }
+) -> __Checked_term__ {
+  __snd__[Comptime_bool][__Checked_term__](dnf_eliminate_with_use(
+  , ct
+  , source
+  , result_type
+  , value
+  , .(branch_type: __Type__, branch_value: __Checked_term__) -> Comptime_bool & __Checked_term__ {
+      (__.f__(ct), branch(branch_type, branch_value))
+    }
+  ))
+}
 
 type Maybe_type_list = Type_list | .;
 

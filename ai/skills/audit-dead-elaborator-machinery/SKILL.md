@@ -36,6 +36,16 @@ body-binding, host-interface and kind-arity metadata using
 [the reflection boundary](../../topics/macros.md#semantic-function-reflection).
 Lack of a current library caller alone does not authorize deleting a public API.
 
+Check [quoted-input boundaries](../../topics/macros.md#quoted-inputs-and-runtime-sharing)
+in both late and fills preparation. Each semantic function stage supplies one
+whole quotation, including Unit, without private-arity exceptions or
+split/project/rebuild duplication. Flag implicit occurrence-count sharing,
+forced-unused sources and exclusive helper state kept alive by tests. Keep
+ordinary call materialization, retained-source validation, recursion checks and
+explicit generated bindings distinct from that obsolete policy. Runtime
+witnesses must distinguish omission, repetition and authored sharing; a pure
+equivalence test alone cannot prove effect count or order.
+
 ## 2. Verify live macro reachability
 
 Trace a real imported macro call through parser, lexical resolution,

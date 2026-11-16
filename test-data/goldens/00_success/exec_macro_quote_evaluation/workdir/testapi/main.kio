@@ -1,0 +1,53 @@
+module testapi/main;
+
+import quote(
+, macro drop
+, macro first
+, macro later
+, macro marked_first
+, macro marked_repeat
+, macro marked_share
+, macro repeat
+, macro share
+);
+import testapi(String);
+import testapi/io(print);
+
+fn mark(text: String) { print(text) }
+
+fn packet() -> . & . { print("packet "); (print("left "), print("right ")) }
+
+fn consume(_unit: .) { () }
+
+fn generic[A](_value: A) { () }
+
+pub fn main() {
+  print("omit: ");
+  drop(mark("hidden "));
+  print("done\nrepeat: ");
+  let _ = repeat(mark("unit "));
+  print("\nshare: ");
+  let _ = share(mark("unit "));
+  print("\nmarked repeat: ");
+  let _ = marked_repeat(mark("unit "));
+  print("\nmarked share: ");
+  let _ = marked_share(mark("unit "));
+  print("\npacket repeat: ");
+  let _ = repeat(packet());
+  print("\npacket share: ");
+  let _ = share(packet());
+  print("\nfirst: ");
+  first(packet());
+  print("\nmarked first: ");
+  marked_first(packet());
+  print("\nunused closure: ");
+  let _ = later(mark("hidden "))[. -> (. & .)];
+  print("done\ncalled closure: ");
+  let delayed = later(mark("body "))[. -> (. & .)];
+  let _ = delayed();
+  let _ = delayed();
+  print("\nordinary: ");
+  consume(mark("direct "));
+  generic(mark("generic "));
+  print("done\n")
+}

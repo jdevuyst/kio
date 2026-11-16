@@ -1016,17 +1016,7 @@ impl<'m> MarkedProjection<'m> {
             self.terminal_result.replace(terminal_result).is_none(),
             "one fills invocation projected two terminal result types"
         );
-        let mut expanded_recipes = Vec::new();
-        for source in &self.sources {
-            let pieces =
-                split_projected_recipe(source.header.recipe().clone(), source.expanded_width)?;
-            assert_eq!(pieces.len(), source.expanded_width);
-            for (offset, piece) in pieces.into_iter().enumerate() {
-                expanded_recipes.push((source.layer, source.expanded_start + offset, piece));
-            }
-        }
-        let mut expanded_recipes = expanded_recipes.into_iter().peekable();
-        let mut previous_requested_recipe_end = None;
+        let mut source_recipes = self.sources.iter().peekable();
         for slot in plan.slots {
             match slot {
                 crate::pass::typecheck_full::ProjectedUserMacroSlot::Type {
@@ -1164,48 +1154,28 @@ impl<'m> MarkedProjection<'m> {
                             }),
                         }
                     } else {
-                        let requested_start = (layer, expanded_start);
-                        if let Some(previous_end) = previous_requested_recipe_end {
-                            assert!(
-                                previous_end <= requested_start,
-                                "declared fills value slots left authored ABI order"
-                            );
-                        }
-                        let expanded_end = expanded_start
-                            .checked_add(expanded_width)
-                            .expect("declared fills value-slot width overflow");
-                        previous_requested_recipe_end = Some((layer, expanded_end));
-                        while expanded_recipes.peek().is_some_and(
-                            |(recipe_layer, recipe_slot, _)| {
-                                (*recipe_layer, *recipe_slot) < requested_start
-                            },
-                        ) {
-                            let (recipe_layer, _recipe_slot, _recipe) = expanded_recipes
+                        let mut sources = Vec::new();
+                        let mut next_slot = expanded_start;
+                        while source_recipes
+                            .peek()
+                            .is_some_and(|source| source.layer == layer)
+                        {
+                            let source = source_recipes
                                 .next()
-                                .expect("a peeked projected recipe remains available");
-                            assert!(
-                                action.value_layer_forces_unrequested_source(recipe_layer),
-                                "a nonzero-ABI projected source escaped its declared fills slot"
+                                .expect("a peeked source remains available");
+                            assert_eq!(
+                                source.expanded_start, next_slot,
+                                "projected sources cover the checked stage in order"
                             );
+                            next_slot += source.expanded_width;
+                            sources.push(source.header.recipe().clone());
                         }
-                        let pieces = (expanded_start..expanded_end)
-                            .map(|expanded| {
-                                let (recipe_layer, recipe_slot, recipe) = expanded_recipes
-                                    .next()
-                                    .unwrap_or_else(|| {
-                                        unreachable!(
-                                            "a declared fills value slot escaped the marked descent gate ({layer}:{expanded_start}+{expanded_width})"
-                                        )
-                                    });
-                                assert_eq!(
-                                    (recipe_layer, recipe_slot),
-                                    (layer, expanded),
-                                    "projected sources left authored ABI order"
-                                );
-                                recipe
-                            })
-                            .collect();
-                        fold_projected_recipe_packet(pieces)?
+                        assert_eq!(
+                            next_slot,
+                            expanded_start + expanded_width,
+                            "the projected packet covers its complete checked stage"
+                        );
+                        fold_projected_recipe_packet(sources)?
                     };
                     inputs.push(crate::normalization::projected_value(ProjectedValue(
                         ProjectedValueKind::CheckedRecipe(recipe),
@@ -1213,12 +1183,10 @@ impl<'m> MarkedProjection<'m> {
                 }
             }
         }
-        for (recipe_layer, _recipe_slot, _recipe) in expanded_recipes {
-            assert!(
-                action.value_layer_forces_unrequested_source(recipe_layer),
-                "a nonzero-ABI projected source escaped its declared fills slot"
-            );
-        }
+        assert!(
+            source_recipes.next().is_none(),
+            "every projected source belongs to a consumed Function stage"
+        );
         self.seal
             .install_specialization_context(specialization.finish());
         Ok((inputs, plan.frozen_residual))
@@ -1529,10 +1497,7 @@ impl<'m> MarkedProjection<'m> {
                     store.require_goal_free_after_delta(delta, source.expected, tcx)?
                 };
                 sources.push(crate::pass::typecheck_full::TypedUserMacroCallSource {
-                    source_index: source.source_index,
                     source: source.source,
-                    expanded_start: source.expanded_start,
-                    expanded_width: source.expanded_width,
                     expected: expected.ty().clone(),
                 });
             }
@@ -1569,13 +1534,7 @@ impl<'m> MarkedProjection<'m> {
                 .state
                 .as_ref()
                 .expect("a retained projected source lost its completed state");
-            collect_projected_operand_source(
-                state,
-                retained.layer,
-                &mut template_slots,
-                frontier,
-                tcx,
-            )?;
+            collect_projected_operand_source(state, &mut template_slots, frontier, tcx)?;
         }
         let mut sources = Vec::with_capacity(template_slots.len());
         let mut runtime_returns = Vec::with_capacity(template_slots.len());
@@ -2085,7 +2044,6 @@ impl<'m> MarkedProjection<'m> {
         close_projected_source_at_path(
             &mut retained.state,
             &location.path,
-            retained.layer,
             &mut self.template_slots,
             request.leaf_expected,
             span,
@@ -2521,7 +2479,6 @@ pub(crate) struct ProjectedTemplateSource {
     pub(crate) reflection_scope: crate::pass::typecheck_core::ScopedType,
     pub(crate) source: crate::ast::Expr<crate::ast::Lowered>,
     pub(crate) ty: crate::pass::typecheck_core::InternedType<crate::ast::Lowered>,
-    pub(crate) layer: Option<usize>,
 }
 
 pub(super) struct ProjectedMaterialization {
@@ -2537,7 +2494,6 @@ pub(super) struct ProjectedMaterialization {
 
 fn collect_projected_sources<'m>(
     pair: &StagedPair<'m>,
-    layer: usize,
     slots: &mut [ProjectedTemplateSlot],
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -2548,7 +2504,6 @@ fn collect_projected_sources<'m>(
                 .state
                 .as_ref()
                 .expect("a retained pair operand lost its completed state"),
-            layer,
             slots,
             frontier,
             tcx,
@@ -2559,7 +2514,6 @@ fn collect_projected_sources<'m>(
 
 fn capture_completed_pair_sources<'m>(
     pair: &mut StagedPair<'m>,
-    layer: usize,
     slots: &mut [ProjectedTemplateSlot],
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -2572,7 +2526,7 @@ fn capture_completed_pair_sources<'m>(
             .expect("a retained pair operand lost its staged state");
         match state {
             StagedOperand::Pair(pair) => {
-                capture_completed_pair_sources(pair, layer, slots, &mut pair_frontier, tcx)?
+                capture_completed_pair_sources(pair, slots, &mut pair_frontier, tcx)?
             }
             StagedOperand::Completed {
                 source,
@@ -2595,7 +2549,6 @@ fn capture_completed_pair_sources<'m>(
                             source: (**source).clone(),
                             reflection_scope: closed.clone(),
                             ty: closed.into_interned_type(),
-                            layer: Some(layer),
                         })
                         .is_none(),
                     "a projected template source was captured more than once"
@@ -2612,13 +2565,12 @@ fn capture_completed_pair_sources<'m>(
 
 fn collect_projected_operand_source<'m>(
     operand: &StagedOperand<'m>,
-    layer: usize,
     slots: &mut [ProjectedTemplateSlot],
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
     match operand {
-        StagedOperand::Pair(pair) => collect_projected_sources(pair, layer, slots, frontier, tcx),
+        StagedOperand::Pair(pair) => collect_projected_sources(pair, slots, frontier, tcx),
         StagedOperand::Completed {
             source,
             completed,
@@ -2643,7 +2595,6 @@ fn collect_projected_operand_source<'m>(
                         source: (*source).clone(),
                         reflection_scope: closed.clone(),
                         ty: closed.into_interned_type(),
-                        layer: Some(layer),
                     })
                     .is_none(),
                 "two projected leaves shared one template identity"
@@ -2668,7 +2619,6 @@ fn collect_projected_operand_source<'m>(
                         source: (*source).clone(),
                         reflection_scope: preview.clone(),
                         ty: preview.ty().clone(),
-                        layer: Some(layer),
                     })
                     .is_none(),
                 "two projected leaves shared one template identity"
@@ -3138,7 +3088,6 @@ fn prepare_lifted_callback_types<'m>(
                         .clone(),
                     ty: continuation.clone(),
                     reflection_scope: continuation_scope,
-                    layer: None,
                 },
             ));
         }
@@ -3804,11 +3753,7 @@ fn collapse_initial_completed_pair_children<'m>(
     Ok(())
 }
 
-fn capture_open_completed_source(
-    state: &StagedOperand<'_>,
-    layer: usize,
-    slots: &mut [ProjectedTemplateSlot],
-) {
+fn capture_open_completed_source(state: &StagedOperand<'_>, slots: &mut [ProjectedTemplateSlot]) {
     let StagedOperand::OpenCompleted {
         source,
         preview,
@@ -3830,7 +3775,6 @@ fn capture_open_completed_source(
                 source: (**source).clone(),
                 reflection_scope: preview.clone(),
                 ty: preview.ty().clone(),
-                layer: Some(layer),
             })
             .is_none(),
         "a projected producer source was captured more than once"
@@ -3853,7 +3797,6 @@ fn require_closed_recipe_match<'m>(
 fn close_projected_source_at_path<'m>(
     state: &mut Option<StagedOperand<'m>>,
     path: &[u8],
-    layer: usize,
     slots: &mut [ProjectedTemplateSlot],
     leaf_expected: crate::pass::typecheck_core::ScopedType,
     span: crate::span::Span,
@@ -3864,7 +3807,7 @@ fn close_projected_source_at_path<'m>(
         let staged = state
             .take()
             .expect("a producer close path lost its staged leaf");
-        capture_open_completed_source(&staged, layer, slots);
+        capture_open_completed_source(&staged, slots);
         let (source, completed) = finalize_staged_operand(staged, frontier, tcx)?;
         require_closed_recipe_match(
             completed.scoped().clone(),
@@ -3891,7 +3834,6 @@ fn close_projected_source_at_path<'m>(
     close_projected_source_at_path(
         &mut operand.state,
         rest,
-        layer,
         slots,
         leaf_expected,
         span,
@@ -5314,7 +5256,7 @@ pub(super) fn stage_projected_descent<'m>(
             projection.next_template as usize,
             ProjectedTemplateSlot::default,
         );
-        capture_completed_pair_sources(root, layer, &mut projection.template_slots, frontier, tcx)?;
+        capture_completed_pair_sources(root, &mut projection.template_slots, frontier, tcx)?;
     }
     projection.sources.push(RetainedProjectedSource {
         state: Some(state),
@@ -7139,56 +7081,6 @@ fn validate_projected_lambda_before_action(
     } else {
         Err(projected_source_pre_action_error(lambda.source.span()))
     }
-}
-
-fn split_projected_recipe(
-    recipe: ProjectedCheckedRecipe,
-    width: usize,
-) -> Result<Vec<ProjectedCheckedRecipe>, crate::error::Error> {
-    assert!(width != 0, "a projected source has at least one ABI slot");
-    if width == 1 {
-        return Ok(vec![recipe]);
-    }
-    let left = project_recipe_product_child(&recipe, true)?;
-    let right = project_recipe_product_child(&recipe, false)?;
-    let mut pieces = Vec::with_capacity(width);
-    pieces.push(left);
-    pieces.extend(split_projected_recipe(right, width - 1)?);
-    Ok(pieces)
-}
-
-fn project_recipe_product_child(
-    recipe: &ProjectedCheckedRecipe,
-    left: bool,
-) -> Result<ProjectedCheckedRecipe, crate::error::Error> {
-    if let ProjectedRecipeNode::Pair(first, second) = recipe.node.as_ref() {
-        return Ok(if left {
-            first.as_ref().clone()
-        } else {
-            second.as_ref().clone()
-        });
-    }
-    let edge = if left {
-        ProjectedTypeEdge::ProductLeft
-    } else {
-        ProjectedTypeEdge::ProductRight
-    };
-    let product_type = recipe.ty.clone();
-    let mut ty = product_type.structural_child(edge).ok_or_else(|| {
-        crate::error::Error::macro_error(
-            recipe.ty.ty.ty().span(),
-            "a projected source width exceeded its exact product spine",
-        )
-    })?;
-    ty.producers = ty.producers.union(&product_type.producers);
-    Ok(ProjectedCheckedRecipe {
-        ty,
-        node: crate::normalization::EvalRef::new(ProjectedRecipeNode::ProductProjection {
-            product_type,
-            product: Arc::new(recipe.clone()),
-            left,
-        }),
-    })
 }
 
 fn fold_projected_recipe_packet(
@@ -12278,6 +12170,9 @@ mod tests {
                     };
                     signature.push_str(&format!(" -> [T{index}] {result}"));
                     implementation.push_str(&format!(", _t{index}: __Type__"));
+                    if index < stages {
+                        implementation.push_str(&format!(", _unit{index}: __Checked_term__"));
+                    }
                     call.push_str(if computed && index == stages {
                         "[. -> .]"
                     } else {
@@ -12610,7 +12505,7 @@ mod tests {
                 __macro_error__(ct, __"inner action entered"__(ct))
             }
             macro relay : [Source] Source -> [Selector] Selector -> [Target] Target { impl relay_impl }
-            pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__) ->
+            pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__, _unit: __Checked_term__) ->
                 __Checked_term__ & __Fill_ctx__ {
                 (__macro_error__(ct, __"outer action entered"__(ct)), fills)
             }
@@ -12724,6 +12619,9 @@ mod tests {
                         if index < stages { "." } else { "T0" }
                     ));
                     implementation.push_str(&format!(", _t{index}: __Type__"));
+                    if index < stages {
+                        implementation.push_str(&format!(", _unit{index}: __Checked_term__"));
+                    }
                 }
                 let result_type = match mode {
                     "partial" => format!("[T{stages}] ."),
@@ -12835,8 +12733,8 @@ mod tests {
             ),
             (
                 // The marked projection retains two optional reflection pointers.
-                456,
-                1280 + std::mem::size_of::<&[crate::ast::CallStage<Lowered>]>()
+                448,
+                1272 + std::mem::size_of::<&[crate::ast::CallStage<Lowered>]>()
                     + std::mem::size_of::<crate::span::Span>(),
                 128,
                 128,
@@ -17618,7 +17516,7 @@ mod tests {
         let mut captured = (0..next_template)
             .map(|_| ProjectedTemplateSlot::default())
             .collect::<Vec<_>>();
-        capture_completed_pair_sources(pair, 0, &mut captured, &mut frontier, &tcx)
+        capture_completed_pair_sources(pair, &mut captured, &mut frontier, &tcx)
             .expect("capture only the producer-free nested pair prefix");
         assert!(captured[0].source.is_none());
         assert!(captured[1].source.is_some());
@@ -17736,7 +17634,7 @@ mod tests {
         let mut captured = (0..next_template)
             .map(|_| ProjectedTemplateSlot::default())
             .collect::<Vec<_>>();
-        capture_completed_pair_sources(pair, 0, &mut captured, &mut frontier, &tcx)
+        capture_completed_pair_sources(pair, &mut captured, &mut frontier, &tcx)
             .expect("capture only the producer-free nested scalar pair prefix");
         assert!(captured[0].source.is_none());
         assert!(captured[1].source.is_some());
@@ -18019,7 +17917,7 @@ mod tests {
         };
         let mut template_slots = Vec::new();
         template_slots.resize_with(next_template as usize, ProjectedTemplateSlot::default);
-        capture_completed_pair_sources(&mut pair, 0, &mut template_slots, &mut frontier, &tcx)
+        capture_completed_pair_sources(&mut pair, &mut template_slots, &mut frontier, &tcx)
             .expect("capture producer-free pair sources");
         collapse_initial_completed_pair_children(&mut pair, &mut frontier, &mut tcx)
             .expect("close nested producer-free pair");
@@ -18041,7 +17939,6 @@ mod tests {
                 action: crate::ast::NodeId(1),
                 source_span: source.span(),
                 layers: Vec::new(),
-                next_source_index: 0,
                 terminal_type_layer: None,
             }),
             sources: vec![RetainedProjectedSource {

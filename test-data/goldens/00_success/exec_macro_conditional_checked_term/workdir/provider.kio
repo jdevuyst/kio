@@ -3,7 +3,7 @@ module provider;
 import __comptime__;
 import macros/control(macro scope);
 
-pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn choose_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   scope {
     __comptime_if_then_else__(ct)(
     , __.t__(ct)

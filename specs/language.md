@@ -610,7 +610,11 @@ distinction.
 **Named-callable contract.** Top-level `fn`s, intrinsics, and macro names are all looked up by name and expose a declared call type (a polytype). At a call site, explicit type arguments, `_` placeholders, value arguments, and the surrounding expected type are all solved against that call type by the ordinary call-type rules of § Type system. The difference is that a macro's macro call runs compile-time implementation code over **reflected arguments** rather than the runtime function-call path; the ordinary and fills-marked reflected ABIs are documented below and in [`docs/guides/macros.md`](../docs/guides/macros.md).
 
 A macro receives a checked input as a quoted term and may omit it from its
-generated code. When that code evaluates a retained product input, ordinary
+generated code or embed it more than once. Each occurrence follows ordinary
+generated-code evaluation. To evaluate an input once and reuse its value, the
+implementation constructs an explicit binding with `__term_let__`; binding the
+quotation to a compile-time variable alone does not share its runtime value.
+When that code evaluates a retained product input, ordinary
 strict product evaluation evaluates its components in order. To make a
 component independently skippable, pass it as a thunk and invoke that thunk
 only when needed. This runtime behavior follows the generated code, not the
@@ -744,8 +748,11 @@ The ordinary field `impl f;` selects the late schedule and this ABI:
   -> __Checked_term__
 ```
 
-Every declared value slot is a completed `__Checked_term__` before the
-implementation runs. Each declared type slot is `__Type__`, except that an
+Each consumed function stage contributes one completed `__Checked_term__` for
+its whole domain, including a unit domain. A product domain supplies one quoted
+product, independent of how the declaration groups its parameters. A stage
+that applies only a type contributes no value quotation. These rules apply to
+both implementation schedules. Each declared type slot is `__Type__`, except that an
 eligible result-only binder may use `.`. Eligibility follows the exact binder:
 it must occur in the terminal result and must not occur in any later value
 domain, after transparent aliases unfold and with lexical shadowing respected.

@@ -1,0 +1,27 @@
+module testapi/main;
+
+import quote(
+, macro marked_omit
+, macro marked_repeat
+, macro marked_share
+, macro omit
+, macro repeat
+, macro share
+);
+import testapi/io(print);
+
+pub fn main() {
+  print("late omit: ");
+  omit(print("hidden "));
+  print("done\nlate repeat: ");
+  let _ = repeat(print("source "));
+  print("done\nlate share: ");
+  let _ = share(print("source "));
+  print("done\nfills omit: ");
+  marked_omit(print("hidden "));
+  print("done\nfills repeat: ");
+  let _ = marked_repeat(print("source "));
+  print("done\nfills share: ");
+  let _ = marked_share(print("source "));
+  print("done\n")
+}

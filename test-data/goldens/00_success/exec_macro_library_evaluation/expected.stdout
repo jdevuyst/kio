@@ -1,0 +1,7 @@
+unused leaf: source done
+leaf: source ready xx done
+unit: source ready ()() done
+pair: source ready (x, y)(x, y) done
+sparse: source ready ((), x)((), x) done
+sum: source ready left(x)left(x) done
+fit packet: source done

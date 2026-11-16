@@ -2,7 +2,7 @@ module macros;
 
 import __comptime__;
 
-pure fn polymorphic_unit_impl(ct: __Comptime__, _result: __Type__) -> __Checked_term__ {
+pure fn polymorphic_unit_impl(ct: __Comptime__, _result: __Type__, _unit: __Checked_term__) -> __Checked_term__ {
   __term_type_fn__(
   , ct
   , __type_arity_zero__(ct)

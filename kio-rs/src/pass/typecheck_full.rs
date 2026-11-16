@@ -543,12 +543,10 @@ struct UserMacroSignatureLayout {
 struct UserMacroSignatureLayer {
     type_params: Vec<TypeParam>,
     value_param: Option<InternedType>,
-    value_abi_arity: usize,
 }
 
-/// Goal-free output of the ordinary application frontier.  The source index
-/// is stable across successive callable layers; `expanded_*` describes the
-/// semantic right-spine slots occupied by the one source expression.
+/// Goal-free output of the ordinary application frontier, retaining complete
+/// source expressions in the order selected for each semantic Function stage.
 pub(crate) struct TypedUserMacroCall {
     pub(crate) layers: Vec<TypedUserMacroCallLayer>,
     pub(crate) result_ty: Option<InternedType>,
@@ -566,10 +564,7 @@ pub(crate) struct TypedUserMacroTypeSlot {
 }
 
 pub(crate) struct TypedUserMacroCallSource {
-    pub(crate) source_index: usize,
     pub(crate) source: Expr,
-    pub(crate) expanded_start: usize,
-    pub(crate) expanded_width: usize,
     pub(crate) expected: InternedType,
 }
 
@@ -802,10 +797,6 @@ impl<'m> PreparedUserMacroAction<'m> {
         &self.layout.layers[layer].type_params[slot]
     }
 
-    pub(crate) fn value_layer_forces_unrequested_source(&self, layer: usize) -> bool {
-        self.layout.layers[layer].value_abi_arity == 0
-    }
-
     pub(crate) fn projected_abi_plan(
         &self,
         call: &ProjectedUserMacroCallShape,
@@ -1024,7 +1015,6 @@ impl<'m> PreparedUserMacroAction<'m> {
             abi_inputs,
             input_keys,
             capture_imports: captures.imports,
-            value_adapter: completed.value_adapter,
             residual_abstraction: completed.residual_abstraction,
             ambient_type_names: completed.ambient_type_names,
             residual_reflection_bindings: completed.residual_reflection_bindings,
@@ -1236,18 +1226,11 @@ fn user_macro_signature_layout(
             cur = InternedType::fresh_with_identity(*body, cur.identity_is_canonical());
         }
         let identity_canonical = cur.identity_is_canonical();
-        let Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } = cur.clone_type()
-        else {
+        let Type::Function { param, ret, .. } = cur.clone_type() else {
             if !type_params.is_empty() {
                 layers.push(UserMacroSignatureLayer {
                     type_params,
                     value_param: None,
-                    value_abi_arity: 0,
                 });
             }
             return UserMacroSignatureLayout {
@@ -1257,26 +1240,15 @@ fn user_macro_signature_layout(
             };
         };
         let value_param = InternedType::fresh_with_identity(*param, identity_canonical);
-        let expanded_value_slots = user_macro_expanded_value_slot_count(&value_param, alias_ctx);
-        let mut expanded_start = 0usize;
-        for ty in user_macro_value_slot_types(&value_param, abi_arity) {
-            let expanded_width = user_macro_expanded_value_slot_count(&ty, alias_ctx).max(1);
-            slots.push(UserMacroSignatureSlot::Value {
-                ty,
-                layer,
-                expanded_start,
-                expanded_width,
-            });
-            expanded_start += expanded_width;
-        }
-        debug_assert!(
-            abi_arity == 0 || expanded_start == expanded_value_slots,
-            "the macro ABI view must cover the semantic value packet"
-        );
+        slots.push(UserMacroSignatureSlot::Value {
+            expanded_width: user_macro_expanded_value_slot_count(&value_param, alias_ctx),
+            ty: value_param.clone(),
+            layer,
+            expanded_start: 0,
+        });
         layers.push(UserMacroSignatureLayer {
             type_params,
             value_param: Some(value_param),
-            value_abi_arity: abi_arity,
         });
         cur = InternedType::fresh_with_identity(*ret, identity_canonical);
     }
@@ -1515,13 +1487,6 @@ fn sequence_slot_type(ty: &InternedType, aliases: &AliasCtx<'_, '_>) -> bool {
     .is_ok()
 }
 
-fn user_macro_value_slot_types(param: &InternedType, abi_arity: usize) -> Vec<InternedType> {
-    Type::right_spine_take(param.as_type(), abi_arity)
-        .into_iter()
-        .map(|ty| InternedType::fresh_with_identity(ty.clone(), param.identity_is_canonical()))
-        .collect()
-}
-
 fn user_macro_expanded_value_slot_count(
     param: &InternedType,
     alias_ctx: &AliasCtx<'_, '_>,
@@ -1560,8 +1525,8 @@ fn projected_user_macro_value_slot(
         ty.identity_is_canonical(),
     );
     // The public call freezes semantic source coordinates when its layer opens.
-    // A later-solved type argument may expose a wider product, but the final
-    // private ABI slot owns the already-selected remaining spine.
+    // A later-solved type argument may expose a wider product; the quotation
+    // still owns the complete packet selected at the public stage.
     let expanded_width = frozen_layer_width.map_or(declared_expanded_width, |layer_width| {
         layer_width
             .checked_sub(expanded_start)
@@ -1574,7 +1539,6 @@ fn projected_user_macro_value_slot(
 struct CompletedUserMacroAbi {
     inputs: Vec<UserMacroTemplateInput>,
     values: Vec<Expr>,
-    value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     /// Enclosing source binders complete the replay allocator's namespace but
     /// do not affect the reusable macro template or its memo key.
@@ -1583,28 +1547,45 @@ struct CompletedUserMacroAbi {
     terminal_result_ty: Option<InternedType>,
 }
 
-fn typed_source_slot_types(
-    source: &TypedUserMacroCallSource,
-    tcx: &TypeCtx<'_, '_>,
-) -> Vec<InternedType> {
-    if source.expanded_width == 1 {
-        return vec![source.expected.clone()];
+/// Assemble the written sources of one checked Function stage. A source that
+/// already computes a product remains one expression in this packet.
+fn user_macro_source_packet(sources: &[TypedUserMacroCallSource], span: Span) -> Expr {
+    let mut sources = sources.iter().rev();
+    let Some(last) = sources.next() else {
+        return Expr::Unit {
+            source_trivia: Default::default(),
+            occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
+            meta: Meta::new(span),
+        };
+    };
+    let mut packet = last.source.clone();
+    let mut packet_ty = last.expected.clone_type();
+    for source in sources {
+        let left_ty = source.expected.clone_type();
+        let callee = Expr::Path {
+            occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
+            segments: vec![PathSegment::new("__pair__".to_owned(), span)],
+            meta: Meta::new(span),
+            ext: (),
+        };
+        packet = Expr::synth_call(
+            callee,
+            vec![
+                CallArg::Type(left_ty.clone()),
+                CallArg::Type(packet_ty.clone()),
+                CallArg::Value(source.source.clone()),
+                CallArg::Value(packet),
+            ],
+            span,
+        );
+        *packet.occurrence_mut() = crate::ast::ExpressionOccurrenceCarrier::fresh();
+        packet_ty = Type::Product {
+            left: Box::new(left_ty),
+            right: Box::new(packet_ty),
+            meta: Meta::new(span),
+        };
     }
-    let (unfolded, identity_canonical) = crate::pass::typecheck_core::canonicalize_for_comparison(
-        source.expected.as_type(),
-        &tcx.env.alias_ctx(),
-        source.expected.identity_is_canonical(),
-    );
-    let slots = Type::right_spine_take(&unfolded, source.expanded_width);
-    assert_eq!(
-        slots.len(),
-        source.expanded_width,
-        "a typed source width must match its expected product spine"
-    );
-    slots
-        .into_iter()
-        .map(|ty| InternedType::fresh_with_identity(ty.clone(), identity_canonical))
-        .collect()
+    packet
 }
 
 fn reserve_module_nominal_type_names(module: &Module, reserved: &mut HashSet<String>) {
@@ -1786,47 +1767,9 @@ fn complete_user_macro_abi(
         typed.layers.len() <= layout.layers.len(),
         "the shared call transcript exceeded the macro declaration"
     );
-    let source_count = typed
-        .layers
-        .iter()
-        .flat_map(|layer| layer.sources.iter().map(|source| source.source_index + 1))
-        .max()
-        .unwrap_or(0);
-    let mut adapter_sources = vec![None; source_count];
-    let mut values = vec![None; source_count];
-    for (layer_index, layer) in typed.layers.iter().enumerate() {
-        for source in &layer.sources {
-            let reflected = reflect_macro_interned_type(&source.expected, tcx)?;
-            let replacement = crate::normalization::CheckedTermTemplateSource {
-                ty: reflected,
-                force_if_unused: layout.layers[layer_index].value_abi_arity == 0,
-            };
-            assert!(
-                adapter_sources[source.source_index]
-                    .replace(replacement)
-                    .is_none(),
-                "one source expression appeared twice in the call transcript"
-            );
-            assert!(
-                values[source.source_index]
-                    .replace(source.source.clone())
-                    .is_none(),
-                "one source expression appeared twice in the call transcript"
-            );
-        }
-    }
-    let mut adapter_sources = adapter_sources
-        .into_iter()
-        .map(|source| source.expect("source indices in a call transcript are contiguous"))
-        .collect::<Vec<_>>();
-    let mut values = values
-        .into_iter()
-        .map(|source| source.expect("source indices in a call transcript are contiguous"))
-        .collect::<Vec<_>>();
-
+    let mut values = Vec::new();
     let mut substitutions = HashMap::new();
     let mut inputs = Vec::new();
-    let mut adapter_slots = Vec::new();
     let mut residual_layers = Vec::new();
     let mut residual_prefix_type_params = Vec::new();
     let mut residual_reflection_binders = Vec::new();
@@ -1911,25 +1854,11 @@ fn complete_user_macro_abi(
             }
         }
 
-        let source_slots = typed_layer
-            .map(|typed_layer| {
-                typed_layer
-                    .sources
-                    .iter()
-                    .map(|source| (source, typed_source_slot_types(source, tcx)))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
         let mut residual_values = Vec::new();
         for slot in layout.slots.iter().filter(|slot| {
             matches!(slot, UserMacroSignatureSlot::Value { layer, .. } if *layer == layer_index)
         }) {
-            let UserMacroSignatureSlot::Value {
-                ty,
-                expanded_start,
-                expanded_width,
-                ..
-            } = slot
+            let UserMacroSignatureSlot::Value { ty, .. } = slot
             else {
                 unreachable!()
             };
@@ -1943,59 +1872,20 @@ fn complete_user_macro_abi(
                 &residual_reflection_binders,
             )?;
             if value_layer_consumed {
-                let mut pieces = Vec::with_capacity(*expanded_width);
-                for expanded_slot in *expanded_start..(*expanded_start + *expanded_width) {
-                    let source_piece = source_slots
-                        .iter()
-                        .find(|(source, _)| {
-                            expanded_slot >= source.expanded_start
-                                && expanded_slot < source.expanded_start + source.expanded_width
-                        });
-                    if let Some((source, slot_tys)) = source_piece {
-                        pieces.push(crate::normalization::CheckedTermTemplatePiece {
-                            source_index: source.source_index,
-                            source_slot: expanded_slot - source.expanded_start,
-                            source_slot_tys: slot_tys
-                                .iter()
-                                .map(|ty| reflect_macro_interned_type(ty, tcx))
-                                .collect::<Result<_, _>>()?,
-                        });
-                        continue;
-                    }
-
-                    let (unfolded, _) =
-                        crate::pass::typecheck_core::canonicalize_for_comparison(
-                            resolved.as_type(),
-                            &tcx.env.alias_ctx(),
-                            resolved.identity_is_canonical(),
-                        );
-                    assert!(
-                        source_slots.is_empty()
-                            && *expanded_width == 1
-                            && matches!(unfolded, Type::Unit { .. }),
-                        "only a source-empty implicit Unit may omit a macro source"
+                let sources = &typed_layer.expect("a consumed value layer has a transcript").sources;
+                if sources.is_empty() {
+                    let (unfolded, _) = crate::pass::typecheck_core::canonicalize_for_comparison(
+                        resolved.as_type(), &tcx.env.alias_ctx(), resolved.identity_is_canonical(),
                     );
-                    let source_index = values.len();
-                    let source_ty = reflected.clone();
-                    values.push(Expr::Unit {
-                        source_trivia: Default::default(), occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
-                        meta: Meta::new(span),
-                    });
-                    adapter_sources.push(crate::normalization::CheckedTermTemplateSource {
-                        ty: source_ty.clone(),
-                        force_if_unused: false,
-                    });
-                    pieces.push(crate::normalization::CheckedTermTemplatePiece {
-                        source_index,
-                        source_slot: 0,
-                        source_slot_tys: vec![source_ty],
-                    });
+                    assert!(matches!(unfolded, Type::Unit { .. }),
+                        "only an implicit Unit may omit a macro source");
                 }
+                let value_index = values.len();
+                values.push(user_macro_source_packet(sources, span));
                 inputs.push(UserMacroTemplateInput::Term {
-                    value_index: abi_value_index,
+                    value_index,
                     value_ty: reflected,
                 });
-                adapter_slots.push(crate::normalization::CheckedTermTemplateSlot { pieces });
             } else {
                 let name = frozen_residual
                     .and_then(|frozen| frozen.bound_value_names[abi_value_index].as_ref())
@@ -2060,10 +1950,6 @@ fn complete_user_macro_abi(
     Ok(CompletedUserMacroAbi {
         inputs,
         values,
-        value_adapter: crate::normalization::CheckedTermTemplateValueAdapter {
-            sources: adapter_sources,
-            slots: adapter_slots,
-        },
         residual_abstraction: crate::pass::substitute::EtaPlan {
             layers: residual_layers,
         },
@@ -3832,7 +3718,6 @@ pub(crate) struct DeferredUserMacroElaboration {
     abi_inputs: Vec<UserMacroTemplateInput>,
     input_keys: Vec<UserMacroTemplateInputKey>,
     capture_imports: Vec<UserMacroTemplateGeneratedImport>,
-    value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
     residual_reflection_bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
@@ -3851,7 +3736,6 @@ pub(crate) struct ReadyUserMacroAction {
     abi_inputs: Vec<UserMacroTemplateInput>,
     input_keys: Vec<UserMacroTemplateInputKey>,
     capture_imports: Vec<UserMacroTemplateGeneratedImport>,
-    value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
     residual_reflection_bindings: Vec<(String, crate::normalization::ReflectedVariable)>,
@@ -3887,7 +3771,6 @@ impl ReadyUserMacroAction {
             abi_inputs: self.abi_inputs,
             input_keys: self.input_keys,
             capture_imports: self.capture_imports,
-            value_adapter: self.value_adapter,
             residual_abstraction: self.residual_abstraction,
             ambient_type_names: self.ambient_type_names,
             residual_reflection_bindings: self.residual_reflection_bindings,
@@ -4080,39 +3963,14 @@ pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
         proof: _,
         fills: _,
     } = ready;
-    let mut adapter_sources = Vec::with_capacity(projected_sources.len());
-    let mut adapter_slots = Vec::with_capacity(projected_sources.len());
-    let mut values = Vec::with_capacity(projected_sources.len());
-    for (index, source) in projected_sources.into_iter().enumerate() {
-        let reflected_ty = reflect_projected_type(
-            &source.ty,
-            tcx,
-            &source.reflection_scope,
-            residual_bindings.iter().cloned(),
-        )?;
-        adapter_sources.push(crate::normalization::CheckedTermTemplateSource {
-            ty: reflected_ty.clone(),
-            force_if_unused: source
-                .layer
-                .is_some_and(|layer| action.layout.layers[layer].value_abi_arity == 0),
-        });
-        adapter_slots.push(crate::normalization::CheckedTermTemplateSlot {
-            pieces: vec![crate::normalization::CheckedTermTemplatePiece {
-                source_index: index,
-                source_slot: 0,
-                source_slot_tys: vec![reflected_ty],
-            }],
-        });
-        values.push(source.source);
-    }
+    let values = projected_sources
+        .into_iter()
+        .map(|source| source.source)
+        .collect();
     let mut ordinary =
         action.into_ready_with_captures(typed, captures, Some(&frozen_residual), tcx)?;
     assert_eq!(ordinary.schedule, crate::ast::MacroSchedule::Fills);
     ordinary.values = values;
-    ordinary.value_adapter = crate::normalization::CheckedTermTemplateValueAdapter {
-        sources: adapter_sources,
-        slots: adapter_slots,
-    };
     // Keep the projected and ordinary derivations honest at the public eta
     // boundary before checking the possibly lifted runtime result below.
     let ordinary_terminal_result = ordinary
@@ -5729,7 +5587,6 @@ impl Elaborations {
                     template,
                     UserMacroReplayInputs {
                         values: &ob.values,
-                        value_adapter: Some(&ob.value_adapter),
                         residual_eta: Some(&ob.residual_abstraction),
                         ambient_type_names: &ob.ambient_type_names,
                         residual_reflection_bindings: &ob.residual_reflection_bindings,
@@ -5747,7 +5604,6 @@ impl Elaborations {
                         template,
                         UserMacroReplayInputs {
                             values: &ob.values,
-                            value_adapter: Some(&ob.value_adapter),
                             residual_eta: Some(&ob.residual_abstraction),
                             ambient_type_names: &ob.ambient_type_names,
                             residual_reflection_bindings: &ob.residual_reflection_bindings,
@@ -7061,6 +6917,7 @@ fn reflect_macro_type(ty: Type, tcx: &TypeCtx<'_, '_>) -> Result<ReflectableType
     reflect_macro_type_with_binders(ty, tcx, &[], false)
 }
 
+#[cfg(test)]
 fn reflect_macro_interned_type(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
@@ -8755,7 +8612,6 @@ fn compute_user_macro_template<'m>(
 
 struct UserMacroReplayInputs<'a> {
     values: &'a [Expr],
-    value_adapter: Option<&'a crate::normalization::CheckedTermTemplateValueAdapter>,
     residual_eta: Option<&'a crate::pass::substitute::EtaPlan<UncheckedPrime>>,
     ambient_type_names: &'a HashSet<String>,
     residual_reflection_bindings: &'a [(String, crate::normalization::ReflectedVariable)],
@@ -8777,7 +8633,6 @@ fn user_macro_template_to_elaboration(
 ) -> Result<UserMacroReplayResult, Error> {
     let UserMacroReplayInputs {
         values,
-        value_adapter,
         residual_eta,
         ambient_type_names,
         residual_reflection_bindings,
@@ -8823,23 +8678,12 @@ fn user_macro_template_to_elaboration(
                 let mask: Vec<_> = computations.iter().map(Option::is_some).collect();
                 terminal_adapted = public.is_some_and(|public| public.terminal_adapted);
                 if mask.iter().any(|suspended| *suspended) {
-                    let slots: Vec<_> = value_adapter
-                        .map(|adapter| {
-                            adapter
-                                .slots
-                                .iter()
-                                .map(|slot| {
-                                    slot.pieces.iter().any(|piece| mask[piece.source_index])
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_else(|| mask.clone());
                     let original = public
                         .map(|public| public.checked.as_ref())
                         .unwrap_or(&template.checked);
                     original
                         .validate_recursive_template_scope(
-                            &slots,
+                            &mask,
                             residual_eta.is_some_and(|eta| !eta.layers.is_empty()),
                         )
                         .map_err(|message| Error::type_(span, message))?;
@@ -8852,9 +8696,7 @@ fn user_macro_template_to_elaboration(
                     public_output_type = None;
                 }
             }
-            let mut checked = value_adapter
-                .map(|adapter| template.checked.adapt_template_values(adapter))
-                .unwrap_or_else(|| template.checked.clone());
+            let mut checked = template.checked.clone();
             let mut recipe_computation = false;
             if let (Some(suspended), Some(runtime)) = (&suspended, &runtime_type) {
                 checked
@@ -9283,7 +9125,7 @@ mod tests {
             pure fn identity[A](value: A) -> A { value }
             pure fn text(proof: Proof) -> Comptime_str { __"content"__(identity(proof)) }
             pure fn message(packet: Proof & .) -> Message { __"literal failure"__(__fst__[Proof][.](packet)) }
-            pure fn implementation(proof: Proof) -> __Checked_term__ {
+            pure fn implementation(proof: Proof, _unit: __Checked_term__) -> __Checked_term__ {
                 let _ = text(proof);
                 let choose = __comptime_if_then_else__(identity(proof));
                 choose[__Checked_term__](
@@ -9312,7 +9154,7 @@ mod tests {
     fn comptime_literal_diagnostic_payload_is_evaluated() {
         let error = check_package_sources(&[r#"module main;
             import __comptime__;
-            pure fn implementation(proof: __Comptime__) -> __Checked_term__ {
+            pure fn implementation(proof: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
                 __macro_error__(proof, __"constructed diagnostic"__(proof))
             }
             macro make : . -> . { impl implementation }
@@ -16175,7 +16017,7 @@ fn generic_last() -> . {
         ok("module pkg/main; \
             import __comptime__; \
             pub type { Rep: . { pub mk; pub get; }; }; \
-            pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
+            pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                 __macro_error__(ct, __\"not evaluated\"__(ct)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
@@ -16190,7 +16032,7 @@ fn generic_last() -> . {
               pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
               pub type Rep_payload = Rep; \
             } \
-            pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
+            pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                 __macro_error__(ct, __\"not evaluated\"__(ct)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk); impl capture_demo_impl; }; \
@@ -16252,7 +16094,7 @@ fn generic_last() -> . {
         ] {
             let source = format!(
                 "module main; import __comptime__; \
-                 pure fn implementation(ct: __Comptime__, _capture: {parameter}) -> __Checked_term__ {{ __term_unit__(ct) }} \
+                 pure fn implementation(ct: __Comptime__, _capture: {parameter}, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }} \
                  macro demo : . -> . {{ captures {capture}; impl implementation; }}; \
                  {declaration}"
             );
@@ -16265,7 +16107,7 @@ fn generic_last() -> . {
 
     #[test]
     fn host_source_order_capture_preserves_prior_and_selectively_imported_hosts() {
-        let helper = "pure fn implementation(ct: __Comptime__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }";
+        let helper = "pure fn implementation(ct: __Comptime__, _type: __Type__, _value: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }";
         let macro_def =
             "macro demo : . -> . { captures (Earlier, earlier); impl implementation; };";
         ok(&format!(
@@ -16407,22 +16249,22 @@ fn generic_last() -> . {
 
         let missing_context = err("module main; \
             import __comptime__; \
-            pure fn ordinary(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
+            pure fn ordinary(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } \
             macro demo : . -> . { impl(fills) ordinary; };");
         assert!(
-            missing_context.contains("ABI expects 2 value parameters")
-                && missing_context.contains("implementation has 1"),
+            missing_context.contains("ABI expects 3 value parameters")
+                && missing_context.contains("implementation has 2"),
             "got: {missing_context}"
         );
 
         let context_in_late_mode = err("module main; \
             import __comptime__; \
-            pure fn marked(ct: __Comptime__, fills: __Fill_ctx__) \
+            pure fn marked(ct: __Comptime__, fills: __Fill_ctx__, _unit: __Checked_term__) \
               -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
             macro demo : . -> . { impl marked; };");
         assert!(
-            context_in_late_mode.contains("ABI expects 1 value parameters")
-                && context_in_late_mode.contains("implementation has 2"),
+            context_in_late_mode.contains("ABI expects 2 value parameters")
+                && context_in_late_mode.contains("implementation has 3"),
             "got: {context_in_late_mode}"
         );
     }
@@ -16914,14 +16756,15 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_sparse_private_value_abi_forces_every_unrequested_source_once() {
+    fn fills_implementation_can_omit_each_unit_source() {
         let source = "module main; \
             import __comptime__; \
             host type I32 role(i32); \
             host fn probe() -> .; \
             pure fn sparse_impl( \
               _ct: __Comptime__, fills: __Fill_ctx__, \
-              _first: __Checked_term__, second: __Checked_term__ \
+              _leading: __Checked_term__, _first: __Checked_term__, \
+              _middle: __Checked_term__, second: __Checked_term__, _trailing: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
             macro sparse : . -> I32 -> . -> I32 -> . -> I32 { \
               impl(fills) sparse_impl; \
@@ -16940,7 +16783,7 @@ fn generic_last() -> . {
                 .elaborations()
                 .elaboration_for("main", &original)
                 .is_some(),
-            "the sparse private ABI must still publish its public call"
+            "omitting quoted sources still publishes the checked public call"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
 
@@ -16968,11 +16811,11 @@ fn generic_last() -> . {
         let mut probe_calls = ProbeCalls(0);
         crate::pass::visit_mut::TypecheckVisitMut::visit_module(&mut probe_calls, &mut substituted);
         assert_eq!(
-            probe_calls.0, 3,
-            "leading, middle, and trailing zero-ABI sources must each replay exactly once"
+            probe_calls.0, 0,
+            "omitted leading, middle, and trailing Unit quotations do not appear in generated code"
         );
         validate_substituted_package(checked.substituted())
-            .expect("the sparse private ABI survives standalone Prime validation");
+            .expect("omitted Unit quotations preserve standalone Prime validation");
     }
 
     #[test]
@@ -17095,6 +16938,121 @@ fn generic_last() -> . {
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the open specialization argument must zonk before TermTypeApp recipe replay");
+    }
+
+    #[test]
+    fn macro_quotations_preserve_whole_packets_and_authored_occurrences() {
+        use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
+        struct Calls(HashMap<String, usize>);
+        impl TypecheckVisitMut<Prime> for Calls {
+            fn visit_expr(&mut self, expr: &mut crate::ast::Expr<Prime>) {
+                if let crate::ast::Expr::Path { segments, .. } = expr
+                    && let Some(name) = segments.last()
+                    && ["make", "packet", "tick"].contains(&name.as_str())
+                {
+                    *self.0.entry(name.name.clone()).or_default() += 1;
+                }
+                walk_expr(self, expr);
+            }
+        }
+        for fills in [false, true] {
+            let mut source = String::from(
+                "module main; import __comptime__; host type Data; host fn make() -> Data; host fn packet() -> Data & Data; host fn tick() -> .;",
+            );
+            for (name, parameters, body, public) in [
+                (
+                    "identity",
+                    "_source: __Type__, value: __Checked_term__",
+                    "value",
+                    "[S] S -> S",
+                ),
+                (
+                    "duplicate",
+                    "_source: __Type__, value: __Checked_term__",
+                    "__intrinsic_pair__(ct, value, value)",
+                    "[S] S -> (S & S)",
+                ),
+                (
+                    "shared",
+                    "source: __Type__, value: __Checked_term__",
+                    "__term_let__(ct, source, value, .(saved: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, saved, saved) })",
+                    "[S] S -> (S & S)",
+                ),
+                (
+                    "omit",
+                    "_source: __Type__, _value: __Checked_term__",
+                    "__term_unit__(ct)",
+                    "[S] S -> .",
+                ),
+                (
+                    "first",
+                    "left: __Type__, right: __Type__, value: __Checked_term__",
+                    "__intrinsic_fst__(ct, __type_product__(ct, left, right), value)",
+                    "[A][B] (A & B) -> A",
+                ),
+                ("unit_keep", "value: __Checked_term__", "value", ". -> ."),
+                (
+                    "unit_repeat",
+                    "value: __Checked_term__",
+                    "__intrinsic_pair__(ct, value, value)",
+                    ". -> (. & .)",
+                ),
+                (
+                    "unit_omit",
+                    "_value: __Checked_term__",
+                    "__term_unit__(ct)",
+                    ". -> .",
+                ),
+            ] {
+                let (context, result, body, mode) = if fills {
+                    (
+                        "fills: __Fill_ctx__, ",
+                        "(__Checked_term__ & __Fill_ctx__)",
+                        format!("({body}, fills)"),
+                        "(fills)",
+                    )
+                } else {
+                    ("", "__Checked_term__", body.to_owned(), "")
+                };
+                source.push_str(&format!("pure fn {name}_impl(ct: __Comptime__, {context}{parameters}) -> {result} {{ {body} }} macro {name} : {public} {{ impl{mode} {name}_impl; }}"));
+            }
+            source.push_str("fn repeated() -> Data & Data { duplicate(make()) } fn saved() -> Data & Data { shared(make()) } fn whole() -> Data & Data { identity(packet()) } fn written() -> Data & Data { identity(make(), make()) } fn selected() -> Data { first(packet()) } fn strict_fields() -> Data { first(make(), tick()) } fn omitted() -> . { omit(make()) } fn kept_unit() -> . { unit_keep(tick()) } fn repeated_unit() -> . & . { unit_repeat(tick()) } fn omitted_unit() -> . { unit_omit(tick()) } fn generic_unit() -> . { omit(tick()) }");
+            let package = lowered_package(&[("main.kio", &source)]);
+            let completed = check_package_preserving_normalization(&package)
+                .unwrap_or_else(|error| panic!("fills={fills}: {error:?}"))
+                .complete()
+                .expect("whole quotations and authored occurrences validate as ordinary Prime");
+            let module = completed.runtime().module("main").unwrap().module();
+            for (function, expected) in [
+                ("repeated", vec![("make", 2)]),
+                ("saved", vec![("make", 1)]),
+                ("whole", vec![("packet", 1)]),
+                ("written", vec![("make", 2)]),
+                ("selected", vec![("packet", 1)]),
+                ("strict_fields", vec![("make", 1), ("tick", 1)]),
+                ("omitted", vec![]),
+                ("kept_unit", vec![("tick", 1)]),
+                ("repeated_unit", vec![("tick", 2)]),
+                ("omitted_unit", vec![]),
+                ("generic_unit", vec![]),
+            ] {
+                let mut body = module
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::FnDef(def) if def.name == function => Some(def.body.clone()),
+                        _ => None,
+                    })
+                    .expect("runtime witness");
+                let mut calls = Calls(HashMap::new());
+                calls.visit_expr(&mut body);
+                let expected = expected
+                    .into_iter()
+                    .map(|(name, count)| (name.to_owned(), count))
+                    .collect();
+                assert_eq!(calls.0, expected, "fills={fills}, function={function}");
+            }
+        }
     }
 
     #[test]
@@ -17228,7 +17186,7 @@ fn generic_last() -> . {
         ok("module main; \
             import __comptime__; \
             host fn effect() -> .; \
-            pure fn demo_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ { \
+            pure fn demo_impl(ct: __Comptime__, effect_term: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ { \
                 let ignored = effect_term; \
                 __term_unit__(ct) \
               } \
@@ -17243,12 +17201,12 @@ fn generic_last() -> . {
              import __comptime__; \
              host fn effect() -> .; \
              pub type Effect = (. -> .) & .; \
-             pub pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, effect_term, __term_unit__(ct)) } \
+             pub pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, effect_term, __term_unit__(ct)) } \
              pub macro effect_call : . -> Effect { captures effect; impl effect_call_impl; };",
             "module outer; \
              import __comptime__; \
              import inner(macro effect_call); \
-             pure fn outer_impl(ct: __Comptime__) -> __Checked_term__ { \
+             pure fn outer_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { \
                  let ignored = effect_call(); \
                  __term_unit__(ct) \
                } \
@@ -17376,7 +17334,7 @@ fn generic_last() -> . {
     fn public_user_macro_accepts_private_implementation_function() {
         ok("module main; \
              import __comptime__; \
-             pure fn hidden_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
+             pure fn hidden_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } \
              pub macro demo : . -> . { impl hidden_impl; };");
     }
 
@@ -17385,7 +17343,7 @@ fn generic_last() -> . {
         check_package_sources(&[
             "module pkg/provider; \
              import __comptime__; \
-             pub pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
+             pub pure fn implementation(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }",
             "module pkg/main; \
              import pkg/provider as provider; \
              pub macro demo : . -> . { impl provider.implementation; };",
@@ -17399,7 +17357,7 @@ fn generic_last() -> . {
             "module pkg/provider; \
              import __comptime__; \
              pub pure fn implementation( \
-               ct: __Comptime__, ctx: __Fill_ctx__ \
+               ct: __Comptime__, ctx: __Fill_ctx__, _unit: __Checked_term__ \
              ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), ctx) }",
             "module pkg/main; \
              import pkg/provider as provider; \
@@ -17435,7 +17393,7 @@ fn generic_last() -> . {
         check_package_sources(&[
             "module pkg/provider; \
              import __comptime__; \
-             pub(pkg) pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
+             pub(pkg) pure fn implementation(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }",
             "module pkg/main; \
              import pkg/provider(implementation); \
              pub macro demo : . -> . { impl implementation; };",
@@ -17480,7 +17438,7 @@ fn generic_last() -> . {
             type Tag = imported.Token; \
             pure fn capture_impl( \
               ct: __Comptime__, \
-              _captured: __Checked_term__ \
+              _captured: __Checked_term__, _unit: __Checked_term__ \
             ) -> __Checked_term__ { __term_unit__(ct) } \
             macro demo : . -> . { captures Tag.mk; impl capture_impl; };";
         check_package_sources(&[origin, private_consumer])
@@ -17521,7 +17479,7 @@ fn generic_last() -> . {
              import pkg/relay(Tag); \
              pure fn capture_impl( \
                ct: __Comptime__, \
-               _captured: __Checked_term__ \
+               _captured: __Checked_term__, _unit: __Checked_term__ \
              ) -> __Checked_term__ { __term_unit__(ct) } \
              pub macro demo : . -> . { captures Tag.mk; impl capture_impl; };",
         ])
@@ -17665,7 +17623,7 @@ fn generic_last() -> . {
                      import dep(Pair); import types(Value); \
                      import label_dep(Slot); import label_shadow as label_dep; \
                      import shadow as dep; import other as types; \
-                     pure fn local_impl(ct: __Comptime__, _source: __Type__) -> __Checked_term__ { \
+                     pure fn local_impl(ct: __Comptime__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                          __macro_error__(ct, __\"not evaluated\"__(ct)) \
                        } \
                      macro local : [A] . -> A { impl local_impl; };",
@@ -17684,19 +17642,21 @@ fn generic_last() -> . {
             Vec::new(),
             test_span(),
         ));
-        let abi_slots = user_macro_value_slot_types(&canonical_pair, 1);
-        assert_eq!(abi_slots.len(), 1);
-        let Type::Path { segments, .. } = abi_slots[0].as_type() else {
-            panic!("expected nominal ABI slot");
+        let callable = InternedType::fresh_canonical(Type::Function {
+            param: Box::new(canonical_pair.clone_type()),
+            ret: Box::new(Type::Unit {
+                meta: Meta::new(test_span()),
+            }),
+            abi_arity: 1,
+            caps: (),
+            meta: Meta::new(test_span()),
+        });
+        let layout = user_macro_signature_layout(&callable, &env.alias_ctx());
+        let [UserMacroSignatureSlot::Value { ty, .. }] = layout.slots.as_slice() else {
+            panic!("one semantic Function stage supplies one quote");
         };
-        assert_eq!(
-            segments
-                .iter()
-                .map(|segment| segment.as_str())
-                .collect::<Vec<_>>(),
-            vec!["dep", "Pair"]
-        );
-        assert!(abi_slots[0].identity_is_canonical());
+        assert_eq!(ty.as_type(), canonical_pair.as_type());
+        assert!(ty.identity_is_canonical());
 
         let (expanded_pair, canonical) = crate::pass::typecheck_core::canonicalize_for_comparison(
             canonical_pair.as_type(),
@@ -18173,7 +18133,7 @@ fn generic_last() -> . {
             "module pkg/refl; \
              import __comptime__; \
              import pkg/helper as h; \
-             pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
+             pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                  __macro_error__(ct, __\"not evaluated\"__(ct)) \
                } \
              pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
@@ -18225,7 +18185,7 @@ fn generic_last() -> . {
             "module pkg/macros; \
              import __comptime__; \
              import pkg/types(Rep); \
-             pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__) -> __Checked_term__ { __term_unit__(ct) } \
+             pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } \
              pub macro capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
         );
         let package = Package::build(
@@ -18274,7 +18234,7 @@ fn generic_last() -> . {
              import __comptime__; \
              import foo/types(Rep); \
              import other as foo; \
-             pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__) -> __Checked_term__ { __term_unit__(ct) } \
+             pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } \
              pub macro capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
         );
         let package = Package::build(
@@ -18326,7 +18286,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  import _q0/types(Rep); \
                  pub pure fn make_rep_impl( \
-                   ct: __Comptime__, _rep: __Type__, ctor: __Checked_term__, _source: __Type__ \
+                   ct: __Comptime__, _rep: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__ \
                  ) -> __Checked_term__ { \
                    __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
                  } \
@@ -18357,7 +18317,7 @@ fn generic_last() -> . {
                 "macros.kio",
                 "module macros; \
                  import __comptime__; \
-                 pure fn demo_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
+                 pure fn demo_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } \
                  macro demo : . -> . { impl demo_impl; };",
             ),
         ]);
@@ -18931,7 +18891,6 @@ fn generic_last() -> . {
             &template,
             UserMacroReplayInputs {
                 values,
-                value_adapter: None,
                 residual_eta: None,
                 ambient_type_names,
                 residual_reflection_bindings: &[],
@@ -19161,7 +19120,6 @@ fn generic_last() -> . {
             &template,
             UserMacroReplayInputs {
                 values: &[],
-                value_adapter: None,
                 residual_eta: None,
                 ambient_type_names: &HashSet::new(),
                 residual_reflection_bindings: &[],
@@ -19495,7 +19453,7 @@ fn generic_last() -> . {
             "module pkg/macros; \
              import __comptime__; \
              import pkg/helper as h; \
-             pub pure fn capture_impl(ct: __Comptime__, helper: __Checked_term__) -> __Checked_term__ { \
+             pub pure fn capture_impl(ct: __Comptime__, helper: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ { \
                __term_call__(ct, __term_type__(ct, helper), helper, __term_unit__(ct)) \
              } \
              pub macro capture_demo : . -> . { captures h.helper; impl capture_impl; };",
@@ -20197,7 +20155,7 @@ fn generic_last() -> . {
     fn role_source_order_ignores_later_host_in_macro_implementation() {
         ok("module main; import __intrinsics__; \
             import __comptime__; \
-            pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
+            pure fn choose_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { \
                 __comptime_if_then_else__(ct)[__Checked_term__](__.t__(ct), .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
               } \
             macro choose : . -> . { impl choose_impl; }; \
@@ -20209,7 +20167,7 @@ fn generic_last() -> . {
         check_package_sources(&[
             "module provider; import __intrinsics__; \
              import __comptime__; \
-             pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
+             pure fn choose_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { \
                  __comptime_if_then_else__(ct)[__Checked_term__](__.t__(ct), .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
                } \
              pub macro choose : . -> . { impl choose_impl; }; \
@@ -20563,7 +20521,7 @@ fn generic_last() -> . {
     fn type_only_unit_domains_have_named_host_value_macro_and_ufcs_parity() {
         let macro_def = "module macros; \
             import __comptime__; \
-            pure fn macro_unit_impl(ct: __Comptime__, _a: __Type__) -> __Checked_term__ { \
+            pure fn macro_unit_impl(ct: __Comptime__, _a: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
             pub macro macro_unit : [A] . -> . { impl macro_unit_impl; }; \
@@ -20728,7 +20686,7 @@ fn generic_last() -> . {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn macro_return_poly_impl( \
-                _ct: __Comptime__, \
+                _ct: __Comptime__, _unit: __Checked_term__, \
                 _a: __Type__, \
                 value: __Checked_term__ \
               ) -> __Checked_term__ { value } \
@@ -21445,7 +21403,7 @@ fn generic_last() -> . {
         let provider = concat!(
             "module provider;\n",
             "import __comptime__;\n",
-            "pub pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }\n",
+            "pub pure fn unit_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }\n",
         );
         let main = concat!(
             "module main;\n",
@@ -21484,7 +21442,7 @@ fn generic_last() -> . {
         let source = concat!(
             "module main;\n",
             "import __comptime__;\n",
-            "pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }\n",
+            "pure fn unit_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }\n",
             "macro unit : . -> . { impl unit_impl; };\n",
         );
         let start = source.rfind("unit_impl").expect("implementation path");
@@ -25213,7 +25171,7 @@ fn generic_last() -> . {
     fn retained_initial_layer_natural_result_evaluates_once_and_closes_its_goal() {
         let macro_def = "module macros; \
             import __comptime__; \
-            pure fn infer_unit_impl(ct: __Comptime__, _a: .) -> __Checked_term__ { \
+            pure fn infer_unit_impl(ct: __Comptime__, _a: ., _unit: __Checked_term__) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
             pub macro infer_unit : [A] . -> A { impl infer_unit_impl; };";
@@ -25246,7 +25204,7 @@ fn generic_last() -> . {
             pure fn infer_unit_impl( \
                 ct: __Comptime__, \
                 _phantom: __Type__, \
-                _result: . \
+                _result: ., _unit: __Checked_term__ \
               ) -> __Checked_term__ { __term_unit__(ct) } \
             pub macro infer_unit : [Phantom][Result] . -> Result { impl infer_unit_impl; };";
         let main = "module main; \
@@ -25277,7 +25235,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pure fn infer_unit_impl( \
                 ct: __Comptime__, \
-                _outer: __Type__, \
+                _outer: __Type__, _unit: __Checked_term__, \
                 _inner: . \
               ) -> __Checked_term__ { __term_unit__(ct) } \
             pub macro infer_unit : [Shadowed] . -> [Shadowed] Shadowed { impl infer_unit_impl; };";
@@ -26375,7 +26333,7 @@ fn generic_last() -> . {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn check_impl( \
-              ct: __Comptime__, fills: __Fill_ctx__, \
+              ct: __Comptime__, fills: __Fill_ctx__, _unit: __Checked_term__, \
               _t: __Type__, _second: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
             pub macro check : . -> [T] T -> . { impl(fills) check_impl; };";
@@ -26651,7 +26609,7 @@ fn generic_last() -> . {
         let macro_def = "module macros; \
             import __comptime__; \
             pure fn ignore_impl( \
-              ct: __Comptime__, fills: __Fill_ctx__ \
+              ct: __Comptime__, fills: __Fill_ctx__, _unit: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
             pub macro ignore : . -> . { impl(fills) ignore_impl; };";
         let main = "module main; \
@@ -26878,7 +26836,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
-              _t: __Type__, _value: __Checked_term__ \
+              _t: __Type__, _value: __Checked_term__, _unit: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
             pub macro inspect_two : [T] T -> . -> . { impl(fills) inspect_impl; };";
         let main = "module main; \
@@ -29532,7 +29490,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pure fn require_type_impl( \
                 ct: __Comptime__, \
-                required: __Type__ \
+                required: __Type__, _unit: __Checked_term__ \
               ) -> __Checked_term__ { \
                 __macro_error__(ct, __type_display__(ct, required)) \
               } \
@@ -29719,7 +29677,7 @@ fn generic_last() -> . {
             pub macro infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
             pure fn require_type_impl( \
                 ct: __Comptime__, \
-                required: __Type__ \
+                required: __Type__, _unit: __Checked_term__ \
               ) -> __Checked_term__ { \
                 __macro_error__(ct, __type_display__(ct, required)) \
               } \

@@ -9,7 +9,6 @@ import continuations/macros/macro_util(
 , Dnf_branch_list
 , Macro_result
 , Slot_list
-, Term_mapper
 , Type_list
 , Type_pair
 , build_product_from_slots
@@ -18,7 +17,7 @@ import continuations/macros/macro_util(
 , dnf_branch_spine
 , dnf_branch_type
 , dnf_branches
-, dnf_eliminate
+, dnf_eliminate_with_use
 , err
 , finish_macro_result
 , macro_result_ok
@@ -51,7 +50,11 @@ type Type_view_tail1 = . | Type_view_tail2;
 
 type Maybe_function_view = Function_view | .;
 
-type Ease_adapter_result = Term_mapper | __Diagnostic_text__;
+type Used_term = Comptime_bool & __Checked_term__;
+
+type Ease_mapper = __Checked_term__ -> Used_term;
+
+type Ease_adapter_result = Ease_mapper | __Diagnostic_text__;
 
 rec type { Spine_list: . | (Type_list & Spine_list) { mk; get } }
 
@@ -155,12 +158,12 @@ pure fn flags_allow_dup(ct: __Comptime__, flags: Branch_build_flags) -> Comptime
   __snd__[Comptime_bool](flags)
 }
 
-pure fn ease_adapter_ok(ct: __Comptime__, mapper: Term_mapper) -> Ease_adapter_result {
-  __left__[Term_mapper][__Diagnostic_text__](mapper)
+pure fn ease_adapter_ok(ct: __Comptime__, mapper: Ease_mapper) -> Ease_adapter_result {
+  __left__[Ease_mapper][__Diagnostic_text__](mapper)
 }
 
 pure fn ease_adapter_err(ct: __Comptime__, message: __Diagnostic_text__) -> Ease_adapter_result {
-  __right__[Term_mapper][__Diagnostic_text__](message)
+  __right__[Ease_mapper][__Diagnostic_text__](message)
 }
 
 pure fn some_function_view(ct: __Comptime__, view: Function_view) -> Maybe_function_view {
@@ -211,8 +214,8 @@ pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
   __snd__[__Type__][__Type__](view)
 }
 
-pure fn identity_mapper(ct: __Comptime__, _source: __Type__) -> Term_mapper {
-  .(value: __Checked_term__) -> __Checked_term__ { value }
+pure fn identity_mapper(ct: __Comptime__, _source: __Type__) -> Ease_mapper {
+  .(value: __Checked_term__) -> Used_term { (__.t__(ct), value) }
 }
 
 pure fn branch_can_land_from_factors(
@@ -645,11 +648,13 @@ pure fn all_targets_have_sources(
   )
 }
 
-type Search_state = Macro_result;
+type Route_result = Used_term | __Diagnostic_text__;
+
+type Search_state = Route_result;
 
 type Search_next = Dnf_branch_list & Search_state;
 
-type Search_step = Macro_result | Search_next;
+type Search_step = Route_result | Search_next;
 
 pure fn choose_target_branch(
 , ct: __Comptime__
@@ -658,22 +663,22 @@ pure fn choose_target_branch(
 , source_value: __Checked_term__
 , targets: Dnf_branch_list
 , flags: Branch_build_flags
-) -> Macro_result {
+) -> Route_result {
   let source_factors = dnf_branch_spine(ct, source_branch);
   let source_slots = dnf_branch_slots(ct, source_branch, source_value);
-  __structural_recur__(ct)[Dnf_branch_list][Search_state][Macro_result](
+  __structural_recur__(ct)[Dnf_branch_list][Search_state][Route_result](
   , targets
-  , err(ct, __"no target DNF branch matches source branch"__(ct))
+  , __right__[Used_term][__Diagnostic_text__](__"no target DNF branch matches source branch"__(ct))
   , .(
-    , loop_recur: (Dnf_branch_list & Search_state) -> Macro_result
+    , loop_recur: (Dnf_branch_list & Search_state) -> Route_result
     , loop_fuel: Dnf_branch_list
     , loop_state: Search_state
-    ) -> Macro_result {
+    ) -> Route_result {
       let loop_step_fn =
         .(fuel: Dnf_branch_list, state: Search_state) -> Search_step {
           __either__[.][Dnf_branch & Dnf_branch_list][Search_step](
           , Type_list.get(fuel)
-          , .(_done: .) -> Search_step { __left__[Macro_result][Search_next](state) }
+          , .(_done: .) -> Search_step { __left__[Route_result][Search_next](state) }
           , .(cell: Dnf_branch & Dnf_branch_list) -> Search_step {
               let target_branch = __fst__[Dnf_branch][Dnf_branch_list](cell);
               let target_branch_type = dnf_branch_type(ct, target_branch);
@@ -699,26 +704,33 @@ pure fn choose_target_branch(
                         , branch_value
                         )
                       , .(term: __Checked_term__) -> Search_step {
-                          __left__[Macro_result][Search_next](__left__[__Checked_term__][__Diagnostic_text__](term))
+                          __left__[Route_result][Search_next](__left__[Used_term][__Diagnostic_text__]((
+                          , __either__[.][__Type__ & Type_list][Comptime_bool](
+                            , Type_list.get(target_factors)
+                            , .(_empty: .) -> Comptime_bool { __.f__(ct) }
+                            , .(_cell: __Type__ & Type_list) -> Comptime_bool { __.t__(ct) }
+                            )
+                          , term
+                          )))
                         }
                       , .(message: __Diagnostic_text__) -> Search_step {
-                          __right__[Macro_result][Search_next]((
+                          __right__[Route_result][Search_next]((
                           , __snd__[Dnf_branch][Dnf_branch_list](cell)
-                          , err(ct, message)
+                          , __right__[Used_term][__Diagnostic_text__](message)
                           ))
                         }
                       )
                     }
                   , .(message: __Diagnostic_text__) -> Search_step {
-                      __right__[Macro_result][Search_next]((
+                      __right__[Route_result][Search_next]((
                       , __snd__[Dnf_branch][Dnf_branch_list](cell)
-                      , err(ct, message)
+                      , __right__[Used_term][__Diagnostic_text__](message)
                       ))
                     }
                   )
                 }
               , .() -> Search_step {
-                  __right__[Macro_result][Search_next]((
+                  __right__[Route_result][Search_next]((
                   , __snd__[Dnf_branch][Dnf_branch_list](cell)
                   , state
                   ))
@@ -727,10 +739,10 @@ pure fn choose_target_branch(
             }
           )
         };
-      __either__[Macro_result][Dnf_branch_list & Search_state][Macro_result](
+      __either__[Route_result][Dnf_branch_list & Search_state][Route_result](
       , loop_step_fn(loop_fuel, loop_state)
-      , .(loop_done: Macro_result) -> Macro_result { loop_done }
-      , .(loop_next: Dnf_branch_list & Search_state) -> Macro_result {
+      , .(loop_done: Route_result) -> Route_result { loop_done }
+      , .(loop_next: Dnf_branch_list & Search_state) -> Route_result {
           loop_recur(
           , __fst__[Dnf_branch_list][Search_state](loop_next)
           , __snd__[Dnf_branch_list][Search_state](loop_next)
@@ -810,11 +822,11 @@ pure fn algebraic_from_branch(
 , source_value: __Checked_term__
 , targets: Dnf_branch_list
 , flags: Branch_build_flags
-) -> __Checked_term__ {
-  __either__[__Checked_term__][__Diagnostic_text__][__Checked_term__](
+) -> Used_term {
+  __either__[Used_term][__Diagnostic_text__][Used_term](
   , choose_target_branch(ct, target, source_branch, source_value, targets, flags)
-  , .(term: __Checked_term__) -> __Checked_term__ { term }
-  , .(_message: __Diagnostic_text__) -> __Checked_term__ { source_value }
+  , .(result: Used_term) -> Used_term { result }
+  , .(_message: __Diagnostic_text__) -> Used_term { (__.t__(ct), source_value) }
   )
 }
 
@@ -825,13 +837,13 @@ pure fn algebraic_eliminate(
 , value: __Checked_term__
 , targets: Dnf_branch_list
 , flags: Branch_build_flags
-) -> __Checked_term__ {
-  dnf_eliminate(
+) -> Used_term {
+  dnf_eliminate_with_use(
   , ct
   , source
   , target
   , value
-  , .(source_branch: __Type__, source_value: __Checked_term__) -> __Checked_term__ {
+  , .(source_branch: __Type__, source_value: __Checked_term__) -> Comptime_bool & __Checked_term__ {
       algebraic_from_branch(ct, target, source_branch, source_value, targets, flags)
     }
   )
@@ -844,21 +856,19 @@ pure fn algebraic_from_dnf(
 , value: __Checked_term__
 , payload: Preflight_payload
 , flags: Branch_build_flags
-) -> __Checked_term__ {
+) -> Used_term {
   let sources = preflight_sources(payload);
   let targets = preflight_targets_payload(payload);
-  __either__[Dnf_branch][.][__Checked_term__](
+  __either__[Dnf_branch][.][Used_term](
   , single_dnf_branch(ct, sources)
-  , .(single_source: Dnf_branch) -> __Checked_term__ {
+  , .(single_source: Dnf_branch) -> Used_term {
       __comptime_if_then_else__(ct)(
       , __type_equal__(ct, source, dnf_branch_type(ct, single_source))
-      , .() -> __Checked_term__ {
-          algebraic_from_branch(ct, target, single_source, value, targets, flags)
-        }
-      , .() -> __Checked_term__ { algebraic_eliminate(ct, source, target, value, targets, flags) }
+      , .() -> Used_term { algebraic_from_branch(ct, target, single_source, value, targets, flags) }
+      , .() -> Used_term { algebraic_eliminate(ct, source, target, value, targets, flags) }
       )
     }
-  , .() -> __Checked_term__ { algebraic_eliminate(ct, source, target, value, targets, flags) }
+  , .() -> Used_term { algebraic_eliminate(ct, source, target, value, targets, flags) }
   )
 }
 
@@ -870,11 +880,11 @@ pure fn algebraic_impl(
 , flags: Branch_build_flags
 , require_all_targets: Comptime_bool
 , failure: __Diagnostic_text__
-) -> Macro_result {
-  __either__[Preflight_payload][.][Macro_result](
+) -> Route_result {
+  __either__[Preflight_payload][.][Route_result](
   , preflight_dnf(ct, source, target, flags, require_all_targets)
-  , .(payload: Preflight_payload) -> Macro_result {
-      __left__[__Checked_term__][__Diagnostic_text__](algebraic_from_dnf(
+  , .(payload: Preflight_payload) -> Route_result {
+      __left__[Used_term][__Diagnostic_text__](algebraic_from_dnf(
       , ct
       , source
       , target
@@ -883,7 +893,7 @@ pure fn algebraic_impl(
       , flags
       ))
     }
-  , .() -> Macro_result { err(ct, failure) }
+  , .() -> Route_result { __right__[Used_term][__Diagnostic_text__](failure) }
   )
 }
 
@@ -900,8 +910,8 @@ pure fn ease_leaf_mapper(
   , .() -> Ease_adapter_result {
       ease_adapter_ok(
       , ct
-      , .(value: __Checked_term__) -> __Checked_term__ {
-          __either__[__Checked_term__][__Diagnostic_text__][__Checked_term__](
+      , .(value: __Checked_term__) -> Used_term {
+          __either__[Used_term][__Diagnostic_text__][Used_term](
           , algebraic_impl(
             , ct
             , source
@@ -911,8 +921,8 @@ pure fn ease_leaf_mapper(
             , __.f__(ct)
             , __"ease POC found no DNF easing"__(ct)
             )
-          , .(term: __Checked_term__) -> __Checked_term__ { term }
-          , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
+          , .(result: Used_term) -> Used_term { result }
+          , .(_message: __Diagnostic_text__) -> Used_term { (__.t__(ct), value) }
           )
         }
       )
@@ -933,28 +943,36 @@ pure fn ease_function_mapper(
   let source_ret = function_result(ct, source_view);
   let target_param = function_param(ct, target_view);
   let target_ret = function_result(ct, target_view);
-  __either__[Term_mapper][__Diagnostic_text__][Ease_adapter_result](
+  __either__[Ease_mapper][__Diagnostic_text__][Ease_adapter_result](
   , recur(__type_product__(ct, target_param, source_param), (target_param, source_param))
-  , .(param_mapper: Term_mapper) -> Ease_adapter_result {
-      __either__[Term_mapper][__Diagnostic_text__][Ease_adapter_result](
+  , .(param_mapper: Ease_mapper) -> Ease_adapter_result {
+      __either__[Ease_mapper][__Diagnostic_text__][Ease_adapter_result](
       , recur(__type_product__(ct, source_ret, target_ret), (source_ret, target_ret))
-      , .(ret_mapper: Term_mapper) -> Ease_adapter_result {
+      , .(ret_mapper: Ease_mapper) -> Ease_adapter_result {
           ease_adapter_ok(
           , ct
-          , .(value: __Checked_term__) -> __Checked_term__ {
-              __term_let__(
-              , ct
-              , source
-              , value
-              , .(fn_value: __Checked_term__) -> __Checked_term__ {
-                  __term_fn__(
-                  , ct
-                  , target
-                  , .(arg_packet: __Checked_term__) -> __Checked_term__ {
-                      ret_mapper(__term_call__(ct, source, fn_value, param_mapper(arg_packet)))
-                    }
-                  )
-                }
+          , .(value: __Checked_term__) -> Used_term {
+              (
+              , __.t__(ct)
+              , __term_let__(
+                , ct
+                , source
+                , value
+                , .(fn_value: __Checked_term__) -> __Checked_term__ {
+                    __term_fn__(
+                    , ct
+                    , target
+                    , .(arg_packet: __Checked_term__) -> __Checked_term__ {
+                        __snd__[Comptime_bool][__Checked_term__](ret_mapper(__term_call__(
+                        , ct
+                        , source
+                        , fn_value
+                        , __snd__[Comptime_bool][__Checked_term__](param_mapper(arg_packet))
+                        )))
+                      }
+                    )
+                  }
+                )
               )
             }
           )
@@ -978,8 +996,8 @@ pure fn ease_recur_step(ct: __Comptime__, recur: Ease_recur, pair: Type_pair) ->
       , .() -> Ease_adapter_result {
           ease_adapter_ok(
           , ct
-          , .(value: __Checked_term__) -> __Checked_term__ {
-              __intrinsic_absurd__(ct, value, target)
+          , .(value: __Checked_term__) -> Used_term {
+              (__.t__(ct), __intrinsic_absurd__(ct, value, target))
             }
           )
         }
@@ -1017,10 +1035,48 @@ pure fn ease_mapper_result(ct: __Comptime__, source: __Type__, target: __Type__)
   )
 }
 
-pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
+pure fn finish_route(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, build: __Checked_term__ -> Route_result
+) -> __Checked_term__ {
+  __either__[Used_term][__Diagnostic_text__][__Checked_term__](
+  , build(value)
+  , .(result: Used_term) -> __Checked_term__ {
+      __comptime_if_then_else__(ct)(
+      , __fst__[Comptime_bool][__Checked_term__](result)
+      , .() -> __Checked_term__ {
+          __term_let__(
+          , ct
+          , source
+          , value
+          , .(saved: __Checked_term__) -> __Checked_term__ {
+              __either__[Used_term][__Diagnostic_text__][__Checked_term__](
+              , build(saved)
+              , .(bound: Used_term) -> __Checked_term__ {
+                  __snd__[Comptime_bool][__Checked_term__](bound)
+                }
+              , .(message: __Diagnostic_text__) -> __Checked_term__ {
+                  finish_macro_result(ct, err(ct, message))
+                }
+              )
+            }
+          )
+        }
+      , .() -> __Checked_term__ { __snd__[Comptime_bool][__Checked_term__](result) }
+      )
+    }
+  , .(message: __Diagnostic_text__) -> __Checked_term__ {
+      finish_macro_result(ct, err(ct, message))
+    }
+  )
+}
+
+pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
   __comptime_if_then_else__(ct)(
   , iso_branch_shape_ok(ct, source, target, (__.f__(ct), __.f__(ct)))
-  , .() -> Macro_result {
+  , .() -> Route_result {
       algebraic_impl(
       , ct
       , source
@@ -1031,22 +1087,29 @@ pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, ta
       , __"iso POC found no DNF bijection"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, __"iso POC found no DNF bijection"__(ct)) }
+  , .() -> Route_result {
+      __right__[Used_term][__Diagnostic_text__](__"iso POC found no DNF bijection"__(ct))
+    }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn iso_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, iso_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { iso_impl(ct, source, saved, target) }
+  )
 }
 
 /// Rearranges products and sums when the source and target have a DNF bijection.
 pub macro iso : [Source] Source -> [Target] Target { impl iso_checked }
 
-pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
+pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
   __comptime_if_then_else__(ct)(
   , into_branch_shape_ok(ct, source, target, (__.f__(ct), __.t__(ct)))
-  , .() -> Macro_result {
+  , .() -> Route_result {
       algebraic_impl(
       , ct
       , source
@@ -1057,19 +1120,26 @@ pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
       , __"into POC found no DNF injection"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, __"into POC found no DNF injection"__(ct)) }
+  , .() -> Route_result {
+      __right__[Used_term][__Diagnostic_text__](__"into POC found no DNF injection"__(ct))
+    }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn into_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, into_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { into_impl(ct, source, saved, target) }
+  )
 }
 
 /// Injects a source shape into a larger compatible DNF target.
 pub macro into : [Source] Source -> [Target] Target { impl into_checked }
 
-pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
+pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
   algebraic_impl(
   , ct
   , source
@@ -1083,13 +1153,18 @@ pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn onto_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, onto_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { onto_impl(ct, source, saved, target) }
+  )
 }
 
 /// Projects a source shape onto a smaller compatible DNF target.
 pub macro onto : [Source] Source -> [Target] Target { impl onto_checked }
 
-pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
+pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
   algebraic_impl(
   , ct
   , source
@@ -1103,34 +1178,46 @@ pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn align_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, align_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { align_impl(ct, source, saved, target) }
+  )
 }
 
 /// Reorders compatible DNF branches without allowing injection or projection.
 pub macro align : [Source] Source -> [Target] Target { impl align_checked }
 
-pure fn ease_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  __either__[Term_mapper][__Diagnostic_text__][Macro_result](
+pure fn ease_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
+  __either__[Ease_mapper][__Diagnostic_text__][Route_result](
   , ease_mapper_result(ct, source, target)
-  , .(mapper: Term_mapper) -> Macro_result {
-      __left__[__Checked_term__][__Diagnostic_text__](mapper(value))
+  , .(mapper: Ease_mapper) -> Route_result {
+      __left__[Used_term][__Diagnostic_text__](mapper(value))
     }
-  , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
+  , .(message: __Diagnostic_text__) -> Route_result {
+      __right__[Used_term][__Diagnostic_text__](message)
+    }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn ease_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, ease_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { ease_impl(ct, source, saved, target) }
+  )
 }
 
 /// Performs recursive structural adaptation across products, sums, and functions.
 pub macro ease : [Source] Source -> [Target] Target { impl ease_checked }
 
-pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  __either__[Dnf_branch][.][Macro_result](
+pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Route_result {
+  __either__[Dnf_branch][.][Route_result](
   , single_dnf_branch(ct, dnf_branches(ct, target))
-  , .(_target_branch: Dnf_branch) -> Macro_result {
+  , .(_target_branch: Dnf_branch) -> Route_result {
       algebraic_impl(
       , ct
       , source
@@ -1141,13 +1228,20 @@ pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
       , __"atom POC found no single-branch target"__(ct)
       )
     }
-  , .() -> Macro_result { err(ct, __"atom POC found no single-branch target"__(ct)) }
+  , .() -> Route_result {
+      __right__[Used_term][__Diagnostic_text__](__"atom POC found no single-branch target"__(ct))
+    }
   )
 }
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn atom_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, atom_impl(ct, source, value, target))
+  finish_route(
+  , ct
+  , source
+  , value
+  , .(saved: __Checked_term__) -> Route_result { atom_impl(ct, source, saved, target) }
+  )
 }
 
 /// Extracts a single target atom or product branch from a larger source shape.

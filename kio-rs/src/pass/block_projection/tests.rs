@@ -19,7 +19,8 @@ pub type Scope[R] = (. -> R) -> R;
 pub type Triple = . & . & .;
 pure fn identity_checked(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
 pure fn fixed_checked(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ { value }
-pure fn pair_checked(ct: __Comptime__, second: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, __term_unit__(ct), second) }
+pure fn curried_checked(_ct: __Comptime__, _unit: __Checked_term__, value: __Checked_term__) -> __Checked_term__ { value }
+pure fn pair_checked(ct: __Comptime__, _unit: __Checked_term__, second: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, __term_unit__(ct), second) }
 pure fn append_thunk_checked(ct: __Comptime__, packet: __Checked_term__) -> __Checked_term__ {
   let prefix = __intrinsic_fst__(ct, __term_type__(ct, packet), packet);
   let body = __intrinsic_snd__(ct, __term_type__(ct, packet), packet);
@@ -35,7 +36,7 @@ pure fn sequence_checked(ct: __Comptime__, _constructor: __Type__, _result: __Ty
 }
 pub macro packet : [A] A -> A { trailing product; impl identity_checked }
 pub macro packet_three : Triple -> Triple { trailing product; impl fixed_checked }
-pub macro curried : . -> (. & .) -> (. & .) { trailing product; impl fixed_checked }
+pub macro curried : . -> (. & .) -> (. & .) { trailing product; impl curried_checked }
 pub macro curried_three : . -> (. & .) -> Triple { trailing product; impl pair_checked }
 pub macro enter : [R] Scope[R] { trailing thunk; impl(fills) enter_checked }
 pub macro sequence : [*F][R] (Bind[F] & Sequence[F][R]) -> F[R] { trailing sequence; impl sequence_checked }
@@ -664,14 +665,14 @@ fn unused_descriptors_do_not_restrict_ordinary_public_calls() {
         "pub macro unused : [R] Scope[R] { trailing thunk; trailing thunk else; impl(fills) enter_checked }",
     ] {
         let provider = format!(
-            "{PROVIDER}\npure fn unit_checked(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}\n{declaration}"
+            "{PROVIDER}\npure fn unit_checked(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}\n{declaration}"
         );
         let mut input = modules("module consumer; fn unrelated() { () }");
         input[0].1 = parse(&provider).unwrap();
         check_modules(input).unwrap_or_else(|error| panic!("{declaration}\n{error:?}"));
     }
     let provider = format!(
-        "{PROVIDER}\npure fn unit_checked(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}\npub macro direct : . -> . {{ trailing thunk; trailing sequence next; impl unit_checked }}"
+        "{PROVIDER}\npure fn unit_checked(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}\npub macro direct : . -> . {{ trailing thunk; trailing sequence next; impl unit_checked }}"
     );
     let mut input =
         modules("module consumer; import provider(macro direct); fn result() { direct() }");
@@ -826,19 +827,22 @@ fn earlier_value_and_forall_stages_remain_distinct() {
 fn thunk_and_sequence_projections_validate_before_ordinary_residualization() {
     let provider = format!(
         r#"{PROVIDER}
-pure fn delayed_thunk_checked(ct: __Comptime__, _result: __Type__, packet: __Checked_term__) -> __Checked_term__ {{
+pure fn delayed_thunk_checked(ct: __Comptime__, _result: __Type__, packet: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ {{
   let body = __intrinsic_snd__(ct, __term_type__(ct, packet), packet);
   __term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct))
 }}
-pure fn delayed_thunk_fills(ct: __Comptime__, fills: __Fill_ctx__, result: __Type__, packet: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {{
-  (delayed_thunk_checked(ct, result, packet), fills)
+pure fn delayed_thunk_fills(ct: __Comptime__, fills: __Fill_ctx__, result: __Type__, packet: __Checked_term__, unit: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {{
+  (delayed_thunk_checked(ct, result, packet, unit), fills)
 }}
-pure fn delayed_sequence_fills(ct: __Comptime__, fills: __Fill_ctx__, constructor: __Type__, result: __Type__, packet: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {{
+pure fn delayed_sequence_fills(ct: __Comptime__, fills: __Fill_ctx__, constructor: __Type__, result: __Type__, packet: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {{
   (sequence_checked(ct, constructor, result, packet), fills)
+}}
+pure fn delayed_sequence_checked(ct: __Comptime__, constructor: __Type__, result: __Type__, packet: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ {{
+  sequence_checked(ct, constructor, result, packet)
 }}
 pub macro thunk_late : [R] (. & (. -> R)) -> . -> R {{ trailing thunk; impl delayed_thunk_checked }}
 pub macro thunk_fills : [R] (. & (. -> R)) -> . -> R {{ trailing thunk; impl(fills) delayed_thunk_fills }}
-pub macro sequence_late : [*F][R] (Bind[F] & Sequence[F][R]) -> . -> F[R] {{ trailing sequence; impl sequence_checked }}
+pub macro sequence_late : [*F][R] (Bind[F] & Sequence[F][R]) -> . -> F[R] {{ trailing sequence; impl delayed_sequence_checked }}
 pub macro sequence_fills : [*F][R] (Bind[F] & Sequence[F][R]) -> . -> F[R] {{ trailing sequence; impl(fills) delayed_sequence_fills }}
 "#
     );

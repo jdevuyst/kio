@@ -4,7 +4,7 @@ import __comptime__;
 
 pure fn reflected[A](ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A] }
 
-pure fn direct_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn direct_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   __comptime_if_then_else__(ct)(
   , __type_equal__(ct, reflected[.](ct), __reflect_type__(ct)[.])
   , .() -> __Checked_term__ { __term_unit__(ct) }
@@ -33,13 +33,15 @@ pure fn invoke(ct: __Comptime__, helper: [A] __Comptime__ -> __Type__) -> __Chec
   )
 }
 
-pure fn passed_helper_impl(ct: __Comptime__) -> __Checked_term__ { invoke(ct, reflected) }
+pure fn passed_helper_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
+  invoke(ct, reflected)
+}
 
 pure fn captured_reflector[A]() -> __Comptime__ -> __Type__ {
   .(ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A] }
 }
 
-pure fn captured_closure_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn captured_closure_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let unit = captured_reflector[.]();
   let bottom = captured_reflector[!]();
   let first = unit(ct);
@@ -56,7 +58,7 @@ pure fn polymorphic_reflector[A]() -> [B] __Comptime__ -> __Type__ {
   .[B](ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[A & B] }
 }
 
-pure fn polymorphic_closure_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn polymorphic_closure_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let outer_unit = polymorphic_reflector[.]();
   let outer_bottom = polymorphic_reflector[!]();
   let first = outer_unit[!](ct);
@@ -72,7 +74,7 @@ pure fn reflected_pair[A](ct: __Comptime__) -> __Type__ {
   __type_product__(ct, outer, inner[!](ct))
 }
 
-pure fn shadowed_type_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn shadowed_type_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let first = reflected_pair[.](ct);
   let second = reflected_pair[!](ct);
   let again = reflected_pair[.](ct);
@@ -82,7 +84,7 @@ pure fn shadowed_type_impl(ct: __Comptime__) -> __Checked_term__ {
 
 pure fn identity[A](value: A) -> A { value }
 
-pure fn nonobserving_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn nonobserving_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let value = identity[__Type__](__reflect_type__(ct)[.]);
   expect(ct, value, __reflect_type__(ct)[.])
 }

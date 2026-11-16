@@ -2,7 +2,9 @@ module macros;
 
 import __comptime__;
 
-pure fn infer_unit_impl(ct: __Comptime__, _target: .) -> __Checked_term__ { __term_unit__(ct) }
+pure fn infer_unit_impl(ct: __Comptime__, _target: ., _unit: __Checked_term__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
 
 pure fn finish_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
   value

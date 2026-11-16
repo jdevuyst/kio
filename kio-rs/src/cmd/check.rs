@@ -3777,7 +3777,7 @@ mod tests {
             temp.path().join("pkg/refl.kio"),
             "module pkg/refl; \
              import __comptime__; \
-             pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
+             pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
              } \
              pub type Rep_payload = .; \
@@ -4201,7 +4201,7 @@ mod tests {
                 "pub fn empty() -> . { () }\n",
                 "pub fn push(left: ., right: .) -> . { left }\n",
                 "pub fn finish(value: .) -> . { value }\n",
-                "pub pure fn macro_impl(ct: __Comptime__) -> __Checked_term__ {\n",
+                "pub pure fn macro_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {\n",
                 "  __term_unit__(ct)\n",
                 "}\n",
             ),

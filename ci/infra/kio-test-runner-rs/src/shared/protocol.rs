@@ -1267,6 +1267,7 @@ pub const TESTAPI_ARITH_PROTOCOL_NAME: &str = "testapi-arith";
 pub const TESTAPI_BARE_ARITH_PROTOCOL_NAME: &str = "testapi-bare-arith";
 pub const TESTAPI_BARE_COMPUTE_PROTOCOL_NAME: &str = "testapi-bare-compute";
 pub const TESTAPI_IO_PROTOCOL_NAME: &str = "testapi-io";
+pub const TESTAPI_IO_BOOL_PROTOCOL_NAME: &str = "testapi-io-bool";
 pub const TESTAPI_FLOAT_PROTOCOL_NAME: &str = "testapi-float";
 pub const TESTAPI_DYN_LOAD_PROTOCOL_NAME: &str = "testapi-dyn-load";
 pub const COEXIST_PROTOCOL_NAME: &str = "coexist";
@@ -1768,6 +1769,7 @@ pub enum RunnerProtocol {
     /// `testapi`: the I/O fns in `testapi/io`, the role types at the
     /// `testapi` root, exported `main` in `testapi/main`.
     TestApiIo,
+    TestApiIoBool,
     /// `00_success/exec_prime_eval_float` and
     /// `exec_float_arithmetic_testapi`, testapi-conformed. A float contract
     /// exercising the `f64` and `f32` role value shapes: `print` in
@@ -3996,6 +3998,7 @@ impl RunnerProtocol {
         Self::TestApiBareArith,
         Self::TestApiBareCompute,
         Self::TestApiIo,
+        Self::TestApiIoBool,
         Self::TestApiFloat,
         Self::TestApiDynLoad,
         Self::TestApiArithAddI32,
@@ -4145,6 +4148,7 @@ impl RunnerProtocol {
             Self::TestApiBareArith => TESTAPI_BARE_ARITH_PROTOCOL_NAME,
             Self::TestApiBareCompute => TESTAPI_BARE_COMPUTE_PROTOCOL_NAME,
             Self::TestApiIo => TESTAPI_IO_PROTOCOL_NAME,
+            Self::TestApiIoBool => TESTAPI_IO_BOOL_PROTOCOL_NAME,
             Self::TestApiFloat => TESTAPI_FLOAT_PROTOCOL_NAME,
             Self::TestApiDynLoad => TESTAPI_DYN_LOAD_PROTOCOL_NAME,
             Self::TestApiArithAddI32 => TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME,
@@ -4332,6 +4336,7 @@ impl RunnerProtocol {
             TESTAPI_BARE_ARITH_PROTOCOL_NAME => Ok(Self::TestApiBareArith),
             TESTAPI_BARE_COMPUTE_PROTOCOL_NAME => Ok(Self::TestApiBareCompute),
             TESTAPI_IO_PROTOCOL_NAME => Ok(Self::TestApiIo),
+            TESTAPI_IO_BOOL_PROTOCOL_NAME => Ok(Self::TestApiIoBool),
             TESTAPI_FLOAT_PROTOCOL_NAME => Ok(Self::TestApiFloat),
             TESTAPI_DYN_LOAD_PROTOCOL_NAME => Ok(Self::TestApiDynLoad),
             TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME => Ok(Self::TestApiArithAddI32),
@@ -4790,6 +4795,7 @@ impl RunnerProtocol {
                 main_contract(TYPES_MACRO_BOOL_INT_STRING, FNS_BARE_COMPUTE_INT)
             }
             Self::TestApiIo => main_contract(TYPES_TESTAPI_I32_STRING, FNS_IO),
+            Self::TestApiIoBool => main_contract(TYPES_TESTAPI_CORE, FNS_IO),
             Self::TestApiFloat => main_contract(TYPES_FLOAT_F64, FNS_FLOAT_F64),
             Self::TestApiDynLoad => main_contract(TYPES_DYN_LOAD, FNS_DYN_LOAD),
 

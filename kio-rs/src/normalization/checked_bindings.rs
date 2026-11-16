@@ -1137,44 +1137,6 @@ pub(super) fn align_for_export(
     aligned
 }
 
-#[cfg(feature = "surface")]
-pub(super) fn replace_templates(root: &CheckedTerm, replacements: &[CheckedTerm]) -> CheckedTerm {
-    let mut work = vec![(root, false)];
-    let mut ready = HashMap::<*const CheckedTerm, EvalRef<CheckedTerm>>::new();
-    while let Some((term, finish)) = work.pop() {
-        let key = std::ptr::from_ref(term);
-        if ready.contains_key(&key) {
-            continue;
-        }
-        if let CheckedTermNode::TemplateValue { index } = term.node.as_ref() {
-            let value = replacements.get(*index).unwrap_or_else(|| {
-                panic!("checked-term template refers to missing ABI slot {index}")
-            });
-            ready.insert(key, EvalRef::new(value.clone()));
-        } else if !finish {
-            work.push((term, true));
-            checked_traversal::children(&term.node, |child| work.push((child, false)));
-        } else {
-            let node = map_node(
-                &term.node,
-                |ty, _| type_traversal::clone_type(ty),
-                |child| ready[&std::ptr::from_ref(child.as_ref())].clone(),
-            );
-            ready.insert(
-                key,
-                EvalRef::new(CheckedTerm {
-                    node: EvalRef::new(node),
-                    ty: term.ty.clone(),
-                }),
-            );
-        }
-    }
-    ready
-        .remove(&std::ptr::from_ref(root))
-        .unwrap()
-        .unwrap_or_clone()
-}
-
 pub(super) fn materialized_parts(root: &CheckedTerm) -> (EvalAstExpr, EvalAstType) {
     let aligned = align_for_materialization(root);
     (
@@ -2316,60 +2278,6 @@ mod tests {
         assert_ne!(
             left, right,
             "paired nodes must retain the same hidden references"
-        );
-    }
-
-    #[cfg(feature = "surface")]
-    #[test]
-    fn template_adapter_preserves_hidden_and_split_slot_references() {
-        let first = ReflectedVariable::live("T".into(), 0);
-        let second = ReflectedVariable::live("T".into(), 0);
-        let left = first.as_type();
-        let right = second.as_type();
-        let mut builder = reflection_bindings::ReflectionTypeBuilder::new([&left, &right]);
-        let a = builder.import(&left).take();
-        let b = builder.import(&right).take();
-        let pair = builder.finish(Type::Product {
-            left: Box::new(a),
-            right: Box::new(b),
-            meta: zero_meta(),
-        });
-        let template = CheckedTerm::template_value_reflected(0, pair.clone());
-        let adapted = template.adapt_template_values(&CheckedTermTemplateValueAdapter {
-            sources: vec![CheckedTermTemplateSource {
-                ty: pair.clone(),
-                force_if_unused: false,
-            }],
-            slots: vec![CheckedTermTemplateSlot {
-                pieces: vec![
-                    CheckedTermTemplatePiece {
-                        source_index: 0,
-                        source_slot: 0,
-                        source_slot_tys: vec![left.clone(), right.clone()],
-                    },
-                    CheckedTermTemplatePiece {
-                        source_index: 0,
-                        source_slot: 1,
-                        source_slot_tys: vec![left.clone(), right.clone()],
-                    },
-                ],
-            }],
-        });
-        assert!(reflection_bindings::semantic_type_equal(&adapted.ty, &pair).unwrap());
-        let free = free_references(&adapted);
-        let free = &free[&std::ptr::from_ref(&adapted)];
-        assert!(free.iter().any(|(_, v)| v.0.same_reference(&first)));
-        assert!(free.iter().any(|(_, v)| v.0.same_reference(&second)));
-        let hidden = hidden_argument(first.clone());
-        let hidden_replaced = replace_templates(&hidden, &[]);
-        assert_eq!(
-            semantic_comparison(&hidden, &hidden_replaced).unwrap(),
-            reflection_bindings::TypeComparison::Equal
-        );
-        assert!(
-            free_references(&hidden_replaced)[&std::ptr::from_ref(&hidden_replaced)]
-                .iter()
-                .any(|(_, v)| v.0.same_reference(&first))
         );
     }
 }

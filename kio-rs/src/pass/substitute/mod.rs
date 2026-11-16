@@ -5150,7 +5150,7 @@ mod tests {
                 "pkg/refl",
                 "module pkg/refl; \
                  import __comptime__; \
-                 pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
+                 pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                    __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
                  } \
                  pub type Rep_payload = .; \

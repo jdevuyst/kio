@@ -2,7 +2,7 @@ module main;
 
 import __comptime__;
 
-pure fn expand(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
+pure fn expand(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }
 
 macro op : . -> . { impl expand }
 

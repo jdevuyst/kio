@@ -620,27 +620,16 @@ mod tests {
     }
 
     #[test]
-    fn existing_source_packet_sharing_is_consumed_as_explicit_let() {
-        let operand = template(0, boolean());
-        let recipe = pair(operand.clone(), operand);
-        let adapter = CheckedTermTemplateValueAdapter {
-            sources: vec![CheckedTermTemplateSource {
-                ty: crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
-                    .unwrap(),
-                force_if_unused: false,
-            }],
-            slots: vec![CheckedTermTemplateSlot {
-                pieces: vec![CheckedTermTemplatePiece {
-                    source_index: 0,
-                    source_slot: 0,
-                    source_slot_tys: vec![
-                        crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
-                            .unwrap(),
-                    ],
-                }],
-            }],
-        };
-        let shared = recipe.adapt_template_values(&adapter);
+    fn authored_source_packet_binding_is_consumed_once() {
+        let recipe = pair(local("saved", boolean()), local("saved", boolean()));
+        let shared = node(
+            CheckedTermNode::TermLet {
+                name: "saved".to_owned(),
+                value: template(0, boolean()),
+                body: recipe.clone(),
+            },
+            recipe.clone_type(),
+        );
         assert!(
             shared
                 .adapt_recursive_template_values(&[true], &boolean())
@@ -657,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn original_recipe_escape_check_precedes_sharing_and_includes_residual_eta() {
+    fn recipe_escape_check_includes_residual_eta_and_authored_capture() {
         let repeated = pair(template(0, boolean()), template(0, boolean()));
         let closure = lambda("ignored".into(), unit(), repeated);
         assert!(
@@ -669,29 +658,6 @@ mod tests {
             template(0, boolean())
                 .validate_recursive_template_scope(&[true], true)
                 .is_err()
-        );
-        let adapter = CheckedTermTemplateValueAdapter {
-            sources: vec![CheckedTermTemplateSource {
-                ty: crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
-                    .unwrap(),
-                force_if_unused: false,
-            }],
-            slots: vec![CheckedTermTemplateSlot {
-                pieces: vec![CheckedTermTemplatePiece {
-                    source_index: 0,
-                    source_slot: 0,
-                    source_slot_tys: vec![
-                        crate::normalization::ReflectedType::new(boolean(), "closed Bool fixture")
-                            .unwrap(),
-                    ],
-                }],
-            }],
-        };
-        let hoisted = closure.adapt_template_values(&adapter);
-        assert!(
-            hoisted
-                .validate_recursive_template_scope(&[true], false)
-                .is_ok()
         );
         let captured = lambda(
             "ignored".into(),

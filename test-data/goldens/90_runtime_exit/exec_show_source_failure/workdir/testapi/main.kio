@@ -1,0 +1,11 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import macros/show(macro show);
+import testapi(I32, String);
+import testapi/io(eprint, exit, print);
+
+fn source() -> String { eprint("kio panic: boom\n"); __absurd__[String](exit(90[I32])) }
+
+pub fn main() { print("before\n"); let _ = show(source()); print("after\n") }

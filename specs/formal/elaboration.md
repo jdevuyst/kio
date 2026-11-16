@@ -828,6 +828,13 @@ Evaluation proceeds as follows:
    ```
 
    The public call plan from step 1 is unchanged by this choice.
+   Each consumed Function layer contributes one quotation of its complete
+   checked domain, including Unit. Product domains retain the complete source
+   computation; declaration parameter grouping does not split that quotation.
+   A type-only layer contributes no value quotation. Substituting the returned
+   term preserves each authored quotation occurrence. Runtime sharing is
+   expressed by an ordinary generated binding, not by counting occurrences or
+   reusing a compile-time quotation handle.
    `__Comptime__` is the immutable first argument in both modes. Only marked
    mode receives the fresh call-local `__Fill_ctx__`, exactly second.
 6. Evaluate the selected implementation once against the explicit compile-time

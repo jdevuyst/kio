@@ -10,7 +10,17 @@ host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
 
 pure fn duplicate_impl(ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, value: __Checked_term__) ->
   __Checked_term__ & __Fill_ctx__
-   { (__intrinsic_pair__(ct, value, value), fills) }
+   {
+  (
+  , __term_let__(
+    , ct
+    , _a
+    , value
+    , .(saved: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, saved, saved) }
+    )
+  , fills
+  )
+}
 
 macro duplicate : [A] A -> (A & A) { impl(fills) duplicate_impl }
 

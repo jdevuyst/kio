@@ -1,0 +1,71 @@
+module quote;
+
+import __comptime__;
+
+pure fn drop_impl(ct: __Comptime__, _a: __Type__, _value: __Checked_term__) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+pure fn repeat_impl(ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_pair__(ct, value, value)
+}
+
+pure fn share_impl(ct: __Comptime__, a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __term_let__(
+  , ct
+  , a
+  , value
+  , .(saved: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, saved, saved) }
+  )
+}
+
+pure fn marked_repeat_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _a: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (__intrinsic_pair__(ct, value, value), fills) }
+
+pure fn marked_share_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, a: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (share_impl(ct, a, value), fills) }
+
+pure fn first_impl(ct: __Comptime__, a: __Type__, b: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_fst__(ct, __type_product__(ct, a, b), value)
+}
+
+pure fn marked_first_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, a: __Type__
+, b: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (first_impl(ct, a, b, value), fills) }
+
+pure fn later_impl(ct: __Comptime__, a: __Type__, value: __Checked_term__, _r: .) -> __Checked_term__ {
+  let result = __type_product__(ct, a, a);
+  __term_fn__(
+  , ct
+  , __type_arrow__(ct, __type_unit__(ct), result)
+  , .(_unit: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, value, value) }
+  )
+}
+
+pub macro drop : [A] A -> . { impl drop_impl }
+
+pub macro repeat : [A] A -> (A & A) { impl repeat_impl }
+
+pub macro share : [A] A -> (A & A) { impl share_impl }
+
+pub macro marked_repeat : [A] A -> (A & A) { impl(fills) marked_repeat_impl }
+
+pub macro marked_share : [A] A -> (A & A) { impl(fills) marked_share_impl }
+
+pub macro first : [A][B] (A & B) -> A { impl first_impl }
+
+pub macro marked_first : [A][B] (A & B) -> A { impl(fills) marked_first_impl }
+
+pub macro later : [A] A -> [R] R { impl later_impl }

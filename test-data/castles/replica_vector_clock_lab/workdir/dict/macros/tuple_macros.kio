@@ -254,6 +254,20 @@ pure fn flatten_product_slots(ct: __Comptime__, source: __Type__, value: __Check
   )
 }
 
+pure fn bind_nonempty_slots(
+, ct: __Comptime__
+, source: __Type__
+, value: __Checked_term__
+, slots: Slot_list
+, build: __Checked_term__ -> __Checked_term__
+) -> __Checked_term__ {
+  __comptime_if_then_else__(ct)(
+  , slot_empty(ct, slots)
+  , .() -> __Checked_term__ { build(value) }
+  , .() -> __Checked_term__ { __term_let__(ct, source, value, build) }
+  )
+}
+
 pure fn finish_slots(ct: __Comptime__, slots: Slot_list) -> Macro_result {
   let folded = slots_fold(ct, slots);
   ok(
@@ -288,7 +302,15 @@ pure fn concat_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn concat_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
-  finish_macro_result(ct, concat_macro(ct, source, value))
+  bind_nonempty_slots(
+  , ct
+  , source
+  , value
+  , flatten_product_slots(ct, source, value)
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, concat_macro(ct, source, saved))
+    }
+  )
 }
 
 /// Concatenates nested product slots into one flat product.
@@ -300,7 +322,15 @@ pure fn flatten_macro(ct: __Comptime__, source: __Type__, value: __Checked_term_
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn flatten_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
-  finish_macro_result(ct, flatten_macro(ct, source, value))
+  bind_nonempty_slots(
+  , ct
+  , source
+  , value
+  , flatten_product_slots(ct, source, value)
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, flatten_macro(ct, source, saved))
+    }
+  )
 }
 
 /// Flattens nested product slots, preserving their left-to-right order.
@@ -308,7 +338,18 @@ pub macro flatten : [Source] Source -> [Target] Target { impl flatten_checked }
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn group_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, materialize_slots(ct, target, flatten_product_slots(ct, source, value)))
+  bind_nonempty_slots(
+  , ct
+  , source
+  , value
+  , flatten_product_slots(ct, source, value)
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(
+      , ct
+      , materialize_slots(ct, target, flatten_product_slots(ct, source, saved))
+      )
+    }
+  )
 }
 
 /// Materializes a flat product into the requested grouped product target.
@@ -343,7 +384,21 @@ pure fn tail_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__) 
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn tail_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
-  finish_macro_result(ct, tail_macro(ct, source, value))
+  __either__[.][Slot & Slot_list][__Checked_term__](
+  , Slot_list.get(flatten_product_slots(ct, source, value))
+  , .(_empty: .) -> __Checked_term__ { finish_macro_result(ct, tail_macro(ct, source, value)) }
+  , .(cell: Slot & Slot_list) -> __Checked_term__ {
+      bind_nonempty_slots(
+      , ct
+      , source
+      , value
+      , __snd__[Slot][Slot_list](cell)
+      , .(saved: __Checked_term__) -> __Checked_term__ {
+          finish_macro_result(ct, tail_macro(ct, source, saved))
+        }
+      )
+    }
+  )
 }
 
 /// Drops the first product slot and returns the remaining product.
@@ -535,7 +590,15 @@ pure fn split_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn split_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ {
-  finish_macro_result(ct, split_impl(ct, source, value, target))
+  bind_nonempty_slots(
+  , ct
+  , source
+  , value
+  , flatten_product_slots(ct, source, value)
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, split_impl(ct, source, saved, target))
+    }
+  )
 }
 
 /// Splits a product into requested prefix and suffix products.
@@ -680,7 +743,26 @@ pure fn zip_checked(
 , rights: __Checked_term__
 , _target: .
 ) -> __Checked_term__ {
-  finish_macro_result(ct, zip_macro(ct, left_source, lefts, right_source, rights))
+  bind_nonempty_slots(
+  , ct
+  , left_source
+  , lefts
+  , flatten_product_slots(ct, left_source, lefts)
+  , .(saved_first: __Checked_term__) -> __Checked_term__ {
+      bind_nonempty_slots(
+      , ct
+      , right_source
+      , rights
+      , flatten_product_slots(ct, right_source, rights)
+      , .(saved_second: __Checked_term__) -> __Checked_term__ {
+          finish_macro_result(
+          , ct
+          , zip_macro(ct, left_source, saved_first, right_source, saved_second)
+          )
+        }
+      )
+    }
+  )
 }
 
 /// Zips two products slotwise into a product of pairs.
@@ -837,7 +919,23 @@ pure fn map_checked(
 , values: __Checked_term__
 , _target: .
 ) -> __Checked_term__ {
-  finish_macro_result(ct, map_macro(ct, fn_source, fns, value_source, values))
+  bind_nonempty_slots(
+  , ct
+  , fn_source
+  , fns
+  , flatten_product_slots(ct, fn_source, fns)
+  , .(saved_first: __Checked_term__) -> __Checked_term__ {
+      bind_nonempty_slots(
+      , ct
+      , value_source
+      , values
+      , flatten_product_slots(ct, value_source, values)
+      , .(saved_second: __Checked_term__) -> __Checked_term__ {
+          finish_macro_result(ct, map_macro(ct, fn_source, saved_first, value_source, saved_second))
+        }
+      )
+    }
+  )
 }
 
 /// Applies a product of functions slotwise to a product of values.
@@ -944,7 +1042,15 @@ pure fn distinct_macro(ct: __Comptime__, source: __Type__, value: __Checked_term
 
 /// Evaluates the corresponding macro and returns its checked core result.
 pure fn distinct_checked(ct: __Comptime__, source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
-  finish_macro_result(ct, distinct_macro(ct, source, value))
+  bind_nonempty_slots(
+  , ct
+  , source
+  , value
+  , flatten_product_slots(ct, source, value)
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      finish_macro_result(ct, distinct_macro(ct, source, saved))
+    }
+  )
 }
 
 /// Keeps the first slot of each distinct reflected type in a product.

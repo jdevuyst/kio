@@ -1000,7 +1000,7 @@ mod tests {
             "module main; import __comptime__; \
             type Hidden = .; pure fn helper() -> . { () } \
             pure fn build(ct: __Comptime__, _helper: __Checked_term__, \
-                _hidden: __Type__) -> __Checked_term__ { \
+                _hidden: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
                 __term_unit__(ct) \
             } \
             macro expand : . -> . { captures (helper, Hidden); impl build; }; \

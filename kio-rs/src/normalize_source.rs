@@ -250,7 +250,7 @@ import __comptime__;
 
 host fn effect() -> .;
 
-pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ {
+pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ {
   let unit = __type_unit__(ct);
   let effect_type = __type_arrow__(ct, unit, unit);
   __term_call__(ct, effect_type, effect_term, __term_unit__(ct))
@@ -287,7 +287,7 @@ module main;
 
 import __comptime__;
 
-pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ {
+pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct))
 }
 

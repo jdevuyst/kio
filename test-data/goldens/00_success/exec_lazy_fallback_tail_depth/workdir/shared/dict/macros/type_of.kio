@@ -637,23 +637,31 @@ pure fn type_of_checked(
 , rep_opaque_type: __Type__
 , rep_opaque_ctor: __Checked_term__
 , source: __Type__
+, value: __Checked_term__
 ) -> __Checked_term__ {
-  build_type_rep(
+  __term_let__(
   , ct
-  , type_rep_ctor
-  , rep_unit_type
-  , rep_bottom_type
-  , rep_product_type
-  , rep_sum_type
-  , rep_function_type
-  , rep_opaque_type
-  , rep_unit_ctor
-  , rep_bottom_ctor
-  , rep_product_ctor
-  , rep_sum_ctor
-  , rep_function_ctor
-  , rep_opaque_ctor
-  , source
+  , __reflect_type__(ct)[.]
+  , value
+  , .(_saved: __Checked_term__) -> __Checked_term__ {
+      build_type_rep(
+      , ct
+      , type_rep_ctor
+      , rep_unit_type
+      , rep_bottom_type
+      , rep_product_type
+      , rep_sum_type
+      , rep_function_type
+      , rep_opaque_type
+      , rep_unit_ctor
+      , rep_bottom_ctor
+      , rep_product_ctor
+      , rep_sum_ctor
+      , rep_function_ctor
+      , rep_opaque_ctor
+      , source
+      )
+    }
   )
 }
 

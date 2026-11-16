@@ -28,8 +28,12 @@ printf '\n' >>typedcache_local_elab.pkg.kio
 KIO_DEBUG_TYPED_CACHE_ROOT='' KIO_DEBUG_TYPED_CACHE=1 KIO_DEBUG_WRITE_TYPED_CACHE=1 \
   "$KIO_BIN" check 2>warm.err
 
-sed 's/{ __term_unit__(ct) }/{ let result = __term_unit__(ct); result }/' \
+sed 's/__term_unit__(ct)/let result = __term_unit__(ct); result/' \
   provider.kio >provider.next
+if cmp -s provider.kio provider.next; then
+  printf '%s\n' 'fixture error: provider body edit made no change' >&2
+  exit 1
+fi
 mv provider.next provider.kio
 KIO_DEBUG_TYPED_CACHE_ROOT='' KIO_DEBUG_TYPED_CACHE=1 KIO_DEBUG_WRITE_TYPED_CACHE=1 \
   "$KIO_BIN" check 2>edited.err

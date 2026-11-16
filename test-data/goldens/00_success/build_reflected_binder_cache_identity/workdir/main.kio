@@ -182,18 +182,18 @@ pure fn fresh_identity(ct: __Comptime__) -> __Type__ {
   )
 }
 
-pure fn factory_pair(ct: __Comptime__) -> __Checked_term__ {
+pure fn factory_pair(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let a = fresh_identity(ct);
   let b = fresh_identity(ct);
   compare_projected(ct, a, b)
 }
 
-pure fn shared_pair(ct: __Comptime__) -> __Checked_term__ {
+pure fn shared_pair(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let scheme = fresh_identity(ct);
   compare_projected(ct, scheme, scheme)
 }
 
-pure fn written_pair(ct: __Comptime__) -> __Checked_term__ {
+pure fn written_pair(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   compare_projected(ct, __reflect_type__(ct)[[X] X -> X], __reflect_type__(ct)[[Y] Y -> Y])
 }
 
@@ -223,7 +223,7 @@ pure fn distinct_schemes(ct: __Comptime__, first: __Type__, second: __Type__) ->
   )
 }
 
-pure fn distinct_positions(ct: __Comptime__) -> __Checked_term__ {
+pure fn distinct_positions(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   with_forall(
   , ct
   , __reflect_type__(ct)[[A][B] A -> B]
@@ -237,11 +237,11 @@ pure fn distinct_positions(ct: __Comptime__) -> __Checked_term__ {
   )
 }
 
-pure fn distinct_kinds(ct: __Comptime__) -> __Checked_term__ {
+pure fn distinct_kinds(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   distinct_schemes(ct, __reflect_type__(ct)[[A] A -> A], __reflect_type__(ct)[[*A] A[.] -> A[.]])
 }
 
-pure fn distinct_live(ct: __Comptime__) -> __Checked_term__ {
+pure fn distinct_live(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let nested =
     __type_forall__(
     , ct
@@ -273,11 +273,15 @@ pure fn distinct_live(ct: __Comptime__) -> __Checked_term__ {
   )
 }
 
-pure fn probe_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, __.f__(ct)) }
+pure fn probe_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
+  warm_pair(ct, __.f__(ct))
+}
 
-pure fn reverse_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, __.t__(ct)) }
+pure fn reverse_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
+  warm_pair(ct, __.t__(ct))
+}
 
-pure fn cold_impl(ct: __Comptime__) -> __Checked_term__ { cold_single(ct) }
+pure fn cold_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ { cold_single(ct) }
 
 macro probe : . -> . { impl probe_impl }
 
@@ -305,7 +309,14 @@ macro position_probe : . -> . { impl distinct_positions }
 
 macro kind_probe : . -> . { impl distinct_kinds }
 
-macro free_probe : [Left][Right] . -> . { impl distinct_schemes }
+pure fn distinct_schemes_macro(
+, ct: __Comptime__
+, first: __Type__
+, second: __Type__
+, _unit: __Checked_term__
+) -> __Checked_term__ { distinct_schemes(ct, first, second) }
+
+macro free_probe : [Left][Right] . -> . { impl distinct_schemes_macro }
 
 fn distinct_free[Left][Right]() { free_probe[[A] Left -> A][[A] Right -> A](()) }
 

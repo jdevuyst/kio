@@ -3,7 +3,9 @@ module main;
 import __comptime__;
 import provider as helper;
 
-pure fn local_impl(ct: __Comptime__) -> __Checked_term__ { helper.unit_impl(ct) }
+pure fn local_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
+  helper.unit_impl(ct)
+}
 
 macro unit : . -> . { impl local_impl }
 

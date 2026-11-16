@@ -285,7 +285,7 @@ fn bodyless_recursive_member_headers_reuse_the_existing_validator() {
 fn signature_only_on_ordinary_phases_still_checks_retained_auxiliary_items() {
     for source in [
         "module claims; fn identity[A](x: A) -> A { x } equiv wrong { (); identity }",
-        "module claims; import __comptime__; pure fn implementation(ct: __Comptime__) -> . { () } macro wrong : . -> . { impl implementation; };",
+        "module claims; import __comptime__; pure fn implementation(ct: __Comptime__, _unit: __Checked_term__) -> . { () } macro wrong : . -> . { impl implementation; };",
     ] {
         let (ordinary, contract) = packages(&[("claims.kio", source)]);
         ordinary.check_in_body_resolution().unwrap();

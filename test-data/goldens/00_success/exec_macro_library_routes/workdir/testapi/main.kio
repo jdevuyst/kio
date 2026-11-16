@@ -1,0 +1,117 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import macros/algebraic_macros(macro align, macro ease, macro onto);
+import macros/derive(macro derive);
+import macros/lookup(Lookup_bool, macro contains, macro lookup);
+import macros/tuple_macros(macro map, macro tail, macro zip);
+import macros/type_of(macro type_of);
+import testapi(String);
+import testapi/io(print);
+
+type { A: String; B: String; Missing: . }
+
+fn pair() -> A & B { print("source "); (A.mk("A "), B.mk("B ")) }
+
+fn nested() -> A & (B | B) { print("source "); (A.mk("A "), __left__[B][B](B.mk("B "))) }
+
+fn missing_sum() -> B | B { print("source "); __left__[B][B](B.mk("B ")) }
+
+fn found(value: A | .) {
+  __either__[A][.][.](value, .(a: A) { print(A.get(a)) }, .() { print("missing ") })
+}
+
+fn presence(value: Lookup_bool) {
+  __either__[.][.][.](value, .() { print("yes ") }, .() { print("no ") })
+}
+
+fn function() -> . -> (A & B) {
+  print("factory ");
+  .() { print("call "); (A.mk("A "), B.mk("B ")) }
+}
+
+fn functions() -> (A -> A) & (B -> B) {
+  print("functions ");
+  (.(a: A) { print("first "); a }, .(b: B) { print("second "); b })
+}
+
+fn right_pair() -> B & A { print("right "); (B.mk("B "), A.mk("A ")) }
+
+fn empty() { print("hidden ") }
+
+fn atom() -> A { print("hidden "); A.mk("A ") }
+
+fn seed_factory() -> . -> A {
+  print("seed factory ");
+  .() { print("seed "); A.mk("A ") }
+}
+
+fn unused_factory() -> . -> Missing {
+  print("unused factory ");
+  .() { print("hidden "); Missing.mk(()) }
+}
+
+fn observed_unit() { print("unit ") }
+
+pub fn main() {
+  print("lookup hit: ");
+  found(lookup(pair())[A]);
+  print("done\n");
+  print("lookup miss: ");
+  let _ = lookup(pair())[Missing];
+  print("done\n");
+  print("contains hit: ");
+  presence(contains(pair())[A]);
+  print("done\n");
+  print("contains miss: ");
+  presence(contains(pair())[Missing]);
+  print("done\n");
+  print("lookup nested: ");
+  found(lookup(nested())[A]);
+  print("done\n");
+  print("sum miss: ");
+  presence(contains(missing_sum())[Missing]);
+  print("done\n");
+  print("onto: ");
+  let value = onto(pair())[A];
+  print(A.get(value));
+  print("done\n");
+  print("erase: ");
+  onto(pair())[.];
+  print("done\n");
+  print("erase sum: ");
+  onto(missing_sum())[.];
+  print("done\n");
+  print("align: ");
+  let value = align(pair())[B & A];
+  print(B.get(__fst__[B][A](value)));
+  print(A.get(__snd__[B][A](value)));
+  print("done\n");
+  print("onto nested: ");
+  let value = onto(nested())[A & B];
+  print(A.get(__fst__[A][B](value)));
+  print(B.get(__snd__[A][B](value)));
+  print("done\n");
+  print("ease: ");
+  let adapted = ease(function())[. -> A];
+  print("ready ");
+  print(A.get(adapted()));
+  print("done\n");
+  print("map: ");
+  let mapped = map(functions())(pair())[A & B];
+  print(A.get(__fst__[A][B](mapped)));
+  print(B.get(__snd__[A][B](mapped)));
+  print("done\nzip: ");
+  let _ = zip(pair())(right_pair())[(A & B) & B & A];
+  print("done\nempty zip: ");
+  zip(empty())(empty())[.];
+  print("done\ntail atom: ");
+  tail(atom())[.];
+  print("done\nderive: ");
+  let derived = derive((seed_factory(), unused_factory()))[A];
+  print(A.get(derived));
+  print("done\ntype_of: ");
+  let _ = type_of[A](observed_unit());
+  print("done\n")
+}

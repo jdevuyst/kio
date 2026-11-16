@@ -1,0 +1,12 @@
+omit: done
+repeat: unit unit 
+share: unit 
+marked repeat: unit unit 
+marked share: unit 
+packet repeat: packet left right packet left right 
+packet share: packet left right 
+first: packet left right 
+marked first: packet left right 
+unused closure: done
+called closure: body body body body 
+ordinary: direct generic done

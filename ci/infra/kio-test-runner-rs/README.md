@@ -136,6 +136,7 @@ sharpened exact variants in the protocol registry.
 | `testapi-reentry` | the standard macro role types and `testapi.Bool`, `I32`, and `String`; `loop` and `loop_reentry`; `add_i32`, `sub_i32`, `leq_i32`, and `eq_i32`; `i32_to_string`, `bool_to_string`, `print`, and `string_concat`. |
 | `testapi-bare-compute` | the corresponding compute contract with unsuffixed i32 arithmetic. |
 | `testapi-io` | the exact print, stderr, exit, and input contract. |
+| `testapi-io-bool` | the I/O contract with `testapi.Bool` for libraries requiring a Boolean carrier. |
 | `testapi-arith-collection` | print, formatting, string concatenation, `_i32` arithmetic/comparison, and loop functions used by the collection family. |
 | `testapi-bare-collection` | the corresponding collection contract with unsuffixed i32 arithmetic and `string_eq`. |
 | `testapi-array` | exact array, formatting, arithmetic, text, and loop functions plus the non-role `testapi/Array[T]` host type. |

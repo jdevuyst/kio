@@ -330,34 +330,6 @@ pub struct CheckedTerm {
     ty: ReflectedType,
 }
 
-#[cfg(feature = "surface")]
-#[derive(Debug, Clone)]
-pub(crate) struct CheckedTermTemplateValueAdapter {
-    pub(crate) sources: Vec<CheckedTermTemplateSource>,
-    pub(crate) slots: Vec<CheckedTermTemplateSlot>,
-}
-
-#[cfg(feature = "surface")]
-#[derive(Debug, Clone)]
-pub(crate) struct CheckedTermTemplateSource {
-    pub(crate) ty: ReflectedType,
-    pub(crate) force_if_unused: bool,
-}
-
-#[cfg(feature = "surface")]
-#[derive(Debug, Clone)]
-pub(crate) struct CheckedTermTemplateSlot {
-    pub(crate) pieces: Vec<CheckedTermTemplatePiece>,
-}
-
-#[cfg(feature = "surface")]
-#[derive(Debug, Clone)]
-pub(crate) struct CheckedTermTemplatePiece {
-    pub(crate) source_index: usize,
-    pub(crate) source_slot: usize,
-    pub(crate) source_slot_tys: Vec<ReflectedType>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckedTermErrorKind {
     Macro,
@@ -816,88 +788,6 @@ impl CheckedTerm {
             raw_to_pre_prime,
             &mut canonical_type_to_pre_prime,
         )
-    }
-
-    #[cfg(feature = "surface")]
-    pub(crate) fn adapt_template_values(&self, adapter: &CheckedTermTemplateValueAdapter) -> Self {
-        let used_slots = checked_term_template_value_counts(&self.node);
-        let mut source_slot_uses = vec![HashSet::new(); adapter.sources.len()];
-        let mut source_use_counts = vec![0usize; adapter.sources.len()];
-        for (slot_index, occurrences) in &used_slots {
-            let slot = adapter.slots.get(*slot_index).unwrap_or_else(|| {
-                panic!("checked-term template refers to missing ABI slot {slot_index}")
-            });
-            for piece in &slot.pieces {
-                source_slot_uses[piece.source_index].insert(*slot_index);
-                source_use_counts[piece.source_index] = source_use_counts[piece.source_index]
-                    .checked_add(*occurrences)
-                    .expect("checked-term template source-use count overflow");
-            }
-        }
-        let bind_source = adapter
-            .sources
-            .iter()
-            .enumerate()
-            .map(|(index, source)| {
-                source.force_if_unused
-                    || source_slot_uses[index].len() > 1
-                    || source_use_counts[index] > 1
-            })
-            .collect::<Vec<_>>();
-        let names = bind_source
-            .iter()
-            .enumerate()
-            .map(|(index, bind)| bind.then(|| format!("__ct_macro_arg{index}__")))
-            .collect::<Vec<_>>();
-        let source_term = |index: usize| {
-            let source = &adapter.sources[index];
-            match &names[index] {
-                Some(name) => CheckedTerm::from_reflected_node(
-                    CheckedTermNode::Local { name: name.clone() },
-                    source.ty.clone(),
-                ),
-                None => CheckedTerm::template_value_reflected(index, source.ty.clone()),
-            }
-        };
-        let replacements = adapter
-            .slots
-            .iter()
-            .map(|slot| {
-                let pieces = slot
-                    .pieces
-                    .iter()
-                    .map(|piece| {
-                        let source = EvalRef::new(source_term(piece.source_index));
-                        project_reflected_product_slot(
-                            source,
-                            &piece.source_slot_tys,
-                            piece.source_slot,
-                        )
-                        .expect("an ABI adapter piece names a valid expanded source slot")
-                    })
-                    .collect::<Vec<_>>();
-                checked_product_packet(&pieces).as_ref().clone()
-            })
-            .collect::<Vec<_>>();
-        let mut body = replace_checked_term_template_values(self, &replacements);
-        for (index, source) in adapter.sources.iter().enumerate().rev() {
-            let Some(name) = &names[index] else {
-                continue;
-            };
-            let body_ty = body.ty.clone();
-            body = CheckedTerm::from_reflected_node(
-                CheckedTermNode::TermLet {
-                    name: name.clone(),
-                    value: EvalRef::new(CheckedTerm::template_value_reflected(
-                        index,
-                        source.ty.clone(),
-                    )),
-                    body: EvalRef::new(body),
-                },
-                body_ty,
-            );
-        }
-        body
     }
 
     /// Reinterpret the already-validated terminal callback topology after
@@ -1779,84 +1669,6 @@ impl RuntimeCallbackAdapter<'_> {
         };
         self.rebuilt(node, ty)
     }
-}
-
-#[cfg(feature = "surface")]
-fn checked_term_template_value_counts(node: &CheckedTermNode) -> HashMap<usize, usize> {
-    fn collect(node: &CheckedTermNode, out: &mut HashMap<usize, usize>) {
-        match node {
-            CheckedTermNode::TemplateValue { index } => {
-                let count = out.entry(*index).or_default();
-                *count = count
-                    .checked_add(1)
-                    .expect("checked-term template occurrence count overflow");
-            }
-            CheckedTermNode::Raw(_)
-            | CheckedTermNode::Local { .. }
-            | CheckedTermNode::MacroError { .. } => {}
-            CheckedTermNode::TermLet { value, body, .. } => {
-                collect(&value.node, out);
-                collect(&body.node, out);
-            }
-            CheckedTermNode::TermFn { body, .. }
-            | CheckedTermNode::TermTypeApp { fn_value: body, .. }
-            | CheckedTermNode::IntrinsicProjection { value: body, .. }
-            | CheckedTermNode::IntrinsicInjection { value: body, .. }
-            | CheckedTermNode::IntrinsicAbsurd {
-                bottom_value: body, ..
-            } => {
-                collect(&body.node, out);
-            }
-            CheckedTermNode::TermCall {
-                fn_value,
-                arg_packet,
-                ..
-            }
-            | CheckedTermNode::IntrinsicPair {
-                left: fn_value,
-                right: arg_packet,
-            }
-            | CheckedTermNode::IntrinsicBoolean {
-                left: fn_value,
-                right: arg_packet,
-                ..
-            } => {
-                collect(&fn_value.node, out);
-                collect(&arg_packet.node, out);
-            }
-            CheckedTermNode::IntrinsicEither {
-                value,
-                left_body,
-                right_body,
-                ..
-            } => {
-                collect(&value.node, out);
-                collect(&left_body.node, out);
-                collect(&right_body.node, out);
-            }
-            CheckedTermNode::IntrinsicIfThenElse {
-                condition,
-                true_body,
-                false_body,
-                ..
-            } => {
-                collect(&condition.node, out);
-                collect(&true_body.node, out);
-                collect(&false_body.node, out);
-            }
-        }
-    }
-    let mut out = HashMap::new();
-    collect(node, &mut out);
-    out
-}
-
-#[cfg(feature = "surface")]
-fn replace_checked_term_template_values(
-    term: &CheckedTerm,
-    replacements: &[CheckedTerm],
-) -> CheckedTerm {
-    checked_bindings::replace_templates(term, replacements)
 }
 
 fn collect_checked_term_type_binders(node: &CheckedTermNode, binders: &mut HashSet<String>) {
@@ -23308,7 +23120,7 @@ mod tests {
     }
 
     #[test]
-    fn projected_product_views_bind_one_shared_template_source() {
+    fn projected_product_views_retain_authored_template_occurrences() {
         let unit = Type::Unit { meta: zero_meta() };
         let product = Type::Product {
             left: Box::new(unit.clone()),
@@ -23338,62 +23150,11 @@ mod tests {
             ProjectedTermConstruction::Pair { left, right },
             product.clone(),
         );
-        let adapted = split.adapt_template_values(&CheckedTermTemplateValueAdapter {
-            sources: vec![CheckedTermTemplateSource {
-                ty: ReflectedType::new_trusted(product.clone()),
-                force_if_unused: false,
-            }],
-            slots: vec![CheckedTermTemplateSlot {
-                pieces: vec![CheckedTermTemplatePiece {
-                    source_index: 0,
-                    source_slot: 0,
-                    source_slot_tys: vec![ReflectedType::new_trusted(product)],
-                }],
-            }],
-        });
-        let CheckedTermNode::TermLet { name, value, body } = adapted.node.as_ref() else {
-            panic!("two views of one template source must replay through a let")
-        };
-        assert!(matches!(
-            value.node.as_ref(),
-            CheckedTermNode::TemplateValue { index: 0 }
-        ));
-        let CheckedTermNode::IntrinsicPair { left, right } = body.node.as_ref() else {
-            panic!("the shared source let must retain both projected views")
-        };
-        for projection in [left, right] {
-            let CheckedTermNode::IntrinsicProjection { value, .. } = projection.node.as_ref()
-            else {
-                panic!("the adapted split lost a product projection")
-            };
-            assert!(matches!(
-                value.node.as_ref(),
-                CheckedTermNode::Local { name: local } if local == name
-            ));
-        }
-        assert_eq!(
-            checked_term_template_value_counts(&adapted.node),
-            HashMap::from([(0, 1)]),
-            "the original source expression must replay exactly once"
-        );
-
-        let branch_counts = checked_term_template_value_counts(&EvalRef::new(
-            CheckedTermNode::IntrinsicIfThenElse {
-                result_ty: unit.clone(),
-                condition: EvalRef::new(CheckedTerm::template_value(0, unit.clone())),
-                true_body: EvalRef::new(CheckedTerm::template_value(1, unit.clone())),
-                false_body: EvalRef::new(CheckedTerm::template_value(2, unit)),
-            },
-        ));
-        assert_eq!(
-            branch_counts,
-            HashMap::from([(0, 1), (1, 1), (2, 1)]),
-            "template occurrence counting must visit condition and each branch once"
-        );
+        assert_template_types(&split, &product, 2);
     }
 
     #[test]
-    fn repeated_callable_template_source_replays_through_one_untyped_let_with_canonical_types() {
+    fn explicit_callable_template_binding_replays_once_with_canonical_types() {
         let unit = Type::Unit { meta: zero_meta() };
         let product = Type::Product {
             left: Box::new(unit.clone()),
@@ -23414,7 +23175,11 @@ mod tests {
             abi_arity: 2,
             caps: (),
         };
-        let source = EvalRef::new(CheckedTerm::template_value(0, source_ty.clone()));
+        let name = "saved_callable".to_owned();
+        let source = EvalRef::new(CheckedTerm::from_node(
+            CheckedTermNode::Local { name: name.clone() },
+            source_ty.clone(),
+        ));
         let packet = EvalRef::new(CheckedTerm::from_projected(
             ProjectedTermConstruction::Pair {
                 left: EvalRef::new(CheckedTerm::new(
@@ -23457,19 +23222,14 @@ mod tests {
             },
             result_ty,
         );
-        let adapted = template.adapt_template_values(&CheckedTermTemplateValueAdapter {
-            sources: vec![CheckedTermTemplateSource {
-                ty: ReflectedType::new_trusted(source_ty.clone()),
-                force_if_unused: false,
-            }],
-            slots: vec![CheckedTermTemplateSlot {
-                pieces: vec![CheckedTermTemplatePiece {
-                    source_index: 0,
-                    source_slot: 0,
-                    source_slot_tys: vec![ReflectedType::new_trusted(source_ty)],
-                }],
-            }],
-        });
+        let adapted = CheckedTerm::from_node(
+            CheckedTermNode::TermLet {
+                name,
+                value: EvalRef::new(CheckedTerm::template_value(0, source_ty)),
+                body: EvalRef::new(template.clone()),
+            },
+            template.clone_type(),
+        );
 
         let CheckedTermNode::TermLet { name, value, body } = adapted.node.as_ref() else {
             panic!("the repeated callable source must be staged exactly once")
@@ -23499,12 +23259,6 @@ mod tests {
                 CheckedTermNode::Local { name: local } if local == name
             ));
         }
-        assert_eq!(
-            checked_term_template_value_counts(&adapted.node),
-            HashMap::from([(0, 1)]),
-            "the ABI-2 source must be materialized exactly once"
-        );
-
         let mut raw_to_pre_prime = |expr: &Expr<EvalPhase>, _call_span: Span| {
             crate::ast::convert_expr::<EvalPhase, PrePrime>(expr)
         };

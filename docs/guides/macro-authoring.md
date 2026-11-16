@@ -695,7 +695,7 @@ import __comptime__;
 
 host fn action();
 
-pure fn emit_impl(ct: __Comptime__, action_term: __Checked_term__) -> __Checked_term__ {
+pure fn emit_impl(ct: __Comptime__, action_term: __Checked_term__, _input: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, __term_type__(ct, action_term), action_term, __term_unit__(ct))
 }
 
@@ -714,7 +714,10 @@ import __comptime__;
 
 host fn action();
 
-pure fn execute_impl(ct: __Comptime__) -> __Checked_term__ { action(); __term_unit__(ct) }
+pure fn execute_impl(ct: __Comptime__, _input: __Checked_term__) -> __Checked_term__ {
+  action();
+  __term_unit__(ct)
+}
 
 macro execute : . -> . { impl execute_impl }
 

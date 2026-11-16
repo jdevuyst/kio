@@ -33,6 +33,27 @@ an abandoned branch, a cache hit, or evaluation order change the typechecking
 result. Making that write idempotent does not repair conflicts, partial failure,
 or rollback; it only makes one repeated successful write harmless.
 
+## Quoted inputs and runtime sharing
+
+Each consumed public Function stage supplies one checked quotation of its
+complete domain, including Unit. Preserve computed products as whole source
+computations in both late and fills preparation; splitting and rebuilding them
+from repeated projections can duplicate evaluation before the author has
+chosen to do so. Type-only stages supply no value quotation. Private ABI
+parameter counts never select these boundaries.
+
+The generated code controls runtime evaluation of quotations. Repeated uses
+are ordinary repeated evaluation; sharing requires a generated binding such
+as `__term_let__`. Do not add source-use counting or implicit outer bindings
+to make those repetitions run once. Compile-time handles and cached pure
+results do not represent runtime bindings. Library migrations must preserve
+their intended count, order and conditionality explicitly, including omitted
+inputs and independently delayed thunks. Binding every input eagerly is not
+a substitute for that analysis.
+
+This does not relax source validation, one-shot compile-time execution,
+recursive-scope checks, ordinary-call strictness or standalone Prime checking.
+
 ## Compiler-owned literals and runtime erasure
 
 The exported names of `__comptime__` and `__intrinsics__` are disjoint, so both

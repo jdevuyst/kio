@@ -6,7 +6,7 @@ pure fn factory[A]() -> __Comptime__ -> __Type__ {
   .(ct) { __reflect_type__(ct)[A] }
 }
 
-pure fn probe_impl(ct: __Comptime__) -> __Checked_term__ {
+pure fn probe_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   let reflect = factory[.]();
   __comptime_if_then_else__(ct)(
   , __type_equal__(ct, reflect(ct), __reflect_type__(ct)[.])

@@ -1,0 +1,56 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import macros/show(macro show);
+import macros/spine_macros(macro fit);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn text(value: String) -> String { value }
+
+fn leaf() -> String { print("source "); "x" }
+
+fn unit() { print("source ") }
+
+fn pair() -> String & String { print("source "); ("x", "y") }
+
+fn sparse() -> . & String { print("source "); ((), "x") }
+
+fn choice() -> String | String { print("source "); __left__[String][String]("x") }
+
+fn packet() -> String & (String | String) { print("source "); ("x", __left__[String][String]("y")) }
+
+pub fn main() {
+  print("unused leaf: ");
+  let _ = show(leaf());
+  print("done\nleaf: ");
+  let render_leaf = show(leaf());
+  print("ready ");
+  print(render_leaf(string_concat, text));
+  print(render_leaf(string_concat, text));
+  print(" done\nunit: ");
+  let render_unit = show(unit());
+  print("ready ");
+  print(render_unit(string_concat, ()));
+  print(render_unit(string_concat, ()));
+  print(" done\npair: ");
+  let render_pair = show(pair());
+  print("ready ");
+  print(render_pair(string_concat, text));
+  print(render_pair(string_concat, text));
+  print(" done\nsparse: ");
+  let render_sparse = show(sparse());
+  print("ready ");
+  print(render_sparse(string_concat, text));
+  print(render_sparse(string_concat, text));
+  print(" done\nsum: ");
+  let render_choice = show(choice());
+  print("ready ");
+  print(render_choice(string_concat, text));
+  print(render_choice(string_concat, text));
+  print(" done\nfit packet: ");
+  let _ = fit(packet())[String & String];
+  print("done\n")
+}

@@ -2989,7 +2989,6 @@ struct UserMacroCallTranscript {
     action: crate::ast::NodeId,
     source_span: Span,
     layers: Vec<UserMacroCallTranscriptLayer>,
-    next_source_index: usize,
     terminal_type_layer: Option<UserMacroTerminalTypeLayerCapability>,
 }
 
@@ -3059,7 +3058,6 @@ struct UserMacroCallTranscriptLayer {
 
 #[cfg(feature = "surface")]
 struct UserMacroCallTranscriptSource {
-    source_index: usize,
     source: crate::ast::Expr<crate::ast::Lowered>,
     expanded_start: usize,
     expanded_width: usize,
@@ -6394,9 +6392,9 @@ enum RecOrderFunctionShellState<'m> {
 }
 
 #[cfg(all(feature = "surface", target_pointer_width = "64", not(test)))]
-const _: () = assert!(std::mem::size_of::<RecOrderContinuation<'static>>() == 384);
+const _: () = assert!(std::mem::size_of::<RecOrderContinuation<'static>>() == 376);
 #[cfg(all(feature = "surface", target_pointer_width = "64", test))]
-const _: () = assert!(std::mem::size_of::<RecOrderContinuation<'static>>() == 400);
+const _: () = assert!(std::mem::size_of::<RecOrderContinuation<'static>>() == 392);
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7628,7 +7626,6 @@ impl<'m> OrdinaryValueCursor<'m> {
                     action: action.node_id(),
                     source_span: span,
                     layers: Vec::new(),
-                    next_source_index: 0,
                     terminal_type_layer,
                 });
                 let mut selecting = open_selecting_goal_call(
@@ -12195,10 +12192,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     match store.try_zonk_goal_free(delta, source.expected.clone(), tcx)? {
                         Some(closed) => {
                             sources.push(crate::pass::typecheck_full::TypedUserMacroCallSource {
-                                source_index: source.source_index,
                                 source: source.source.clone(),
-                                expanded_start: source.expanded_start,
-                                expanded_width: source.expanded_width,
                                 expected: closed.ty().clone(),
                             })
                         }
@@ -13724,10 +13718,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                     .as_ref()
                     .expect("a checked lifted lambda lost its public result type")
                     .clone();
-                {
+                let closed_public = {
                     let (store, owner, delta, _publication) = lambda_frontier.parts_mut();
                     let runtime_scoped = store.scoped_type(owner, runtime.clone(), body.span())?;
-                    let continuation = store.scoped_type(owner, continuation, body.span())?;
+                    let continuation =
+                        store.scoped_type(owner, continuation.clone(), body.span())?;
                     let input = continuation
                         .projected_structural_child(super::ScopedTypeEdge::FunctionParam)
                         .expect("a deferred callback continuation has an ordinary function type");
@@ -13736,6 +13731,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         .expect("a deferred callback continuation has an ordinary function type");
                     let public =
                         public.into_expected_equation_operand(owner, store, body.span())?;
+                    let public_scope = public.solver_type().clone();
                     store.constrain_equation(delta, input, public, body.span(), tcx)?;
                     store.constrain_equation(
                         delta,
@@ -13744,6 +13740,33 @@ impl<'m> OrdinaryValueCursor<'m> {
                         body.span(),
                         tcx,
                     )?;
+                    store
+                        .try_zonk_goal_free(delta, public_scope, tcx)?
+                        .map(|ty| OwnerBoundType::Retained { owner, ty })
+                };
+                if let Some(public) = closed_public {
+                    // A closed public result is usable by generated descendants
+                    // before the body closes the lambda's speculative delta.
+                    // Runtime-result equations remain with that delta.
+                    let (reservation, ()) =
+                        lambda_frontier
+                            .reserve_ordinary_child_with(body.span(), tcx, |_, _| Ok(()))?;
+                    let mut header = lambda_frontier.open_ordinary_child(reservation)?;
+                    {
+                        let mut header_frontier =
+                            lambda_frontier.ordinary_child_frontier(&mut header);
+                        let (store, owner, delta, _publication) = header_frontier.parts_mut();
+                        let continuation = store.scoped_type(owner, continuation, body.span())?;
+                        let input = continuation
+                            .projected_structural_child(super::ScopedTypeEdge::FunctionParam)
+                            .expect(
+                                "a deferred callback continuation has an ordinary function type",
+                            );
+                        let public =
+                            public.into_expected_equation_operand(owner, store, body.span())?;
+                        store.constrain_equation(delta, input, public, body.span(), tcx)?;
+                    }
+                    lambda_frontier.close_ordinary_child(header, Vec::new(), tcx)?;
                 }
                 Some(OwnerBoundType::Plain(runtime))
             }
@@ -17965,11 +17988,7 @@ fn begin_general_goal_call<'m>(
         ));
     }
 
-    if let Some(next_source_index) = call
-        .user_macro_transcript
-        .as_ref()
-        .map(|transcript| transcript.next_source_index)
-    {
+    if call.user_macro_transcript.is_some() {
         let mut type_slots = Vec::with_capacity(call.shape.binders.len());
         for binder in &call.shape.binders {
             let Some(ty) = call.replacements.get(goal_owner, &binder.name) else {
@@ -17984,17 +18003,14 @@ fn begin_general_goal_call<'m>(
             )?));
         }
         let mut sources = Vec::with_capacity(prepared_values.len());
-        for (
-            source_offset,
-            (value, expected, _immediate_evidence, expanded_start, expanded_width),
-        ) in prepared_values.iter().enumerate()
+        for (value, expected, _immediate_evidence, expanded_start, expanded_width) in
+            &prepared_values
         {
             let source = match value {
                 OrdinaryCallValue::Completed { source, .. } => *source,
                 OrdinaryCallValue::Retained(retained) => retained.cursor.source,
             };
             sources.push(UserMacroCallTranscriptSource {
-                source_index: next_source_index + source_offset,
                 source: source.clone(),
                 expanded_start: *expanded_start,
                 expanded_width: *expanded_width,
@@ -18007,7 +18023,6 @@ fn begin_general_goal_call<'m>(
             && (!prepared_values.is_empty()
                 || accepts_zero_value_args(&call.remaining_param.solver, &tcx.env.alias_ctx()));
         if let Some(transcript) = call.user_macro_transcript.as_mut() {
-            transcript.next_source_index += sources.len();
             transcript.layers.push(UserMacroCallTranscriptLayer {
                 type_slots,
                 value_layer_consumed,
@@ -22718,15 +22733,9 @@ mod tests {
     #[cfg(all(feature = "surface", target_pointer_width = "64"))]
     #[test]
     fn marked_ancestor_and_terminal_roundtrip_layouts_stay_bounded() {
-        struct LayerOnlyTemplateSource {
-            _source: Expr,
-            _ty: InternedType<Lowered>,
-            _layer: usize,
-        }
         eprintln!(
-            "projected template source layouts: layer_only={}, optional_layer={}",
-            std::mem::size_of::<LayerOnlyTemplateSource>(),
-            std::mem::size_of::<fills::ProjectedTemplateSource>(),
+            "projected template source layout: {}",
+            std::mem::size_of::<fills::ProjectedTemplateSource>()
         );
         eprintln!(
             "recursive continuation edge layouts: plan={}, expression={}, path_segment={}, optional_box={}",
@@ -22735,19 +22744,32 @@ mod tests {
             std::mem::size_of::<crate::ast::PathSegment>(),
             std::mem::size_of::<Option<Box<Expr>>>(),
         );
-        assert_eq!(std::mem::size_of::<UserMacroCallTranscript>(), 96);
+        eprintln!(
+            "macro call layouts: transcript={}, open={}, planned={}",
+            std::mem::size_of::<UserMacroCallTranscript>(),
+            std::mem::size_of::<OpenGoalCall<'_>>(),
+            std::mem::size_of::<PlannedUserMacroCallState<'_>>()
+        );
+        assert_eq!(std::mem::size_of::<UserMacroCallTranscript>(), 88);
         assert_eq!(
             std::mem::size_of::<OpenGoalCall<'_>>(),
-            624 + std::mem::size_of::<Option<Box<FixedMacroStages<'_>>>>()
+            616 + std::mem::size_of::<Option<Box<FixedMacroStages<'_>>>>()
         );
         assert_eq!(
             std::mem::size_of::<PlannedUserMacroCallState<'_>>(),
             // Ready retains the residual-binding vector until checked export.
-            456 + std::mem::size_of::<Span>()
+            408 + std::mem::size_of::<Span>()
         );
-        assert_eq!(std::mem::size_of::<CompletedInFrame>(), 200);
+        eprintln!(
+            "completion layouts: frame={}, step={}, child={}, driver={}",
+            std::mem::size_of::<CompletedInFrame>(),
+            std::mem::size_of::<OrdinaryDriverStep<'_>>(),
+            std::mem::size_of::<OpenOrdinaryChildAdvance<'_>>(),
+            std::mem::size_of::<OrdinaryDriverFrame<'_>>()
+        );
+        assert_eq!(std::mem::size_of::<CompletedInFrame>(), 192);
         assert_eq!(std::mem::size_of::<OrdinaryDriverStep<'_>>(), 240);
-        assert_eq!(std::mem::size_of::<OpenOrdinaryChildAdvance<'_>>(), 288);
+        assert_eq!(std::mem::size_of::<OpenOrdinaryChildAdvance<'_>>(), 280);
         assert_eq!(std::mem::size_of::<OrdinaryDriverFrame<'_>>(), 224);
         assert_eq!(
             std::mem::size_of::<crate::ast::RecOrderPlan<Lowered>>(),
@@ -22849,10 +22871,11 @@ mod tests {
     #[test]
     fn relation_state_layouts_and_owned_shallow_footprints_stay_exact() {
         eprintln!(
-            "computed call layout: continuation={}, paired={}, cursor={}",
+            "computed call layout: continuation={}, paired={}, cursor={}, planned={}",
             std::mem::size_of::<ComputedCallContinuation<'_>>(),
             std::mem::size_of::<PairedComputedCall<'_>>(),
-            std::mem::size_of::<OrdinaryValueCursor<'_>>()
+            std::mem::size_of::<OrdinaryValueCursor<'_>>(),
+            std::mem::size_of::<PlannedOrdinaryValue<'_>>()
         );
         eprintln!(
             "selection result context: state={}, selecting={}",
@@ -22860,11 +22883,11 @@ mod tests {
             std::mem::size_of::<SelectingOrdinaryCall<'_>>()
         );
         assert_eq!(std::mem::size_of::<ComputedCallContinuation<'_>>(), 400);
-        assert_eq!(std::mem::size_of::<PairedComputedCall<'_>>(), 584);
+        assert_eq!(std::mem::size_of::<PairedComputedCall<'_>>(), 576);
         assert_eq!(std::mem::size_of::<frontier::FrontierMode>(), 1);
         assert_eq!(std::mem::size_of::<ActiveOrdinaryDriverChild<'_>>(), 104);
-        assert_eq!(std::mem::size_of::<PlannedOrdinaryValue<'_>>(), 920);
-        assert_eq!(std::mem::size_of::<OrdinaryValueCursor<'_>>(), 1048);
+        assert_eq!(std::mem::size_of::<PlannedOrdinaryValue<'_>>(), 912);
+        assert_eq!(std::mem::size_of::<OrdinaryValueCursor<'_>>(), 1040);
     }
 
     #[cfg(all(feature = "surface", target_pointer_width = "64"))]
@@ -25829,7 +25852,7 @@ mod tests {
                 _result: __Type__, body: __Checked_term__)
                 -> __Checked_term__ & __Fill_ctx__ { (invoke(ct, body), fills) }
             pub macro enter_now : [Result](. -> Result) -> Result { impl(fills) enter_checked }
-            pure fn unit_checked(ct: __Comptime__, _result: .) -> __Checked_term__ {
+            pure fn unit_checked(ct: __Comptime__, _result: ., _unit: __Checked_term__) -> __Checked_term__ {
                 __term_unit__(ct)
             }"#;
         format!("{provider} pub macro infer_unit : [A]. -> A {{ impl unit_checked }}")
@@ -27431,7 +27454,6 @@ mod tests {
                 action,
                 source_span: sp(),
                 layers: Vec::new(),
-                next_source_index: 0,
                 terminal_type_layer: None,
             };
             let (mut frontier, call) =
@@ -28444,7 +28466,7 @@ mod tests {
              pure fn retained[A](seed: A) -> [B] B -> A {
                .[B](_value: B) { seed }
              }
-             pure fn stage_impl(ct: __Comptime__) -> __Checked_term__ {
+             pure fn stage_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
                let _ignored = retained(ct)[__Comptime__]( ct);
                __term_unit__(ct)
              }
@@ -31432,7 +31454,7 @@ mod tests {
             r#"module main;
             import __comptime__;
             host fn supply[A]() -> A;
-            pure fn unit_checked(ct: __Comptime__, _result: .) -> __Checked_term__ {
+            pure fn unit_checked(ct: __Comptime__, _result: ., _unit: __Checked_term__) -> __Checked_term__ {
                 __term_unit__(ct)
             }
             macro infer_unit : [A]. -> A { impl unit_checked }
@@ -31555,7 +31577,7 @@ mod tests {
             host type Bool role(bool);
             {extra}
             host fn supply[A]() -> A;
-            pure fn unit_checked(ct: __Comptime__, _result: .) -> __Checked_term__ {{ __term_unit__(ct) }}
+            pure fn unit_checked(ct: __Comptime__, _result: ., _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}
             macro infer_unit : [A]. -> A {{ impl unit_checked }}
             fn consume[A](_first: . -> A, _second: . -> A, _later: A) -> . {{ () }}
             fn consume_distinct[A](_first: . -> A, _second: . -> ., _later: .) -> . {{ () }}
@@ -35462,6 +35484,7 @@ mod tests {
              pure fn infer_unit_impl(
                  ct: __Comptime__,
                  _a: .,
+                 _unit: __Checked_term__,
              ) -> __Checked_term__ {
                  __term_unit__(ct)
              }

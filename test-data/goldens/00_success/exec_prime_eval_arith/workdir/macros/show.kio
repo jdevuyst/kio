@@ -509,29 +509,36 @@ pure fn show_checked(
   let converters_type = __type_host_converters__(ct, string_type, source);
   let show_fn_type =
     __type_arrow__(ct, __type_product__(ct, concat_type, converters_type), string_type);
-  __term_fn__(
+  __term_let__(
   , ct
-  , show_fn_type
-  , .(packet: __Checked_term__) -> __Checked_term__ {
-      let packet_type = __type_product__(ct, concat_type, converters_type);
-      let concat_fn = __intrinsic_fst__(ct, packet_type, packet);
-      let converters = __intrinsic_snd__(ct, packet_type, packet);
-      render_value(
+  , source
+  , value
+  , .(saved: __Checked_term__) -> __Checked_term__ {
+      __term_fn__(
       , ct
-      , string_type
-      , concat_type
-      , concat_fn
-      , source
-      , converters
-      , text_fn_type
-      , unit_text_fn
-      , open_paren_fn
-      , close_paren_fn
-      , comma_space_fn
-      , left_prefix_fn
-      , right_prefix_fn
-      , source
-      , value
+      , show_fn_type
+      , .(packet: __Checked_term__) -> __Checked_term__ {
+          let packet_type = __type_product__(ct, concat_type, converters_type);
+          let concat_fn = __intrinsic_fst__(ct, packet_type, packet);
+          let converters = __intrinsic_snd__(ct, packet_type, packet);
+          render_value(
+          , ct
+          , string_type
+          , concat_type
+          , concat_fn
+          , source
+          , converters
+          , text_fn_type
+          , unit_text_fn
+          , open_paren_fn
+          , close_paren_fn
+          , comma_space_fn
+          , left_prefix_fn
+          , right_prefix_fn
+          , source
+          , saved
+          )
+        }
       )
     }
   )

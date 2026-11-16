@@ -13,6 +13,7 @@ pure fn captured_type_app_impl(
 , ct: __Comptime__
 , polymorphic: __Checked_term__
 , _source: __Type__
+, _unit: __Checked_term__
 , value: __Checked_term__
 ) -> __Checked_term__ {
   let specialized = __term_type_app__(ct, polymorphic, reflected_actual(ct));
