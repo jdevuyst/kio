@@ -150,6 +150,11 @@ case study paired with its POC:
 - Distinguish syntax validation, local package/materialization evidence, and
   an actual fetch at the published ref. Report missing or failing evidence
   accurately; do not turn a local fixture pass into a remote-fetch claim.
+- For examples composing libraries, verify that their public types and host
+  bindings agree. Explain whether a conditional or fallback argument is eager
+  or delayed; the example must demonstrate the evaluation behavior it promises.
+  Use [the corpus audit](../audit-corpus/SKILL.md#poc-4-api-surface-comprehensiveness-library-pocs)
+  for runtime evidence rather than treating prose or value-only laws as proof.
 
 ## How to report
 

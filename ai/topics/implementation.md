@@ -115,6 +115,10 @@ this diagnostic does not offer an automatic source replacement.
 
 ### Retained application inference
 
+The [product and call principles](../../DESIGN.md#products-and-function-calls)
+separate a function's semantic input from declaration and host parameter layout.
+Keep that distinction when retaining or completing a written application.
+
 The full-language typer may retain an unfinished immediate argument when its
 parameter slot depends on other information in the same written call tree.
 This remains ordinary synthesize/check typing: a retained source action is the

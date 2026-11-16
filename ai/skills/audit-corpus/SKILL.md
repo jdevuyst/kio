@@ -568,6 +568,16 @@ Worked-example POCs are exempt from the library-surface contract — their subje
 
 ### POC 4. API surface comprehensiveness (library POCs)
 
+Inspect a representative composition of related libraries through their public
+APIs. Trace shared type identities and documented host bindings; for example,
+a predicate should compose with the conditional API its documentation uses.
+For control-like operations and fallbacks, distinguish an eagerly computed
+value from a delayed computation. Require observable runtime evidence for
+promised skipping, evaluation order and once-only evaluation; laws over already
+computed values do not establish those properties. Report an awkward or missing
+composition separately from a contract violation rather than inventing a new
+primitive or silently changing an API.
+
 Apply [`test-data/poc/README.md` § General-purpose abstraction ownership](../../../test-data/poc/README.md#general-purpose-abstraction-ownership) to the POC's own library and demo modules. Identify the owner of each public general-purpose abstraction and literal syntax, and inspect its actual API and direct consumers rather than deciding from a type's spelling or recursive shape.
 
 - A duplicate public general-purpose collection or optional-value abstraction is a finding, including a renamed clone or duplicate literal. Routine absence uses ordinary `A | .` and `()` outside the dedicated Option abstraction. Ordinary products/sums and private domain-specific state are not duplicate libraries.

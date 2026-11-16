@@ -8,6 +8,7 @@ import option/core {
   macro or_else_lazy as option_or_else_lazy;
   macro unwrap_or_lazy as option_unwrap_or_lazy
 }
+import result/macros/control { macro if; op_macro _ && .__; op_macro _ || .__ }
 import result/result as r;
 import result/result {
   macro or_else_lazy as result_or_else_lazy;
@@ -68,5 +69,8 @@ pub fn main() {
   emit(result_unwrap_or_lazy(result_receiver(bad)) { print("B"); 8[I32] });
   emit(option_unwrap_or_lazy(option_receiver(o.some(5[I32]))) { print("bad"); 0[I32] });
   emit(r.unwrap_or(0, r.or_else(result_receiver(good), eager_result(8))));
-  emit(countdown(64))
+  emit(countdown(64));
+  if(r.is_ok(good) && d.is_empty(d.empty[I32][I32])) { print("P1\n") } else { print("bad\n") };
+  if(r.is_ok(bad) || d.is_empty(d.empty[I32][I32])) { print("P2\n") } else { print("bad\n") };
+  if(r.is_ok(good) && d.is_empty(present)) { print("bad\n") } else { print("P3\n") }
 }

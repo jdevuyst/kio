@@ -510,6 +510,12 @@ A destructuring `let` binds the components directly. Tuples extend to any arity:
 
 Tuple values compose with call arguments. If a function expects `(A & (B & C))`, these calls pass the same product shape: `f(a, b, c)`, `f(a, (b, c))`, and `f((a, b, c))`. Grouping still matters on the left: `f((a, b), c)` passes `(A & B)` as the first argument, which is a different shape.
 
+Parameter names describe how a function's body receives that product.
+`fn split(a: A, b: B) -> C` and `fn packed(pair: A & B) -> C` have the same
+function type, `(A & B) -> C`. Either function can receive the product as
+`f(a, b)` or `f((a, b))`. This does not combine successive calls: `f(a)(b)`
+passes `a` and `b` through two separate function layers.
+
 The same destructuring shape can appear in a function parameter:
 
 ```kio {@tutorial_module}

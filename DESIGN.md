@@ -128,6 +128,19 @@ or greediness, can make parentheses unnecessary. Where those rules leave
 competing groupings, Kio requires parentheses rather than choosing by incidental
 parser order or by which interpretation happens to succeed.
 
+### Products and function calls
+
+Tuples are ordinary structural products. Kio chooses right-associated binary
+products for a flat tuple; left-nested products retain their distinct shape.
+Each function layer has one semantic input type and one result type. Written
+value and type applications advance those layers in order, so parameter
+grouping cannot silently merge or split call stages.
+
+Declaration signatures also record how parameters bind a body and how a host
+interface presents them. That layout can differ for equal Kio function types.
+Adapters preserve the semantic value, application stages and evaluation order;
+layout does not change type equality, inference or macro reflection.
+
 ### An explicit core and an expressive surface
 
 [Kio'](specs/prime.md) is the explicit semantic subset shared with full Kio.
