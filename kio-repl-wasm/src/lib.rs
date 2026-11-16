@@ -352,6 +352,22 @@ fn literal_types_repl() -> Repl {
     }
 }
 
+#[cfg(all(test, target_arch = "wasm32"))]
+fn inspection_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/inspection");
+    let files = BTreeMap::from([(
+        root.join("app.kio"),
+        "mod app; import __comptime__; pub pure fn identity(x: .) -> . { x } host fn emit(); host type Text role(str); pure fn macro_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro inspect : [Source] Source -> Source { impl macro_impl; };"
+            .to_owned(),
+    )]);
+    Repl {
+        poc_id: "inspection".to_owned(),
+        session: Session::new_in_memory(root, files),
+        init_banner: String::new(),
+        completion_names: OnceCell::new(),
+    }
+}
+
 #[cfg(test)]
 fn trailing_blocks_repl() -> Repl {
     let root = PathBuf::from("/kio-wasm-tests/trailing-blocks");

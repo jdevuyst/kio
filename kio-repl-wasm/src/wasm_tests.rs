@@ -276,3 +276,34 @@ pub fn type_only_values_cross_public_javascript_boundaries() {
         2
     );
 }
+
+#[wasm_bindgen(inline_js = r#"
+export function exerciseInspection(repl) {
+  try {
+    repl.eval(':load app');
+    for (const [input, kind] of [[':sig identity', 'pure fn'], [':sig emit', 'host fn'], [':sig Text', 'host type'], [':sig inspect', 'macro']]) {
+      const item = repl.complete(input, input.length).candidates.find(item => item.label === input.slice(5));
+      if (!item || item.kind !== kind || !item.detail.includes(kind)) throw new Error(`${input}: ${JSON.stringify(item)}`);
+    }
+    const expression = repl.complete('ide', 3).candidates.find(item => item.label === 'identity');
+    if (!expression || !expression.detail.includes('pure fn identity')) throw new Error(`expression: ${JSON.stringify(expression)}`);
+    const normalized = ':normalize ide';
+    const inNormalize = repl.complete(normalized, normalized.length).candidates.find(item => item.label === 'identity');
+    if (!inNormalize || !inNormalize.detail.includes('pure fn identity')) throw new Error(`normalize: ${JSON.stringify(inNormalize)}`);
+    const shadow = '.(identity: . -> .) { ide';
+    const local = repl.complete(shadow, shadow.length).candidates.find(item => item.label === 'identity');
+    if (!local || local.detail.includes('pure fn')) throw new Error(`shadow: ${JSON.stringify(local)}`);
+    const signature = repl.eval(':sig identity').output.replace(/\x1b\[[0-9;]*m/g, '');
+    if (!signature.includes('pure fn identity')) throw new Error(`signature: ${signature}`);
+  } finally { repl.free(); }
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(catch, js_name = exerciseInspection)]
+    fn exercise_inspection(repl: JsValue) -> Result<(), JsValue>;
+}
+
+#[wasm_bindgen_test]
+pub fn inspection_crosses_the_public_javascript_boundary() {
+    exercise_inspection(super::inspection_repl().into()).unwrap();
+}

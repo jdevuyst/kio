@@ -33,7 +33,7 @@ pub(super) fn enrich(item: &mut CompletionItem, declaration: &UserMacroDef) {
     }
     snippet.push_str("$0");
     item.detail = Some(format!(
-        "{}; {}",
+        "macro: {}; {}",
         header.public_type,
         header
             .blocks

@@ -257,6 +257,12 @@ an edit-string assertion alone does not prove editor application works.
 
 ## Completion currency
 
+Inspection and completion present resolved declaration kinds and function
+purity alongside the signature or type. Use authenticated declaration facts;
+function types have no purity class, and a macro's compile-time purity does
+not classify its generated runtime term. Keep ordinary values' inferred types
+visible without guessing declaration metadata from their displayed spelling.
+
 Completion is bidirectional: identifier candidates equal the bindings in the cursor's lexical/source-order scope and selected namespace, with shadowing and ordinary import visibility preserved. At every position where the next user-selectable named atom comes from a closed language-defined vocabulary, contextual completion equals the choices that can still lead to an accepted, canonically spelled construct. This includes all five Kio-family file kinds, not only modules and packages. Reserved, removed, rejected, duplicate, mutually exclusive, order-invalid, and context-invalid choices are not suggestions. Parser recognition for a targeted diagnostic does not make a choice eligible; derive eligibility from the effective grammar, semantics, package/versioning and target-key contracts.
 
 Trace the shared context/scope machinery through each actual LSP, terminal REPL, and browser/wasm completion entry point. Suppress unrelated identifier suggestions in comments, literals, and binder-introduction positions; distinguish language-name matching from command discovery. Replacement ranges cover the complete started identifier or operator run. Candidate labels and optional type/documentation enrichment must retain the exact selected binding, provider edge, and current source version. Omit unauthenticated enrichment rather than attaching a same-spelled or stale declaration's metadata. Bounded menu presentation does not authorize discarding eligible matches; apply the response and menu contracts in `specs/cli.md` separately.

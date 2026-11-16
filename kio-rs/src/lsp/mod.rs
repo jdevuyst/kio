@@ -121,7 +121,7 @@ use crate::lsp::docs::doc_hover_at_with_module;
 use crate::lsp::folding::folding_ranges;
 use crate::lsp::formatting::{handle_formatting_with_file_context, try_handle_formatting};
 use crate::lsp::highlight::handle_document_highlight;
-use crate::lsp::hover::handle_hover;
+use crate::lsp::hover::handle_hover_with_current;
 use crate::lsp::inlay_hints::handle_inlay_hints;
 use crate::lsp::live_syntax::LiveSyntaxSnapshot;
 use crate::lsp::positions::LineIndex;
@@ -497,11 +497,17 @@ fn dispatch_request_inner(
                 parsed: overlay_parsed,
             });
             let result = declaration_hover.or_else(|| {
-                uri_to_canonical(uri)
-                    .and_then(|canonical| state.best_analysis_entry_for_file(&canonical, uri))
-                    .filter(|entry| state.block_label_query_is_current(entry, uri, position))
-                    .map(|entry| entry.analysis())
-                    .and_then(|analysis| handle_hover(uri, position, analysis, overlay))
+                uri_to_canonical(uri).and_then(|canonical| {
+                    let entry = state.best_analysis_entry_for_file(&canonical, uri)?;
+                    if !state.block_label_query_is_current(entry, uri, position) {
+                        return None;
+                    }
+                    let analysis = entry.analysis();
+                    let current = state
+                        .completion_analysis_for_file(&canonical, uri)
+                        .is_some_and(|candidate| std::ptr::eq(candidate, analysis));
+                    handle_hover_with_current(uri, position, analysis, overlay, current)
+                })
             });
             let json = serde_json::to_value(result).unwrap_or(serde_json::Value::Null);
             lsp_server::Response {
@@ -1958,7 +1964,7 @@ mod tests {
             .iter()
             .find(|item| item.label == "expand")
             .unwrap_or_else(|| panic!("current selected provider lost: {:?}", result.items));
-        assert_eq!(expansion.detail.as_deref(), Some(". -> ."));
+        assert_eq!(expansion.detail.as_deref(), Some("macro: . -> ."));
         assert!(format!("{:?}", expansion.documentation).contains("Current expansion."));
     }
 
@@ -2083,6 +2089,81 @@ mod tests {
             publish_worker_result(&server, &mut state, disk).unwrap();
             assert_eq!(request(&mut state).as_deref(), Some("."));
         }
+        scheduler.shutdown();
+    }
+
+    #[test]
+    fn hover_withholds_stale_provider_classification() {
+        use crate::lsp::snapshot::{Snapshot, SnapshotIdGen};
+        use crate::package_collection::SourceOverlay;
+        let root = workspace_path("");
+        let consumer_path = workspace_path("app/main.kio");
+        let consumer_uri = workspace_uri("app/main.kio");
+        let provider_path = workspace_path("provider.kio");
+        let provider_uri = workspace_uri("provider.kio");
+        let consumer = "mod app/main; import provider {fn produce} fn run() { let value = produce(); let _ = value; () }";
+        let old = "mod provider; pub pure fn produce() -> . { () }";
+        let new = "mod provider; pub fn produce() -> . -> . { .(x: .) { x } }";
+        let analyze = |provider: &str| {
+            let overlay = SourceOverlay::complete(
+                root.clone(),
+                BTreeMap::from([
+                    (
+                        root.join("completion.pkg.kio"),
+                        "pkg completion; bridge { app/main; }".into(),
+                    ),
+                    (consumer_path.clone(), consumer.into()),
+                    (provider_path.clone(), provider.into()),
+                ]),
+            );
+            crate::cmd::check::analyze_workspace_at_with_overlay_lsp(&root, &overlay).unwrap()
+        };
+        let mut state = ServerState::new();
+        state.open(consumer_uri.clone(), consumer.into(), 1);
+        state.open(provider_uri.clone(), old.into(), 1);
+        let (mut scheduler, _results) = Scheduler::spawn();
+        let ids = SnapshotIdGen::new();
+        let store = |state: &mut ServerState, version, provider: &str| {
+            state.store_analysis(
+                &root,
+                Snapshot::new(
+                    ids.next(),
+                    BTreeMap::from([(consumer_uri.clone(), 1), (provider_uri.clone(), version)]),
+                )
+                .with_source_paths(BTreeMap::from([
+                    (consumer_uri.clone(), consumer_path.clone()),
+                    (provider_uri.clone(), provider_path.clone()),
+                ])),
+                analyze(provider),
+            );
+        };
+        let request = |state: &mut ServerState| {
+            let position = crate::lsp::positions::LineIndex::new(consumer)
+                .to_position(consumer.find("produce()").unwrap() as u32);
+            dispatch_request(
+                lsp_server::Request::new(
+                    1.into(),
+                    HoverRequest::METHOD.to_owned(),
+                    serde_json::json!({"textDocument": {"uri": consumer_uri},
+                    "position": {"line": position.line, "character": position.character}}),
+                ),
+                state,
+                &scheduler,
+                Some(&root),
+            )
+            .result
+            .unwrap()
+        };
+        store(&mut state, 1, old);
+        let initial = request(&mut state);
+        assert!(initial.to_string().contains("pure fn:"), "{initial}");
+        state.open(provider_uri.clone(), new.into(), 2);
+        let stale = request(&mut state);
+        assert_eq!(stale["contents"]["value"], "```kio\n. -> .\n```", "{stale}");
+        store(&mut state, 2, new);
+        let current = request(&mut state);
+        assert!(current.to_string().contains("fn:"), "{current}");
+        assert!(!current.to_string().contains("pure fn:"), "{current}");
         scheduler.shutdown();
     }
 
@@ -2217,7 +2298,7 @@ mod tests {
             macro_def.kind,
             Some(lsp_types::CompletionItemKind::FUNCTION)
         );
-        assert_eq!(macro_def.detail.as_deref(), Some(". -> ."));
+        assert_eq!(macro_def.detail.as_deref(), Some("macro: . -> ."));
         assert!(format!("{:?}", macro_def.documentation).contains("Current expansion."));
         assert_eq!(
             fresh

@@ -147,6 +147,18 @@ pub fn pretty_item_signature(item: &Item) -> String {
     render(&doc, WIDTH)
 }
 
+/// Render a function header without copying its body.
+#[cfg(any(feature = "lsp", feature = "repl-core"))]
+pub(crate) fn pretty_fn_signature(def: &FnDef<Surface>) -> String {
+    render(&doc_fn_def_header(def), WIDTH)
+}
+
+/// Render a recursive function member without copying its body.
+#[cfg(any(feature = "lsp", feature = "repl-core"))]
+pub(crate) fn pretty_rec_fn_signature(def: &FnDef<Surface, ()>) -> String {
+    render(&doc_fn_def_header(def), WIDTH)
+}
+
 /// Canonical public-cache identity for a user macro declaration.
 ///
 /// Captures constrain visibility; ordered trailing descriptors determine block

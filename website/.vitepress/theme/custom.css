@@ -945,10 +945,10 @@ body {
 }
 
 .repl-completion-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  column-gap: 12px;
   padding: 3px 8px;
   border-radius: 4px;
   color: var(--kio-terminal-text);
@@ -972,7 +972,16 @@ body {
   font-size: 0.68rem;
 }
 
-.repl-completion-item.active .repl-completion-kind {
+.repl-completion-detail {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--kio-terminal-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+}
+
+.repl-completion-item.active .repl-completion-kind,
+.repl-completion-item.active .repl-completion-detail {
   color: var(--kio-terminal-bg);
 }
 

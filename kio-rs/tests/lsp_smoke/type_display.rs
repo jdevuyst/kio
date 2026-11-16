@@ -19,9 +19,9 @@ pub fn run() {\n\
     lsp.initialize(&path_to_file_uri(dir.path()));
     open_and_wait_for_analysis(&mut lsp, &uri, source);
     for (use_site, expected) in [
-        ("implicit;", ". -> ."),
-        ("explicit;", ". -> ."),
-        ("staged;", ". -> [A] ."),
+        ("implicit;", "host fn: . -> ."),
+        ("explicit;", "host fn: . -> ."),
+        ("staged;", "host fn: . -> [A] ."),
     ] {
         let (line, character) = source_position(source, source.find(use_site).unwrap());
         let hover = wait_for_hover(&mut lsp, &uri, line, character);
@@ -70,9 +70,9 @@ pub fn run() {\n\
     assert_eq!(recovered["diagnostics"], json!([]), "{recovered}");
 
     for (use_site, length, expected) in [
-        ("mark;", 4, "[A] ."),
+        ("mark;", 4, "fn: [A] ."),
         ("saved[.]", 5, "[A] ."),
-        ("delayed[.]", 7, "[A] . -> ."),
+        ("delayed[.]", 7, "fn: [A] . -> ."),
         ("anonymous[.](())", 9, "[B] B -> B"),
         ("ready;", 5, "."),
         ("wait()", 4, ". -> ."),

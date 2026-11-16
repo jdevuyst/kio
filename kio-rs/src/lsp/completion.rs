@@ -825,6 +825,10 @@ fn entry_to_lsp(
                 _ => None,
             })
     {
+        item.detail = Some(format!(
+            "macro: {}",
+            crate::pretty::pretty_type(&declaration.call_ty)
+        ));
         block_calls::enrich(&mut item, declaration);
     }
     item
@@ -882,6 +886,7 @@ struct DeclarationType<'a> {
     span: crate::span::Span,
     local: bool,
     ty: &'a crate::ast::Type<crate::ast::Lowered>,
+    kind: Option<&'static str>,
 }
 
 /// The dispatcher authenticates the dependency snapshot before supplying
@@ -922,6 +927,23 @@ impl<'a> CompletionMetadata<'a> {
             declarations: Default::default(),
             imports: Default::default(),
         };
+        let local_functions: std::collections::HashMap<_, _> = analysis
+            .root_package_lowered
+            .module(module_path)
+            .into_iter()
+            .flat_map(|entry| &entry.module.items)
+            .filter_map(|item| match item {
+                Item::FnDef(def) => Some((
+                    def.name.as_str(),
+                    if def.purity == crate::ast::Purity::Pure {
+                        "pure fn"
+                    } else {
+                        "fn"
+                    },
+                )),
+                _ => None,
+            })
+            .collect();
         for ((mp, span), binder) in analysis.position_index.declaration_binders_iter() {
             if mp != module_path {
                 continue;
@@ -950,6 +972,14 @@ impl<'a> CompletionMetadata<'a> {
                     span: *span,
                     local,
                     ty,
+                    kind: match binder {
+                        ResolvedBinder::Fn {
+                            module_path: owner,
+                            name,
+                        } if owner == module_path => local_functions.get(name.as_str()).copied(),
+                        ResolvedBinder::Fn { .. } => None,
+                        _ => crate::lsp::hover::declaration_kind(analysis, binder),
+                    },
                 });
         }
         Some(result)
@@ -1002,10 +1032,17 @@ impl<'a> CompletionMetadata<'a> {
                     label,
                     kind: Some(kind),
                     detail: match &entry {
-                        DocEntry::Macro(macro_def) => {
-                            Some(crate::pretty::pretty_type(&macro_def.call_ty))
-                        }
-                        _ => entry.ty(),
+                        DocEntry::Fn(def) => Some(crate::pretty::pretty_fn_signature(def)),
+                        DocEntry::RecFn(def) => Some(crate::pretty::pretty_rec_fn_signature(def)),
+                        DocEntry::TypeAlias(_, Some(_))
+                        | DocEntry::Newtype(_, Some(_))
+                        | DocEntry::Labels(..)
+                        | DocEntry::LabelNominal { .. } => None,
+                        DocEntry::Macro(declaration) => Some(format!(
+                            "macro: {}",
+                            crate::pretty::pretty_type(&declaration.call_ty)
+                        )),
+                        _ => Some(entry.signature()),
                     },
                     documentation: doc_comment_documentation(&provider_source, entry.doc()),
                     ..Default::default()
@@ -1042,7 +1079,10 @@ impl<'a> CompletionMetadata<'a> {
         }
         let mut detail = String::new();
         write_type(declaration.ty, &mut detail);
-        Some(detail)
+        Some(match declaration.kind {
+            Some(kind) => format!("{kind}: {detail}"),
+            None => detail,
+        })
     }
 }
 

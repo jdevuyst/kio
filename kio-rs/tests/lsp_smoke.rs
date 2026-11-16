@@ -4082,6 +4082,9 @@ mod completion_calls;
 #[path = "lsp_smoke/identifier_names.rs"]
 mod identifier_names;
 
+#[path = "lsp_smoke/inspection.rs"]
+mod inspection;
+
 #[path = "lsp_smoke/import_fixes.rs"]
 mod import_fixes;
 #[path = "lsp_smoke/module_path_fixes.rs"]

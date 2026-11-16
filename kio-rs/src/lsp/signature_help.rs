@@ -252,7 +252,12 @@ thread_local! {
 }
 
 fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> RenderedSignature {
-    let mut out = format!("fn {}", def.name);
+    let modifier = if def.purity == crate::ast::Purity::Pure {
+        "pure "
+    } else {
+        ""
+    };
+    let mut out = format!("{modifier}fn {}", def.name);
     let mut values = Vec::new();
     for group in def.sig.canonical_groups() {
         match group {
@@ -805,7 +810,7 @@ mod tests {
                 .join("signature-stages-fixture"),
         );
         let source = "mod main;
-fn pair[A](left: A, right: A) -> A { left }
+pure fn pair[A](left: A, right: A) -> A { left }
 fn staged[A](left: A)[B](right: B) -> B { right }
 fn factory() -> . -> . { .(value: .) { value } }
 fn tail(left: ., rest: . & .) { () }
@@ -831,6 +836,19 @@ pub fn run() { factory()(()); pair[.]((), ()); staged[.](())[.](()); pair[.]((()
         .unwrap()
         .unwrap();
         let module = parse_lazy(source).unwrap().force_all().unwrap();
+        let call_offset = source.find("pair[.]((), ())").unwrap() as u32;
+        let position = LineIndex::new(source).to_position(call_offset);
+        let hover = crate::lsp::hover::handle_hover(
+            &crate::lsp::util::test_file_uri(root.join("main.kio")),
+            &lsp_types::Position::new(position.line, position.character),
+            &analysis,
+            None,
+        )
+        .expect("function use has hover");
+        let lsp_types::HoverContents::Markup(markup) = hover.contents else {
+            panic!("hover uses markup");
+        };
+        assert!(markup.value.contains("pure fn:"), "{}", markup.value);
         for (marker, delta, expected) in [
             ("factory()(())", "factory()(".len(), ". -> ."),
             ("pair[.]((), ())", 5, "left: A"),
@@ -855,6 +873,9 @@ pub fn run() { factory()(()); pair[.]((), ()); staged[.](())[.](()); pair[.]((()
             };
             let help = handle_signature_help(&params, source, &module, Some(&analysis), false)
                 .unwrap_or_else(|| panic!("sig help at {marker} + {delta}"));
+            if marker.starts_with("pair") {
+                assert!(help.signatures[0].label.starts_with("pure fn pair"));
+            }
             let active = help
                 .active_parameter
                 .expect("one source parameter is active") as usize;

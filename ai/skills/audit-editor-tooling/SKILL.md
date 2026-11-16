@@ -49,6 +49,10 @@ Check the request-specific rules in `specs/cli.md`, including:
   members, and continuation labels; same spelling is not shared identity.
   Check reference ordering and `includeDeclaration`, null/refusal behavior,
   and documentation/signature ownership.
+- Inspection shows the resolved declaration kind and any ordinary function's
+  `pure` contract alongside its signature or type. Check aliases and source
+  edits; a same-spelled declaration, arbitrary function value, or macro's
+  generated runtime expression must not inherit an unsupported purity label.
 - Configuration field hover describes accepted forms and defaults from shared
   field definitions, using the current syntax owner rather than a same-spelled
   key elsewhere. Check grouped values and invalid/incomplete contexts; these

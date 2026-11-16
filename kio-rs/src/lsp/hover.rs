@@ -87,6 +87,16 @@ pub fn handle_hover(
     analysis: &LspAnalysis,
     overlay: Option<LiveSyntaxSnapshot<'_>>,
 ) -> Option<Hover> {
+    handle_hover_with_current(uri, position, analysis, overlay, true)
+}
+
+pub(crate) fn handle_hover_with_current(
+    uri: &Uri,
+    position: &Position,
+    analysis: &LspAnalysis,
+    overlay: Option<LiveSyntaxSnapshot<'_>>,
+    classification_current: bool,
+) -> Option<Hover> {
     let canonical = crate::lsp::util::uri_to_canonical(uri)?;
     let module_path = analysis.file_to_module.get(canonical.as_path())?;
 
@@ -215,9 +225,22 @@ pub fn handle_hover(
         display_ty.as_ref().unwrap_or(ty),
     );
     write_type(&display_ty, &mut type_str);
+    let kind = classification_current
+        .then(|| {
+            analysis
+                .position_index
+                .binders_iter()
+                .find_map(|((owner, binder_span), binder)| {
+                    (owner == module_path && *binder_span == span)
+                        .then(|| declaration_kind(analysis, binder))
+                        .flatten()
+                })
+        })
+        .flatten();
+    let header = kind.map_or(type_str.clone(), |kind| format!("{kind}: {type_str}"));
     let contents = HoverContents::Markup(MarkupContent {
         kind: MarkupKind::Markdown,
-        value: format!("```kio\n{type_str}\n```"),
+        value: format!("```kio\n{header}\n```"),
     });
 
     let range = span_to_lsp_range(span, &line_index);
@@ -226,6 +249,35 @@ pub fn handle_hover(
         contents,
         range: Some(range),
     })
+}
+
+/// Describe only facts attached to the exact resolved declaration.
+pub(crate) fn declaration_kind(
+    analysis: &LspAnalysis,
+    binder: &crate::pass::typecheck_full::ResolvedBinder,
+) -> Option<&'static str> {
+    use crate::pass::typecheck_full::ResolvedBinder;
+    match binder {
+        ResolvedBinder::Fn { module_path, name } => {
+            let module = &analysis.root_package_lowered.module(module_path)?.module;
+            module.items.iter().find_map(|item| match item {
+                crate::ast::Item::FnDef(def) if def.name == *name => {
+                    Some(if def.purity == crate::ast::Purity::Pure {
+                        "pure fn"
+                    } else {
+                        "fn"
+                    })
+                }
+                _ => None,
+            })
+        }
+        ResolvedBinder::HostEnvFn { .. } => Some("host fn"),
+        ResolvedBinder::HostType { .. } => Some("host type"),
+        ResolvedBinder::TypeAlias { .. } => Some("type"),
+        ResolvedBinder::Newtype { .. } => Some("nominal type"),
+        ResolvedBinder::NewtypeMember { .. } => Some("nominal member"),
+        _ => None,
+    }
 }
 
 fn nominal_type_hover(
@@ -362,6 +414,34 @@ mod tests {
             panic!("hover should use Markdown markup");
         };
         markup.value
+    }
+
+    #[test]
+    fn declaration_kind_follows_resolved_owner_and_excludes_local_values() {
+        use crate::pass::typecheck_full::ResolvedBinder;
+        let source = "mod main; pure fn work(x: .) -> . { x }";
+        let mut analysis = make_analysis("main", source, Span::new(0, 1));
+        analysis.root_package_lowered =
+            lowered_package(&[source, "mod other; fn work(x: .) -> . { x }"]);
+        let function = |module: &str| ResolvedBinder::Fn {
+            module_path: module.into(),
+            name: "work".into(),
+        };
+        assert_eq!(
+            declaration_kind(&analysis, &function("main")),
+            Some("pure fn")
+        );
+        assert_eq!(declaration_kind(&analysis, &function("other")), Some("fn"));
+        assert_eq!(
+            declaration_kind(
+                &analysis,
+                &ResolvedBinder::Local {
+                    name: "work".into(),
+                    decl_span: None,
+                }
+            ),
+            None
+        );
     }
 
     #[test]

@@ -211,6 +211,12 @@ export async function smokeRepl(page, origin) {
     return row && [...row.querySelectorAll('span')].some(span => span.textContent === 'if' && getComputedStyle(span).color === 'rgb(86, 182, 194)')
   })
   for (const _ of macroInput) await page.keyboard.press('Backspace')
+  await page.keyboard.type('fil')
+  const candidate = page.locator('.repl-completion-item').filter({ has: page.locator('.repl-completion-label', { hasText: 'filter' }) }).first()
+  await candidate.waitFor({ state: 'visible' })
+  assert.match(await candidate.locator('.repl-completion-detail').innerText(), /fn filter/)
+  await page.keyboard.press('Escape')
+  for (const _ of 'fil') await page.keyboard.press('Backspace')
 
 }
 

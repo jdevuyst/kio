@@ -184,6 +184,8 @@ pub struct ScopeCandidate {
     pub label: String,
     /// What kind of binder it names.
     pub kind: ScopeKind,
+    /// Declaration signature, when the source owner is known.
+    pub detail: Option<String>,
 }
 
 /// The source of in-scope identifier candidates for an expression-shaped
@@ -230,6 +232,7 @@ impl ScopeProvider for CatalogFixture<'_> {
                 out.push(ScopeCandidate {
                     label: it.short_name.clone(),
                     kind,
+                    detail: None,
                 });
             }
         }
@@ -238,6 +241,7 @@ impl ScopeProvider for CatalogFixture<'_> {
                 out.push(ScopeCandidate {
                     label: builtin.name.clone(),
                     kind: ScopeKind::Function,
+                    detail: None,
                 });
             }
         }
@@ -306,7 +310,11 @@ impl ScopeProvider for AstScopeProvider<'_> {
                 candidate: Candidate {
                     label: candidate.label,
                     kind: CandidateKind::Identifier(candidate.kind),
-                    description: Some(candidate.kind.description().to_owned()),
+                    description: Some(
+                        candidate
+                            .detail
+                            .unwrap_or_else(|| candidate.kind.description().to_owned()),
+                    ),
                     match_indices: fm.indices,
                 },
             });
@@ -477,8 +485,14 @@ impl AstScopeProvider<'_> {
                 )
                 .into_iter()
                 .map(|candidate| ScopeCandidate {
-                    label: candidate.label,
+                    label: candidate.label.clone(),
                     kind: scope_kind_from_walk(candidate.kind),
+                    detail: self
+                        .names
+                        .signatures
+                        .get(&(candidate.owner.clone(), candidate.label.clone()))
+                        .and_then(Clone::clone)
+                        .or(candidate.detail),
                 }),
             );
         }
@@ -579,6 +593,7 @@ fn scope_candidate_from_walk(candidate: crate::scope_walk::Candidate) -> ScopeCa
     ScopeCandidate {
         label: candidate.label,
         kind: scope_kind_from_walk(candidate.kind),
+        detail: None,
     }
 }
 
@@ -599,8 +614,13 @@ fn scope_kind_from_walk(kind: crate::scope_walk::CandidateKind) -> ScopeKind {
 #[cfg(test)]
 fn scope_kind_of_item(kind: ItemKind) -> Option<ScopeKind> {
     match kind {
-        ItemKind::Fn | ItemKind::Op | ItemKind::Equiv => Some(ScopeKind::Function),
-        ItemKind::Newtype | ItemKind::TypeAlias => Some(ScopeKind::Type),
+        ItemKind::Fn
+        | ItemKind::PureFn
+        | ItemKind::HostFn
+        | ItemKind::Macro
+        | ItemKind::Op
+        | ItemKind::Equiv => Some(ScopeKind::Function),
+        ItemKind::Newtype | ItemKind::HostType | ItemKind::TypeAlias => Some(ScopeKind::Type),
         ItemKind::Literal => Some(ScopeKind::Constant),
     }
 }
@@ -612,6 +632,10 @@ fn scope_kind_of_item(kind: ItemKind) -> Option<ScopeKind> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
     Fn,
+    PureFn,
+    HostFn,
+    Macro,
+    HostType,
     Newtype,
     TypeAlias,
     Literal,
@@ -624,6 +648,10 @@ impl ItemKind {
     fn tag(self) -> &'static str {
         match self {
             ItemKind::Fn => "fn",
+            ItemKind::PureFn => "pure fn",
+            ItemKind::HostFn => "host fn",
+            ItemKind::Macro => "macro",
+            ItemKind::HostType => "host type",
             ItemKind::Newtype => "newtype",
             ItemKind::TypeAlias => "type",
             ItemKind::Literal => "literal",
@@ -645,6 +673,11 @@ fn kind_label(kind: ItemKind, vis_pub: bool) -> &'static str {
     match kind {
         ItemKind::Fn if vis_pub => "pub fn",
         ItemKind::Fn => "fn",
+        ItemKind::PureFn if vis_pub => "pub pure fn",
+        ItemKind::PureFn => "pure fn",
+        ItemKind::HostFn => "host fn",
+        ItemKind::Macro => "macro",
+        ItemKind::HostType => "host type",
         ItemKind::Newtype => "nominal type",
         ItemKind::TypeAlias => "type",
         ItemKind::Literal => "literal",
@@ -740,6 +773,7 @@ pub struct NameSet {
     /// Current lexical module bindings with import kind and visibility resolved
     /// against the session's exact loaded providers.
     pub(crate) expression_bindings: Option<Arc<[ScopeCandidate]>>,
+    pub(crate) signatures: std::collections::BTreeMap<(String, String), Option<String>>,
     /// Exact loaded source snapshots reachable through current-module imports.
     pub(crate) expression_provider_sources: std::collections::BTreeMap<String, Arc<str>>,
     pub(crate) expression_operators: Option<Arc<[crate::ast::OperatorGrammar]>>,
@@ -776,9 +810,20 @@ impl NameSet {
 
         let mut items: Vec<ItemEntry> = Vec::new();
         let mut operators: Vec<OperatorEntry> = Vec::new();
+        let mut signatures = std::collections::BTreeMap::new();
         let mut imports_intrinsics = false;
         let mut imports_comptime = false;
         for m in session.modules_in_load_order() {
+            for entry in crate::doc_entry::documented_items_module(&m.module) {
+                let Some(signature) = inspection_signature(&entry) else {
+                    continue;
+                };
+                let key = (m.path.clone(), entry.name().to_owned());
+                signatures
+                    .entry(key)
+                    .and_modify(|value| *value = None)
+                    .or_insert(Some(signature));
+            }
             for item in &m.module.items {
                 collect_item(&m.path, item, &mut items, &mut operators);
             }
@@ -860,7 +905,20 @@ impl NameSet {
                             candidate.kind = crate::scope_walk::CandidateKind::Constant;
                         }
                     }
-                    Some(scope_candidate_from_walk(candidate))
+                    let detail = match &candidate.origin {
+                        crate::scope_walk::CandidateOrigin::Import {
+                            provider, source, ..
+                        } => signatures
+                            .get(&(provider.clone(), source.clone()))
+                            .and_then(Clone::clone),
+                        crate::scope_walk::CandidateOrigin::Declaration(_) => signatures
+                            .get(&(current.to_owned(), candidate.label.clone()))
+                            .and_then(Clone::clone),
+                        _ => None,
+                    };
+                    let mut projected = scope_candidate_from_walk(candidate);
+                    projected.detail = detail;
+                    Some(projected)
                 })
                 .collect();
             Some(Arc::from(bindings))
@@ -945,6 +1003,7 @@ impl NameSet {
             expression_module,
             expression_parse_context,
             expression_bindings,
+            signatures,
             expression_provider_sources,
             expression_operators,
             expression_call_heads,
@@ -995,7 +1054,12 @@ impl NameSet {
     fn name_scored(&self, query: &str) -> Vec<ScoredCandidate> {
         let mut scored: Vec<ScoredCandidate> = Vec::new();
         for it in &self.items {
-            let desc = format!("{} — {}", kind_label(it.kind, it.vis_pub), it.source_module);
+            let desc = self
+                .signatures
+                .get(&(it.source_module.clone(), it.short_name.clone()))
+                .and_then(|value| value.as_ref())
+                .map_or_else(|| kind_label(it.kind, it.vis_pub).to_owned(), Clone::clone);
+            let desc = format!("{desc} — {}", it.source_module);
             if let Some(fm) = fuzzy_match(query, &it.short_name) {
                 scored.push(ScoredCandidate {
                     score: fm.score,
@@ -1115,6 +1179,24 @@ fn builtin_completion_label(module: crate::builtin_docs::BuiltinModule) -> &'sta
     }
 }
 
+fn inspection_signature(entry: &crate::doc_entry::DocEntry<'_>) -> Option<String> {
+    use crate::doc_entry::DocEntry;
+    match entry {
+        DocEntry::Fn(def) => Some(crate::pretty::pretty_fn_signature(def)),
+        DocEntry::RecFn(def) => Some(crate::pretty::pretty_rec_fn_signature(def)),
+        DocEntry::Macro(def) => Some(format!(
+            "macro {}: {}",
+            def.name,
+            crate::pretty::pretty_type(&def.call_ty)
+        )),
+        DocEntry::TypeAlias(_, Some(_))
+        | DocEntry::Newtype(_, Some(_))
+        | DocEntry::Labels(..)
+        | DocEntry::LabelNominal { .. } => None,
+        _ => Some(entry.signature()),
+    }
+}
+
 /// Classify one Surface item into the structured completion entries it
 /// contributes.
 ///
@@ -1140,7 +1222,15 @@ fn collect_item(
     }
 
     let (name, kind, vis_pub) = match item {
-        Item::FnDef(d) => (d.name.as_str(), ItemKind::Fn, d.vis.is_pub()),
+        Item::FnDef(d) => (
+            d.name.as_str(),
+            if d.purity == crate::ast::Purity::Pure {
+                ItemKind::PureFn
+            } else {
+                ItemKind::Fn
+            },
+            d.vis.is_pub(),
+        ),
         Item::RecGroup(g, _) => {
             for d in &g.members {
                 items.push(ItemEntry {
@@ -1186,9 +1276,9 @@ fn collect_item(
         Item::TypeAlias(a) => (a.name.as_str(), ItemKind::TypeAlias, a.vis.is_pub()),
         Item::LiteralAlias(l, _) => (l.name.as_str(), ItemKind::Literal, l.vis.is_pub()),
         Item::Equiv(e, _) => (e.name.as_str(), ItemKind::Equiv, false),
-        Item::Macro(s, _) => (s.name.as_str(), ItemKind::Fn, s.vis.is_pub()),
-        Item::HostType(h) => (h.name.as_str(), ItemKind::Newtype, true),
-        Item::HostFn(h) => (h.name.as_str(), ItemKind::Fn, true),
+        Item::Macro(s, _) => (s.name.as_str(), ItemKind::Macro, s.vis.is_pub()),
+        Item::HostType(h) => (h.name.as_str(), ItemKind::HostType, true),
+        Item::HostFn(h) => (h.name.as_str(), ItemKind::HostFn, true),
         Item::Labels(t, _) => {
             collect_nominal_entries(module_path, t, items);
             match &t.type_alias_name {
@@ -1537,7 +1627,11 @@ fn scope_completion(
                 candidate: Candidate {
                     label: candidate.label,
                     kind: CandidateKind::Identifier(candidate.kind),
-                    description: Some(candidate.kind.description().to_owned()),
+                    description: Some(
+                        candidate
+                            .detail
+                            .unwrap_or_else(|| candidate.kind.description().to_owned()),
+                    ),
                     match_indices: fm.indices,
                 },
             });
@@ -1747,6 +1841,10 @@ mod tests {
     fn kind_label_covers_every_item_kind() {
         assert_eq!(kind_label(ItemKind::Fn, true), "pub fn");
         assert_eq!(kind_label(ItemKind::Fn, false), "fn");
+        assert_eq!(kind_label(ItemKind::PureFn, true), "pub pure fn");
+        assert_eq!(kind_label(ItemKind::HostFn, true), "host fn");
+        assert_eq!(kind_label(ItemKind::Macro, false), "macro");
+        assert_eq!(kind_label(ItemKind::HostType, true), "host type");
         assert_eq!(kind_label(ItemKind::Newtype, true), "nominal type");
         assert_eq!(kind_label(ItemKind::TypeAlias, false), "type");
         assert_eq!(kind_label(ItemKind::Literal, true), "literal");
@@ -2620,12 +2718,12 @@ op _ + __ { impl add }
             ),
             (
                 root.join("demo/main.kio"),
-                "mod demo/main; pub fn factorial(n: .) -> . { n } pub fn factory(n: .) -> . { n }"
+                "mod demo/main; import demo/other { fn foreign as alias } import demo/other as other; pub pure fn factorial(n: .) -> . { n } pub fn factory(n: .) -> . { n }"
                     .to_owned(),
             ),
             (
                 root.join("demo/other.kio"),
-                "mod demo/other; import __intrinsics__; fn foreign_private() -> . { () }"
+                "mod demo/other; import __intrinsics__; pub pure fn foreign(n: .) -> . { n } fn foreign_private() -> . { () }"
                     .to_owned(),
             ),
         ]);
@@ -2654,6 +2752,51 @@ op _ + __ { impl add }
             "bare expression candidates are identifiers"
         );
 
+        let factorial = bare
+            .candidates
+            .iter()
+            .find(|c| c.label == "factorial")
+            .unwrap();
+        assert!(
+            factorial
+                .description
+                .as_deref()
+                .unwrap()
+                .contains("pure fn factorial")
+        );
+        let alias = complete(&names, &provider, "ali", 3);
+        assert!(
+            alias
+                .candidates
+                .iter()
+                .find(|c| c.label == "alias")
+                .unwrap()
+                .description
+                .as_deref()
+                .unwrap()
+                .contains("pure fn foreign")
+        );
+        let qualified = complete(&names, &provider, "other.for", 9);
+        assert!(
+            qualified
+                .candidates
+                .iter()
+                .find(|c| c.label == "foreign")
+                .unwrap()
+                .description
+                .as_deref()
+                .unwrap()
+                .contains("pure fn foreign")
+        );
+        let shadowed = ".(factorial: . -> .) { fact";
+        let completion = complete(&names, &provider, shadowed, shadowed.len());
+        let local = completion
+            .candidates
+            .iter()
+            .find(|c| c.label == "factorial")
+            .unwrap();
+        assert!(!local.description.as_deref().unwrap().contains("pure fn"));
+
         // `:t` argument → item name / FQN candidates.
         let typed = complete(&names, &provider, ":t fac", ":t fac".len());
         let typed_labels: Vec<&str> = typed.candidates.iter().map(|c| c.label.as_str()).collect();
@@ -2661,6 +2804,18 @@ op _ + __ { impl add }
         assert!(
             typed_labels.contains(&"demo/main.factorial"),
             "got: {typed_labels:?}"
+        );
+        let command_item = typed
+            .candidates
+            .iter()
+            .find(|c| c.label == "factorial")
+            .unwrap();
+        assert!(
+            command_item
+                .description
+                .as_deref()
+                .unwrap()
+                .contains("pure fn factorial")
         );
         let scoped = provider.in_scope("foreign", 7);
         assert!(

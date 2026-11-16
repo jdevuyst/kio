@@ -688,6 +688,7 @@ onBeforeUnmount(() => {
         >
           <span class="repl-completion-label">{{ item.label }}</span>
           <span class="repl-completion-kind">{{ item.kind === 'newtype' ? 'type' : item.kind }}</span>
+          <span v-if="item.detail" class="repl-completion-detail" :title="item.detail">{{ item.detail }}</span>
         </li>
       </ul>
     </div>

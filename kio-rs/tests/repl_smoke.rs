@@ -1892,6 +1892,9 @@ fn repl_pure_uses_declaration_contracts_and_pure_context_typechecking() {
         pkg.path(),
         &[
             ":load demo/main",
+            ":signature identity",
+            ":signature emit",
+            ":signature Text",
             ":pure ()",
             ":pure identity",
             ":pure demo/main.identity",
@@ -1907,6 +1910,9 @@ fn repl_pure_uses_declaration_contracts_and_pure_context_typechecking() {
             ":quit",
         ],
     );
+    for expected in ["pure fn identity", "host fn emit", "host type Text"] {
+        assert!(out.contains(expected), "missing {expected}: {out}");
+    }
     let verdicts: Vec<&str> = out
         .lines()
         .filter(|line| matches!(*line, "pure" | "impure"))

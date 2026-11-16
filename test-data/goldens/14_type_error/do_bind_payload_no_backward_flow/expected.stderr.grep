@@ -1,1 +1,1 @@
-cannot synthesize the type of `fn` parameter `value`
+cannot infer type argument `A` from the available type information

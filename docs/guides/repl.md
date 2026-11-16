@@ -106,6 +106,11 @@ A `<name>` argument is resolved through the **current scope**: the items the cur
 
 `:signature`, `:source`, and `:t` are the **named-item query trio** — three fixed views of one named item: its declaration header, its full source, and the type of the value it binds. Kiodoc spells the same three as the `@signature` / `@source` / `@type` directives. They share the rendering of a selected declaration; Kiodoc's [directive arguments](../../specs/kiodoc.md#code-embedding-directives) retain their own lookup syntax.
 
+Use `:signature` or `:doc` to see whether a declaration is a function, macro,
+host function or host type. A function's `pure` modifier appears with its
+signature. The absence of `pure` does not mean every call has effects, and a
+function-valued local's type alone does not establish a purity guarantee.
+
 `:which`, `:refs`, and `:scope` are the navigation commands. `:which example_fn1` reports the fully-qualified `my_package/examples.example_fn1` (private and public declarations both count); `:refs example_fn1` lists every call site, type-position use, and `import`-clause mention of `example_fn1`, each as `module-path:line:col  in <kind> <name>` with the enclosing top-level item's spelling; `:scope` lists everything in the current module's scope under five sections (declared items, imported names by source, operator bindings, module aliases, intrinsics state).
 
 `:packages` (synonym `:pkgs`) is the package counterpart to `:mods`. Packages are optional — the REPL works on the module tree whether or not a `*.pkg.kio` is present — so this is a read-only view that never touches the loaded-module set. With no argument it lists every `*.pkg.kio` in the directory tree; with a package name (the `.pkg.kio` stem) it shows that package's contract: the package name and its `bridge { … }` block — the module globs that select which modules' `pub` surface (host requirements plus exports) the package exposes.
@@ -264,6 +269,8 @@ naming namespaces and insert canonical spellings. Comments and string contents d
 name suggestions.
 
 The menu displays a bounded portion of the results while retaining all matches.
+Declaration suggestions identify their kind and show the available type or
+signature, including `pure` for a function declared with that contract.
 In the terminal, press Tab to move through the candidates, Enter to accept one,
 or Escape to dismiss the menu. A match beyond the first displayed portion is
 still reachable.
