@@ -110,7 +110,14 @@ fail the change if violated:
   API. Read [`ai/topics/emit.md`](../../topics/emit.md) § Runtime model and
   discharge
   [`audit-backend-family-conformance`](../audit-backend-family-conformance/SKILL.md)
-  § Human-usable host facade with representative host-authored call sites.
+  § Human-usable host facade. Before implementation, write short complete
+  proposed host examples and public declarations, and compare native
+  alternatives, covering ordinary
+  capability setup, package creation, calls and data/callback operations in
+  both directions. Use that audit's workflow/necessity record to explain the
+  whole API and remaining ceremony; compiler acceptance is not the usability
+  verdict. At acceptance, reconcile those examples with the actual public
+  declarations and independently authored host evidence.
 - **A settled backend decision propagates to every semantic peer.** State one
   backend-neutral law and its applicability predicate, then record independent
   applicability, conformance, and evidence results for every shipping backend
@@ -1268,7 +1275,9 @@ adversary role explicitly) and hunt for:
   identifier equivalence, such as source underscores with module separators;
   then add an unrelated declaration and confirm every pre-existing public
   selector is byte-stable. Reject declaration-order suffixes and APIs a human
-  host author cannot reasonably navigate.
+  host author cannot reasonably navigate. Challenge the whole workflow and
+  native alternatives in the family audit's § Human-usable host facade record,
+  not only collision freedom or successful native compilation.
 - **An injective opaque-host mapping disguised as type safety** — on a
   configurable facade, bind two compatible exact declarations to the same
   concrete host type or type constructor. On a fixed or erased facade, trace
@@ -1377,8 +1386,11 @@ The backend is accepted only when **all** of the following hold:
    pass — plus the rest of the audit-set gate.
 4. The generated-binding naming plan, adversarial collision fixtures, and
    `audit-generated-binder-hygiene` result are clean; the human-usable-facade
-   audit is also clean against representative independently authored
-   `HOST_INTERFACE` call sites. Any `ARTIFACT_SHAPE` case pins only a durable
+   audit has an explicit acceptable host-workflow verdict, with representative
+   public declaration excerpts and independently authored host call sites,
+   separate from their compilation/runtime results. Reconcile the proposed
+   host examples and native alternatives against the actual API using that
+   audit's existing record. Any `ARTIFACT_SHAPE` case pins only a durable
    spec- or recorded-measurement-backed fact, and emissions were not counted as
    runtime cells. For long generated identifiers or filenames, discharge the
    target's actual limits with native artifact evidence; reuse the existing

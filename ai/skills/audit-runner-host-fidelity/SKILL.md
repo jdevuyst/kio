@@ -25,6 +25,15 @@ This skill checks the runner's host-construction **technique** against the two h
   documented way?
 - Whether the **emitter** behaviorally conforms to `specs/backends/<lang>.md` (spec says X, emitter does Y) — [`audit-spec-drift`](../audit-spec-drift/SKILL.md) § 7 Per-backend specs. This skill is the host-boundary complement: its § 2 below compares the mangler *transform* across runner ↔ emitter ↔ spec ↔ docs, which catches a description that is mechanically wrong yet output-equivalent on today's legal inputs (the "lower-cased" class) — a drift a behavioral spec→impl check passes over because both sides still produce `app__print`.
 
+A conforming runner can expose a poor public design. Trace a representative
+complete host workflow from capability setup through package creation, export
+calls and data/callback use, and compare its public declarations with the
+human-usability record in
+[`audit-backend-family-conformance`](../audit-backend-family-conformance/SKILL.md)
+§ 3. Report concrete host-authoring burdens there, even when runner, spec and
+emitter agree; protocol parity and successful native execution are not a
+usability verdict. Reuse existing host evidence rather than duplicating it.
+
 Anchor: [`AGENTS.md` § Pointer set](../../../AGENTS.md) →
 [`ci/infra/kio-test-runner-rs/README.md`](../../../ci/infra/kio-test-runner-rs/README.md)
 (§ The protocol model and § What runners read from emitted artifacts), plus
@@ -203,9 +212,10 @@ The factory, host-record/trait, namespace derivation, selector navigation, and
 public type spellings used by both should agree with the backend spec without
 sharing producer-derived metadata. Agreement proves two distinct things: the
 protocol runner exercises cross-implementation runtime behavior, while the
-fixed host proves an ordinary host author can consume the public facade. The
-emission is supplemental and never satisfies a runtime backend-completeness
-cell. A runner that passes only because it uses a private shortcut, or a fixed
+fixed host independently exercises public integration and type relationships.
+Neither result alone establishes the human-usability verdict owned by the
+family audit. The emission is supplemental and never satisfies a runtime
+backend-completeness cell. A runner that passes only because it uses a private shortcut, or a fixed
 host that was adapted from generated output, is a finding.
 
 ## How to report

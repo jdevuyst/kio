@@ -136,6 +136,12 @@ host-authored call sites against the actual public facade. The owning audit is
 [`audit-backend-family-conformance`](../skills/audit-backend-family-conformance/SKILL.md)
 § Human-usable host facade.
 
+Report material host-usability defects regardless of `Host API stability`.
+That field controls compatibility decisions, not quality assessment or
+permission to suppress a finding. Distinguish source-confirmed interface
+burdens, executed host evidence and proposed alternatives; current emitter
+layout and successful runner execution are not semantic justifications.
+
 Exploit expressive host capabilities to simplify the public API. Where native
 higher-kinded parameters, polymorphic functions, algebraic types, or module
 systems express the required relationship directly, prefer those idioms over

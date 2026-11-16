@@ -51,12 +51,15 @@ The orchestrator also pins `--cache-base` below its own temporary root. Emission
 
 ## `HOST_INTERFACE`
 
-A `HOST_INTERFACE` case proves that the published generated facade is usable by an ordinary host author.
+A `HOST_INTERFACE` case independently exercises the published generated facade
+through host-authored source. It can prove public callability and type
+relationships; human usability also requires a separate assessment of the
+complete host workflow and its public declarations.
 
 - `host/` is required. Normally it contains fixed host-language source authored from `specs/backends/<backend>.md`, not from the artifact produced during the run. A capacity case whose host is mechanically enormous may instead keep fixed public-spec parameters in `host/` and deterministically generate the repeated source from only those parameters; the generator never reads the emitted artifact, and the exception must reduce rather than hide reviewable contract content.
 - The host uses the documented public loading, host-record, namespace, type, and package API. It does not reach a private symbol.
 - Case code does not read, copy, grep, patch, or parse generated files to discover names, signatures, shapes, fixtures, or compiler arguments. The host compiler/runtime may import, compile, link, or load the generated artifact in the ordinary documented way.
-- Changing the emitter's public facade incompatibly makes the unchanged host fail to compile or run. That independence is the oracle.
+- Changing the emitter's public facade incompatibly makes the unchanged host fail to compile or run. That independence is the conformance oracle.
 
 Use this marker for generated-host ABI, public selector collisions, namespace/package coexistence at the host source level, public type relationships, and other host-author operations that a fixed runner protocol cannot independently demonstrate.
 

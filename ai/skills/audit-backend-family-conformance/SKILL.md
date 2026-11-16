@@ -74,9 +74,24 @@ Distinguish readable names with compact stable hash suffixes from full encoded
 identities; check explicit collision handling rather than assuming short
 hashes are unique.
 
-Prefer a fixed independent runner protocol and cross-implementation golden:
-the runner uses the documented public interface and ordinary host tooling, so
-an incompatible or unusable facade fails without golden-owned source scraping.
+For each distinct public facade policy, record a short complete host workflow
+and corresponding public declaration excerpt, the native alternative
+considered, and the reason for remaining ceremony. Cover providing capabilities,
+creating a package, calling exports, constructing and inspecting data, and
+passing or retaining callbacks in both directions; select representative
+generic, staged, recursive, existential and collision cases where the policy
+differs. Reuse existing independent hosts and runner evidence. Record
+source/artifact identities, target baseline, evidence actually executed, and
+the explicit usability disposition; a source-only review does not establish
+native execution. Apply emit's reporting duty regardless of Host API stability.
+
+Prefer a fixed independent runner protocol and cross-implementation golden for
+public conformance and runtime behavior. It uses the documented interface and
+ordinary host tooling, so an incompatible facade fails without golden-owned
+source scraping. A conforming runner can faithfully automate an awkward
+interface; passing it does not establish human usability. Record a separate
+human-usability verdict from the actual public declarations and independently
+authored host workflow.
 The golden passes the output directory opaquely; it is not the place for
 case-owned host imports, native compilation, or generated-file inspection.
 Use backend-first `test-data/emissions/<backend>/*/HOST_INTERFACE` evidence only
@@ -216,7 +231,10 @@ Usability does not license a contract change or subjective cosmetic churn.
 State the concrete host-author operation that is awkward or undiscoverable,
 show the emitted spelling/call site, and identify the simpler host-native
 organization that preserves Kio identity, additivity, and collision freedom.
-If no such improvement exists, do not report taste as a defect.
+If no such improvement exists, do not report taste as a defect. A serious
+concrete host-authoring burden with an unproved remedy remains an open
+investigation; uncertainty about its replacement is not a clean usability
+verdict.
 
 ## 4. Cross-backend decision propagation
 
@@ -312,8 +330,10 @@ Group findings into:
 5. **Human-usability failures** — public facades that compile but are
    materially opaque, flattened, cast-heavy, undiscoverable, or non-idiomatic
    for a normal host author, including public erasure of a relationship the
-   selected stable language floor can express, or a backend with no independent
-   fixed-host emission exercising representative public operations.
+   selected stable language floor can express, or missing either representative
+   independent host evidence or an explicit usability verdict. Apply § 3's
+   evidence-placement rules; an emission is not required when the runner
+   already independently demonstrates the public relationship.
 6. **Unpropagated semantic decisions** — missing backend/occurrence rows,
    family-inferred applicability, shared laws left local or copied instead of
    referenced, misplaced shared code/spec policy, incomplete evidence, and
@@ -323,6 +343,10 @@ Group findings into:
    these are findings, not admissible placeholders.
 9. **Stale family declarations** — pages declaring a family the README no longer lists.
 
-For each finding, cite the per-backend page, the relevant section, and the line in `specs/backends/README.md` if applicable.
+For each finding, cite the per-backend page, the relevant section, and the line
+in `specs/backends/README.md` if applicable. Include the human-usability verdict,
+remaining necessity arguments and current evidence gaps from § 3, distinguishing
+confirmed burdens from proposed replacements and executed evidence from source
+review.
 
 **Default: report only.** If invoked with a fix-it directive, follow [`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md).
